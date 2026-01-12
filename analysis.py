@@ -17,18 +17,21 @@ from shapes import (
 
 Dim = Union[int, str, None]
 
-def expr_to_dim(expr: Any, env: Env) -> Dim:
+def expr_to_dim(
+        expr: Any, 
+        env: Env
+    ) -> Dim:
     """Try to interpret an expression as a dimension (int or symbolic). For the tests, dims are either numeric constants or scalars"""
     tag = expr[0]
 
     if tag == "const":
-        val = expr[1]
+        val = expr[2]
         if float(val).is_integer():
             return int(val)
         return None
 
     if tag == "var":
-        name = expr[1]
+        name = expr[2]
         return name
 
     # Anything more complex: don't know
@@ -38,38 +41,49 @@ def pretty_expr(expr):
     tag = expr[0]
 
     if tag == "var":
-        return expr[1]
+        return expr[2]
     if tag == "const":
-        return str(expr[1])
-    if tag in {"+", "-", "*", ".*", "./"}:
-        return f"({pretty_expr(expr[1])} {tag} {pretty_expr(expr[2])})"
+        return str(expr[2])
+    if tag in {"+", "-", "*", ".*", "./", "/"}:
+        return f"({pretty_expr(expr[2])} {tag} {pretty_expr(expr[3])})"
     if tag == "transpose":
-        return pretty_expr(expr[1]) + "'"
+        return pretty_expr(expr[2]) + "'"
     if tag == "call":
-        func = pretty_expr(expr[1])
-        args = ", ".join(pretty_expr(a) for a in expr[2])
+        func = pretty_expr(expr[2])
+        args = ", ".join(pretty_expr(a) for a in expr[3])
         return f"{func}({args})"
+    if tag == "index":
+        base = pretty_expr(expr[2])
+        idx = pretty_expr(expr[3])
+        return f"{base}({idx})"
+    if tag == "neg":
+        return f"(-{pretty_expr(expr[2])})"
     return tag
 
 
 # Expression analysis
-def eval_expr(expr: Any, env: Env, warnings: List[str]) -> Shape:
+def eval_expr(
+        expr: Any, 
+        env: Env, 
+        warnings: List[str]
+    ) -> Shape:
     tag = expr[0]
 
     if tag == "var":
-        name = expr[1]
+        name = expr[2]
         return env.get(name)
 
     if tag == "const":
         return Shape.scalar()
 
     if tag == "call":
-        func_expr = expr[1]
-        args = expr[2]
+        # ['call', line, func_expr, args]
+        func_expr = expr[2]
+        args = expr[3]
 
         # Only handle calls where function is a simple variable name
         if func_expr[0] == "var":
-            fname = func_expr[1]
+            fname = func_expr[2]
 
             if fname == "zeros" or fname == "ones":
                 if len(args) == 2:
@@ -84,31 +98,44 @@ def eval_expr(expr: Any, env: Env, warnings: List[str]) -> Shape:
         return Shape.scalar()
 
     if tag == "transpose":
-        inner = eval_expr(expr[1], env, warnings)
+        inner = eval_expr(expr[2], env, warnings)
         if inner.is_matrix():
             return Shape.matrix(inner.cols, inner.rows)
         return inner
 
     if tag == "index":
-        base_shape = eval_expr(expr[1], env, warnings)
+        base_shape = eval_expr(expr[2], env, warnings)
         # For now I'm treating the indexing result as a scalar or unknown
         if base_shape.is_matrix():
             return Shape.scalar()
         return Shape.unknown()
+    
+    if tag == "neg":
+        inner = eval_expr(expr[2], env, warnings)
+        return inner
 
     op = tag
     if op in {"+", "-", "*", "/", ".*", "./", "==", "~=", "<", "<=", ">", ">=", "&&", "||", ":"}:
-        left_expr = expr[1]
-        right_expr = expr[2]
+        line = expr[1]
+        left_expr = expr[2]
+        right_expr = expr[3]
         left_shape = eval_expr(left_expr, env, warnings)
         right_shape = eval_expr(right_expr, env, warnings)
-        return eval_binop(op, left_shape, right_shape, warnings, left_expr, right_expr)
+        return eval_binop(op, left_shape, right_shape, warnings, left_expr, right_expr, line)
 
     # Fallback
     return Shape.unknown()
 
 
-def eval_binop(op: str, left: Shape, right: Shape, warnings: List[str], left_expr: Any, right_expr: Any) -> Shape:
+def eval_binop(
+        op: str, 
+        left: Shape, 
+        right: Shape, 
+        warnings: List[str], 
+        left_expr: Any, 
+        right_expr: Any,
+        line: int
+    ) -> Shape:
     """Evaluate binary operator shapes and emit dimension mismatch warnings where we can prove incompatibility"""
 
     if op in {"==", "~=", "<", "<=", ">", ">=", "&&", "||"}:
@@ -126,17 +153,25 @@ def eval_binop(op: str, left: Shape, right: Shape, warnings: List[str], left_exp
 
     # Elementwise requires the same shape
     if op in {"+", "-", ".*", "./", "/"}:
-        return elementwise_shape(op, left, right, warnings, left_expr, right_expr)
+        return elementwise_shape(op, left, right, warnings, left_expr, right_expr, line)
 
     # Matrix multiply
     if op == "*":
-        return matmul_shape(left, right, warnings, left_expr, right_expr)
+        return matmul_shape(left, right, warnings, left_expr, right_expr, line)
 
     # Fallback
     return Shape.unknown()
 
 
-def elementwise_shape(op: str, left: Shape, right: Shape, warnings: List[str], left_expr: Any, right_expr: Any) -> Shape:
+def elementwise_shape(
+        op: str, 
+        left: Shape, 
+        right: Shape, 
+        warnings: List[str], 
+        left_expr: Any, 
+        right_expr: Any,
+        line: int
+    ) -> Shape:
     """Elementwise operations require matching shapes when both operands are matrices."""
     # Unknowns -> unknown
     if left.is_unknown() or right.is_unknown():
@@ -152,8 +187,8 @@ def elementwise_shape(op: str, left: Shape, right: Shape, warnings: List[str], l
         c_conflict = dims_definitely_conflict(left.cols, right.cols)
         if r_conflict or c_conflict:
             warnings.append(
-                f"Elementwise {op} mismatch in {pretty_expr([op, left_expr, right_expr])}: "
-                f"{left} vs {right}"
+                f"Line {line}: Elementwise {op} mismatch in "
+                f"{pretty_expr([op, line, left_expr, right_expr])}: {left} vs {right}"
 )
         # Result has joined dimensions
         rows = join_dim(left.rows, right.rows)
@@ -164,7 +199,14 @@ def elementwise_shape(op: str, left: Shape, right: Shape, warnings: List[str], l
     return Shape.unknown()
 
 
-def matmul_shape(left: Shape, right: Shape, warnings: List[str], left_expr: Any, right_expr: Any) -> Shape:
+def matmul_shape(
+        left: Shape, 
+        right: Shape, 
+        warnings: List[str], 
+        left_expr: Any, 
+        right_expr: Any,
+        line: int
+    ) -> Shape:
     """Matrix multiplication: A * B"""
     # Scalar * scalar
     if left.is_scalar() and right.is_scalar():
@@ -182,24 +224,27 @@ def matmul_shape(left: Shape, right: Shape, warnings: List[str], left_expr: Any,
         inner_right = right.rows
         if dims_definitely_conflict(inner_left, inner_right):
             warnings.append(
-                f"Dimension mismatch in expression {pretty_expr(['*', left_expr, right_expr])}: "
+                f"Line {line}: Dimension mismatch in expression "
+                f"{pretty_expr(['*', line, left_expr, right_expr])}: "
                 f"inner dims {left.cols} vs {right.rows} (shapes {left} and {right})"
             )
         # Result shape is rows_left x cols_right, even if inner dims are unknown
-        rows = left.rows
-        cols = right.cols
-        return Shape.matrix(rows, cols)
+        return Shape.matrix(left.rows, right.cols)
 
     # Anything else is unknown
     return Shape.unknown()
 
 
-def analyze_stmt(stmt: Any, env: Env, warnings: List[str]) -> Env:
+def analyze_stmt(
+        stmt: Any, 
+        env: Env, 
+        warnings: List[str]
+    ) -> Env:
     tag = stmt[0]
 
     if tag == "assign":
-        name = stmt[1]
-        expr = stmt[2]
+        name = stmt[2]
+        expr = stmt[3]
         shape = eval_expr(expr, env, warnings)
         env.set(name, shape)
         return env

@@ -11,6 +11,7 @@ class Token:
     kind: TokenKind # "ID", "NUMBER", "FOR", "==", "+"
     value: str # original text
     pos: int # character offset for error messages
+    line: int  # line number
 
 # MATLAB keywords in the subset
 KEYWORDS = {"for", "while", "if", "else", "end"}
@@ -35,30 +36,36 @@ MASTER_RE = re.compile("|".join(
 def lex(src: str) -> List[Token]:
     """Turn a Mini-MATLAB source string into a list of Tokens"""
     tokens: List[Token] = []
+    line = 1 # Start at the first line
+
     for m in MASTER_RE.finditer(src):
         kind = m.lastgroup
         value = m.group()
         pos = m.start()
+
         if kind == "NUMBER":
-            tokens.append(Token("NUMBER", value, pos))
+            tokens.append(Token("NUMBER", value, pos, line))
         elif kind == "ID":
             if value in KEYWORDS:
-                tokens.append(Token(value.upper(), value, pos))
+                tokens.append(Token(value.upper(), value, pos, line))
             else:
-                tokens.append(Token("ID", value, pos))
+                tokens.append(Token("ID", value, pos, line))
         elif kind == "DOTOP":
-            tokens.append(Token(kind, value, pos))
+            tokens.append(Token(kind, value, pos, line))
         elif kind == "TRANSPOSE":
-            tokens.append(Token("TRANSPOSE", value, pos))
+            tokens.append(Token("TRANSPOSE", value, pos, line))
         elif kind == "OP":
-            tokens.append(Token(value, value, pos))
+            tokens.append(Token(value, value, pos, line))
         elif kind == "NEWLINE":
-            tokens.append(Token("NEWLINE", value, pos))
+            tokens.append(Token("NEWLINE", value, pos, line))
+            if value == "\n":
+                line += 1
         elif kind == "SKIP" or kind == "COMMENT":
             continue
         elif kind == "MISMATCH":
             raise SyntaxError(f"Unexpected character {value!r} at {pos}")
-    tokens.append(Token("EOF", "", len(src)))
+        
+    tokens.append(Token("EOF", "", len(src), line))
     return tokens
 
 class ParseError(Exception):
@@ -134,7 +141,7 @@ class MatlabParser:
             if self.current().value == "=":
                 self.eat("=")
                 expr = self.parse_expr()
-                return ["assign", id_tok.value, expr]
+                return ["assign", id_tok.line, id_tok.value, expr]
             else:
                 expr_tail = self.parse_expr_rest(["var", id_tok.value], 0)
                 return ["expr", expr_tail]
@@ -212,14 +219,15 @@ class MatlabParser:
 
         # prefix
         if tok.value == "-":
-            self.eat("-")
+            minus_tok = self.eat("-")
             operand = self.parse_expr(self.PRECEDENCE["-"])
-            left = ["neg", operand]
+            left = ["neg", minus_tok.line, operand]
         elif tok.kind == "NUMBER":
-            left = ["const", float(self.eat("NUMBER").value)]
+            num_tok = self.eat("NUMBER")
+            left = ["const", num_tok.line, float(num_tok.value)]
         elif tok.kind == "ID":
             id_tok = self.eat("ID")
-            left = ["var", id_tok.value]
+            left = ["var", id_tok.line, id_tok.value]
             left = self.parse_postfix(left)
         elif tok.value == "(":
             self.eat("(")
@@ -239,9 +247,9 @@ class MatlabParser:
             prec = self.PRECEDENCE[op]
             if prec < min_prec:
                 break
-            self.eat(op)
+            op_tok = self.eat(op)
             right = self.parse_expr(prec + 1)
-            left = [op, left, right]
+            left = [op, op_tok.line, left, right]
         return left
 
     def parse_postfix(self, left: Any) -> Any:
@@ -249,7 +257,7 @@ class MatlabParser:
         while True:
             tok = self.current()
             if tok.value == "(":
-                self.eat("(")
+                lparen_tok = self.eat("(")
                 args = []
                 if self.current().value != ")":
                     args.append(self.parse_expr())
@@ -258,12 +266,12 @@ class MatlabParser:
                         args.append(self.parse_expr())
                 self.eat(")")
                 if len(args) == 1:
-                    left = ["index", left, args[0]]
+                    left = ["index", lparen_tok.line, left, args[0]]
                 else:
-                    left = ["call", left, args]
+                    left = ["call", lparen_tok.line, left, args]
             elif tok.kind == "TRANSPOSE":
-                self.eat("TRANSPOSE")
-                left = ["transpose", left]
+                t_tok = self.eat("TRANSPOSE")
+                left = ["transpose", t_tok.line, left]
             else:
                 break
         return left
@@ -278,9 +286,9 @@ class MatlabParser:
             prec = self.PRECEDENCE[op]
             if prec < min_prec:
                 break
-            self.eat(op)
+            op_tok = self.eat(op)
             right = self.parse_expr(prec + 1)
-            left = [op, left, right]
+            left = [op, op_tok.line, left, right]
         return left
 
 def parse_matlab(src: str) -> Any:
