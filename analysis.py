@@ -44,7 +44,7 @@ def pretty_expr(expr):
         return expr[2]
     if tag == "const":
         return str(expr[2])
-    if tag in {"+", "-", "*", ".*", "./", "/"}:
+    if tag in {"+", "-", "*", "/", ".*", "./", "==", "~=", "<", "<=", ">", ">=", "&&", "||"}:
         return f"({pretty_expr(expr[2])} {tag} {pretty_expr(expr[3])})"
     if tag == "transpose":
         return pretty_expr(expr[2]) + "'"
@@ -138,7 +138,29 @@ def eval_binop(
     ) -> Shape:
     """Evaluate binary operator shapes and emit dimension mismatch warnings where we can prove incompatibility"""
 
-    if op in {"==", "~=", "<", "<=", ">", ">=", "&&", "||"}:
+    if op in {"==", "~=", "<", "<=", ">", ">="}:
+        # Warn if someone compares matrices (MATLAB comparisons are elementwise and can produce a logical matrix)
+        if (left.is_matrix() and right.is_scalar()) or (left.is_scalar() and right.is_matrix()):
+            warnings.append(
+                f"Line {line}: Suspicious comparison between matrix and scalar in "
+                f"{pretty_expr([op, line, left_expr, right_expr])} ({left} vs {right}). "
+                f"In MATLAB this is elementwise and may produce a logical matrix."
+            )
+        elif left.is_matrix() and right.is_matrix():
+            warnings.append(
+                f"Line {line}: Matrix-to-matrix comparison in "
+                f"{pretty_expr([op, line, left_expr, right_expr])} ({left} vs {right}). "
+                f"In MATLAB this is elementwise and may produce a logical matrix."
+            )
+        return Shape.scalar()
+
+    if op in {"&&", "||"}:
+        # also warn if logical ops are applied to non-scalars
+        if left.is_matrix() or right.is_matrix():
+            warnings.append(
+                f"Line {line}: Logical operator {op} used with non-scalar operand(s) in "
+                f"{pretty_expr([op, line, left_expr, right_expr])} ({left} vs {right})."
+            )
         return Shape.scalar()
 
     # Colon: 1:n style vector
@@ -264,20 +286,32 @@ def analyze_stmt(
         return env
 
     if tag == "while":
+        
+        cond = stmt[1]
         body = stmt[2]
+
+        # analyze the condition so comparison/logical warnings trigger
+        _ = eval_expr(cond, env, warnings)
+
         for s in body:
             analyze_stmt(s, env, warnings)
         return env
 
     if tag == "if":
+
+        cond = stmt[1]
         then_body = stmt[2]
         else_body = stmt[3]
+
+        _ = eval_expr(cond, env, warnings)
+
         then_env = env.copy()
         else_env = env.copy()
         for s in then_body:
             analyze_stmt(s, then_env, warnings)
         for s in else_body:
             analyze_stmt(s, else_env, warnings)
+
         # merge environments
         from env import join_env
         merged = join_env(then_env, else_env)
