@@ -1,7 +1,8 @@
 # Mini-MATLAB Static Shape & Dimension Analysis
 **Ethan Doughty**
 
-This project implements a **static shape and dimension analysis** for a subset of the MATLAB programming language (I call it **Mini-MATLAB**)
+This project implements a **static shape and dimension analysis** for a subset of the MATLAB programming language (called **Mini-MATLAB**)
+The goal of the analysis is to detect common matrix-related errors before runtime, using a custom static analyzer built specifically for a small but expressive MATLAB subset.
 
 ## What the Analysis Detects
 
@@ -14,12 +15,29 @@ The analyzer detects dimension mismatches in the following matrix operations:
 - **colon-generated vectors** (`1:n`)
 - **scalar–matrix operations** (`s*A`, `s+A`)
 - **indexing behavior** (`A(i,j)`)
+- **matrix–scalar comparisons** (`A == 0`)
+- **logical operators on non-scalars** (`&&, ||`)
+- **incompatible variable reassignments**
+- **fix suggestions** (e.g., suggesting .* instead of *)
+
+All warnings are reported with source line numbers
 
 This property is important because many MATLAB runtime errors come from incompatible dimensions. This analysis attempts to detect these errors statically, without needing to use the MATLAB runtime environment.
 
 ## Language Subset Design
 
-The language subset and analysis design were chosen to isolate a small core of MATLAB that is dense enough to show interesting behaviors, but small enough to analyze with a custom-built static tool.
+The language subset and analysis design were chosen to isolate a subset of MATLAB that is dense enough to show interesting behaviors, but small enough to analyze with a custom static tool.
+
+The subset includes:
+
+- assignments
+- expressions
+- function calls (zeros, ones)
+- control flow (if, for, while)
+- symbolic dimensions
+- indexing and transpose
+
+Loops are analyzed conservatively using a single pass, which is sufficient for the test cases and keeps the analysis focused on shape reasoning rather than loop invariants.
 
 ## Test Suite
 

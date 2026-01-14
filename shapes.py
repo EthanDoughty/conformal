@@ -75,6 +75,21 @@ def dims_definitely_conflict(a: Dim, b: Dim) -> bool:
         return False
     return a != b
 
+def add_dim(a: Dim, b: Dim) -> Dim:
+    """Symbolic/int addition for dimensions."""
+    if a is None or b is None:
+        return None
+    if isinstance(a, int) and isinstance(b, int):
+        return a + b
+    return f"({a}+{b})"
+
+def sum_dims(ds: list[Dim]) -> Dim:
+    if not ds:
+        return 0
+    acc = ds[0]
+    for d in ds[1:]:
+        acc = add_dim(acc, d)
+    return acc
 
 # Shape lattice join
 

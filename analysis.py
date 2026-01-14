@@ -13,6 +13,8 @@ from shapes import (
     shape_of_colon,
     dims_definitely_conflict,
     join_dim,
+    add_dim,
+    sum_dims,
 )
 
 Dim = Union[int, str, None]
@@ -94,6 +96,11 @@ def eval_expr(
 
     if tag == "const":
         return Shape.scalar()
+    
+    if tag == "matrix":
+        line = expr[1]
+        rows = expr[2]  # List[List[expr]]
+        return eval_matrix_literal(rows, env, warnings, line)
 
     if tag == "call":
         # ['call', line, func_expr, args]
@@ -263,17 +270,96 @@ def matmul_shape(
     if left.is_matrix() and right.is_matrix():
         inner_left = left.cols
         inner_right = right.rows
-        if dims_definitely_conflict(inner_left, inner_right):
-            warnings.append(
+        if dims_definitely_conflict(left.cols, right.rows):
+            msg = (
                 f"Line {line}: Dimension mismatch in expression "
                 f"{pretty_expr(['*', line, left_expr, right_expr])}: "
                 f"inner dims {left.cols} vs {right.rows} (shapes {left} and {right})"
             )
+
+            # If same outer shape, suggest an elementwise multiply
+            if (
+                left.is_matrix()
+                and right.is_matrix()
+                and not dims_definitely_conflict(left.rows, right.rows)
+                and not dims_definitely_conflict(left.cols, right.cols)
+            ):
+                msg += ". Did you mean elementwise multiplication (.*)?"
+
+            warnings.append(msg)
+
         # Result shape is rows_left x cols_right, even if inner dims are unknown
         return Shape.matrix(left.rows, right.cols)
 
     # Anything else is unknown
     return Shape.unknown()
+
+def as_matrix_shape(s: Shape) -> Shape:
+    """Treat scalar as 1x1 matrix for concatenation."""
+    if s.is_scalar():
+        return Shape.matrix(1, 1)
+    return s
+
+
+def eval_matrix_literal(
+        rows_exprs: List[List[Any]],
+        env: Env,
+        warnings: List[str],
+        line: int
+    ) -> Shape:
+    # Empty literal []
+    if len(rows_exprs) == 0:
+        return Shape.matrix(0, 0)
+
+    row_heights: List[Dim] = []
+    row_widths: List[Dim] = []
+
+    for r, row in enumerate(rows_exprs):
+        elem_rows: List[Dim] = []
+        elem_cols: List[Dim] = []
+
+        for e in row:
+            s = as_matrix_shape(eval_expr(e, env, warnings))
+
+            if s.is_unknown():
+                elem_rows.append(None)
+                elem_cols.append(None)
+            elif s.is_matrix():
+                elem_rows.append(s.rows)
+                elem_cols.append(s.cols)
+            else:
+                # should not happen, but be safe
+                elem_rows.append(None)
+                elem_cols.append(None)
+
+        # unify row counts within the row (horizontal concat constraint)
+        height = elem_rows[0]
+        for rr in elem_rows[1:]:
+            if dims_definitely_conflict(height, rr):
+                warnings.append(
+                    f"Line {line}: Horizontal concatenation requires equal row counts in row {r+1}; "
+                    f"got {height} and {rr} in matrix literal."
+                )
+            height = join_dim(height, rr)
+
+        width = sum_dims(elem_cols)
+
+        row_heights.append(height)
+        row_widths.append(width)
+
+    # unify widths across rows (vertical concat constraint)
+    common_width = row_widths[0]
+    for w in row_widths[1:]:
+        if dims_definitely_conflict(common_width, w):
+            warnings.append(
+                f"Line {line}: Vertical concatenation requires equal column counts across rows; "
+                f"got {common_width} and {w} in matrix literal."
+            )
+        common_width = join_dim(common_width, w)
+
+    total_height = sum_dims(row_heights)
+
+    return Shape.matrix(total_height, common_width)
 
 
 def analyze_stmt(

@@ -21,8 +21,8 @@ TOKEN_SPEC = [
     ("NUMBER",   r"\d+(?:\.\d*)?"), # ints or floats
     ("ID",       r"[A-Za-z_]\w*"), # identifiers
     ("DOTOP",    r"\.\*|\./"), # element-wise ops
-    ("OP",       r"==|~=|<=|>=|&&|\|\||[+\-*/<>()=,:]"),
-    ("NEWLINE",  r"[;\n]"), # ; or newline ends a stmt
+    ("OP",       r"==|~=|<=|>=|&&|\|\||[+\-*/<>()=,:\[\];]"),
+    ("NEWLINE",  r"\n"),  # only real newlines
     ("SKIP",     r"[ \t]+"), # spaces/tabs
     ("COMMENT",  r"%[^\n]*"), # comments
     ("TRANSPOSE", r"'"), # transpose operator
@@ -99,6 +99,12 @@ class MatlabParser:
 
     def at_end(self) -> bool:
         return self.current().kind == "EOF"
+    
+    def starts_expr(self, tok: Token) -> bool:
+        return (
+            tok.kind in {"NUMBER", "ID"}
+            or tok.value in {"(", "-", "["}
+            )
 
     # top-level program
 
@@ -106,8 +112,11 @@ class MatlabParser:
         """Internal form: ['seq', stmt1, stmt2, ...]"""
         stmts = []
         while not self.at_end():
-            while self.current().kind == "NEWLINE":
-                self.eat("NEWLINE")
+            while self.current().kind == "NEWLINE" or self.current().value == ";":
+                if self.current().kind == "NEWLINE":
+                    self.eat("NEWLINE")
+                else:
+                    self.eat(";")
                 if self.at_end():
                     return ["seq"] + stmts
             if self.at_end():
@@ -130,8 +139,11 @@ class MatlabParser:
             return ["skip"]
         else:
             node = self.parse_simple_stmt()
-            if self.current().kind == "NEWLINE":
-                self.eat("NEWLINE")
+            if self.current().kind == "NEWLINE" or self.current().value == ";":
+                if self.current().kind == "NEWLINE":
+                    self.eat("NEWLINE")
+                else:
+                    self.eat(";")
             return node
 
     def parse_simple_stmt(self) -> Any:
@@ -233,6 +245,8 @@ class MatlabParser:
             self.eat("(")
             left = self.parse_expr()
             self.eat(")")
+        elif tok.value == "[":
+            left = self.parse_matrix_literal()
         else:
             raise ParseError(
                 f"Unexpected token {tok.kind} {tok.value!r} in expression at {tok.pos}"
@@ -290,7 +304,75 @@ class MatlabParser:
             right = self.parse_expr(prec + 1)
             left = [op, op_tok.line, left, right]
         return left
+    
+    def parse_matrix_literal(self) -> Any:
+        """
+        Parse MATLAB-style matrix literal: [ a b, c ; d e ]
+        Internal form: ['matrix', line, rows]
+        where rows is List[List[expr]]
+        """
+        lbrack = self.eat("[")
+        line = lbrack.line
 
+        rows: List[List[Any]] = []
+
+        # Empty literal: []
+        if self.current().value == "]":
+            self.eat("]")
+            return ["matrix", line, rows]
+
+        while True:
+            # parse one row: elem (sep elem)*
+            row: List[Any] = []
+
+            # At least one element per row
+            row.append(self.parse_expr())
+
+            while True:
+                tok = self.current()
+
+                # explicit column separator
+                if tok.value == ",":
+                    self.eat(",")
+                    row.append(self.parse_expr())
+                    continue
+
+                # row / end delimiters
+                if tok.value in {";", "]"} or tok.kind == "NEWLINE" or tok.kind == "EOF":
+                    break
+
+                # implicit column separator (whitespace in source, skipped by lexer)
+                # If the next token can start an expression, treat it as concat.
+                if self.starts_expr(tok):
+                    row.append(self.parse_expr())
+                    continue
+
+                break
+
+            rows.append(row)
+
+            # end?
+            if self.current().value == "]":
+                self.eat("]")
+                break
+
+            # row separator
+            if self.current().value == ";":
+                self.eat(";")
+                # allow trailing ; before ]
+                if self.current().value == "]":
+                    self.eat("]")
+                    break
+                continue
+
+            # If we got here without ; or ], it's a syntax error in literal
+            tok = self.current()
+            raise ParseError(
+                f"Unexpected token {tok.kind} {tok.value!r} in matrix literal at {tok.pos}"
+            )
+
+        return ["matrix", line, rows]
+    
 def parse_matlab(src: str) -> Any:
     """src string -> internal AST"""
     tokens = lex(src)
