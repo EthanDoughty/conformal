@@ -46,6 +46,8 @@ def pretty_expr(expr):
         return expr[2]
     if tag == "const":
         return str(expr[2])
+    if tag == "colon":
+        return ":"
     if tag in {"+", "-", "*", "/", ".*", "./", "==", "~=", "<", "<=", ">", ">=", "&&", "||"}:
         return f"({pretty_expr(expr[2])} {tag} {pretty_expr(expr[3])})"
     if tag == "transpose":
@@ -56,8 +58,9 @@ def pretty_expr(expr):
         return f"{func}({args})"
     if tag == "index":
         base = pretty_expr(expr[2])
-        idx = pretty_expr(expr[3])
-        return f"{base}({idx})"
+        args = expr[3]
+        args_s = ", ".join(pretty_expr(a) for a in args)
+        return f"{base}({args_s})"
     if tag == "neg":
         return f"(-{pretty_expr(expr[2])})"
     return tag
@@ -130,10 +133,52 @@ def eval_expr(
         return inner
 
     if tag == "index":
-        base_shape = eval_expr(expr[2], env, warnings)
-        # For now I'm treating the indexing result as a scalar or unknown
+        line = expr[1]
+        base_expr = expr[2]
+        args = expr[3]  # List[Any]
+
+        base_shape = eval_expr(base_expr, env, warnings)
+
+        # If unknown, we can't do much.
+        if base_shape.is_unknown():
+            return Shape.unknown()
+
+        # Indexing a scalar is suspicious
+        if base_shape.is_scalar():
+            warnings.append(
+                f"Line {line}: Indexing applied to scalar in {pretty_expr(expr)}. "
+                f"Treating result as unknown."
+            )
+            return Shape.unknown()
+
+        # Matrix indexing semantics
         if base_shape.is_matrix():
-            return Shape.scalar()
+            m = base_shape.rows
+            n = base_shape.cols
+
+            # Linear indexing A(i) turns into a scalar conservatively
+            if len(args) == 1:
+                return Shape.scalar()
+
+            # 2D indexing A(i,j), A(i,:), A(:,j), A(:,:)
+            if len(args) == 2:
+                a1, a2 = args
+                a1_is_colon = (isinstance(a1, list) and a1[0] == "colon")
+                a2_is_colon = (isinstance(a2, list) and a2[0] == "colon")
+
+                if a1_is_colon and a2_is_colon:
+                    return Shape.matrix(m, n)
+                if a1_is_colon and not a2_is_colon:
+                    return Shape.matrix(m, 1)
+                if not a1_is_colon and a2_is_colon:
+                    return Shape.matrix(1, n)
+
+                # A(i,j)
+                return Shape.scalar()
+
+            # Anything else (A(i,j,k)) unsupported
+            return Shape.unknown()
+
         return Shape.unknown()
     
     if tag == "neg":
@@ -237,7 +282,9 @@ def elementwise_shape(
             warnings.append(
                 f"Line {line}: Elementwise {op} mismatch in "
                 f"{pretty_expr([op, line, left_expr, right_expr])}: {left} vs {right}"
-)
+            )
+            return Shape.unknown()
+        
         # Result has joined dimensions
         rows = join_dim(left.rows, right.rows)
         cols = join_dim(left.cols, right.cols)
@@ -287,7 +334,8 @@ def matmul_shape(
                 msg += ". Did you mean elementwise multiplication (.*)?"
 
             warnings.append(msg)
-
+            return Shape.unknown()
+        
         # Result shape is rows_left x cols_right, even if inner dims are unknown
         return Shape.matrix(left.rows, right.cols)
 
@@ -307,6 +355,7 @@ def eval_matrix_literal(
         warnings: List[str],
         line: int
     ) -> Shape:
+    had_definite_error = False
     # Empty literal []
     if len(rows_exprs) == 0:
         return Shape.matrix(0, 0)
@@ -336,6 +385,7 @@ def eval_matrix_literal(
         height = elem_rows[0]
         for rr in elem_rows[1:]:
             if dims_definitely_conflict(height, rr):
+                had_definite_error = True
                 warnings.append(
                     f"Line {line}: Horizontal concatenation requires equal row counts in row {r+1}; "
                     f"got {height} and {rr} in matrix literal."
@@ -343,14 +393,13 @@ def eval_matrix_literal(
             height = join_dim(height, rr)
 
         width = sum_dims(elem_cols)
-
         row_heights.append(height)
         row_widths.append(width)
 
-    # unify widths across rows (vertical concat constraint)
     common_width = row_widths[0]
-    for w in row_widths[1:]:
+    for i, w in enumerate(row_widths[1:], start=2):
         if dims_definitely_conflict(common_width, w):
+            had_definite_error = True
             warnings.append(
                 f"Line {line}: Vertical concatenation requires equal column counts across rows; "
                 f"got {common_width} and {w} in matrix literal."
@@ -358,6 +407,9 @@ def eval_matrix_literal(
         common_width = join_dim(common_width, w)
 
     total_height = sum_dims(row_heights)
+
+    if had_definite_error:
+        return Shape.unknown()
 
     return Shape.matrix(total_height, common_width)
 

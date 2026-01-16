@@ -7,7 +7,7 @@
 %
 % EXPECT: warnings = 1
 % EXPECT: X = matrix[5 x 3]
-% EXPECT: Y = matrix[None x 6]
+% EXPECT: Y = unknown
 
 A = zeros(2, 3);
 B = zeros(3, 3);

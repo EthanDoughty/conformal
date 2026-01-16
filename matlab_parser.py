@@ -267,27 +267,32 @@ class MatlabParser:
         return left
 
     def parse_postfix(self, left: Any) -> Any:
-        """Postfix constructs after a primary. indexing: a(i), calls: f(x, y)"""
+        """Postfix constructs after a primary.
+        - Indexing: A(i), A(i,j), A(:,j), A(i,:), A(:,:)
+        - Calls: zeros(...), ones(...) (subset)
+        """
         while True:
             tok = self.current()
+
             if tok.value == "(":
                 lparen_tok = self.eat("(")
-                args = []
-                if self.current().value != ")":
-                    args.append(self.parse_expr())
-                    while self.current().value == ",":
-                        self.eat(",")
-                        args.append(self.parse_expr())
+                args = self.parse_paren_args()
                 self.eat(")")
-                if len(args) == 1:
-                    left = ["index", lparen_tok.line, left, args[0]]
-                else:
+
+                # Treat zeros/ones as function calls.
+                # Everything else with (...) is indexing
+                if left[0] == "var" and left[2] in {"zeros", "ones"}:
                     left = ["call", lparen_tok.line, left, args]
+                else:
+                    left = ["index", lparen_tok.line, left, args]
+
             elif tok.kind == "TRANSPOSE":
                 t_tok = self.eat("TRANSPOSE")
                 left = ["transpose", t_tok.line, left]
+
             else:
                 break
+
         return left
 
     def parse_expr_rest(self, left: Any, min_prec: int) -> Any:
@@ -372,6 +377,27 @@ class MatlabParser:
             )
 
         return ["matrix", line, rows]
+    
+    def parse_index_arg(self) -> Any:
+        """Parse a single argument inside () for indexing/calls.
+        ':' inside indexing as a dedicated node: [':', line].
+        """
+        tok = self.current()
+        if tok.value == ":":
+            c_tok = self.eat(":")
+            return ["colon", c_tok.line]
+        return self.parse_expr()
+
+
+    def parse_paren_args(self) -> List[Any]:
+        """Parse comma-separated args in (). Allows ':' as an argument."""
+        args: List[Any] = []
+        if self.current().value != ")":
+            args.append(self.parse_index_arg())
+            while self.current().value == ",":
+                self.eat(",")
+                args.append(self.parse_index_arg())
+        return args
     
 def parse_matlab(src: str) -> Any:
     """src string -> internal AST"""

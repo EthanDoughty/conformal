@@ -8,7 +8,7 @@ from matlab_parser import parse_matlab
 from analysis import analyze_program
 from shapes import Shape
 
-TEST_FILES = [f"tests/test{i}.m" for i in range(1, 16)]
+TEST_FILES = [f"tests/test{i}.m" for i in range(1, 19)]
 
 # Expectations syntax in .m files:
 #  % EXPECT: warnings = 0

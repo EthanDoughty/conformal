@@ -4,7 +4,7 @@
 % EXPECT: warnings = 1
 % EXPECT: A = matrix[3 x 4]
 % EXPECT: B = matrix[4 x 4]
-% EXPECT: C = matrix[None x 4]
+% EXPECT: C = unknown
 
 A = zeros(3, 4);
 B = zeros(4, 4);

@@ -1,9 +1,9 @@
 # Mini-MATLAB Static Shape & Dimension Analysis
 **Ethan Doughty**
 
-This project implements a **static shape and dimension analysis** for a subset of the MATLAB programming language, referred to as **Mini-MATLAB**.
+This project implements a static shape and dimension analysis for a subset of the MATLAB programming language, referred to as Mini-MATLAB.
 
-The goal of the analysis is to detect common matrix-related errors **before runtime**, using a custom parser and static analyzer designed specifically for MATLAB-style matrix semantics. The tool reasons about matrix shapes, symbolic dimensions, and control flow without relying on the MATLAB runtime.
+The goal of the analysis is to detect common matrix-related errors before runtime, using a custom parser and static analyzer designed specifically for MATLAB-style matrix semantics. The tool reasons about matrix shapes, symbolic dimensions, and control flow without relying on the MATLAB runtime.
 
 ## What the Analysis Detects
 
@@ -17,14 +17,14 @@ The analyzer statically detects dimension and shape issues in the following cons
 - **Horizontal and vertical concatenation constraints**
 - **Vector transpose** (`v'`)
 - **Colon-generated vectors** (`1:n`)
-- **Indexing behavior** (`A(i, j)`)
+- **MATLAB-style indexing and slices** (`A(i,j)`, `A(i,:)`, `A(:,j)`, `A(:,:)`)
 - **Matrix–scalar comparisons** (`A == 0`)
 - **Logical operators on non-scalars** (`&&`, `||`)
 - **Incompatible variable reassignments**
 - **MATLAB-aware fix suggestions**
   - e.g. suggesting `.*` instead of `*`
 
-All warnings are reported with **source line numbers**, and the analysis continues in a "best-effort" manner even after detecting errors.
+All warnings are reported with source line numbers, and the analysis continues in a "best-effort" manner even after detecting errors.
 
 ## Language Subset Design
 
@@ -38,7 +38,7 @@ The subset includes:
 - symbolic dimensions
 - indexing and transpose
 
-Loops are analyzed conservatively using a **single pass**, which keeps the analysis focused on shape reasoning rather than loop invariants. This design choice is fine for the intended test cases and avoids unnecessary complexity.
+Loops are analyzed conservatively using a single pass, which keeps the analysis focused on shape reasoning rather than loop invariants. This design choice is fine for the intended test cases and avoids unnecessary complexity.
 
 ## Shape System
 
@@ -58,7 +58,7 @@ The analysis supports:
 
 ## Test Suite
 
-The project includes a **self-checking test suite** consisting of **15 Mini-MATLAB programs**.
+The project includes a self-checking test suite consisting of 18 Mini-MATLAB programs.
 
 Each test file:
 - documents its intent using MATLAB comments
@@ -77,10 +77,13 @@ Each test file:
 | 9    | Indexing semantics 
 | 10   | Control-flow joins                  
 | 11-14| Matrix literals             
-| 15    | Symbolic concatenation         
+| 15    | Symbolic Concatenation         
+| 16   | Row Slice Indexing
+| 17   | Column and Full Slice Indexing
+| 18   | Invalid indexing on scalars
 
 
-For more information on the specifics of each of the 10 test cases, see the testN.m files. MATLAB comments are provided to describe intended behavior for each test case, and the reasoning for why they pass or fail. 
+For more information on the specifics of each of the test cases, see the tests/testN.m files. MATLAB comments are provided to describe intended behavior for each test case, and the reasoning for why the assertions pass.
 
 ## HOW TO RUN!
 
@@ -92,13 +95,13 @@ To run a single test: `python3 runner.py tests/testN.m`
 
 ## Notes and Challenges
 
-- The AST is represented using lightweight list-based nodes (e.g. ['assign', line, name, expr]), which makes it easy to implement analyses over the tree.
+- The AST is represented using list-based nodes (e.g. ['assign', line, name, expr]), which makes it easy to implement analyses over the tree.
 
-- Matrix literals are parsed with MATLAB-aware rules, including implicit whitespace-based concatenation.
+- Matrix literals are parsed with MATLAB-aware rules.
 
-- The analyzer uses best-effort inference: even when a definite mismatch is detected, it continues analysis to provide as much information as possible.
+- The analyzer uses best-effort inference; Even when a definite mismatch is detected, it continues analysis to provide as much information as possible.
 
-- Control-flow joins merge environments using a pointwise shape lattice.
+- The analyzer is strict on provable dimension errors. When an operation is definitely invalid (e.g., inner-dimension mismatch in A*B), it emits a warning and treats the expression result as unknown.
 
 ## Motivation and Future Directions
 
