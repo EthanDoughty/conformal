@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict
 
-from shapes import Shape, join_shape
+from runtime.shapes import Shape, join_shape
 
 
 @dataclass

@@ -4,7 +4,7 @@ import sys
 from collections import Counter
 from typing import Any, List
 
-from matlab_parser import parse_matlab
+from frontend.matlab_parser import parse_matlab
 
 
 def parse_file(path: str):
