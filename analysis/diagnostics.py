@@ -47,6 +47,17 @@ def pretty_index_arg_ir(arg: IndexArg) -> str:
 # Warning message builders
 # ------------------------
 
+def has_unsupported(diags: list[str]) -> bool:
+    """Check if any diagnostic is an unsupported statement warning.
+
+    Args:
+        diags: List of diagnostic messages
+
+    Returns:
+        True if any diagnostic starts with W_UNSUPPORTED_
+    """
+    return any(d.startswith("W_UNSUPPORTED_") for d in diags)
+
 def warn_reassign_incompatible(line: int, name: str, new_shape: Shape, old_shape: Shape) -> str:
     return (
         f"Line {line}: Variable '{name}' reassigned with incompatible shape "
@@ -136,11 +147,8 @@ def warn_unsupported_stmt(line: int, raw: str, targets: list[str]) -> str:
         targets: Variables that will be set to unknown
 
     Returns:
-        Warning message string
+        Warning message string with stable code token W_UNSUPPORTED_STMT
     """
     target_str = ", ".join(targets) if targets else "(none)"
     raw_str = f" '{raw}'" if raw else ""
-    return (
-        f"Line {line}: Unsupported statement{raw_str}. "
-        f"Variables set to unknown: {target_str}"
-    )
+    return f"W_UNSUPPORTED_STMT line={line} targets={target_str}{raw_str}"

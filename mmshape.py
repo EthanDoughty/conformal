@@ -8,14 +8,16 @@ from pathlib import Path
 from frontend.matlab_parser import parse_matlab
 from frontend.lower_ir import lower_program
 from analysis import analyze_program, analyze_program_ir
+from analysis.diagnostics import has_unsupported
 
 
-def run_file(file_path: str, compare: bool) -> int:
+def run_file(file_path: str, compare: bool, strict: bool = False) -> int:
     """Analyze a single Mini-MATLAB file.
 
     Args:
         file_path: Path to .m file to analyze
         compare: If True, compare legacy vs IR analyzer outputs
+        strict: If True, exit with error if unsupported constructs detected
 
     Returns:
         Exit code (0 for success, 1 for error)
@@ -67,18 +69,27 @@ def run_file(file_path: str, compare: bool) -> int:
 
     print("\nFinal environment:")
     print(env_ir)
+
+    # Strict mode: fail if unsupported constructs detected
+    if strict and has_unsupported(warnings_ir):
+        print("\nSTRICT MODE: Unsupported constructs detected (W_UNSUPPORTED_*)")
+        return 1
+
     return 0
 
 
-def run_tests() -> int:
+def run_tests(strict: bool = False) -> int:
     """Run the full test suite.
+
+    Args:
+        strict: If True, exit with error if unsupported constructs detected
 
     Returns:
         Exit code (0 for all tests passed, 1 otherwise)
     """
     # Import here so normal usage doesn't load test code
     import run_all_tests
-    return 0 if run_all_tests.main(return_code=True) == 0 else 1
+    return run_all_tests.main(return_code=True, strict=strict)
 
 
 def main() -> int:
@@ -102,16 +113,21 @@ def main() -> int:
         action="store_true",
         help="Run test suite"
     )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Exit with error if unsupported constructs detected"
+    )
     args = parser.parse_args()
 
     if args.tests:
-        return run_tests()
+        return run_tests(strict=args.strict)
 
     if not args.file:
         parser.print_help()
         return 1
 
-    return run_file(args.file, compare=args.compare)
+    return run_file(args.file, compare=args.compare, strict=args.strict)
 
 
 if __name__ == "__main__":

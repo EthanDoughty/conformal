@@ -10,6 +10,7 @@ from typing import Dict, List, Tuple
 from frontend.matlab_parser import parse_matlab
 from frontend.lower_ir import lower_program
 from analysis import analyze_program_ir, analyze_program_legacy
+from analysis.diagnostics import has_unsupported
 from runtime.shapes import Shape
 
 
@@ -56,11 +57,20 @@ def parse_expectations(src: str) -> Tuple[Dict[str, str], int | None]:
     return expected_shapes, expected_warning_count
 
 
-def run_test(path: str, compare: bool = True) -> bool:
+def run_test(path: str, compare: bool = True) -> tuple[bool, bool]:
+    """Run a test file and return (passed, has_unsupported_warnings).
+
+    Args:
+        path: Path to test file
+        compare: Whether to compare legacy vs IR analysis
+
+    Returns:
+        Tuple of (test_passed, has_unsupported_stmt_warnings)
+    """
     print(f"===== Analysis for {path}")
     if not os.path.exists(path):
         print("ERROR: file not found\n")
-        return False
+        return False, False
 
     src = open(path, "r").read()
     expected_shapes, expected_warning_count = parse_expectations(src)
@@ -69,12 +79,15 @@ def run_test(path: str, compare: bool = True) -> bool:
         syntax_ast = parse_matlab(src)
     except Exception as e:
         print(f"Error while parsing {path}: {e}\n")
-        return False
+        return False, False
 
     ir_prog = lower_program(syntax_ast)
 
     # IR is the source of truth for expectations.
     env, warnings = analyze_program_ir(ir_prog)
+
+    # Check for unsupported statement warnings using shared helper
+    has_unsupported_warnings = has_unsupported(warnings)
 
     # Optional: compare legacy vs IR for sanity.
     if COMPARE:
@@ -123,22 +136,43 @@ def run_test(path: str, compare: bool = True) -> bool:
 
     print("ASSERTIONS:", "PASS" if passed else "FAIL")
     print()
-    return passed
+    return passed, has_unsupported_warnings
 
 
-def main(return_code: bool = False) -> int:
+def main(return_code: bool = False, strict: bool = False) -> int:
+    """Run all tests.
+
+    Args:
+        return_code: If True, return exit code instead of exiting
+        strict: If True, exit with error if unsupported constructs detected
+
+    Returns:
+        Exit code (0 for all tests passed, 1 otherwise)
+    """
     total = 0
     ok = 0
     compare = "--compare" in sys.argv
+    # Accept strict from parameter or sys.argv for backwards compatibility
+    strict = strict or "--strict" in sys.argv
+    any_unsupported = False
 
     for path in TEST_FILES:
         total += 1
-        if run_test(path, compare=compare):
+        passed, has_unsupported = run_test(path, compare=compare)
+        if passed:
             ok += 1
+        if has_unsupported:
+            any_unsupported = True
 
     print(f"===== Summary: {ok}/{total} tests passed =====")
 
     rc = 0 if ok == total else 1
+
+    # In strict mode, exit with error if any unsupported constructs found
+    if strict and any_unsupported:
+        print("STRICT MODE: Unsupported constructs detected (W_UNSUPPORTED_*)")
+        rc = 1
+
     if return_code:
         return rc
     return rc
