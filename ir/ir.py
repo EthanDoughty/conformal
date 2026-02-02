@@ -125,6 +125,16 @@ class For(Stmt):
     body: List[Stmt]
 
 @dataclass(frozen=True)
+class OpaqueStmt(Stmt):
+    """Opaque statement with local-havoc semantics.
+
+    Used to represent unsupported or unknown constructs.
+    Sets all target variables to unknown shape during analysis.
+    """
+    targets: List[str]  # Variable names to havoc
+    raw: str = ""  # Optional: original source text
+
+@dataclass(frozen=True)
 class Program:
     """Top-level program consisting of statements."""
     body: List[Stmt]

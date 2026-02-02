@@ -22,10 +22,12 @@ TOKEN_SPEC = [
     ("ID",       r"[A-Za-z_]\w*"), # identifiers
     ("DOTOP",    r"\.\*|\./"), # element-wise ops
     ("OP",       r"==|~=|<=|>=|&&|\|\||[+\-*/<>()=,:\[\];]"),
+    ("DOT",      r"\."), # standalone dot (for recovery from struct/method access)
     ("NEWLINE",  r"\n"),  # only real newlines
     ("SKIP",     r"[ \t]+"), # spaces/tabs
     ("COMMENT",  r"%[^\n]*"), # comments
     ("TRANSPOSE", r"'"), # transpose operator
+    ("CURLYBRACE", r"[{}]"), # curly braces (for recovery from cell arrays)
     ("MISMATCH", r"."), # anything else is an error
 ]
 
@@ -52,6 +54,10 @@ def lex(src: str) -> List[Token]:
                 tokens.append(Token("ID", value, pos, line))
         elif kind == "DOTOP":
             tokens.append(Token(kind, value, pos, line))
+        elif kind == "DOT":
+            tokens.append(Token("DOT", value, pos, line))
+        elif kind == "CURLYBRACE":
+            tokens.append(Token(value, value, pos, line))
         elif kind == "TRANSPOSE":
             tokens.append(Token("TRANSPOSE", value, pos, line))
         elif kind == "OP":
@@ -99,12 +105,57 @@ class MatlabParser:
 
     def at_end(self) -> bool:
         return self.current().kind == "EOF"
-    
+
     def starts_expr(self, tok: Token) -> bool:
         return (
             tok.kind in {"NUMBER", "ID"}
             or tok.value in {"(", "-", "["}
             )
+
+    def recover_to_stmt_boundary(self, start_line: int) -> Any:
+        """Recover from parse error by consuming tokens until statement boundary.
+
+        Statement boundary is `;` or NEWLINE when delimiter depth is 0.
+        Tracks (), [], {} depth so newlines inside don't terminate.
+        Stops before `end` at depth 0 to preserve block structure.
+
+        Returns: ['raw_stmt', line, tokens, raw_text]
+        """
+        tokens_consumed = []
+        depth = 0  # Track (), [], {} nesting
+
+        while not self.at_end():
+            tok = self.current()
+
+            # Check for block-ending keywords at depth 0
+            if depth == 0 and tok.kind in {"END", "ELSE", "ELSEIF"}:
+                break
+
+            # Check for statement boundary at depth 0 (using token kind for semicolon)
+            if depth == 0:
+                if tok.kind == "NEWLINE":
+                    # Consume the terminator and stop
+                    self.i += 1
+                    break
+                # Check for semicolon by value (since it's stored as token kind ";" after lexing)
+                if tok.kind == ";" or tok.value == ";":
+                    self.i += 1
+                    break
+
+            # Track delimiter depth using token kinds/values
+            # LPAREN/RPAREN etc. are stored as their string values after lexing
+            if tok.value == "(" or tok.value == "[" or tok.value == "{":
+                depth += 1
+            elif tok.value == ")" or tok.value == "]" or tok.value == "}":
+                depth = max(0, depth - 1)
+
+            tokens_consumed.append(tok)
+            self.i += 1
+
+        # Construct raw text from consumed tokens
+        raw_text = " ".join(t.value for t in tokens_consumed)
+
+        return ["raw_stmt", start_line, tokens_consumed, raw_text]
 
     # top-level program
 
@@ -128,23 +179,36 @@ class MatlabParser:
 
     def parse_stmt(self) -> Any:
         tok = self.current()
-        if tok.kind == "FOR":
-            return self.parse_for()
-        elif tok.kind == "WHILE":
-            return self.parse_while()
-        elif tok.kind == "IF":
-            return self.parse_if()
-        elif tok.kind == "NEWLINE":
-            self.eat("NEWLINE")
-            return ["skip"]
-        else:
-            node = self.parse_simple_stmt()
-            if self.current().kind == "NEWLINE" or self.current().value == ";":
-                if self.current().kind == "NEWLINE":
-                    self.eat("NEWLINE")
-                else:
-                    self.eat(";")
-            return node
+        start_line = tok.line
+        start_pos = self.i
+
+        try:
+            if tok.kind == "FOR":
+                return self.parse_for()
+            elif tok.kind == "WHILE":
+                return self.parse_while()
+            elif tok.kind == "IF":
+                return self.parse_if()
+            elif tok.kind == "NEWLINE":
+                self.eat("NEWLINE")
+                return ["skip"]
+            else:
+                node = self.parse_simple_stmt()
+                # Check for proper statement terminator
+                if self.current().kind not in {"NEWLINE", "EOF"} and self.current().value != ";":
+                    # Unexpected token after statement - trigger recovery
+                    # Reset to start of statement and recover
+                    self.i = start_pos
+                    return self.recover_to_stmt_boundary(start_line)
+                if self.current().kind == "NEWLINE" or self.current().value == ";":
+                    if self.current().kind == "NEWLINE":
+                        self.eat("NEWLINE")
+                    else:
+                        self.eat(";")
+                return node
+        except ParseError:
+            # Recovery: consume tokens until statement boundary
+            return self.recover_to_stmt_boundary(start_line)
 
     def parse_simple_stmt(self) -> Any:
         """For now, only support ID '=' expr, otherwise, treat it as a bare expression statement: expr;"""
@@ -403,13 +467,23 @@ class MatlabParser:
 
 
     def parse_paren_args(self) -> List[Any]:
-        """Parse comma-separated args in (). Allows ':' as an argument."""
+        """Parse comma-separated args in (). Allows ':' as an argument.
+        Skips newlines between arguments."""
         args: List[Any] = []
+        # Skip leading newlines
+        while self.current().kind == "NEWLINE":
+            self.eat("NEWLINE")
         if self.current().value != ")":
             args.append(self.parse_index_arg())
             while self.current().value == ",":
                 self.eat(",")
+                # Skip newlines after comma
+                while self.current().kind == "NEWLINE":
+                    self.eat("NEWLINE")
                 args.append(self.parse_index_arg())
+        # Skip trailing newlines
+        while self.current().kind == "NEWLINE":
+            self.eat("NEWLINE")
         return args
     
 def parse_matlab(src: str) -> Any:

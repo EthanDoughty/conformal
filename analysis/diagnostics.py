@@ -125,3 +125,22 @@ def warn_matmul_mismatch(
     if suggest_elementwise:
         msg += ". Did you mean elementwise multiplication (.*)?"
     return msg
+
+
+def warn_unsupported_stmt(line: int, raw: str, targets: list[str]) -> str:
+    """Warning for unsupported/opaque statement.
+
+    Args:
+        line: Source line number
+        raw: Original statement text (if available)
+        targets: Variables that will be set to unknown
+
+    Returns:
+        Warning message string
+    """
+    target_str = ", ".join(targets) if targets else "(none)"
+    raw_str = f" '{raw}'" if raw else ""
+    return (
+        f"Line {line}: Unsupported statement{raw_str}. "
+        f"Variables set to unknown: {target_str}"
+    )

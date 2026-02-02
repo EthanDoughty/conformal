@@ -11,7 +11,7 @@ from typing import List, Tuple
 
 from ir import (
     Program, Stmt,
-    Assign, ExprStmt, While, For, If,
+    Assign, ExprStmt, While, For, If, OpaqueStmt,
     Expr, Var, Const, MatrixLit, Call, Transpose, Neg, Index, BinOp,
     IndexArg, Colon, Range, IndexExpr,
 )
@@ -90,6 +90,14 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str]) -> Env:
         from runtime.env import join_env
         merged = join_env(then_env, else_env)
         env.bindings = merged.bindings
+        return env
+
+    if isinstance(stmt, OpaqueStmt):
+        # Emit warning for unsupported statement
+        warnings.append(diag.warn_unsupported_stmt(stmt.line, stmt.raw, stmt.targets))
+        # Havoc all target variables (set to unknown)
+        for target_name in stmt.targets:
+            env.set(target_name, Shape.unknown())
         return env
 
     return env

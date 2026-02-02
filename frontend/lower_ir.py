@@ -7,6 +7,75 @@ from typing import Any, List
 from ir.ir import *
 
 
+def extract_targets_from_tokens(tokens: List[Any]) -> List[str]:
+    """Conservatively extract target variable names from raw tokens.
+
+    Supports:
+    - IDENT = ...
+    - IDENT(...) = ...
+    - [A, B, ...] = ... (only ID/COMMA/NEWLINE/~ in brackets)
+
+    Args:
+        tokens: List of Token objects from recovered statement
+
+    Returns:
+        List of variable names that may be assigned
+    """
+    if not tokens:
+        return []
+
+    targets = []
+
+    # Simple case: IDENT = ...
+    if len(tokens) >= 2 and tokens[0].kind == "ID" and tokens[1].value == "=":
+        return [tokens[0].value]
+
+    # Function-style: IDENT(...) = ...
+    if len(tokens) >= 3 and tokens[0].kind == "ID" and tokens[1].value == "(":
+        # Find matching ), then check for =
+        depth = 0
+        for i, tok in enumerate(tokens):
+            if tok.value == "(":
+                depth += 1
+            elif tok.value == ")":
+                depth -= 1
+                if depth == 0 and i + 1 < len(tokens) and tokens[i + 1].value == "=":
+                    return [tokens[0].value]
+                break
+
+    # Destructuring: [A, B, ...] = ...
+    # Enforce strict validation: only ID, COMMA, NEWLINE, or ~ inside brackets
+    if len(tokens) >= 2 and tokens[0].value == "[":
+        depth = 0
+        bracket_end = -1
+        for i, tok in enumerate(tokens):
+            if tok.value == "[":
+                depth += 1
+            elif tok.value == "]":
+                depth -= 1
+                if depth == 0:
+                    bracket_end = i
+                    break
+
+        if bracket_end > 0 and bracket_end + 1 < len(tokens) and tokens[bracket_end + 1].value == "=":
+            # Validate bracket contents: only ID, COMMA, NEWLINE, ~
+            valid_destructuring = True
+            for j in range(1, bracket_end):
+                tok = tokens[j]
+                if tok.kind not in {"ID", "NEWLINE"} and tok.value not in {",", "~"}:
+                    valid_destructuring = False
+                    break
+
+            if valid_destructuring:
+                # Extract identifiers from inside brackets
+                for j in range(1, bracket_end):
+                    if tokens[j].kind == "ID":
+                        targets.append(tokens[j].value)
+                return targets
+
+    return []
+
+
 def lower_program(ast: Any) -> Program:
     """Convert syntax AST to IR Program.
 
@@ -58,6 +127,18 @@ def lower_stmt(stmt: Any) -> Stmt:
         iterator_expr = lower_expr(stmt[2])
         body = [lower_stmt(x) for x in stmt[3]]
         return For(line=iterator_expr.line, var=var_name, it=iterator_expr, body=body)
+
+    if tag == "raw_stmt":
+        # ['raw_stmt', line, tokens, raw_text]
+        line = stmt[1]
+        tokens = stmt[2]
+        raw_text = stmt[3]
+        targets = extract_targets_from_tokens(tokens)
+        return OpaqueStmt(line=line, targets=targets, raw=raw_text)
+
+    if tag == "skip":
+        # Skip empty statements
+        return ExprStmt(line=0, expr=Const(line=0, value=0.0))
 
     # Fallback for unexpected statement types
     return ExprStmt(line=0, expr=Const(line=0, value=0.0))

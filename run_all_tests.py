@@ -4,6 +4,7 @@
 import sys
 import os
 import re
+import glob
 from typing import Dict, List, Tuple
 
 from frontend.matlab_parser import parse_matlab
@@ -11,7 +12,14 @@ from frontend.lower_ir import lower_program
 from analysis import analyze_program_ir, analyze_program_legacy
 from runtime.shapes import Shape
 
-TEST_FILES = [f"tests/test{i}.m" for i in range(1, 22)]
+
+def test_sort_key(path: str) -> int:
+    """Extract numeric suffix from test filename for sorting."""
+    match = re.search(r'test(\d+)\.m$', path)
+    return int(match.group(1)) if match else 0
+
+
+TEST_FILES = sorted(glob.glob("tests/test*.m"), key=test_sort_key)
 COMPARE = False
 
 EXPECT_RE = re.compile(r"%\s*EXPECT:\s*(.+)$")
