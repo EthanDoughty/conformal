@@ -1,5 +1,10 @@
 # Ethan Doughty
-# analysis.py
+# analysis_ir.py
+"""IR-based static shape analyzer for Mini-MATLAB.
+
+This module performs shape inference on the typed IR AST, tracking matrix
+dimensions and detecting dimension mismatches at compile time.
+"""
 
 from __future__ import annotations
 from typing import List, Tuple
@@ -17,14 +22,34 @@ from runtime.shapes import Shape, Dim, shape_of_zeros, shape_of_ones, join_dim
 from analysis.analysis_core import shapes_definitely_incompatible
 from analysis.matrix_literals import infer_matrix_literal_shape, as_matrix_shape, dims_definitely_conflict
 
+
 def analyze_program_ir(program: Program) -> Tuple[Env, List[str]]:
+    """Analyze a complete Mini-MATLAB program for shape consistency.
+
+    Args:
+        program: IR program to analyze
+
+    Returns:
+        Tuple of (final environment, list of warning messages)
+    """
     env = Env()
     warnings: List[str] = []
     for stmt in program.body:
         analyze_stmt_ir(stmt, env, warnings)
     return env, warnings
 
+
 def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str]) -> Env:
+    """Analyze a statement and update environment with inferred shapes.
+
+    Args:
+        stmt: Statement to analyze
+        env: Current environment (modified in place)
+        warnings: List to append warnings to
+
+    Returns:
+        Updated environment
+    """
     if isinstance(stmt, Assign):
         new_shape = eval_expr_ir(stmt.expr, env, warnings)
         old_shape = env.get(stmt.name)
@@ -46,7 +71,7 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str]) -> Env:
         return env
 
     if isinstance(stmt, For):
-        # naive single-pass, same as old
+        # Naive single-pass analysis (no fixed-point iteration)
         for s in stmt.body:
             analyze_stmt_ir(s, env, warnings)
         return env
@@ -69,7 +94,18 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str]) -> Env:
 
     return env
 
+
 def eval_expr_ir(expr: Expr, env: Env, warnings: List[str]) -> Shape:
+    """Evaluate an expression to infer its shape.
+
+    Args:
+        expr: Expression to evaluate
+        env: Current environment with variable shapes
+        warnings: List to append warnings to
+
+    Returns:
+        Inferred shape of the expression
+    """
     # Variables / constants
     if isinstance(expr, Var):
         return env.get(expr.name)
@@ -211,6 +247,15 @@ def index_arg_to_extent_ir(
     return None
 
 def expr_to_dim_ir(expr: Expr, env: Env) -> Dim:
+    """Convert an expression to a dimension value if possible.
+
+    Args:
+        expr: Expression to convert
+        env: Current environment
+
+    Returns:
+        Integer dimension, symbolic name, or None if not determinable
+    """
     if isinstance(expr, Const):
         v = expr.value
         if float(v).is_integer():
@@ -219,6 +264,7 @@ def expr_to_dim_ir(expr: Expr, env: Env) -> Dim:
     if isinstance(expr, Var):
         return expr.name
     return None
+
 
 def eval_binop_ir(
     op: str,
@@ -229,7 +275,20 @@ def eval_binop_ir(
     right_expr: Expr,
     line: int
 ) -> Shape:
+    """Evaluate a binary operation and infer result shape.
 
+    Args:
+        op: Operator string (+, -, *, .*, etc.)
+        left: Left operand shape
+        right: Right operand shape
+        warnings: List to append warnings to
+        left_expr: Left expression (for error messages)
+        right_expr: Right expression (for error messages)
+        line: Source line number
+
+    Returns:
+        Result shape of the operation
+    """
     if op in {"==", "~=", "<", "<=", ">", ">="}:
         if (left.is_matrix() and right.is_scalar()) or (left.is_scalar() and right.is_matrix()):
             warnings.append(diag.warn_suspicious_comparison_matrix_scalar(line, op, left_expr, right_expr, left, right)

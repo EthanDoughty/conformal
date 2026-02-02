@@ -1,10 +1,20 @@
 # Ethan Doughty
 # analysis_core.py
+"""Core shape analysis utilities and compatibility checks."""
+
 from runtime.shapes import *
-from typing import Any, List
 
 
 def shapes_definitely_incompatible(old: Shape, new: Shape) -> bool:
+    """Check if two shapes are provably incompatible for variable reassignment.
+
+    Args:
+        old: Previous shape of a variable
+        new: New shape being assigned
+
+    Returns:
+        True if shapes are definitely incompatible, False otherwise
+    """
     # If either is unknown, don't claim incompatibility
     if old.is_unknown() or new.is_unknown():
         return False
@@ -24,12 +34,17 @@ def shapes_definitely_incompatible(old: Shape, new: Shape) -> bool:
 
     return False
 
-def as_matrix_shape(s: Shape) -> Shape:
-    if s.is_scalar():
-        return Shape.matrix(1, 1)
-    return s
 
 def elementwise_result_shape(left: Shape, right: Shape) -> Shape:
+    """Compute result shape for elementwise operations (+, -, .*, ./).
+
+    Args:
+        left: Shape of left operand
+        right: Shape of right operand
+
+    Returns:
+        Result shape with joined dimensions
+    """
     if left.is_unknown() or right.is_unknown():
         return Shape.unknown()
     if left.is_scalar() and right.is_scalar():
@@ -40,7 +55,17 @@ def elementwise_result_shape(left: Shape, right: Shape) -> Shape:
         return Shape.matrix(join_dim(left.rows, right.rows), join_dim(left.cols, right.cols))
     return Shape.unknown()
 
+
 def elementwise_definitely_mismatch(left: Shape, right: Shape) -> bool:
+    """Check if elementwise operation has provable dimension mismatch.
+
+    Args:
+        left: Shape of left operand
+        right: Shape of right operand
+
+    Returns:
+        True if dimensions definitely conflict
+    """
     return (
         left.is_matrix() and right.is_matrix()
         and (
@@ -49,7 +74,17 @@ def elementwise_definitely_mismatch(left: Shape, right: Shape) -> bool:
         )
     )
 
+
 def matmul_result_shape(left: Shape, right: Shape) -> Shape:
+    """Compute result shape for matrix multiplication.
+
+    Args:
+        left: Shape of left operand
+        right: Shape of right operand
+
+    Returns:
+        Result shape (left.rows x right.cols for matrices)
+    """
     if left.is_scalar() and right.is_scalar():
         return Shape.scalar()
     if left.is_scalar() and right.is_matrix():
@@ -62,5 +97,15 @@ def matmul_result_shape(left: Shape, right: Shape) -> Shape:
         return Shape.matrix(left.rows, right.cols)
     return Shape.unknown()
 
+
 def matmul_definitely_mismatch(left: Shape, right: Shape) -> bool:
+    """Check if matrix multiplication has provable inner dimension mismatch.
+
+    Args:
+        left: Shape of left operand
+        right: Shape of right operand
+
+    Returns:
+        True if left.cols != right.rows provably
+    """
     return left.is_matrix() and right.is_matrix() and dims_definitely_conflict(left.cols, right.rows)

@@ -1,5 +1,41 @@
+# Python
 __pycache__/
-*.pyc
-*.zip
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Testing
+.pytest_cache/
+.tox/
+.coverage
+htmlcov/
+*.cover
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS specific
 .DS_Store
 *:Zone.Identifier
+Thumbs.db
+
+# Project specific
+*.zip
+*.log

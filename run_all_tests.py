@@ -118,7 +118,7 @@ def run_test(path: str, compare: bool = True) -> bool:
     return passed
 
 
-def main(return_code: bool = False) -> int | None:
+def main(return_code: bool = False) -> int:
     total = 0
     ok = 0
     compare = "--compare" in sys.argv
@@ -133,6 +133,7 @@ def main(return_code: bool = False) -> int | None:
     rc = 0 if ok == total else 1
     if return_code:
         return rc
-    
+    return rc
+
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

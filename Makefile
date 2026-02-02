@@ -1,4 +1,4 @@
-.PHONY: test run compare
+.PHONY: test run compare clean
 
 PY=python3
 

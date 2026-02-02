@@ -1,25 +1,35 @@
 # Ethan Doughty
 # mmshape.py
+"""Command-line interface for Mini-MATLAB shape analyzer."""
+
 import argparse
-import sys
 from pathlib import Path
 
 from frontend.matlab_parser import parse_matlab
 from frontend.lower_ir import lower_program
-from frontend.pipeline import parse_syntax, lower_to_ir
 from analysis import analyze_program, analyze_program_ir
 
-def run_file(path: str, compare: bool) -> int:
-    p = Path(path)
-    if not p.exists():
-        print(f"ERROR: file not found: {path}")
+
+def run_file(file_path: str, compare: bool) -> int:
+    """Analyze a single Mini-MATLAB file.
+
+    Args:
+        file_path: Path to .m file to analyze
+        compare: If True, compare legacy vs IR analyzer outputs
+
+    Returns:
+        Exit code (0 for success, 1 for error)
+    """
+    path = Path(file_path)
+    if not path.exists():
+        print(f"ERROR: file not found: {file_path}")
         return 1
 
     try:
-        src = p.read_text()
+        src = path.read_text()
         syntax_ast = parse_matlab(src)
     except Exception as e:
-        print(f"Error while parsing {path}: {e}")
+        print(f"Error while parsing {file_path}: {e}")
         return 1
 
     ir_prog = lower_program(syntax_ast)
@@ -28,32 +38,32 @@ def run_file(path: str, compare: bool) -> int:
     env_ir, warnings_ir = analyze_program_ir(ir_prog)
 
     if compare:
-        env_s, warnings_s = analyze_program(syntax_ast)
+        env_syntax, warnings_syntax = analyze_program(syntax_ast)
         print("==== Compare: syntax vs IR ====")
-        print("syntax env:", env_s)
+        print("syntax env:", env_syntax)
         print("IR env    :", env_ir)
 
-        if env_s.bindings != env_ir.bindings:
+        if env_syntax.bindings != env_ir.bindings:
             print("ENV DIFF!")
-            print("syntax warnings:", warnings_s)
+            print("syntax warnings:", warnings_syntax)
             print("IR warnings    :", warnings_ir)
             return 1
 
-        if len(warnings_s) != len(warnings_ir):
-            print(f"WARNING COUNT DIFF: {len(warnings_s)} vs {len(warnings_ir)}")
-            print("syntax warnings:", warnings_s)
+        if len(warnings_syntax) != len(warnings_ir):
+            print(f"WARNING COUNT DIFF: {len(warnings_syntax)} vs {len(warnings_ir)}")
+            print("syntax warnings:", warnings_syntax)
             print("IR warnings    :", warnings_ir)
         else:
             print("Warnings match.")
         print()
 
-    print(f"=== Analysis for {path} ===")
+    print(f"=== Analysis for {file_path} ===")
     if not warnings_ir:
         print("No dimension warnings.")
     else:
         print("Warnings:")
-        for w in warnings_ir:
-            print("  -", w)
+        for warning in warnings_ir:
+            print("  -", warning)
 
     print("\nFinal environment:")
     print(env_ir)
@@ -61,23 +71,44 @@ def run_file(path: str, compare: bool) -> int:
 
 
 def run_tests() -> int:
+    """Run the full test suite.
+
+    Returns:
+        Exit code (0 for all tests passed, 1 otherwise)
+    """
     # Import here so normal usage doesn't load test code
     import run_all_tests
     return 0 if run_all_tests.main(return_code=True) == 0 else 1
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(prog="mmshape", description="Mini-MATLAB shape/dimension analyzer")
-    ap.add_argument("file", nargs="?", help="MATLAB .m file to analyze")
-    ap.add_argument("--compare", action="store_true", help="Compare legacy syntax analyzer vs IR analyzer")
-    ap.add_argument("--tests", action="store_true", help="Run test suite")
-    args = ap.parse_args()
+    """Main entry point for the mmshape CLI tool.
+
+    Returns:
+        Exit code (0 for success, 1 for error)
+    """
+    parser = argparse.ArgumentParser(
+        prog="mmshape",
+        description="Mini-MATLAB shape/dimension analyzer"
+    )
+    parser.add_argument("file", nargs="?", help="MATLAB .m file to analyze")
+    parser.add_argument(
+        "--compare",
+        action="store_true",
+        help="Compare legacy syntax analyzer vs IR analyzer"
+    )
+    parser.add_argument(
+        "--tests",
+        action="store_true",
+        help="Run test suite"
+    )
+    args = parser.parse_args()
 
     if args.tests:
         return run_tests()
 
     if not args.file:
-        ap.print_help()
+        parser.print_help()
         return 1
 
     return run_file(args.file, compare=args.compare)

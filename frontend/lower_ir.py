@@ -1,94 +1,132 @@
 # Ethan Doughty
-# analysis_ast.py
+# lower_ir.py
+"""Lower list-based syntax AST to typed IR AST."""
+
 from __future__ import annotations
 from typing import Any, List
 from ir.ir import *
 
+
 def lower_program(ast: Any) -> Program:
+    """Convert syntax AST to IR Program.
+
+    Args:
+        ast: List-based syntax AST with ['seq', stmt1, stmt2, ...]
+
+    Returns:
+        IR Program
+    """
     assert isinstance(ast, list) and ast and ast[0] == "seq"
     return Program(body=[lower_stmt(s) for s in ast[1:]])
 
-def lower_stmt(s: Any) -> Stmt:
-    tag = s[0]
+
+def lower_stmt(stmt: Any) -> Stmt:
+    """Convert syntax statement to IR Stmt.
+
+    Args:
+        stmt: List-based syntax statement
+
+    Returns:
+        IR Stmt
+    """
+    tag = stmt[0]
 
     if tag == "assign":
-        line, name, expr = s[1], s[2], s[3]
+        line, name, expr = stmt[1], stmt[2], stmt[3]
         return Assign(line=line, name=name, expr=lower_expr(expr))
 
     if tag == "expr":
-        expr = s[1]
+        expr = stmt[1]
         line = expr[1] if isinstance(expr, list) and len(expr) > 1 and isinstance(expr[1], int) else 0
         return ExprStmt(line=line, expr=lower_expr(expr))
 
     if tag == "if":
-        cond = lower_expr(s[1])
-        then_body = [lower_stmt(x) for x in s[2]]
-        else_body = [lower_stmt(x) for x in s[3]]
+        cond = lower_expr(stmt[1])
+        then_body = [lower_stmt(x) for x in stmt[2]]
+        else_body = [lower_stmt(x) for x in stmt[3]]
         return If(line=cond.line, cond=cond, then_body=then_body, else_body=else_body)
 
     if tag == "while":
-        cond = lower_expr(s[1])
-        body = [lower_stmt(x) for x in s[2]]
+        cond = lower_expr(stmt[1])
+        body = [lower_stmt(x) for x in stmt[2]]
         return While(line=cond.line, cond=cond, body=body)
 
     if tag == "for":
         # ['for', ['var', name], it_expr, body]
-        var_node = s[1]
+        var_node = stmt[1]
         var_name = var_node[1] if var_node[0] == "var" else var_node[2]
-        it = lower_expr(s[2])
-        body = [lower_stmt(x) for x in s[3]]
-        return For(line=it.line, var=var_name, it=it, body=body)
+        iterator_expr = lower_expr(stmt[2])
+        body = [lower_stmt(x) for x in stmt[3]]
+        return For(line=iterator_expr.line, var=var_name, it=iterator_expr, body=body)
 
-    # fallback (better to raise later)
+    # Fallback for unexpected statement types
     return ExprStmt(line=0, expr=Const(line=0, value=0.0))
 
-def lower_expr(e: Any) -> Expr:
-    tag = e[0]
+
+def lower_expr(expr: Any) -> Expr:
+    """Convert syntax expression to IR Expr.
+
+    Args:
+        expr: List-based syntax expression
+
+    Returns:
+        IR Expr
+    """
+    tag = expr[0]
 
     if tag == "var":
-        return Var(line=e[1], name=e[2])
+        return Var(line=expr[1], name=expr[2])
 
     if tag == "const":
-        return Const(line=e[1], value=float(e[2]))
+        return Const(line=expr[1], value=float(expr[2]))
 
     if tag == "neg":
-        return Neg(line=e[1], operand=lower_expr(e[2]))
+        return Neg(line=expr[1], operand=lower_expr(expr[2]))
 
     if tag == "transpose":
-        return Transpose(line=e[1], operand=lower_expr(e[2]))
+        return Transpose(line=expr[1], operand=lower_expr(expr[2]))
 
     if tag == "call":
-        return Call(line=e[1], func=lower_expr(e[2]), args=[lower_expr(a) for a in e[3]])
+        return Call(line=expr[1], func=lower_expr(expr[2]), args=[lower_expr(arg) for arg in expr[3]])
 
     if tag == "matrix":
-        return MatrixLit(line=e[1], rows=[[lower_expr(x) for x in row] for row in e[2]])
+        return MatrixLit(line=expr[1], rows=[[lower_expr(elem) for elem in row] for row in expr[2]])
 
     if tag == "index":
-        base = lower_expr(e[2])
-        args_list = e[3]
-        lowered_args = [lower_index_arg(a) for a in args_list]
-        return Index(line=e[1], base=base, args=lowered_args)
+        base = lower_expr(expr[2])
+        args_list = expr[3]
+        lowered_args = [lower_index_arg(arg) for arg in args_list]
+        return Index(line=expr[1], base=base, args=lowered_args)
 
     if tag in {"+", "-", "*", "/", ".*", "./", "==", "~=", "<", "<=", ">", ">=", "&&", "||", ":"}:
-        return BinOp(line=e[1], op=tag, left=lower_expr(e[2]), right=lower_expr(e[3]))
+        return BinOp(line=expr[1], op=tag, left=lower_expr(expr[2]), right=lower_expr(expr[3]))
 
-    # fallback: unknown expression shape; keep something harmless
+    # Fallback for unexpected expression types
     return Const(line=0, value=0.0)
 
-def lower_index_arg(a: Any) -> IndexArg:
-    tag = a[0]
+
+def lower_index_arg(index_arg: Any) -> IndexArg:
+    """Convert syntax index argument to IR IndexArg.
+
+    Args:
+        index_arg: List-based syntax index argument
+
+    Returns:
+        IR IndexArg (Colon, Range, or IndexExpr)
+    """
+    tag = index_arg[0]
 
     if tag == "colon":
-        return Colon(line=a[1])
+        return Colon(line=index_arg[1])
 
-    # Range inside indexing args is encoded as ":" in your current syntax AST
+    # Range inside indexing args is encoded as ":" in the syntax AST
     if tag == ":":
-        return Range(line=a[1], start=lower_expr(a[2]), end=lower_expr(a[3]))
+        return Range(line=index_arg[1], start=lower_expr(index_arg[2]), end=lower_expr(index_arg[3]))
 
-    # If you ever emit ["range", ...] explicitly, support it too
+    # Also support explicit "range" tag if it exists
     if tag == "range":
-        return Range(line=a[1], start=lower_expr(a[2]), end=lower_expr(a[3]))
+        return Range(line=index_arg[1], start=lower_expr(index_arg[2]), end=lower_expr(index_arg[3]))
 
-    # Otherwise it’s a normal expression subscript
-    line = a[1] if isinstance(a, list) and len(a) > 1 and isinstance(a[1], int) else 0
-    return IndexExpr(line=line, expr=lower_expr(a))
+    # Otherwise it's a normal expression subscript
+    line = index_arg[1] if isinstance(index_arg, list) and len(index_arg) > 1 and isinstance(index_arg[1], int) else 0
+    return IndexExpr(line=line, expr=lower_expr(index_arg))

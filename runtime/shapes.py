@@ -1,19 +1,28 @@
 # Ethan Doughty
 # shapes.py
+"""Shape abstract domain for Mini-MATLAB static analysis.
+
+Defines the Shape type and dimension operations used throughout the analyzer.
+"""
+
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Union
 
 # A dimension can be:
-# an int  (3, 4)
-# a symbolic name ("n", "m")
-# None for "unknown"
+# - an int (e.g., 3, 4) for concrete dimensions
+# - a symbolic name (e.g., "n", "m") for unknown but tracked dimensions
+# - None for completely unknown dimensions
 Dim = Union[int, str, None]
 
 
 @dataclass(frozen=True)
 class Shape:
-    """Abstract shape for MATLAB values"""
+    """Abstract shape for MATLAB values.
+
+    Represents one of: scalar, matrix[rows x cols], or unknown.
+    Matrix dimensions can be concrete integers, symbolic names, or None.
+    """
     kind: str
     rows: Optional[Dim] = None
     cols: Optional[Dim] = None
@@ -22,25 +31,31 @@ class Shape:
 
     @staticmethod
     def scalar() -> "Shape":
+        """Create a scalar shape."""
         return Shape(kind="scalar")
 
     @staticmethod
     def matrix(rows: Dim, cols: Dim) -> "Shape":
+        """Create a matrix shape with given dimensions."""
         return Shape(kind="matrix", rows=rows, cols=cols)
 
     @staticmethod
     def unknown() -> "Shape":
+        """Create an unknown shape (for error cases)."""
         return Shape(kind="unknown")
 
     # Predicates
 
     def is_scalar(self) -> bool:
+        """Check if this is a scalar shape."""
         return self.kind == "scalar"
 
     def is_matrix(self) -> bool:
+        """Check if this is a matrix shape."""
         return self.kind == "matrix"
 
     def is_unknown(self) -> bool:
+        """Check if this is an unknown shape."""
         return self.kind == "unknown"
 
     # Pretty print / debug
@@ -76,20 +91,37 @@ def dims_definitely_conflict(a: Dim, b: Dim) -> bool:
     return a != b
 
 def add_dim(a: Dim, b: Dim) -> Dim:
-    """Symbolic/int addition for dimensions."""
+    """Add two dimensions symbolically.
+
+    Args:
+        a: First dimension
+        b: Second dimension
+
+    Returns:
+        Sum of dimensions (concrete if both are ints, symbolic otherwise)
+    """
     if a is None or b is None:
         return None
     if isinstance(a, int) and isinstance(b, int):
         return a + b
     return f"({a}+{b})"
 
-def sum_dims(ds: list[Dim]) -> Dim:
-    if not ds:
+
+def sum_dims(dimensions: list[Dim]) -> Dim:
+    """Sum a list of dimensions.
+
+    Args:
+        dimensions: List of dimensions to sum
+
+    Returns:
+        Total dimension (0 if empty list)
+    """
+    if not dimensions:
         return 0
-    acc = ds[0]
-    for d in ds[1:]:
-        acc = add_dim(acc, d)
-    return acc
+    total = dimensions[0]
+    for dim in dimensions[1:]:
+        total = add_dim(total, dim)
+    return total
 
 # Shape lattice join
 
@@ -120,9 +152,18 @@ def shape_of_zeros(rows: Dim, cols: Dim) -> Shape:
 
 
 def shape_of_ones(rows: Dim, cols: Dim) -> Shape:
+    """Shape for ones(m, n)."""
     return Shape.matrix(rows, cols)
 
 
 def shape_of_colon(start: Dim, end: Dim) -> Shape:
-    """Shape for 1:n style vectors"""
+    """Shape for 1:n style vectors.
+
+    Args:
+        start: Start value (currently unused, assumed to be 1)
+        end: End value (becomes column dimension)
+
+    Returns:
+        Row vector shape (1 x end)
+    """
     return Shape.matrix(1, end)

@@ -1,9 +1,16 @@
 # Mini-MATLAB Static Shape & Dimension Analysis
 **Ethan Doughty**
 
-This project implements a static shape and dimension analysis for a subset of the MATLAB programming language, referred to as Mini-MATLAB.
+This project implements a static shape and dimension analysis for a carefully chosen subset of the MATLAB programming language, referred to as Mini-MATLAB.
 
 The goal of the analysis is to detect common matrix-related errors before runtime, using a custom parser and static analyzer designed specifically for MATLAB-style matrix semantics. The tool reasons about matrix shapes, symbolic dimensions, and control flow without relying on the MATLAB runtime.
+
+## Requirements
+
+- **Python 3.10+**
+- No third-party dependencies
+- Tested on Linux
+- No MATLAB installation required
 
 ## What the Analysis Detects
 
@@ -29,7 +36,7 @@ All warnings are reported with source line numbers, and the analysis continues i
 
 ## Language Subset Design
 
-The language subset and analysis design were chosen to isolate a subset of MATLAB that is dense enough to show interesting behaviors, but small enough to analyze with a custom static tool.
+The language subset and analysis design were chosen to isolate a fragment of MATLAB that is dense enough to show interesting behaviors, but small enough to analyze with a custom static tool.
 
 The subset includes:
 
@@ -57,6 +64,16 @@ The analysis supports:
 - symbolic dimension joins across control flow
 - symbolic dimension addition for matrix concatenation (e.g. `n x (k+m)`)
 
+## Project Structure
+
+frontend/    Parsing and IR lowering
+ir/          Typed IR dataclass definitions
+analysis/    Shape analysis, diagnostics, and core semantics
+legacy/      Original syntax-based analyzer (for comparison)
+runtime/     Shape domain and environments
+tests/       Self-checking Mini-MATLAB programs
+tools/       Debugging utilities (AST printer)
+
 ## Test Suite
 
 The project includes a self-checking test suite consisting of 18 Mini-MATLAB programs.
@@ -83,26 +100,59 @@ Each test file:
 | 19-20| Range Indexing Slices
 | 21   | Invalid non-scalar index argument
 
+## Getting Started
 
-For more information on the specifics of each of the test cases, see the tests/testN.m files. MATLAB comments are provided to describe intended behavior for each test case, and the reasoning for why the assertions pass.
+Clone and Verify
+`git clone <repo-url>`
+`cd matlab-static-dimension-analysis`
+`make test`
 
-## HOW TO RUN!
+Analyze a File
+`make run FILE=tests/test4.m`
 
-Run the full test suite: `python3 run_all_tests.py`
+Compare IR vs Legacy Analyzer
+`make compare FILE=tests/test4.m`
 
-This script runs the analysis on `tests/test1.m` through `tests/test15.m`, prints any dimension warnings, shows the final environment, and checks all inline expectations automatically
+Example Output
+`Warnings:`
+  `- Line 11: Dimension mismatch in expression (A * x):`
+    `inner dims 4 vs 5 (shapes matrix[3 x 4] and matrix[5 x 1])`
 
-To run a single test: `python3 runner.py tests/testN.m`
+`Final environment:`
+`Env{A: matrix[3 x 4], x: matrix[5 x 1], y: unknown}`
+
+## CLI Options
+
+mmshape.py file.m – analyze a file (IR-based)
+
+`--compare` – compare legacy vs IR analyzer
+
+`--tests` – run full test suite
+
+Exit codes:
+
+0 – success
+
+1 – parse error, analyzer mismatch, or test failure
 
 ## Notes and Challenges
 
-- The AST is represented using list-based nodes (e.g. ['assign', line, name, expr]), which makes it easy to implement analyses over the tree.
+- The IR enforces structural invariants absent in the raw syntax AST
 
 - Matrix literals are parsed with MATLAB-aware rules.
 
 - The analyzer uses best-effort inference; Even when a definite mismatch is detected, it continues analysis to provide as much information as possible.
 
 - The analyzer is strict on provable dimension errors. When an operation is definitely invalid (e.g., inner-dimension mismatch in A*B), it emits a warning and treats the expression result as unknown.
+
+## Limitations
+This tool does not support: 
+- user-defined functions
+- cell arrays or structs
+- strings
+- file I/O
+- plotting or graphics
+- precise loop invariants
 
 ## Motivation and Future Directions
 
