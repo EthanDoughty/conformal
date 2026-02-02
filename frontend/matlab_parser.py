@@ -425,7 +425,7 @@ class MatlabParser:
                 self.eat("]")
                 break
 
-            # row separator
+            # row separator: semicolon
             if self.current().value == ";":
                 self.eat(";")
                 # allow trailing ; before ]
@@ -434,7 +434,16 @@ class MatlabParser:
                     break
                 continue
 
-            # If we got here without ; or ], it's a syntax error in literal
+            # row separator: newline (MATLAB-style multiline matrix literal)
+            if self.current().kind == "NEWLINE":
+                self.eat("NEWLINE")
+                # allow trailing newline before ]
+                if self.current().value == "]":
+                    self.eat("]")
+                    break
+                continue
+
+            # If we got here without ; or ] or NEWLINE, it's a syntax error in literal
             tok = self.current()
             raise ParseError(
                 f"Unexpected token {tok.kind} {tok.value!r} in matrix literal at {tok.pos}"
