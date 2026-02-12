@@ -129,13 +129,25 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str]) -> Shape:
         return infer_matrix_literal_shape(shape_rows, expr.line, warnings)
 
     if isinstance(expr, Call):
-        # Only handle calls where function is a variable name (zeros/ones)
         if isinstance(expr.func, Var):
             fname = expr.func.name
             if fname in {"zeros", "ones"} and len(expr.args) == 2:
                 r_dim = expr_to_dim_ir(expr.args[0], env)
                 c_dim = expr_to_dim_ir(expr.args[1], env)
                 return shape_of_zeros(r_dim, c_dim) if fname == "zeros" else shape_of_ones(r_dim, c_dim)
+            if fname == "size":
+                if len(expr.args) == 1:
+                    # size(A) returns a 1x2 row vector [rows, cols]
+                    eval_expr_ir(expr.args[0], env, warnings)
+                    return Shape.matrix(1, 2)
+                elif len(expr.args) == 2:
+                    # size(A, dim) returns a scalar
+                    eval_expr_ir(expr.args[0], env, warnings)
+                    return Shape.scalar()
+            if fname == "isscalar" and len(expr.args) == 1:
+                # isscalar(x) always returns a logical scalar
+                eval_expr_ir(expr.args[0], env, warnings)
+                return Shape.scalar()
 
         return Shape.scalar()
 
