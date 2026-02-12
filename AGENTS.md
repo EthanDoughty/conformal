@@ -140,7 +140,10 @@ This project uses **9 specialized Claude Code agents** with distinct, non-overla
 - **Authority**: Final say on all decisions
 
 #### Local backend: Ollama (tools/ai_local.py)
-- Used for: spec-writer, mentor-reviewer, implementer (drafts only)
+- Model: Qwen 2.5 Coder 14B (RTX 5070, 12K context, 85% GPU)
+- Used for: file summaries, draft generation, single-file Q&A, boilerplate, docstrings
+- Supports: `--compact`, `--summarize`, `--lite-context`, `--file path:N-M` line ranges
+- Used by: spec-writer, mentor-reviewer, implementer (drafts only)
 - Not used for: structural-ci-gatekeeper, semantic-differential-auditor
 
 ## Agent Invocation

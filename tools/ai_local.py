@@ -3,10 +3,11 @@
 Usage:
     python3 tools/ai_local.py [--role ROLE] [--file FILE ...] [--no-context] [--raw] PROMPT ...
     python3 tools/ai_local.py --chat [--role ROLE] [--file FILE ...] [--no-context]
+    python3 tools/ai_local.py --summarize --file FILE [--file FILE ...]
     echo "question" | python3 tools/ai_local.py [--role ROLE] [--file FILE ...]
 
-Sends a prompt to a local Qwen 2.5 Coder 7B (or other model) via Ollama's
-OpenAI-compatible API.  Auto-starts the server when it isn't running.
+Sends a prompt to a local Qwen 2.5 Coder 14B (or other model) via Ollama's
+native API.  Auto-starts the server when it isn't running.
 
 Use --chat for an interactive REPL that maintains conversation history.
 """
@@ -22,9 +23,9 @@ from pathlib import Path
 
 import requests
 
-BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
-MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")
-CTX_LIMIT = int(os.getenv("OLLAMA_CTX", "32768"))
+BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:14b")
+CTX_LIMIT = int(os.getenv("OLLAMA_CTX", "12288"))
 
 DEFAULT_SYSTEM = (
     "You are a professional code collaborator for this repo. "
@@ -55,10 +56,75 @@ def strip_think(text: str) -> str:
     return THINK_RE.sub("", text).strip()
 
 
+def _read_file_spec(spec: str) -> tuple[str, str]:
+    """Parse 'path:start-end' → (label, content). Plain 'path' returns full file."""
+    if ":" in spec and spec.rsplit(":", 1)[1].replace("-", "").isdigit():
+        path_str, range_str = spec.rsplit(":", 1)
+        parts = range_str.split("-", 1)
+        start = int(parts[0])
+        end = int(parts[1]) if len(parts) > 1 else start
+        path = Path(path_str)
+        if not path.exists():
+            return spec, f"[Missing file: {path_str}]"
+        lines = path.read_text(encoding="utf-8").splitlines()
+        selected = lines[start - 1 : end]  # 1-indexed
+        return f"{path_str}:{start}-{end}", "\n".join(selected)
+    path = Path(spec)
+    if not path.exists():
+        return spec, f"[Missing file: {spec}]"
+    return spec, path.read_text(encoding="utf-8")
+
+
+def _compact(text: str) -> str:
+    """Strip comment-only lines and blank lines."""
+    return "\n".join(
+        line for line in text.splitlines()
+        if line.strip() and not line.lstrip().startswith(("#", "%"))
+    )
+
+
+# --- Summary caching ----------------------------------------------------------
+
+CACHE_DIR = PROJECT_ROOT / ".cache" / "summaries"
+
+SUMMARIZE_PROMPT = (
+    "Summarize this file in 3-5 bullet points. "
+    "Focus on purpose, key functions, and public API.\n\n"
+)
+
+
+def _cache_path(file_path: Path) -> Path:
+    safe = str(file_path.resolve().relative_to(PROJECT_ROOT)).replace("/", "__")
+    return CACHE_DIR / f"{safe}.md"
+
+
+def _get_cached_summary(file_path: Path) -> str | None:
+    cp = _cache_path(file_path)
+    if not cp.exists():
+        return None
+    text = cp.read_text(encoding="utf-8")
+    first_line, _, body = text.partition("\n")
+    try:
+        cached_mtime = float(first_line.split(":", 1)[1].strip().rstrip("-->").strip())
+    except (IndexError, ValueError):
+        return None
+    if file_path.stat().st_mtime != cached_mtime:
+        return None
+    return body.strip()
+
+
+def _save_cached_summary(file_path: Path, summary: str) -> None:
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    mtime = file_path.stat().st_mtime
+    _cache_path(file_path).write_text(
+        f"<!-- mtime:{mtime} -->\n{summary}", encoding="utf-8"
+    )
+
+
 def _server_healthy() -> bool:
     """Return True if Ollama API responds."""
     try:
-        r = requests.get(f"{BASE_URL}/models", timeout=3)
+        r = requests.get(f"{BASE_URL}/api/tags", timeout=3)
         return r.status_code == 200
     except (requests.ConnectionError, requests.Timeout):
         return False
@@ -70,10 +136,16 @@ def _ensure_server(timeout: float = 15.0) -> None:
         return
 
     _eprint("Server not running — starting Ollama...")
+    env = os.environ.copy()
+    env.setdefault("OLLAMA_FLASH_ATTENTION", "1")
+    env.setdefault("OLLAMA_KV_CACHE_TYPE", "q8_0")
+    env.setdefault("OLLAMA_NUM_CTX", "32000")
+    env.setdefault("OLLAMA_NUM_GPU", "999")
     subprocess.Popen(
         ["ollama", "serve"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        env=env,
     )
 
     deadline = time.monotonic() + timeout
@@ -99,11 +171,15 @@ def chat(messages: list[dict[str, str]]) -> tuple[str, dict]:
     usage_dict has keys: prompt_tokens, completion_tokens, total_tokens.
     Falls back to empty dict if the server omits usage info.
     """
-    url = f"{BASE_URL}/chat/completions"
+    url = f"{BASE_URL}/api/chat"
     payload = {
         "model": MODEL,
         "messages": messages,
-        "temperature": 0.2,
+        "stream": False,
+        "options": {
+            "temperature": 0.2,
+            "num_ctx": CTX_LIMIT,
+        },
     }
     r = requests.post(url, json=payload, timeout=300)
     if r.status_code == 400:
@@ -122,8 +198,12 @@ def chat(messages: list[dict[str, str]]) -> tuple[str, dict]:
         raise SystemExit(f"ERROR: 400 Bad Request — {err}")
     r.raise_for_status()
     data = r.json()
-    usage = data.get("usage", {})
-    return data["choices"][0]["message"]["content"], usage
+    usage = {
+        "prompt_tokens": data.get("prompt_eval_count", 0),
+        "completion_tokens": data.get("eval_count", 0),
+        "total_tokens": data.get("prompt_eval_count", 0) + data.get("eval_count", 0),
+    }
+    return data["message"]["content"], usage
 
 
 def _format_usage(usage: dict) -> str:
@@ -137,10 +217,24 @@ def _format_usage(usage: dict) -> str:
     return f"[tokens: {prompt} in + {completion} out = {total} total — {pct:.0f}% of {CTX_LIMIT} ctx]"
 
 
-def build_system(role: str, *, include_context: bool = True) -> str:
+LITE_CONTEXT = """\
+PROJECT: Mini-MATLAB static shape analyzer (matrix dimension checking before runtime).
+PIPELINE: frontend/matlab_parser.py → frontend/lower_ir.py → analysis/analysis_ir.py (authoritative).
+IR: ir/ir.py (dataclass AST). Shapes: runtime/shapes.py (scalar | matrix[r x c] | unknown).
+Dims: int (concrete) | str (symbolic) | None (unknown). Key: join_dim, dims_definitely_conflict, add_dim.
+Env: runtime/env.py (var→shape map, join_env merges branches).
+Diagnostics: analysis/diagnostics.py (W_* warning codes).
+Tests: tests/test*.m with inline % EXPECT: assertions. Runner: run_all_tests.py.
+INVARIANT: IR analyzer is source of truth. Legacy analyzer is for comparison only.
+"""
+
+
+def build_system(role: str, *, include_context: bool = True, lite: bool = False) -> str:
     parts = [DEFAULT_SYSTEM, f"\nROLE={role}"]
 
-    if include_context:
+    if lite:
+        parts.append(f"\n{LITE_CONTEXT}")
+    elif include_context:
         for name in ("CLAUDE.md", "AGENTS.md", "TASK.md"):
             p = PROJECT_ROOT / name
             if p.exists():
@@ -182,24 +276,49 @@ def main(argv: list[str] | None = None) -> int:
         "--chat", action="store_true",
         help="interactive REPL with conversation history (type /quit to exit)",
     )
+    p.add_argument(
+        "--compact", action="store_true",
+        help="strip comment lines and blank lines from file attachments",
+    )
+    p.add_argument(
+        "--summarize", action="store_true",
+        help="generate and cache file summaries (use with --file)",
+    )
+    p.add_argument(
+        "--lite-context", action="store_true",
+        help="use compact ~400-token project summary instead of full docs",
+    )
 
     args = p.parse_args(argv)
+
+    # --- Summarize mode (no server needed for cache hits) -----------------
+    if args.summarize:
+        if not args.file:
+            _eprint("--summarize requires at least one --file argument.")
+            return 1
+        return _summarize_files(args.file, role=args.role, raw=args.raw)
 
     # --- Ensure server is running -----------------------------------------
     _ensure_server()
 
-    system = build_system(args.role, include_context=not args.no_context)
+    system = build_system(
+        args.role,
+        include_context=not args.no_context,
+        lite=args.lite_context,
+    )
 
     # --- Build file attachment (shared by both modes) ---------------------
     file_attachment = ""
     if args.file:
         chunks: list[str] = []
         for fp in args.file:
-            path = Path(fp)
-            if not path.exists():
-                chunks.append(f"[Missing file: {fp}]")
+            label, content = _read_file_spec(fp)
+            if content.startswith("[Missing file:"):
+                chunks.append(content)
                 continue
-            chunks.append(f"=== FILE: {fp} ===\n{path.read_text(encoding='utf-8')}")
+            if args.compact:
+                content = _compact(content)
+            chunks.append(f"=== FILE: {label} ===\n{content}")
         file_attachment = "\n\n".join(chunks)
 
     # --- Interactive chat mode --------------------------------------------
@@ -237,6 +356,56 @@ def main(argv: list[str] | None = None) -> int:
     usage_str = _format_usage(usage)
     if usage_str:
         _eprint(usage_str)
+    return 0
+
+
+def _summarize_files(file_specs: list[str], *, role: str, raw: bool) -> int:
+    """Generate or return cached summaries for each file spec."""
+    need_llm: list[tuple[Path, str]] = []  # (resolved_path, content)
+    results: list[tuple[str, str, bool]] = []  # (label, summary, was_cached)
+
+    for spec in file_specs:
+        label, content = _read_file_spec(spec)
+        if content.startswith("[Missing file:"):
+            results.append((label, content, False))
+            continue
+        # Resolve to actual file path (strip line range for caching)
+        path_str = spec.rsplit(":", 1)[0] if ":" in spec and spec.rsplit(":", 1)[1].replace("-", "").isdigit() else spec
+        file_path = Path(path_str).resolve()
+        cached = _get_cached_summary(file_path)
+        if cached is not None:
+            results.append((label, cached, True))
+        else:
+            need_llm.append((file_path, content))
+            results.append((label, "", False))  # placeholder
+
+    if need_llm:
+        _ensure_server()
+        system = build_system(role, lite=True)
+        for file_path, content in need_llm:
+            _eprint(f"Summarizing {file_path.name}...")
+            messages = [
+                {"role": "system", "content": system},
+                {"role": "user", "content": f"{SUMMARIZE_PROMPT}{content}"},
+            ]
+            reply, usage = chat(messages)
+            summary = reply if raw else strip_think(reply)
+            _save_cached_summary(file_path, summary)
+            # Fill in the placeholder
+            for i, (lbl, _, was_cached) in enumerate(results):
+                if not was_cached and results[i][1] == "":
+                    rel = file_path.relative_to(Path.cwd()) if file_path.is_relative_to(Path.cwd()) else file_path
+                    if str(rel) in lbl or file_path.name in lbl:
+                        results[i] = (lbl, summary, False)
+                        break
+            usage_str = _format_usage(usage)
+            if usage_str:
+                _eprint(usage_str)
+
+    for label, summary, was_cached in results:
+        tag = "(cached)" if was_cached else "(generated)"
+        print(f"=== {label} {tag} ===\n{summary}\n")
+
     return 0
 
 

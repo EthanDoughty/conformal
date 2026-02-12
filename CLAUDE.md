@@ -36,25 +36,45 @@ python3 mmshape.py --strict tests/test22.m
 make clean
 ```
 
-## Local LLM Delegation
+## Local LLM Delegation (Token Conservation)
 
-A local Qwen 2.5 Coder 7B model (via Ollama) is available for heavy-token tasks like file summaries, draft reviews, and brainstorming. Claude should delegate to it when the task is token-heavy but does not require Claude-level reasoning.
+A local Qwen 2.5 Coder 14B model (Ollama, RTX 5070) is available as a **token conservation tool**. Claude should delegate to it aggressively for any task that involves a single file and does not require multi-file reasoning or tool use. Every token the local LLM handles is a token Claude doesn't spend.
 
-**Standalone usage**:
+**Delegation is the default for these tasks**:
+- Summarizing a file before deciding whether to read it fully
+- Drafting docstrings, comments, or boilerplate code
+- Answering questions about a single file's contents
+- Validating assumptions about a module's API or behavior
+- Generating test case skeletons or code templates
+- Quick "what does this function do?" queries
+
+**Claude delegates via Bash**:
 ```bash
-./ask "how does the parser handle matrix literals?"
-./ask --role implementer --file ir/ir.py "summarize this file"
-./ask --no-context "explain abstract interpretation"
-make ask Q='list all warning codes'
+# Summarize a file (cached — instant on repeat calls)
+python3 tools/ai_local.py --summarize --file runtime/shapes.py
+
+# Ask about specific lines (saves tokens on large files)
+python3 tools/ai_local.py --file frontend/matlab_parser.py:100-150 "what does this parsing rule handle?"
+
+# Draft boilerplate with compact file attachment (strips comments/blanks)
+python3 tools/ai_local.py --compact --file analysis/diagnostics.py "add a new warning function for transpose mismatch"
+
+# Quick question with minimal context overhead
+python3 tools/ai_local.py --lite-context --file ir/ir.py "list all Expr subclasses"
+
+# General knowledge (no project context needed)
+python3 tools/ai_local.py --no-context "explain lattice widening in abstract interpretation"
 ```
 
-**Claude delegating via Bash** (for draft/brainstorm workloads):
-```bash
-python3 tools/ai_local.py --role mentor --file runtime/shapes.py "summarize the shape domain"
-python3 tools/ai_local.py --no-context "draft a docstring for join_dim"
-```
+**Flags for token efficiency**:
+| Flag | Effect |
+|------|--------|
+| `--file path:N-M` | Attach only lines N through M of a file |
+| `--compact` | Strip comment lines and blank lines from attachments |
+| `--lite-context` | Use ~400-token project summary instead of full docs (~7K tokens) |
+| `--summarize` | Generate and cache file summaries (instant on repeat) |
 
-**When to delegate**: file summaries, boilerplate generation, draft docstrings, exploratory questions about well-documented code. **When NOT to delegate**: correctness-critical analysis, multi-file refactors, anything requiring tool use or codebase search.
+**When NOT to delegate**: multi-file reasoning, correctness-critical analysis (soundness of joins, symbolic arithmetic edge cases), anything requiring codebase search or tool use, tasks needing >12K tokens of context.
 
 ## Architecture
 

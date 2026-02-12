@@ -19,9 +19,9 @@ clean:
 
 # --- Local Ollama Integration ---
 
-LM_MODEL ?= qwen2.5-coder:7b
+LM_MODEL ?= qwen2.5-coder:14b
 LM_PORT ?= 11434
-LM_CTX ?= 32768
+LM_CTX ?= 12288
 
 lm-up:
 	@echo "Pulling $(LM_MODEL)..."
