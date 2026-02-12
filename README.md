@@ -76,7 +76,7 @@ tools/       Debugging utilities (AST printer)
 
 ## Test Suite
 
-The project includes a self-checking test suite consisting of 18 Mini-MATLAB programs.
+The project includes a self-checking test suite consisting of 28 Mini-MATLAB programs.
 
 Each test file:
 - documents its intent using MATLAB comments
@@ -84,21 +84,26 @@ Each test file:
   ```matlab
   % EXPECT: warnings = 1
   % EXPECT: A = matrix[n x (k+m)]
+  ```
 
-| Tests | Category                     
+| Tests | Category
 |------|------------
-| 1-4  | Basic arithmetic                      
-| 5    | Colon vectors and transpose                   
-| 6    | Symbolic dimensions             
-| 7    | Scalar Expansion                 
-| 8    | Elementwise mismatches         
-| 9    | Indexing semantics 
-| 10   | Control-flow joins                  
-| 11-14| Matrix literals             
-| 15   | Symbolic Concatenation         
+| 1-4  | Basic arithmetic
+| 5    | Colon vectors and transpose
+| 6    | Symbolic dimensions
+| 7    | Scalar Expansion
+| 8    | Elementwise mismatches
+| 9    | Indexing semantics
+| 10   | Control-flow joins
+| 11-14| Matrix literals
+| 15   | Symbolic Concatenation
 | 16-18| Indexing Slices and Invalid Scalar Indexing
 | 19-20| Range Indexing Slices
 | 21   | Invalid non-scalar index argument
+| 22-25| Unsupported construct recovery (parse recovery tests)
+| 26   | Extended control flow patterns
+| 27   | Advanced symbolic dimension tracking
+| 28   | Multiline matrix literals with newline separators
 
 ## Getting Started
 
