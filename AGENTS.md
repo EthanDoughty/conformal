@@ -139,6 +139,10 @@ This project uses **9 specialized Claude Code agents** with distinct, non-overla
   - Creates git tags and pushes releases
 - **Authority**: Final say on all decisions
 
+#### Local backend: LM Studio (tools/ai_local.py)
+- Used for: spec-writer, mentor-reviewer, implementer (drafts only)
+- Not used for: structural-ci-gatekeeper, semantic-differential-auditor
+
 ## Agent Invocation
 
 All agents are invoked within Claude Code:
