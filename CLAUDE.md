@@ -36,6 +36,26 @@ python3 mmshape.py --strict tests/test22.m
 make clean
 ```
 
+## Local LLM Delegation
+
+A local Qwen 2.5 Coder 7B model (via Ollama) is available for heavy-token tasks like file summaries, draft reviews, and brainstorming. Claude should delegate to it when the task is token-heavy but does not require Claude-level reasoning.
+
+**Standalone usage**:
+```bash
+./ask "how does the parser handle matrix literals?"
+./ask --role implementer --file ir/ir.py "summarize this file"
+./ask --no-context "explain abstract interpretation"
+make ask Q='list all warning codes'
+```
+
+**Claude delegating via Bash** (for draft/brainstorm workloads):
+```bash
+python3 tools/ai_local.py --role mentor --file runtime/shapes.py "summarize the shape domain"
+python3 tools/ai_local.py --no-context "draft a docstring for join_dim"
+```
+
+**When to delegate**: file summaries, boilerplate generation, draft docstrings, exploratory questions about well-documented code. **When NOT to delegate**: correctness-critical analysis, multi-file refactors, anything requiring tool use or codebase search.
+
 ## Architecture
 
 ### Three-Stage Pipeline

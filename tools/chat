@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Interactive chat session with the local LLM.
+cd "$(dirname "$0")/.." || exit 1
+exec python3 tools/ai_local.py --chat "$@"

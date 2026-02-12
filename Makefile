@@ -1,4 +1,4 @@
-.PHONY: test run compare clean lm-up lm-down ai-local lm-status
+.PHONY: test run compare clean lm-up lm-down ai-local lm-status ask chat
 
 PY=python3
 
@@ -17,37 +17,35 @@ clean:
 	find . -type d -name "__pycache__" -prune -exec rm -rf {} \;
 	find . -type f -name "*.pyc" -delete
 
-# --- Local LM Studio Integration ---
+# --- Local Ollama Integration ---
 
-LM_ID ?= local-qwen3-14b
-LM_MODEL ?= qwen/qwen3-14b
-LM_PORT ?= 1234
-LM_CTX ?= 8192
-LM_GPU ?= max
-LM_TTL ?= 900
+LM_MODEL ?= qwen2.5-coder:7b
+LM_PORT ?= 11434
+LM_CTX ?= 32768
 
 lm-up:
-	@echo "Loading $(LM_MODEL) as $(LM_ID) (ctx=$(LM_CTX), gpu=$(LM_GPU))..."
-	lms load "$(LM_MODEL)" --identifier "$(LM_ID)" --gpu "$(LM_GPU)" --context-length "$(LM_CTX)" --ttl "$(LM_TTL)" -y
-	@echo "Starting server on port $(LM_PORT)..."
-	lms server start -p "$(LM_PORT)"
-	@echo "LM Studio ready at http://localhost:$(LM_PORT)/v1 (model id: $(LM_ID))"
+	@echo "Pulling $(LM_MODEL)..."
+	ollama pull "$(LM_MODEL)"
+	@echo "Ollama ready at http://localhost:$(LM_PORT) (model: $(LM_MODEL))"
 
 lm-down:
-	@echo "Stopping LM Studio server..."
-	@lms server stop >/dev/null 2>&1 || true
-	@echo "Unloading all models..."
-	@lms unload --all >/dev/null 2>&1 || true
-	@echo "LM Studio stopped."
-
-ai-local:
-	@if [ -z "$(ROLE)" ]; then echo "Usage: make ai-local ROLE=mentor-reviewer PROMPT='...'" ; exit 1; fi
-	@if [ -z "$(PROMPT)" ]; then echo "Usage: make ai-local ROLE=mentor-reviewer PROMPT='...'" ; exit 1; fi
-	@echo "$(PROMPT)" | python3 tools/ai_local.py "$(ROLE)"
+	@echo "Ollama manages model lifecycle automatically. To stop a running model:"
+	@echo "  ollama stop \"$(LM_MODEL)\""
 
 lm-status:
 	@echo "Loaded models:"
-	@lms ps || true
+	@ollama list || true
 	@echo ""
 	@echo "Server check:"
-	@curl -sS http://localhost:$(LM_PORT)/v1/models | head -c 300; echo
+	@curl -sS http://localhost:$(LM_PORT)/api/tags | head -c 300; echo
+
+ai-local:
+	@if [ -z "$(Q)" ] && [ -z "$(PROMPT)" ]; then echo "Usage: make ai-local Q='...' [ROLE=mentor] [FILE=path]"; exit 1; fi
+	$(PY) tools/ai_local.py --role "$(or $(ROLE),mentor)" $(if $(FILE),--file "$(FILE)") $(or $(Q),$(PROMPT))
+
+ask:
+	@if [ -z "$(Q)" ]; then echo "Usage: make ask Q='your question' [ROLE=mentor] [FILE=path]"; exit 1; fi
+	$(PY) tools/ai_local.py --role "$(or $(ROLE),mentor)" $(if $(FILE),--file "$(FILE)") $(Q)
+
+chat:
+	$(PY) tools/ai_local.py --chat --role "$(or $(ROLE),mentor)" $(if $(FILE),--file "$(FILE)")
