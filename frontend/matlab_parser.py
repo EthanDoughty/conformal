@@ -4,6 +4,15 @@ import re
 from dataclasses import dataclass
 from typing import List, Tuple, Any, Union
 
+# Builtins recognized as function calls (not array indexing).
+# Sorted alphabetically for maintainability.
+KNOWN_BUILTINS = {
+    "abs", "det", "diag", "eye", "inv", "isscalar",
+    "length", "linspace", "norm", "numel", "ones",
+    "rand", "randn", "repmat", "reshape", "size",
+    "sqrt", "transpose", "zeros",
+}
+
 TokenKind = str
 
 @dataclass
@@ -345,7 +354,7 @@ class MatlabParser:
 
                 # Treat known builtins as function calls.
                 # Everything else with (...) is indexing
-                if left[0] == "var" and left[2] in {"zeros", "ones", "size", "isscalar"}:
+                if left[0] == "var" and left[2] in KNOWN_BUILTINS:
                     left = ["call", lparen_tok.line, left, args]
                 else:
                     left = ["index", lparen_tok.line, left, args]

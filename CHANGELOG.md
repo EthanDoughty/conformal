@@ -21,6 +21,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Renamed test-runner2 to semantic-differential-auditor for clarity
 - Enhanced validation pipeline with quality, structural, and semantic checks
 
+## [0.8.1] - 2026-02-13
+### Added
+- Expanded builtin function set from 4 to 19 functions (KNOWN_BUILTINS in frontend/matlab_parser.py)
+- New warning code W_UNKNOWN_FUNCTION for unrecognized function calls (informational)
+- Test28.m for expanded builtins and unknown function warning
+
+### Changed
+- Unrecognized function calls now return unknown shape instead of scalar (soundness fix)
+- Previous test28.m renumbered to test29.m
+
 ## [0.7e] - 2026-02-05
 ### Added
 - Support for multiline matrix literals with newline row separators

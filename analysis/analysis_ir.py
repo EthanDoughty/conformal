@@ -9,6 +9,12 @@ dimensions and detecting dimension mismatches at compile time.
 from __future__ import annotations
 from typing import List, Tuple
 
+from frontend.matlab_parser import KNOWN_BUILTINS
+
+# Builtins with explicit shape rules (handled above in eval_expr_ir).
+# Everything else in KNOWN_BUILTINS returns unknown silently.
+_BUILTINS_WITH_SHAPE_RULES = {"zeros", "ones", "size", "isscalar"}
+
 from ir import (
     Program, Stmt,
     Assign, ExprStmt, While, For, If, OpaqueStmt,
@@ -148,8 +154,13 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str]) -> Shape:
                 # isscalar(x) always returns a logical scalar
                 eval_expr_ir(expr.args[0], env, warnings)
                 return Shape.scalar()
+            # Known builtin without a shape rule: return unknown silently
+            if fname in KNOWN_BUILTINS:
+                return Shape.unknown()
+            # Unrecognized function: emit warning and return unknown
+            warnings.append(diag.warn_unknown_function(expr.line, fname))
 
-        return Shape.scalar()
+        return Shape.unknown()
 
     if isinstance(expr, Transpose):
         inner = eval_expr_ir(expr.operand, env, warnings)
@@ -165,6 +176,9 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str]) -> Shape:
         base_shape = eval_expr_ir(expr.base, env, warnings)
 
         if base_shape.is_unknown():
+            # If base is an unbound variable, it might be a call to an undefined function
+            if isinstance(expr.base, Var) and expr.base.name not in env.bindings:
+                warnings.append(diag.warn_unknown_function(line, expr.base.name))
             return Shape.unknown()
 
         if base_shape.is_scalar():

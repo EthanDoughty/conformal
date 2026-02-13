@@ -152,3 +152,15 @@ def warn_unsupported_stmt(line: int, raw: str, targets: list[str]) -> str:
     target_str = ", ".join(targets) if targets else "(none)"
     raw_str = f" '{raw}'" if raw else ""
     return f"W_UNSUPPORTED_STMT line={line} targets={target_str}{raw_str}"
+
+def warn_unknown_function(line: int, name: str) -> str:
+    """Warning for unrecognized function call.
+
+    Args:
+        line: Source line number
+        name: Name of the unrecognized function
+
+    Returns:
+        Warning message string with code W_UNKNOWN_FUNCTION
+    """
+    return f"Line {line}: Function '{name}' is not recognized; treating result as unknown [W_UNKNOWN_FUNCTION]"
