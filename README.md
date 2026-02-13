@@ -76,7 +76,7 @@ tools/       Debugging utilities (AST printer)
 
 ## Test Suite
 
-The project includes a self-checking test suite consisting of 30 Mini-MATLAB programs.
+The project includes a self-checking test suite of Mini-MATLAB programs.
 
 Each test file:
 - documents its intent using MATLAB comments
@@ -106,6 +106,7 @@ Each test file:
 | 28   | Expanded builtins and unknown function warning
 | 29   | Multiline matrix literals with newline separators
 | 30   | Apply node disambiguation (colon/builtin/unbound/indexing)
+| 31   | Rich builtin shape rules (eye/rand/randn/abs/sqrt/transpose/length/numel)
 
 ## Getting Started
 

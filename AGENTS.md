@@ -300,7 +300,7 @@ Task(subagent_type="spec-writer", prompt="...", description="...")
 ## Running Tests
 
 - **Full test suite**: `python3 run_all_tests.py` or `make test`
-  - Runs all test files (tests/test1.m through tests/test*.m)
+  - Runs all test files (discovered via `glob("tests/test*.m")`)
   - Automatically validates inline expectations (comments starting with `% EXPECT:`)
   - Reports pass/fail status for each test
 

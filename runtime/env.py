@@ -43,7 +43,7 @@ def join_env(env1: Env, env2: Env) -> Env:
         Merged environment with joined shapes for each variable
     """
     result = Env()
-    all_vars = set(env1.bindings.keys()) | set(env2.bindings.keys())
+    all_vars = sorted(set(env1.bindings.keys()) | set(env2.bindings.keys()))
     for var_name in all_vars:
         shape1 = env1.get(var_name)
         shape2 = env2.get(var_name)

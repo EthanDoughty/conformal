@@ -1,141 +1,112 @@
-# Task: Unified Apply IR Node for Runtime Call-vs-Index Disambiguation
+# Task: Rich Builtin Shape Rules (Phase 3)
 
 ## Goal
-Replace separate Call/Index IR nodes with a unified `Apply` node. Move call-vs-index disambiguation from parse time (parser) to analysis time (analyzer), where shape information enables better decisions.
+Add shape inference rules for MATLAB builtin functions so the analyzer produces concrete shapes instead of `unknown` for common matrix constructors, element-wise operations, and query functions.
 
 ## Scope
-- `/root/projects/MATLAB_analysis/ir/ir.py`: Add `Apply` IR node with `base: Expr` and `args: List[IndexArg]`
-- `/root/projects/MATLAB_analysis/frontend/matlab_parser.py`: Remove builtin whitelist logic, emit unified syntax node for all `foo(...)` expressions
-- `/root/projects/MATLAB_analysis/frontend/lower_ir.py`: Lower unified syntax node to `Apply` IR node
-- `/root/projects/MATLAB_analysis/analysis/analysis_ir.py`: Add disambiguation logic in `eval_expr_ir` for `Apply` nodes using colon heuristic and shape information; add `unwrap_arg(IndexArg) -> Expr` helper for builtin handlers
-- `/root/projects/MATLAB_analysis/analysis/diagnostics.py`: Add `Apply` node handling to `pretty_expr_ir` so warnings print useful text
-- `/root/projects/MATLAB_analysis/tests/`: Add test30.m exercising runtime disambiguation (colon forces indexing, unknown base forces call warning, bound variable defaults to indexing)
+- Add shape rules for 4 builtin categories in `analysis/analysis_ir.py`:
+  1. **Matrix constructors** (0/1/2-arg forms): `eye`, `rand`, `randn`
+     - 0 args: `rand()` → scalar, `randn()` → scalar
+     - 1 arg: `eye(n)` → n×n, `rand(n)` → n×n, `randn(n)` → n×n
+     - 2 args: `eye(m,n)` → m×n, `rand(m,n)` → m×n, `randn(m,n)` → m×n
+     - (Same signature pattern as existing `zeros`/`ones`)
+  2. **Unary element-wise**: `abs`, `sqrt` (output shape = input shape)
+  3. **Transpose function**: `transpose` (swaps row/col dimensions — NOT shape-preserving)
+  4. **Query functions**: `length`, `numel` (return scalar)
+- Factor out shared try/except unwrap boilerplate into a helper (e.g., `_eval_builtin_args`)
+- Update `_BUILTINS_WITH_SHAPE_RULES` set to include all newly handled builtins
+- Add test file exercising all new rules with symbolic and concrete dimensions
 
 ## Non-goals
-- Rich shape rules for phase 3 builtins (eye, randn, etc.) — deferred to Phase 3
-- Path-sensitive analysis or flow-sensitive disambiguation
-- Modifying legacy analyzer (remains frozen for comparison)
-- Removing old Call/Index nodes immediately (keep for legacy analyzer compatibility during transition)
+- Reshaping functions (`reshape`, `repmat`) — too complex, defer
+- Reduction functions (`sum`, `min`, `max`) — dim argument handling complex, defer
+- Advanced functions (`diag`, `inv`, `det`, `trace`, `norm`, `linspace`) — defer to future phase
+- Three-dimensional arrays (e.g., `zeros(2,3,4)`) — not supported by shape domain
 
 ## Invariants Impacted
-- **IR analyzer is authoritative**: Preserved — changes are localized to IR definition, lowering, and analysis
-- **Parser-lowering-analyzer pipeline separation**: Strengthened — parser no longer makes semantic decisions
-- **Conservative analysis soundness**: Preserved — unknown base or colon args trigger appropriate warnings/fallbacks
-- **Legacy analyzer compatibility**: Preserved — old Call/Index nodes remain for legacy analyzer
+- **IR analyzer authoritative**: All changes in `analysis_ir.py` (no legacy analyzer changes)
+- **Test expectations reflect IR analyzer**: New test expectations must match IR analyzer output
+- **All existing tests pass**: No regressions in existing test suite
+- **Known builtins return shape or unknown**: Every builtin in `KNOWN_BUILTINS` must either have a rule or return `unknown` silently
+- **Warning stability**: No new warning codes introduced
+- **`transpose()` and `.'` must agree**: Both must swap dimensions, share logic or produce identical results
 
 ## Acceptance Criteria
-- [ ] New `Apply(base: Expr, args: List[IndexArg])` IR node defined in `ir/ir.py`
-- [ ] Parser emits unified `['apply', line, base, args]` syntax node for all `foo(...)` expressions
-- [ ] Lowering pass converts `['apply', ...]` to `Apply` IR node
-- [ ] Analyzer disambiguates `Apply` nodes:
-  - If any arg is `Colon` or `Range`: treat as indexing
-  - If base is unknown variable: emit `W_UNKNOWN_FUNCTION`, return `unknown`
-  - If base is known builtin: apply builtin shape rules
-  - Otherwise: treat as indexing
-- [ ] `KNOWN_BUILTINS` constant moved to analyzer (kept importable from parser for legacy compat)
-- [ ] `pretty_expr_ir` in `diagnostics.py` handles `Apply` nodes
-- [ ] `unwrap_arg(IndexArg) -> Expr` helper extracts inner `Expr` from `IndexExpr` args for builtin handlers
-- [ ] Test30.m validates: (1) colon forces indexing, (2) unknown function emits warning, (3) builtin calls work, (4) bound variable defaults to indexing
+- [ ] **Constructors (0-arg)**: `rand()` → `scalar`, `randn()` → `scalar`
+- [ ] **Constructors (1-arg)**: `eye(n)` → `matrix[n x n]`, `rand(n)` → `matrix[n x n]`, `randn(n)` → `matrix[n x n]`
+- [ ] **Constructors (2-arg)**: `eye(m,n)` → `matrix[m x n]`, `rand(2,3)` → `matrix[2 x 3]`, `randn(k,2)` → `matrix[k x 2]`
+- [ ] **Element-wise**: `abs(A)` → same shape as `A`, `sqrt(B)` → same shape as `B` (including scalar, matrix, unknown pass-through)
+- [ ] **Transpose function**: `transpose(C)` → swapped dimensions (row↔col), consistent with `.'` operator
+- [ ] **Queries**: `length(v)` → `scalar`, `numel(M)` → `scalar`
+- [ ] **Symbolic dimensions**: `eye(n)` → `matrix[n x n]` where `n` is symbolic
+- [ ] **Edge case**: `eye(0)` → `matrix[0 x 0]` (empty matrix)
+- [ ] **Unwrap helper**: Shared `_eval_builtin_args` or similar reduces try/except boilerplate
+- [ ] `_BUILTINS_WITH_SHAPE_RULES` updated to include all newly handled builtins
 - [ ] All existing tests pass: `python3 mmshape.py --tests`
+- [ ] New test file validates all new shape rules
 
 ## Commands to Run
 ```bash
-# Run all tests
-python3 /root/projects/MATLAB_analysis/mmshape.py --tests
+# Run all tests including new one
+python3 mmshape.py --tests
 
-# Run new test
-python3 /root/projects/MATLAB_analysis/mmshape.py /root/projects/MATLAB_analysis/tests/test30.m
-
-# Compare against legacy analyzer (should differ due to disambiguation change)
-python3 /root/projects/MATLAB_analysis/mmshape.py --compare /root/projects/MATLAB_analysis/tests/test30.m
+# Run new test individually
+python3 mmshape.py tests/test31.m
 ```
 
 ## Tests to Add/Change
-
-**Test file**: `/root/projects/MATLAB_analysis/tests/test30.m`
-
-Test cases:
-1. **Colon forces indexing**: `B = A(:, 2);` where `A` is `matrix[3 x 4]` → result is `matrix[3 x 1]` (no warning)
-2. **Builtin call works**: `C = zeros(2, 3);` → result is `matrix[2 x 3]` (no warning)
-3. **Unknown function call**: `D = my_func(5);` → emit `W_UNKNOWN_FUNCTION`, result is `unknown`
-4. **Range forces indexing**: `E = A(1:2, :);` → result is `matrix[2 x 4]` (no warning)
-5. **Bound variable defaults to indexing**: `M = zeros(3, 4); val = M(2, 3);` → result is `scalar` (no warning, no W_UNKNOWN_FUNCTION)
-
-Assertions:
-- `% EXPECT: warnings = 1`  (only unknown function)
-- `% EXPECT: A = matrix[3 x 4]`
-- `% EXPECT: B = matrix[3 x 1]`
-- `% EXPECT: C = matrix[2 x 3]`
-- `% EXPECT: D = unknown`
-- `% EXPECT: E = matrix[2 x 4]`
-- `% EXPECT: M = matrix[3 x 4]`
-- `% EXPECT: val = scalar`
-
-## Migration Strategy
-
-**Transition plan** (all old nodes retained for legacy analyzer):
-
-1. **Phase 2a**: Add `Apply` node to IR, update parser to emit `['apply', ...]`, update lowering to handle both old and new syntax
-2. **Phase 2b**: Add `Apply` handling to analyzer with disambiguation logic, keep old `Call`/`Index` handling intact
-3. **Phase 2c**: Verify all tests pass with new path, validate against legacy analyzer in compare mode
-4. **Phase 2d**: Document that legacy analyzer will use old Call/Index nodes, IR analyzer uses Apply
-
-**Backward compatibility**: Legacy analyzer continues using old `Call`/`Index` nodes. Only IR analyzer uses new `Apply` node. No changes to legacy analyzer code.
+- **test31.m**: Rich builtin shape rules
+  - Constructors 0-arg: `rand()`, `randn()`
+  - Constructors 1-arg: `eye(n)`, `rand(n)`, `randn(n)` (should produce n×n, NOT n×1)
+  - Constructors 2-arg: `eye(m,n)`, `rand(2,3)`, `randn(k,2)`
+  - Element-wise: `abs(zeros(2,3))`, `sqrt(ones(n,m))`
+  - Transpose function: `transpose(zeros(2,3))` → `matrix[3 x 2]` (must match `.'` operator)
+  - Queries: `length(v)`, `numel(M)`
+  - Edge case: `eye(0)` → `matrix[0 x 0]`
+  - Expected warnings: 0 (all functions recognized and have shape rules)
+  - Assertions: Use `% EXPECT:` format for all variable shapes and warning count
 
 ## Implementation Notes
 
-**Disambiguation algorithm** (in `eval_expr_ir` for `Apply` nodes):
+**Constructor pattern** (shared for eye/rand/randn/zeros/ones):
 ```python
-if isinstance(expr, Apply):
-    # Check for indexing indicators
-    has_colon_or_range = any(isinstance(arg, (Colon, Range)) for arg in expr.args)
-
-    if has_colon_or_range:
-        # Definitely indexing
-        return handle_indexing_apply(expr, env, warnings)
-
-    # Check if base is a known builtin function
-    if isinstance(expr.base, Var):
-        fname = expr.base.name
-        if fname in KNOWN_BUILTINS:
-            # Handle as function call
-            return handle_builtin_call(fname, expr.args, expr.line, env, warnings)
-
-        # Check if variable is unbound (unknown function)
-        if fname not in env.bindings:
-            warnings.append(diag.warn_unknown_function(expr.line, fname))
-            return Shape.unknown()
-
-    # Default: treat as indexing
-    return handle_indexing_apply(expr, env, warnings)
+if len(args) == 0:
+    return Shape.scalar()
+elif len(args) == 1:
+    d = expr_to_dim_ir(args[0], env)
+    return Shape.matrix(d, d)  # n×n square matrix
+elif len(args) == 2:
+    r = expr_to_dim_ir(args[0], env)
+    c = expr_to_dim_ir(args[1], env)
+    return Shape.matrix(r, c)
+else:
+    return Shape.unknown()  # 3D+ not supported
 ```
 
-**Parser change**: Lines 350-360 of `matlab_parser.py`
-- Remove `if left[0] == "var" and left[2] in KNOWN_BUILTINS` check
-- Always emit `["apply", lparen_tok.line, left, args]`
-
-**Lowering change**: `lower_ir.py`
-- Handle `"apply"` tag in `lower_expr`
-- Convert to `Apply(line=expr[1], base=lower_expr(expr[2]), args=[lower_index_arg(arg) for arg in expr[3]])`
-- Keep existing `"call"` and `"index"` handling for legacy compatibility
-
-**IndexExpr unwrapping helper** (critical for builtins):
+**Transpose function** — reuse logic from `Transpose` IR node handler (lines ~226-230):
 ```python
-def unwrap_arg(arg: IndexArg) -> Expr:
-    """Extract the inner Expr from an IndexArg. Colon/End raise ValueError."""
-    if isinstance(arg, IndexExpr):
-        return arg.expr
-    raise ValueError(f"Cannot unwrap {type(arg).__name__} to Expr")
+# Same swap logic as .' operator
+if shape.kind == "matrix":
+    return Shape.matrix(shape.cols, shape.rows)
+elif shape.kind == "scalar":
+    return Shape.scalar()
+else:
+    return Shape.unknown()
 ```
-All builtin handlers must use `unwrap_arg(arg)` instead of accessing `arg` directly as `Expr`.
-This is the key type change: `Call.args: List[Expr]` → `Apply.args: List[IndexArg]`.
 
-**Diagnostics change**: `diagnostics.py`
-- Add `Apply` case to `pretty_expr_ir` so warnings like "indexing scalar" print `foo(...)` not `<expr>`
-- For non-`Var` base, fall back to `<expr>(...)` which is sound
+**Element-wise pattern** (abs, sqrt): evaluate arg shape, return it unchanged.
 
-**Analyzer change**: `analysis_ir.py`
-- Add `isinstance(expr, Apply)` case in `eval_expr_ir` with disambiguation logic above
-- Define `KNOWN_BUILTINS` directly in analyzer (keep importable from parser via re-export for legacy compat)
-- Extract shared indexing/call logic into helper functions
-- Use `unwrap_arg()` in all builtin shape rule handlers
+**Query pattern** (length, numel): evaluate arg (to trigger any nested warnings), return `scalar`.
+
+**Unwrap helper** to reduce boilerplate:
+```python
+def _eval_builtin_args(expr, env, warnings):
+    """Unwrap Apply args and evaluate shapes. Returns None if any arg is Colon/Range."""
+    exprs = []
+    for arg in expr.args:
+        try:
+            exprs.append(unwrap_arg(arg))
+        except ValueError:
+            return None  # Colon/Range → fall through to indexing
+    return exprs
+```

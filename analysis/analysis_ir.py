@@ -13,7 +13,14 @@ from frontend.matlab_parser import KNOWN_BUILTINS
 
 # Builtins with explicit shape rules (handled above in eval_expr_ir).
 # Everything else in KNOWN_BUILTINS returns unknown silently.
-_BUILTINS_WITH_SHAPE_RULES = {"zeros", "ones", "size", "isscalar"}
+_BUILTINS_WITH_SHAPE_RULES = {
+    "zeros", "ones",      # matrix constructors (2-arg form)
+    "eye", "rand", "randn",  # matrix constructors (0/1/2-arg forms)
+    "abs", "sqrt",        # element-wise (pass through shape)
+    "transpose",          # transpose (swap rows/cols)
+    "length", "numel",    # query functions (return scalar)
+    "size", "isscalar",   # other builtins with shape rules
+}
 
 from ir import (
     Program, Stmt,
@@ -109,6 +116,35 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str]) -> Env:
     return env
 
 
+def _eval_index_arg_to_shape(arg: IndexArg, env: Env, warnings: List[str]) -> Shape:
+    """Evaluate an IndexArg to a Shape.
+
+    Handles:
+    - IndexExpr: unwrap and evaluate the inner expression
+    - Range: evaluate as a row vector (1 x n)
+    - Colon: cannot be evaluated standalone, return unknown
+
+    Args:
+        arg: IndexArg to evaluate
+        env: Current environment
+        warnings: List to append warnings to
+
+    Returns:
+        Shape of the argument
+    """
+    if isinstance(arg, IndexExpr):
+        return eval_expr_ir(arg.expr, env, warnings)
+    elif isinstance(arg, Range):
+        # Range creates a row vector; shape depends on the bounds
+        # For simplicity, we assume ranges create 1 x N matrices
+        # (The actual size depends on start/end evaluation)
+        return Shape.matrix(1, None)  # 1 x unknown
+    elif isinstance(arg, Colon):
+        # Standalone colon cannot be evaluated
+        return Shape.unknown()
+    return Shape.unknown()
+
+
 def eval_expr_ir(expr: Expr, env: Env, warnings: List[str]) -> Shape:
     """Evaluate an expression to infer its shape.
 
@@ -168,18 +204,12 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str]) -> Shape:
         # Check for indexing indicators: colon or range in args
         has_colon_or_range = any(isinstance(arg, (Colon, Range)) for arg in expr.args)
 
-        if has_colon_or_range:
-            # Definitely indexing: delegate to shared indexing logic
-            base_shape = eval_expr_ir(expr.base, env, warnings)
-            if base_shape.is_unknown() and isinstance(expr.base, Var) and expr.base.name not in env.bindings:
-                warnings.append(diag.warn_unknown_function(line, expr.base.name))
-                return Shape.unknown()
-            return _eval_indexing(base_shape, expr.args, line, expr, env, warnings)
-
-        # No colon/range: check if base is a known builtin function
+        # Check if base is a known builtin function
         if isinstance(expr.base, Var):
             fname = expr.base.name
             if fname in KNOWN_BUILTINS:
+                # Known builtin: try function call first (even with colon/range)
+                # Ranges/colons in builtin args are valid (e.g., length(1:10))
                 # Treat as a function call
                 if fname in {"zeros", "ones"} and len(expr.args) == 2:
                     try:
@@ -211,6 +241,37 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str]) -> Shape:
                     except ValueError:
                         # Colon in arg: treat as indexing
                         pass
+                # Matrix constructors: eye, rand, randn
+                if fname in {"eye", "rand", "randn"} and len(expr.args) <= 2:
+                    if len(expr.args) == 0:
+                        return Shape.scalar()
+                    elif len(expr.args) == 1:
+                        try:
+                            d = expr_to_dim_ir(unwrap_arg(expr.args[0]), env)
+                            return Shape.matrix(d, d)  # n×n square matrix
+                        except ValueError:
+                            pass
+                    elif len(expr.args) == 2:
+                        try:
+                            r = expr_to_dim_ir(unwrap_arg(expr.args[0]), env)
+                            c = expr_to_dim_ir(unwrap_arg(expr.args[1]), env)
+                            return Shape.matrix(r, c)
+                        except ValueError:
+                            pass
+                # Element-wise operations: abs, sqrt (output shape = input shape)
+                if fname in {"abs", "sqrt"} and len(expr.args) == 1:
+                    arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings)
+                    return arg_shape
+                # Transpose function: swap row/col dimensions
+                if fname == "transpose" and len(expr.args) == 1:
+                    arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings)
+                    if arg_shape.is_matrix():
+                        return Shape.matrix(arg_shape.cols, arg_shape.rows)
+                    return arg_shape
+                # Query functions: length, numel (return scalar)
+                if fname in {"length", "numel"} and len(expr.args) == 1:
+                    _ = _eval_index_arg_to_shape(expr.args[0], env, warnings)
+                    return Shape.scalar()
                 # Known builtin without a matching shape rule: return unknown silently
                 return Shape.unknown()
 

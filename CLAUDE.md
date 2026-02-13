@@ -131,7 +131,7 @@ Tests use inline assertions in MATLAB comments:
 % EXPECT: A = matrix[n x (k+m)]
 ```
 
-The test runner (`run_all_tests.py`) validates these expectations against analysis results. All test files are in `tests/` (test1.m through test29.m, discovered via `glob("tests/test*.m")`).
+The test runner (`run_all_tests.py`) validates these expectations against analysis results. All test files are in `tests/` (discovered dynamically via `glob("tests/test*.m")`).
 
 ## Critical Implementation Details
 

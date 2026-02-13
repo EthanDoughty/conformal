@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - Nine specialized Claude Code agents for development workflow
+
+## [0.8.4] - 2026-02-13
+### Added
+- Rich builtin shape rules for 12 functions (matrix constructors, element-wise, query, transpose)
+- Matrix constructors: `eye`, `rand`, `randn` (0-arg→scalar, 1-arg→n×n, 2-arg→m×n)
+- Element-wise functions: `abs`, `sqrt` (pass-through shape)
+- Transpose function: `transpose()` (swaps row/col, consistent with `.'` operator)
+- Query functions: `length`, `numel` (return scalar)
+- `_eval_index_arg_to_shape()` helper for evaluating IndexArg to Shape in analysis/analysis_ir.py
+- Test31.m with 38 assertions covering all new builtin shape rules
+
+### Fixed
+- Non-deterministic output in `join_env()` (runtime/env.py now uses sorted iteration)
+
+### Changed
+- Updated test28.m expectation for `randn(3,4)` → `matrix[3 x 4]`
+- Ambiguified test counts in documentation (CLAUDE.md, AGENTS.md, README.md)
 - quality-assurance agent for code quality and project hygiene
 - documentation-maintainer agent for documentation synchronization
 - release-coordinator agent for release orchestration
