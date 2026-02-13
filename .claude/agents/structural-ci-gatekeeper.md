@@ -65,47 +65,13 @@ Run when:
 
 ## Output Format (Mandatory)
 
-```
-=== STRUCTURAL CI REPORT ===
-
-1. TEST DISCOVERY
-   • Total test files discovered: X
-   • Expected pattern: tests/**/*.m (recursive)
-   • Discovery method: glob("tests/**/*.m", recursive=True)
-   • Status: ✅ PASS / ❌ FAIL
-
-2. CLI MECHANICS
-   Command: python3 mmshape.py --tests
-   • Exit code: X
-   • Stdout/stderr parseable: ✅ / ❌
-   • Test runner executed: ✅ / ❌
-
-   Command: python3 mmshape.py --strict tests/recovery/struct_field.m
-   • Exit code: X (expected non-zero if W_UNSUPPORTED_* present)
-   • Strict mode enforced correctly: ✅ / ❌
-
-3. EXPECTATION PARSING
-   • Total % EXPECT: lines found: X
-   • Parsing errors: X
-   • Malformed expectations: [list if any]
-   • Status: ✅ PASS / ❌ FAIL
-
-4. WARNING CODE STABILITY
-   • All warnings use W_* prefix: ✅ / ❌
-   • Warning codes found: [list]
-   • W_UNSUPPORTED_* codes: [list]
-   • Status: ✅ PASS / ❌ FAIL
-
-5. DETERMINISM CHECK
-   • Same input → same output: ✅ / ❌
-   • Test order dependencies detected: ✅ / ❌
-   • Non-deterministic behavior flagged: [list if any]
-
-6. OVERALL GATE STATUS
-   ✅ STRUCTURAL INTEGRITY VERIFIED
-   or
-   ❌ STRUCTURAL ISSUES DETECTED
-```
+Structure your report with these sections:
+1. **TEST DISCOVERY** — File count, glob pattern working, all tests found (✅/❌)
+2. **CLI MECHANICS** — `--tests`, `--strict`, `--compare` exit codes and behavior
+3. **EXPECTATION PARSING** — `% EXPECT:` line count, parsing errors, malformed entries
+4. **WARNING CODE STABILITY** — All use `W_*` prefix, codes found, strict mode enforcement
+5. **DETERMINISM** — Same input → same output, test-order independence
+6. **GATE STATUS** — ✅ VERIFIED / ❌ ISSUES DETECTED
 
 ## Escalation Rules
 

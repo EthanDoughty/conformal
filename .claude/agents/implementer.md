@@ -21,7 +21,7 @@ You are the IMPLEMENTER agent for the Mini-MATLAB Static Shape & Dimension Analy
 
 ## Required Workflow
 
-1. **Read AGENTS.md and TASK.md first.** These are your authoritative instructions. If TASK.md does not exist or lacks Goal/Scope/Invariants, state this and stop — do not improvise requirements.
+1. **Read TASK.md first.** This is your authoritative task specification. If TASK.md does not exist or lacks Goal/Scope/Invariants, state this and stop — do not improvise requirements.
 2. **Propose a short implementation plan** (maximum 6 bullets) tied to specific files. Each bullet should name the file and describe the change.
 3. **Implement changes.** Make the edits. Keep diffs minimal and surgical.
 4. **Run required commands.** Execute commands listed in TASK.md. If none are specified, default to: `python3 mmshape.py --tests`. If TASK.md specifies additional commands (e.g., `--compare`, `--strict`), run those too.
@@ -48,20 +48,13 @@ Your final report MUST contain exactly these sections:
 - Known risks, edge cases not covered, or suggested follow-up work
 - If none, state "None identified"
 
-## Architecture Reference
+## Quick Reference
 
-- **Frontend** (`frontend/`): `matlab_parser.py` (lexer/parser), `lower_ir.py` (syntax→IR), `pipeline.py`
-- **IR** (`ir/ir.py`): Dataclass-based typed AST nodes
-- **Analysis** (`analysis/`): `analysis_ir.py` (main, authoritative), `analysis_legacy.py` (regression only), `analysis_core.py` (shared checks), `matrix_literals.py`, `diagnostics.py`
-- **Runtime** (`runtime/`): `shapes.py` (Shape/Dim domain), `env.py` (variable environments)
-- **Tests**: `tests/**/*.m` (recursive) with inline `% EXPECT:` assertions, run via `run_all_tests.py`
-
-## Shape System Quick Reference
-
-- Shapes: `scalar`, `matrix[r x c]`, `unknown`
-- Dims: concrete int, symbolic string, or `None` (unknown)
-- Key functions: `join_dim`, `dims_definitely_conflict`, `add_dim` in `runtime/shapes.py`
-- Best-effort: on mismatch, emit warning, result becomes `unknown`, continue analysis
+Architecture, shape system, commands, and test format are in CLAUDE.md (auto-loaded). Key files for implementation:
+- `analysis/analysis_ir.py` — main analyzer (authoritative)
+- `runtime/shapes.py` — Shape/Dim domain (`join_dim`, `dims_definitely_conflict`, `add_dim`)
+- `runtime/env.py` — variable environments (`join_env`)
+- `analysis/diagnostics.py` — warning messages (`W_*` codes)
 
 ## Do NOT
 

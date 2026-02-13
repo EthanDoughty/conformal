@@ -28,12 +28,8 @@ You will receive one or more of:
 
 ### Step 2: Locate the Root Cause
 - If a diff is provided, examine it first — the bug is almost always in the recent change.
-- Trace the failure through the three-stage pipeline:
-  1. **Frontend** (`frontend/matlab_parser.py`, `frontend/lower_ir.py`) — Is parsing or IR lowering wrong?
-  2. **IR** (`ir/ir.py`) — Are IR nodes malformed?
-  3. **Analysis** (`analysis/analysis_ir.py`, `analysis/analysis_core.py`, `analysis/matrix_literals.py`) — Is shape inference or compatibility checking wrong?
-  4. **Runtime** (`runtime/shapes.py`, `runtime/env.py`) — Is the shape domain or environment logic wrong?
-- Remember: `analysis/analysis_ir.py` is the **authoritative** analyzer. The legacy analyzer is irrelevant unless explicitly asked about.
+- Trace the failure through the pipeline (frontend → IR → analysis → runtime). See CLAUDE.md for architecture details.
+- `analysis/analysis_ir.py` is the **authoritative** analyzer. The legacy analyzer is irrelevant unless explicitly asked about.
 - Read the relevant source files to understand the current behavior.
 - If needed, run `python3 mmshape.py <failing_test_file>` to see detailed output for a specific test.
 

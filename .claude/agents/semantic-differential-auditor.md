@@ -76,84 +76,13 @@ Run when:
 
 ## Output Format (Mandatory)
 
-```
-=== SEMANTIC ANALYSIS REPORT ===
-
-1. SHAPE INFERENCE CORRECTNESS
-   Test: testN.m
-   Expected: var = matrix[n x m]
-   Actual:   var = matrix[n x m]
-   Status: ✅ MATCH / ❌ MISMATCH
-
-   [Repeat for all shape expectations]
-
-   Summary:
-   • Total shape expectations: X
-   • Correct: X
-   • Mismatched: X
-   • Status: ✅ PASS / ❌ FAIL
-
-2. SYMBOLIC DIMENSION TRACKING
-   Test: testN.m
-   Symbolic dims used: [n, m, k]
-   Arithmetic expressions: [k+m, n*2, etc.]
-
-   Validation:
-   • Symbolic names preserved: ✅ / ❌
-   • Arithmetic correct: ✅ / ❌
-   • No spurious unification: ✅ / ❌
-   • Status: ✅ PASS / ❌ FAIL
-
-3. CONTROL FLOW ANALYSIS
-   Test: testN.m (if/else, while loops)
-
-   Branch join results:
-   • If branch: var = matrix[n x m]
-   • Else branch: var = matrix[n x k]
-   • Joined: var = matrix[n x unknown]
-   • Join conservative: ✅ / ❌
-
-   Loop analysis:
-   • Shape evolution tracked: ✅ / ❌
-   • Single-pass approximation sound: ✅ / ❌
-   • Status: ✅ PASS / ❌ FAIL
-
-4. OPERATION SEMANTICS
-   Matrix multiplication:
-   • A: matrix[n x m], B: matrix[m x k]
-   • Result: matrix[n x k]
-   • Inner dimension check: ✅ / ❌
-
-   Concatenation:
-   • Horizontal: [matrix[n x m], matrix[n x k]] → matrix[n x (m+k)]
-   • Vertical: [matrix[n x m]; matrix[k x m]] → matrix[(n+k) x m]
-   • Dimension rules: ✅ / ❌
-
-   [Report other operations as needed]
-   Status: ✅ PASS / ❌ FAIL
-
-5. DIFFERENTIAL ANALYSIS (if --compare used)
-   Command: python3 mmshape.py --compare tests/basics/valid_add.m
-
-   IR analyzer output:
-   [key shapes and warnings]
-
-   Legacy analyzer output:
-   [key shapes and warnings]
-
-   Differences:
-   • Expected divergences: [list]
-   • Unexpected divergences: [list]
-   • Regression detected: ✅ / ❌
-   • Status: ✅ PASS / ❌ FAIL
-
-6. SEMANTIC CORRECTNESS VERDICT
-   ✅ ALL SEMANTIC CHECKS PASSED
-   or
-   ❌ SEMANTIC ISSUES DETECTED
-
-   Critical issues:
-   [List shape mismatches, control flow errors, operation semantic bugs]
+Structure your report with these sections:
+1. **SHAPE INFERENCE** — Expected vs actual for each `% EXPECT:` assertion (✅/❌)
+2. **SYMBOLIC DIMENSIONS** — Names preserved, arithmetic correct, no spurious unification
+3. **CONTROL FLOW** — Branch join results, loop analysis, conservatism check
+4. **OPERATION SEMANTICS** — Matrix mult, concat, transpose, elementwise correctness
+5. **DIFFERENTIAL ANALYSIS** (if `--compare` used) — IR vs legacy, expected vs unexpected divergences
+6. **VERDICT** — ✅ ALL PASSED / ❌ ISSUES DETECTED + critical issue list
 ```
 
 ## Analysis Depth

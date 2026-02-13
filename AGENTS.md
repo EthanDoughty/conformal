@@ -1,14 +1,10 @@
-# AGENTS.md
+# AGENTS.md — Orchestrator Reference
 
-This file provides guidance to coding agents working in this repository.
-
-## Overview
-
-This project implements a static shape and dimension analysis for Mini-MATLAB, a subset of the MATLAB programming language. The analyzer detects matrix-related errors before runtime by reasoning about matrix shapes, symbolic dimensions, and control flow.
+This file is for the **orchestrator (Coop)** and human integrator. Individual agents get project context from CLAUDE.md (auto-loaded) and role context from their own config in `.claude/agents/`.
 
 ## Agent Architecture
 
-This project uses **9 specialized Claude Code agents** with distinct, non-overlapping responsibilities. All agents are defined in `.claude/agents/` and invoked within Claude Code.
+9 specialized agents with non-overlapping responsibilities, defined in `.claude/agents/`.
 
 ## Agent Roles and Responsibilities
 
@@ -162,10 +158,10 @@ Task(subagent_type="spec-writer", prompt="...", description="...")
 ## Agent Rules
 
 ### General Rules
-- All agents must read AGENTS.md + TASK.md (BACKLOG is informational only)
-- Agents must preserve the core invariant: **IR analyzer is authoritative**
-- Minimal diffs only; avoid broad refactors unless explicitly requested
-- All tests must pass before claiming "done"
+- Agents get project context from CLAUDE.md (auto-loaded) — they do NOT need to read AGENTS.md
+- Agents read TASK.md when implementing or reviewing changes
+- Core invariant: **IR analyzer is authoritative**
+- Minimal diffs; all tests must pass before claiming "done"
 
 ### Specific Rules
 - **implementer**: Must not start work unless TASK.md has Goal/Scope/Invariants filled
@@ -268,134 +264,4 @@ Task(subagent_type="spec-writer", prompt="...", description="...")
 6. Human: Reviews, commits, tags, pushes
 ```
 
-## Entry Points
-
-- CLI: `mmshape.py`
-- Full test runner: `run_all_tests.py`
-- Default analyzer: `analysis/analysis_ir.py` (`analyze_program_ir`)
-- Legacy analyzer: `analysis/analysis_legacy.py` (`analyze_program_legacy`)
-
-## Commands
-
-## Running Tests
-
-- **Full test suite**: `python3 run_all_tests.py` or `make test`
-  - Runs all test files (discovered via `glob("tests/**/*.m", recursive=True)`)
-  - Automatically validates inline expectations (comments starting with `% EXPECT:`)
-  - Reports pass/fail status for each test
-
-- **Single test**: `python3 mmshape.py tests/basics/inner_dim_mismatch.m` or `make run FILE=tests/basics/inner_dim_mismatch.m`
-  - Runs analysis on a single test file
-  - Displays warnings and final environment
-
-- **Compare mode**: `python3 mmshape.py --compare tests/control_flow/if_branch_mismatch.m` or `make compare FILE=tests/control_flow/if_branch_mismatch.m`
-  - Compares legacy syntax analyzer vs IR analyzer
-  - Useful for debugging differences between the two pipelines
-
-- **CLI test runner**: `python3 mmshape.py --tests`
-  - Runs the full test suite via the CLI tool
-
-## Other Commands
-- **Clean build artifacts**: `make clean`
-  - Removes `__pycache__` directories and `.pyc` files
-
-## Architecture
-
-## Three-Stage Pipeline
-
-The analyzer uses a three-stage pipeline:
-
-1. **Frontend** (`frontend/`): Parses Mini-MATLAB source → Syntax AST
-   - `matlab_parser.py`: Lexer and recursive-descent parser
-   - `lower_ir.py`: Lowers syntax AST to IR AST
-   - `pipeline.py`: Convenience functions for the pipeline
-
-2. **IR** (`ir/`): Intermediate representation with typed nodes
-   - `ir.py`: Dataclass-based IR AST (Expr, Stmt, Program)
-   - Clean, typed representation (vs. list-based syntax AST)
-
-3. **Analysis** (`analysis/`): Static shape inference over IR
-   - `analysis_ir.py`: Main IR-based analyzer (current default)
-   - `analysis_legacy.py`: Legacy syntax-based analyzer (for comparison)
-   - `analysis_core.py`: Shared logic for shape compatibility checks
-   - `matrix_literals.py`: Matrix literal shape inference
-   - `diagnostics.py`: Warning message generation
-
-## Runtime Components (`runtime/`)
-
-- `shapes.py`: Shape abstract domain
-  - `Shape`: scalar | matrix[r x c] | unknown
-  - `Dim`: int | str (symbolic name) | None (unknown)
-  - Functions: `join_dim`, `dims_definitely_conflict`, `add_dim`
-
-- `env.py`: Environment for variable bindings
-  - `Env`: Maps variable names to shapes
-  - `join_env`: Merges environments from control flow branches
-
-## Legacy Code (`legacy/`)
-
-Contains the original syntax-based analyzer. The IR-based analyzer (`analysis_ir.py`) is now the default and source of truth for test expectations.
-
-## Shape System
-
-The analyzer assigns each expression a shape from this abstract domain:
-
-- **scalar**: Single values (e.g., `5`, `x`, scalar variables)
-- **matrix[r x c]**: Matrices where `r` and `c` can be:
-  - Concrete integers (e.g., `3`, `4`)
-  - Symbolic names (e.g., `n`, `m`, `k`)
-  - Unknown (`None`)
-- **unknown**: When shape cannot be determined
-
-## Key Analysis Features
-
-- **Symbolic dimension tracking**: Variables like `n` and `m` represent dimensions
-- **Symbolic arithmetic**: Concatenation produces dimensions like `n x (k+m)`
-- **Control flow joins**: Merges shapes from `if`/`else` branches conservatively
-- **Single-pass loop analysis**: Loops analyzed once (no fixed-point iteration)
-
-## Test File Format
-
-Test files use inline assertions in MATLAB comments:
-
-```matlab
-% EXPECT: warnings = 1
-% EXPECT: A = matrix[n x (k+m)]
-```
-
-The test runner parses these expectations and validates them against the analysis results. All test files are in `tests/` (dynamically discovered via glob pattern).
-
-## Important Implementation Details
-
-## AST Representations
-
-The project has two AST formats:
-
-1. **Syntax AST** (list-based): `['assign', line, name, expr]`
-   - Original parsed format from `matlab_parser.py`
-   - Used by legacy analyzer
-
-2. **IR AST** (dataclass-based): `Assign(line=line, name=name, expr=expr)`
-   - Typed, structured representation from `ir/ir.py`
-   - Used by current analyzer (`analysis_ir.py`)
-
-The lowering pass (`frontend/lower_ir.py`) converts syntax AST → IR AST.
-
-## Analysis Modes
-
-- **Default**: IR-based analysis (`analyze_program_ir`)
-- **Legacy**: Syntax-based analysis (`analyze_program_legacy`)
-- **Compare mode**: Runs both and reports differences
-
-The IR analyzer is the source of truth for test expectations.
-
-## Best-Effort Analysis
-
-The analyzer continues after detecting errors to provide maximum information. When a definite mismatch is detected (e.g., inner dimension mismatch in `A*B`), it emits a warning and treats the result as `unknown` to allow analysis to continue.
-
-## Known Behaviors
-- Test discovery is dynamic in `run_all_tests.py` (`glob("tests/**/*.m", recursive=True)`), so treat files in `tests/` subdirectories as source of truth if docs disagree.
-- `run_all_tests.py --compare` currently does not execute compare-mode output due to a wiring bug (the parsed flag is not used at runtime).
-- `python3 mmshape.py --tests --compare` currently behaves like `--tests` only; compare mode is only reliable for single-file runs (`mmshape.py --compare tests/category/test_name.m`).
-- `--strict` fails if any `W_UNSUPPORTED_*` warning is emitted. This is expected for unsupported-construct recovery tests in `tests/recovery/`: `struct_field.m`, `cell_array.m`, `multiple_assignment.m`, `multiline_braces.m`, and `end_in_parens.m`.
-- IR analysis is the default for CLI analysis (`mmshape.py`) and for test expectations, while legacy analysis remains available for per-file comparison.
+For project architecture, commands, test format, shape system, and known behaviors, see **CLAUDE.md** (auto-loaded for all agents).

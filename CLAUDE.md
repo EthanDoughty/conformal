@@ -168,9 +168,7 @@ When a definite mismatch is detected (e.g., inner dimension mismatch in `A*B`), 
 
 ## Agent Workflow
 
-**Read AGENTS.md for complete agent roles, responsibilities, and workflow pipelines.**
-
-This project uses nine specialized Claude Code agents with non-overlapping responsibilities:
+This project uses nine specialized Claude Code agents with non-overlapping responsibilities. See AGENTS.md for workflow pipelines (orchestrator reference).
 
 **Planning & Review**:
 - spec-writer: Plans features before implementation
