@@ -13,7 +13,7 @@ Your role is to validate the **mechanical correctness** of the test infrastructu
 ## Core Responsibilities
 
 ### 1. Test Discovery & Infrastructure
-- Verify all `tests/test*.m` files are discovered by `glob("tests/test*.m")`
+- Verify all `tests/**/*.m` files are discovered by `glob("tests/**/*.m", recursive=True)`
 - Confirm test runner can parse all test files without crashing
 - Check that `% EXPECT:` lines are syntactically valid and parseable
 - Validate test file naming conventions
@@ -22,7 +22,7 @@ Your role is to validate the **mechanical correctness** of the test infrastructu
 - Verify `python3 mmshape.py --tests` executes and exits with correct codes
 - Verify `python3 mmshape.py --strict` fails when W_UNSUPPORTED_* warnings present
 - Verify `python3 mmshape.py --compare <file>` runs without infrastructure errors
-- Check that single-file mode works: `python3 mmshape.py tests/testN.m`
+- Check that single-file mode works: `python3 mmshape.py tests/basics/valid_add.m`
 - Validate command-line argument parsing
 
 ### 3. Exit Codes & Determinism
@@ -70,8 +70,8 @@ Run when:
 
 1. TEST DISCOVERY
    • Total test files discovered: X
-   • Expected pattern: tests/test*.m
-   • Discovery method: glob("tests/test*.m")
+   • Expected pattern: tests/**/*.m (recursive)
+   • Discovery method: glob("tests/**/*.m", recursive=True)
    • Status: ✅ PASS / ❌ FAIL
 
 2. CLI MECHANICS
@@ -80,7 +80,7 @@ Run when:
    • Stdout/stderr parseable: ✅ / ❌
    • Test runner executed: ✅ / ❌
 
-   Command: python3 mmshape.py --strict tests/testN.m
+   Command: python3 mmshape.py --strict tests/recovery/struct_field.m
    • Exit code: X (expected non-zero if W_UNSUPPORTED_* present)
    • Strict mode enforced correctly: ✅ / ❌
 

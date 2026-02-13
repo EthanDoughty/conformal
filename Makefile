@@ -6,11 +6,11 @@ test:
 	python3 run_all_tests.py
 
 run:
-	@if [ -z "$(FILE)" ]; then echo "Usage: make run FILE=tests/test1.m"; exit 1; fi
+	@if [ -z "$(FILE)" ]; then echo "Usage: make run FILE=tests/basics/valid_add.m"; exit 1; fi
 	$(PY) mmshape.py "$(FILE)"
 
 compare:
-	@if [ -z "$(FILE)" ]; then echo "Usage: make compare FILE=tests/test1.m"; exit 1; fi
+	@if [ -z "$(FILE)" ]; then echo "Usage: make compare FILE=tests/basics/valid_add.m"; exit 1; fi
 	$(PY) mmshape.py --compare "$(FILE)"
 
 clean:

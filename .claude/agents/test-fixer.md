@@ -99,7 +99,7 @@ Always structure your response with these four sections:
 - If the failure is in parsing (`frontend/`), be extra careful about delimiter syncing and token precedence.
 - If the failure involves symbolic dimensions, check `runtime/shapes.py` functions like `join_dim`, `dims_definitely_conflict`, `add_dim`.
 - If the failure is in control flow joins, check `runtime/env.py` and `join_env`.
-- If you see `W_UNSUPPORTED_*` warnings in strict mode for test22.m, test23.m, test24.m, test25.m, or test27.m — that is expected behavior, not a bug.
+- If you see `W_UNSUPPORTED_*` warnings in strict mode for tests/recovery/*.m files — that is expected behavior, not a bug.
 
 **Update your agent memory** as you discover root causes of failures, common bug patterns, which files tend to cause regressions, and relationships between test files and code paths. This builds up institutional knowledge across conversations. Write concise notes about what you found and where.
 

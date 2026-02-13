@@ -19,7 +19,7 @@
    - Added warning emit for Index applied to unbound variables (e.g., `my_func(x)`)
    - Key insight: Index handles unbound variable calls since parser only creates Call nodes for recognized builtins
 
-4. **tests/builtins/unknown_function.m**: Test for Phase 1 (renamed from test28.m)
+4. **tests/builtins/unknown_function.m**: Test for Phase 1
    - Tests `randn` (recognized builtin, unknown result, silent)
    - Tests `my_custom_func` (unrecognized, emits warning, unknown result)
    - Tests propagation of `unknown` through arithmetic
@@ -44,10 +44,10 @@
      * **transpose**: swap dimensions (rows↔cols)
      * **length, numel**: return scalar
 
-2. **tests/builtins/shape_preserving.m** — Tests shape-preserving builtins (renamed from test29.m)
+2. **tests/builtins/shape_preserving.m** — Tests shape-preserving builtins
    - Validates pass-through shape behavior
 
-3. **tests/builtins/constructors.m** — Comprehensive builtin test (renamed from test31.m)
+3. **tests/builtins/constructors.m** — Comprehensive builtin test
    - Tests all 10 builtin shape rules
    - Covers 0-arg, 1-arg, 2-arg forms
    - Tests concrete and symbolic dimensions

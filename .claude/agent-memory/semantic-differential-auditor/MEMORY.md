@@ -43,15 +43,15 @@
 
 ### Expected IR vs Legacy Divergences
 
-- **test31.m**: Legacy returns all `unknown` (lacks builtin rules); IR returns precise shapes ✅ EXPECTED
-- **test28.m**: Legacy lacks `W_UNKNOWN_FUNCTION` warning; IR emits it ✅ EXPECTED
-- **test28.m**: Legacy returns `unknown` for `randn(3,4)`; IR returns `matrix[3 x 4]` ✅ EXPECTED
+- **tests/builtins/constructors.m**: Legacy returns all `unknown` (lacks builtin rules); IR returns precise shapes ✅ EXPECTED
+- **tests/builtins/unknown_function.m**: Legacy lacks `W_UNKNOWN_FUNCTION` warning; IR emits it ✅ EXPECTED
+- **tests/builtins/unknown_function.m**: Legacy returns `unknown` for `randn(3,4)`; IR returns `matrix[3 x 4]` ✅ EXPECTED
 
 ### Test Coverage
 
-- **test31.m**: Comprehensive Phase 3 builtin validation (39 shape expectations, 0 warnings)
-- **test28.m**: Updated for `randn()` constructor + `W_UNKNOWN_FUNCTION` warning
-- **test5.m**: Validates `'` operator transpose (implicitly checks consistency with `transpose()` function)
+- **tests/builtins/constructors.m**: Comprehensive Phase 3 builtin validation (39 shape expectations, 0 warnings)
+- **tests/builtins/unknown_function.m**: Updated for `randn()` constructor + `W_UNKNOWN_FUNCTION` warning
+- **tests/symbolic/dimension_tracking.m**: Validates `'` operator transpose (implicitly checks consistency with `transpose()` function)
 
 ## Links
 

@@ -164,7 +164,7 @@ Quality Check:
 Validation:
 ✅ File paths: All references valid
 ✅ Function names: All exist
-⚠️  CLAUDE.md:78 - References test21.m, should be test27.m (max test number)
+⚠️  Test path references outdated - should use descriptive names in categorized subdirectories
 ✅ External links: All accessible
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

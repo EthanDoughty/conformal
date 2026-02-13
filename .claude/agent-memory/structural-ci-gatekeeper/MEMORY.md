@@ -3,9 +3,9 @@
 ## Test Infrastructure Patterns
 
 ### Test Discovery
-- Pattern: glob("tests/test*.m") in run_all_tests.py:23
-- Sorting: test_sort_key() extracts numeric suffix for deterministic ordering
-- As of 2026-02-13: 31 test files (test1.m through test31.m)
+- Pattern: glob("tests/**/*.m", recursive=True) in run_all_tests.py:23
+- Sorting: Alphabetical by full path for deterministic ordering
+- As of 2026-02-13: 31 test files organized in categorized subdirectories (basics/, symbolic/, indexing/, control_flow/, literals/, builtins/, recovery/)
 
 ### Expectation Format
 - % EXPECT: warnings = N - warning count assertion

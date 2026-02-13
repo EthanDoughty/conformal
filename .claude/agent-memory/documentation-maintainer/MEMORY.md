@@ -2,11 +2,11 @@
 
 ## Common Drift Patterns
 
-### Test Range References
-- **CLAUDE.md line ~134**: Test file range (currently "test1.m through test29.m")
-- **README.md line ~79**: Total test count (currently 29 programs)
-- **README.md lines ~89-107**: Test category table (maps test numbers to categories)
-- **Pattern**: When new tests are added, all three locations must be updated
+### Test Path References
+- **Test organization**: Categorized subdirectories (basics/, symbolic/, indexing/, control_flow/, literals/, builtins/, recovery/, apply/)
+- **Glob pattern**: tests/**/*.m (recursive) not tests/test*.m
+- **Pattern**: When referencing tests, use descriptive category paths not numbered testN.m
+- **Example paths**: tests/basics/valid_add.m, tests/recovery/struct_field.m, tests/builtins/constructors.m
 
 ### Version Documentation Flow
 - **CHANGELOG.md**: Add new version entry with date
@@ -26,10 +26,11 @@
 - Currently 19 functions (as of v0.8.1)
 - CLAUDE.md and README.md do NOT list individual builtins (too volatile)
 
-### Test Numbering
-- Discovery: Dynamic via `glob("tests/test*.m")`
-- Renumbering: When inserting tests mid-sequence, renumber subsequent tests
-- Example: v0.8.1 added test28.m, renumbered old test28.m to test29.m
+### Test Organization (Updated v0.8.5+)
+- Discovery: Dynamic via `glob("tests/**/*.m", recursive=True)`
+- Structure: Categorized subdirectories with descriptive names
+- No more numbered test files - use category/descriptive_name.m format
+- Example: tests/basics/valid_add.m not tests/test1.m
 
 ## Files to Always Check on Changes
 

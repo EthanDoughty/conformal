@@ -31,7 +31,8 @@
 - `join_shape(s1, s2)`: Joins shapes conservatively (scalar+scalar=scalar, matrix+matrix joins dims, otherwise unknown)
 
 ## Test Patterns
-- Control flow tests: test10.m (if with mismatch), test11.m (suspicious comparison), test26.m (no control flow)
+- Control flow tests: tests/control_flow/if_branch_mismatch.m, tests/control_flow/suspicious_comparison.m
+- Recovery tests: tests/recovery/*.m (struct_field.m, cell_array.m, multiple_assignment.m, multiline_braces.m, dot_elementwise.m, end_in_parens.m)
 - Tests use symbolic dimensions extensively: `n`, `m`, `k`, `(k+m)`
 - Warning codes use `W_*` prefix (stable)
 

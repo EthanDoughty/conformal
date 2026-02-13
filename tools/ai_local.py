@@ -224,7 +224,7 @@ IR: ir/ir.py (dataclass AST). Shapes: runtime/shapes.py (scalar | matrix[r x c] 
 Dims: int (concrete) | str (symbolic) | None (unknown). Key: join_dim, dims_definitely_conflict, add_dim.
 Env: runtime/env.py (var→shape map, join_env merges branches).
 Diagnostics: analysis/diagnostics.py (W_* warning codes).
-Tests: tests/test*.m with inline % EXPECT: assertions. Runner: run_all_tests.py.
+Tests: tests/**/*.m (recursive) with inline % EXPECT: assertions. Runner: run_all_tests.py.
 INVARIANT: IR analyzer is source of truth. Legacy analyzer is for comparison only.
 """
 

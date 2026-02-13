@@ -133,7 +133,7 @@ Run when:
    Status: ✅ PASS / ❌ FAIL
 
 5. DIFFERENTIAL ANALYSIS (if --compare used)
-   Command: python3 mmshape.py --compare tests/testN.m
+   Command: python3 mmshape.py --compare tests/basics/valid_add.m
 
    IR analyzer output:
    [key shapes and warnings]
