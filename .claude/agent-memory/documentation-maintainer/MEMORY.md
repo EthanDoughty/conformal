@@ -3,7 +3,7 @@
 ## Common Drift Patterns
 
 ### Test Path References
-- **Test organization**: Categorized subdirectories (basics/, symbolic/, indexing/, control_flow/, literals/, builtins/, recovery/, apply/)
+- **Test organization**: Categorized subdirectories (basics/, symbolic/, indexing/, control_flow/, literals/, builtins/, recovery/)
 - **Glob pattern**: tests/**/*.m (recursive) not tests/test*.m
 - **Pattern**: When referencing tests, use descriptive category paths not numbered testN.m
 - **Example paths**: tests/basics/valid_add.m, tests/recovery/struct_field.m, tests/builtins/constructors.m

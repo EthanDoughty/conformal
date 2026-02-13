@@ -236,56 +236,36 @@ Task(subagent_type="spec-writer", prompt="...", description="...")
 5. Human: Decides whether to proceed to implementation
 ```
 
+### Workflow 4: Test Failure Recovery
+
+```
+1. Human: Runs tests → failures detected
+   ↓
+2. test-fixer: Analyzes failures, produces minimal patch
+   ↓
+3. quality-assurance: Checks patch quality (auto-triggered)
+   ↓
+4. structural-ci-gatekeeper + semantic-differential-auditor: Validate
+   ↓
+5. All green → Human: MERGE
+```
+
 ### Workflow 5: Version Release
 
 ```
 1. Human: "Prepare release for v0.8"
    ↓
 2. release-coordinator: Runs all validation agents
-   • quality-assurance
-   • structural-ci-gatekeeper
-   • semantic-differential-auditor
-   • documentation-maintainer
+   (quality-assurance, structural-ci-gatekeeper,
+    semantic-differential-auditor, documentation-maintainer)
    ↓
-3. release-coordinator: Reports validation status
+3. release-coordinator: Reports status, proposes CHANGELOG + version
    ↓
-4. If issues found:
-   - Use appropriate agents to fix
-   - Return to step 2
+4. Human: Approves (or edits) via AskUserQuestion
    ↓
-5. release-coordinator: Proposes CHANGELOG entry
+5. release-coordinator: Updates files, reports READY
    ↓
-6. AskUserQuestion: "Approve CHANGELOG?"
-   ↓
-7. Human: Reviews and approves (or edits)
-   ↓
-8. release-coordinator: Proposes version number
-   ↓
-9. AskUserQuestion: "Approve version v0.8.0?"
-   ↓
-10. Human: Approves
-    ↓
-11. release-coordinator: Updates CHANGELOG.md
-    ↓
-12. release-coordinator: Reports READY
-    ↓
-13. Human: Reviews, commits, tags, pushes
-```
-
-### Workflow 4: Test Failure Recovery
-
-```
-1. Human: Runs tests → 2 failures detected
-   ↓
-2. test-fixer: Analyzes failures, produces minimal patch
-   ↓
-3. quality-assurance: Checks patch quality
-   ↓
-4. structural-ci-gatekeeper: Validates infrastructure
-   ↓
-5. semantic-differential-auditor: Validates correctness
-   ↓
-6. All green → Human: MERGE
+6. Human: Reviews, commits, tags, pushes
 ```
 
 ## Entry Points
@@ -293,7 +273,7 @@ Task(subagent_type="spec-writer", prompt="...", description="...")
 - CLI: `mmshape.py`
 - Full test runner: `run_all_tests.py`
 - Default analyzer: `analysis/analysis_ir.py` (`analyze_program_ir`)
-- Legacy analyzer: `legacy/analysis_legacy.py` (`analyze_program_legacy`)
+- Legacy analyzer: `analysis/analysis_legacy.py` (`analyze_program_legacy`)
 
 ## Commands
 

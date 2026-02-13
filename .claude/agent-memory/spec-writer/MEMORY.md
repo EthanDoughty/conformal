@@ -5,7 +5,7 @@
 - **Legacy analyzer**: `analysis/analysis_legacy.py` exists only for regression comparison
 - **Test format**: Inline `% EXPECT:` assertions in .m files in `tests/` directory
 - **Test discovery**: Dynamic via `glob("tests/**/*.m", recursive=True)` in `run_all_tests.py`
-- **Test organization**: Categorized subdirectories (basics, symbolic, indexing, control_flow, literals, builtins, recovery, apply)
+- **Test organization**: Categorized subdirectories (basics, symbolic, indexing, control_flow, literals, builtins, recovery)
 - **Current test count**: 31 test files as of v0.8.4 (2026-02-13)
 
 ## Control Flow Current Implementation

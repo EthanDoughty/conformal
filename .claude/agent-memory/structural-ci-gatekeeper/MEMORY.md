@@ -28,9 +28,6 @@
 
 ## Known Issues
 
-### Non-Deterministic Output (CRITICAL)
-**Status**: Confirmed structural bug in runtime/env.py:46-47
-
-**Root cause**: join_env() uses unordered set iteration
-**Fix**: Replace line 46 with sorted(set(...))
-**Escalation**: Report to Ethan (Integrator)
+### Non-Deterministic Output — RESOLVED
+- **Was**: join_env() used unordered set iteration in runtime/env.py
+- **Fix**: Line 46 now uses `sorted(set(...))` — deterministic output confirmed

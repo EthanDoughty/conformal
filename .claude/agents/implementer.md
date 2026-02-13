@@ -2,7 +2,7 @@
 name: implementer
 description: "Use this agent when the user needs a minimal, correct code change implemented for a defined task. Specifically: (1) after an approach has been agreed upon with a reviewer/mentor, (2) when TASK.md has Goal/Scope/Invariants filled out, (3) to produce a mergeable patch with minimal diff. Do NOT use this agent for exploratory discussion, architecture debates, or code review.\\n\\nExamples:\\n\\n<example>\\nContext: The user has agreed on an approach with the reviewer and TASK.md is filled out. They want to implement the change.\\nuser: \"TASK.md is ready. Please implement the fix for symbolic dimension arithmetic in concatenation.\"\\nassistant: \"I'll use the Task tool to launch the implementer agent to read TASK.md and produce a minimal patch.\"\\n<commentary>\\nSince TASK.md is filled and the approach is agreed upon, use the implementer agent to make the code change, run tests, and report results.\\n</commentary>\\n</example>\\n\\n<example>\\nContext: The user has just finished a review cycle and wants to proceed to implementation.\\nuser: \"The reviewer approved the plan. Let's implement the new warning code for scalar-matrix mismatch.\"\\nassistant: \"I'll use the Task tool to launch the implementer agent to implement the approved change with a minimal diff.\"\\n<commentary>\\nThe review is complete and the user wants code changes. Use the implementer agent to produce the patch.\\n</commentary>\\n</example>\\n\\n<example>\\nContext: The user wants a specific bug fix applied.\\nuser: \"Go ahead and fix the join_dim bug we discussed. TASK.md has the details.\"\\nassistant: \"I'll use the Task tool to launch the implementer agent to implement the fix according to TASK.md.\"\\n<commentary>\\nA concrete fix has been discussed and documented. Use the implementer agent to execute the implementation.\\n</commentary>\\n</example>"
 tools: Bash, Glob, Grep, Read, Edit, Write, NotebookEdit, WebFetch, WebSearch
-model: haiku
+model: sonnet
 color: red
 ---
 
@@ -82,79 +82,4 @@ Before reporting results, verify:
 - [ ] Diff is minimal — no cosmetic changes, no unnecessary reformatting
 - [ ] Output follows the mandatory format
 
-**Update your agent memory** as you discover codepaths, file locations, function signatures, test patterns, and implementation details in this codebase. This builds up institutional knowledge across conversations. Write concise notes about what you found and where.
-
-Examples of what to record:
-- Key function signatures and their locations (e.g., `join_dim` in `runtime/shapes.py`)
-- Test file patterns and what they cover
-- Common pitfalls encountered during implementation
-- File dependencies and import chains
-- Warning code conventions and existing codes
-
-# Persistent Agent Memory
-
-You have a persistent Persistent Agent Memory directory at `/root/projects/MATLAB_analysis/.claude/agent-memory/implementer/`. Its contents persist across conversations.
-
-As you work, consult your memory files to build on previous experience. When you encounter a mistake that seems like it could be common, check your Persistent Agent Memory for relevant notes — and if nothing is written yet, record what you learned.
-
-Guidelines:
-- `MEMORY.md` is always loaded into your system prompt — lines after 200 will be truncated, so keep it concise
-- Create separate topic files (e.g., `debugging.md`, `patterns.md`) for detailed notes and link to them from MEMORY.md
-- Update or remove memories that turn out to be wrong or outdated
-- Organize memory semantically by topic, not chronologically
-- Use the Write and Edit tools to update your memory files
-
-What to save:
-- Stable patterns and conventions confirmed across multiple interactions
-- Key architectural decisions, important file paths, and project structure
-- User preferences for workflow, tools, and communication style
-- Solutions to recurring problems and debugging insights
-
-What NOT to save:
-- Session-specific context (current task details, in-progress work, temporary state)
-- Information that might be incomplete — verify against project docs before writing
-- Anything that duplicates or contradicts existing CLAUDE.md instructions
-- Speculative or unverified conclusions from reading a single file
-
-Explicit user requests:
-- When the user asks you to remember something across sessions (e.g., "always use bun", "never auto-commit"), save it — no need to wait for multiple interactions
-- When the user asks to forget or stop remembering something, find and remove the relevant entries from your memory files
-- Since this memory is project-scope and shared with your team via version control, tailor your memories to this project
-
-## MEMORY.md
-
-Your MEMORY.md is currently empty. When you notice a pattern worth preserving across sessions, save it here. Anything in MEMORY.md will be included in your system prompt next time.
-
-# Persistent Agent Memory
-
-You have a persistent Persistent Agent Memory directory at `/root/projects/MATLAB_analysis/.claude/agent-memory/implementer/`. Its contents persist across conversations.
-
-As you work, consult your memory files to build on previous experience. When you encounter a mistake that seems like it could be common, check your Persistent Agent Memory for relevant notes — and if nothing is written yet, record what you learned.
-
-Guidelines:
-- `MEMORY.md` is always loaded into your system prompt — lines after 200 will be truncated, so keep it concise
-- Create separate topic files (e.g., `debugging.md`, `patterns.md`) for detailed notes and link to them from MEMORY.md
-- Update or remove memories that turn out to be wrong or outdated
-- Organize memory semantically by topic, not chronologically
-- Use the Write and Edit tools to update your memory files
-
-What to save:
-- Stable patterns and conventions confirmed across multiple interactions
-- Key architectural decisions, important file paths, and project structure
-- User preferences for workflow, tools, and communication style
-- Solutions to recurring problems and debugging insights
-
-What NOT to save:
-- Session-specific context (current task details, in-progress work, temporary state)
-- Information that might be incomplete — verify against project docs before writing
-- Anything that duplicates or contradicts existing CLAUDE.md instructions
-- Speculative or unverified conclusions from reading a single file
-
-Explicit user requests:
-- When the user asks you to remember something across sessions (e.g., "always use bun", "never auto-commit"), save it — no need to wait for multiple interactions
-- When the user asks to forget or stop remembering something, find and remove the relevant entries from your memory files
-- Since this memory is project-scope and shared with your team via version control, tailor your memories to this project
-
-## MEMORY.md
-
-Your MEMORY.md is currently empty. When you notice a pattern worth preserving across sessions, save it here. Anything in MEMORY.md will be included in your system prompt next time.
+**Update your agent memory** as you discover codepaths, file locations, function signatures, test patterns, and implementation details in this codebase. Write concise notes about what you found and where.
