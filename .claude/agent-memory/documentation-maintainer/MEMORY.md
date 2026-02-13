@@ -22,9 +22,10 @@
 - CLAUDE.md mentions warning code stability but does not list all codes
 
 ### Builtin Functions
-- Source of truth: `KNOWN_BUILTINS` constant in frontend/matlab_parser.py
-- Currently 19 functions (as of v0.8.1)
+- Source of truth: `KNOWN_BUILTINS` constant in frontend/matlab_parser.py (whitelist: 19 functions)
+- Shape rules: `_BUILTINS_WITH_SHAPE_RULES` in analysis/analysis_ir.py (14 functions as of v0.8.5)
 - CLAUDE.md and README.md do NOT list individual builtins (too volatile)
+- Document new shape rules in CHANGELOG.md with function signatures
 
 ### Test Organization (Updated v0.8.5+)
 - Discovery: Dynamic via `glob("tests/**/*.m", recursive=True)`
@@ -52,7 +53,13 @@
 - Keep Unreleased section for future changes
 - Version format: `[0.8.2]` (no 'v' prefix in section headers)
 
-## Recent Documentation Updates (v0.8.2-v0.8.3)
+### Symbolic Arithmetic Synchronization
+- **CLAUDE.md line 122**: Lists symbolic arithmetic capabilities
+- **README.md line 65**: Bulleted list of symbolic arithmetic features
+- **Pattern**: When adding new symbolic operators (add_dim, mul_dim), update BOTH locations
+- **v0.8.5 update**: Added multiplication support for repmat (mul_dim function)
+
+## Recent Documentation Updates (v0.8.2-v0.8.5)
 
 ### v0.8.2 Architectural Change
 - Unified Apply IR node for call-vs-index disambiguation
@@ -66,3 +73,18 @@
 - Consolidated three copies of indexing logic
 - Typed `Apply.args` properly as `List[IndexArg]`
 - Pure refactor: no test expectation changes, no user-facing changes
+
+### v0.8.4 Rich Builtin Shape Rules
+- Added shape rules for 12 functions (up from ~4)
+- Introduced `_eval_index_arg_to_shape()` helper
+- Test31.m (now tests/builtins/constructors.m) with 38 assertions
+- Fixed non-deterministic output in join_env() (sorted iteration)
+
+### v0.8.5 Symbolic Multiplication
+- Added `mul_dim()` function in runtime/shapes.py
+- Shape rules for reshape and repmat
+- Required updating symbolic arithmetic documentation in TWO places:
+  - CLAUDE.md line 122 (Key features list)
+  - README.md line 65 (analysis supports bullet list)
+- New test: tests/builtins/reshape_repmat.m (7 assertions)
+- Test count: 32 total

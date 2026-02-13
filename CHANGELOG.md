@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Nine specialized Claude Code agents for development workflow
 
+## [0.8.5] - 2026-02-13
+### Added
+- Shape rules for `reshape(A, m, n)` → `matrix[m x n]` and `repmat(A, m, n)` → `matrix[r*m x c*n]`
+- `mul_dim()` function in runtime/shapes.py for multiplicative symbolic arithmetic (with 0/1 short-circuits)
+- Test file tests/builtins/reshape_repmat.m with 7 test cases
+
 ## [0.8.4] - 2026-02-13
 ### Added
 - Rich builtin shape rules for 12 functions (matrix constructors, element-wise, query, transpose)
