@@ -343,6 +343,7 @@ class MatlabParser:
         """Postfix constructs after a primary.
         - Indexing: A(i), A(i,j), A(:,j), A(i,:), A(:,:)
         - Calls: zeros(...), ones(...) (subset)
+        - Apply: Unified node, dispatching deferred to analyzer
         """
         while True:
             tok = self.current()
@@ -352,12 +353,8 @@ class MatlabParser:
                 args = self.parse_paren_args()
                 self.eat(")")
 
-                # Treat known builtins as function calls.
-                # Everything else with (...) is indexing
-                if left[0] == "var" and left[2] in KNOWN_BUILTINS:
-                    left = ["call", lparen_tok.line, left, args]
-                else:
-                    left = ["index", lparen_tok.line, left, args]
+                # Emit unified apply node. Disambiguation happens in analyzer.
+                left = ["apply", lparen_tok.line, left, args]
 
             elif tok.kind == "TRANSPOSE":
                 t_tok = self.eat("TRANSPOSE")

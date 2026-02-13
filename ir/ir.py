@@ -50,6 +50,17 @@ class Call(Expr):
     func: Expr
     args: List[Expr]
 
+@dataclass(frozen=True)
+class Apply(Expr):
+    """Unified apply node for runtime call-vs-index disambiguation.
+
+    Represents foo(...) expressions where the decision to treat as a function call
+    or indexing operation is deferred to the analyzer based on shape information
+    and the presence of colon/range arguments.
+    """
+    base: Expr
+    args: List  # List[IndexArg]
+
 # ---- Indexing ----
 
 @dataclass(frozen=True)

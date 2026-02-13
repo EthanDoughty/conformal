@@ -18,7 +18,7 @@ _BUILTINS_WITH_SHAPE_RULES = {"zeros", "ones", "size", "isscalar"}
 from ir import (
     Program, Stmt,
     Assign, ExprStmt, While, For, If, OpaqueStmt,
-    Expr, Var, Const, MatrixLit, Call, Transpose, Neg, Index, BinOp,
+    Expr, Var, Const, MatrixLit, Call, Apply, Transpose, Neg, Index, BinOp,
     IndexArg, Colon, Range, IndexExpr,
 )
 
@@ -162,6 +162,153 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str]) -> Shape:
 
         return Shape.unknown()
 
+    if isinstance(expr, Apply):
+        line = expr.line
+
+        # Check for indexing indicators: colon or range in args
+        has_colon_or_range = any(isinstance(arg, (Colon, Range)) for arg in expr.args)
+
+        if has_colon_or_range:
+            # Definitely indexing: delegate to index-like logic
+            base_shape = eval_expr_ir(expr.base, env, warnings)
+
+            if base_shape.is_unknown():
+                if isinstance(expr.base, Var) and expr.base.name not in env.bindings:
+                    warnings.append(diag.warn_unknown_function(line, expr.base.name))
+                return Shape.unknown()
+
+            if base_shape.is_scalar():
+                warnings.append(diag.warn_indexing_scalar(line, expr))
+                return Shape.unknown()
+
+            if base_shape.is_matrix():
+                m = base_shape.rows
+                n = base_shape.cols
+                args = expr.args
+
+                if len(args) == 1:
+                    return Shape.scalar()
+
+                if len(args) == 2:
+                    a1, a2 = args
+
+                    r_extent = index_arg_to_extent_ir(a1, env, warnings, line)
+                    c_extent = index_arg_to_extent_ir(a2, env, warnings, line)
+
+                    # Strict: if extent unknown due to invalid indexing, return unknown
+                    def is_allowed_unknown(a: IndexArg) -> bool:
+                        return isinstance(a, (Colon, Range))
+
+                    if (r_extent is None and not is_allowed_unknown(a1)) or (c_extent is None and not is_allowed_unknown(a2)):
+                        return Shape.unknown()
+
+                    # Resolve ':' meaning "all rows/cols"
+                    if isinstance(a1, Colon):
+                        r_extent = m
+                    if isinstance(a2, Colon):
+                        c_extent = n
+
+                    # Range with unknown extent stays None (already)
+                    if r_extent == 1 and c_extent == 1:
+                        return Shape.scalar()
+
+                    return Shape.matrix(r_extent, c_extent)
+
+                if len(args) > 2:
+                    warnings.append(diag.warn_too_many_indices(line, expr))
+                    return Shape.unknown()
+
+            return Shape.unknown()
+
+        # No colon/range: check if base is a known builtin function
+        if isinstance(expr.base, Var):
+            fname = expr.base.name
+            if fname in KNOWN_BUILTINS:
+                # Treat as a function call
+                if fname in {"zeros", "ones"} and len(expr.args) == 2:
+                    try:
+                        r_dim = expr_to_dim_ir(unwrap_arg(expr.args[0]), env)
+                        c_dim = expr_to_dim_ir(unwrap_arg(expr.args[1]), env)
+                        return shape_of_zeros(r_dim, c_dim) if fname == "zeros" else shape_of_ones(r_dim, c_dim)
+                    except ValueError:
+                        # Colon/Range in builtin args: treat as indexing, not call
+                        pass
+                if fname == "size":
+                    if len(expr.args) == 1:
+                        try:
+                            eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings)
+                            return Shape.matrix(1, 2)
+                        except ValueError:
+                            # Colon in arg: treat as indexing
+                            pass
+                    elif len(expr.args) == 2:
+                        try:
+                            eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings)
+                            return Shape.scalar()
+                        except ValueError:
+                            # Colon in arg: treat as indexing
+                            pass
+                if fname == "isscalar" and len(expr.args) == 1:
+                    try:
+                        eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings)
+                        return Shape.scalar()
+                    except ValueError:
+                        # Colon in arg: treat as indexing
+                        pass
+                # Known builtin without a matching shape rule: return unknown silently
+                return Shape.unknown()
+
+            # Check if variable is unbound (unknown function)
+            if fname not in env.bindings:
+                warnings.append(diag.warn_unknown_function(line, fname))
+                return Shape.unknown()
+
+        # Default: treat as indexing (bound variable)
+        base_shape = eval_expr_ir(expr.base, env, warnings)
+
+        if base_shape.is_unknown():
+            return Shape.unknown()
+
+        if base_shape.is_scalar():
+            warnings.append(diag.warn_indexing_scalar(line, expr))
+            return Shape.unknown()
+
+        if base_shape.is_matrix():
+            m = base_shape.rows
+            n = base_shape.cols
+            args = expr.args
+
+            if len(args) == 1:
+                return Shape.scalar()
+
+            if len(args) == 2:
+                a1, a2 = args
+
+                r_extent = index_arg_to_extent_ir(a1, env, warnings, line)
+                c_extent = index_arg_to_extent_ir(a2, env, warnings, line)
+
+                def is_allowed_unknown(a: IndexArg) -> bool:
+                    return isinstance(a, (Colon, Range))
+
+                if (r_extent is None and not is_allowed_unknown(a1)) or (c_extent is None and not is_allowed_unknown(a2)):
+                    return Shape.unknown()
+
+                if isinstance(a1, Colon):
+                    r_extent = m
+                if isinstance(a2, Colon):
+                    c_extent = n
+
+                if r_extent == 1 and c_extent == 1:
+                    return Shape.scalar()
+
+                return Shape.matrix(r_extent, c_extent)
+
+            if len(args) > 2:
+                warnings.append(diag.warn_too_many_indices(line, expr))
+                return Shape.unknown()
+
+        return Shape.unknown()
+
     if isinstance(expr, Transpose):
         inner = eval_expr_ir(expr.operand, env, warnings)
         if inner.is_matrix():
@@ -298,6 +445,26 @@ def expr_to_dim_ir(expr: Expr, env: Env) -> Dim:
     if isinstance(expr, Var):
         return expr.name
     return None
+
+
+def unwrap_arg(arg: IndexArg) -> Expr:
+    """Extract the inner Expr from an IndexArg.
+
+    Used by builtin handlers to access argument expressions when Apply args
+    are stored as IndexArg (which can include Colon, Range, or IndexExpr).
+
+    Args:
+        arg: IndexArg to unwrap
+
+    Returns:
+        The inner Expr if arg is IndexExpr
+
+    Raises:
+        ValueError: If arg is Colon or Range (cannot be unwrapped to Expr)
+    """
+    if isinstance(arg, IndexExpr):
+        return arg.expr
+    raise ValueError(f"Cannot unwrap {type(arg).__name__} to Expr")
 
 
 def eval_binop_ir(
