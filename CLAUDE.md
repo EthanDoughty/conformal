@@ -31,6 +31,12 @@ make compare FILE=tests/control_flow/if_branch_mismatch.m    # or: python3 mmsha
 python3 mmshape.py --strict tests/recovery/struct_field.m
 ```
 
+**Fixed-point loop analysis** (iterative convergence):
+```bash
+python3 mmshape.py --fixpoint tests/loops/matrix_growth.m
+python3 mmshape.py --fixpoint --tests    # run all tests with fixpoint mode
+```
+
 **Clean build artifacts**:
 ```bash
 make clean
@@ -121,7 +127,7 @@ Each expression gets a shape from this abstract domain:
 - Symbolic dimension tracking (e.g., `n`, `m` represent dimensions)
 - Symbolic arithmetic for concatenation (e.g., `n x (k+m)`) and multiplication (e.g., `(n*k)`)
 - Control flow joins (merges `if`/`else` branches conservatively)
-- Single-pass loop analysis (no fixed-point iteration)
+- Single-pass loop analysis by default (optional fixed-point iteration via `--fixpoint`)
 
 ## Test File Format
 
@@ -129,9 +135,10 @@ Tests use inline assertions in MATLAB comments:
 ```matlab
 % EXPECT: warnings = 1
 % EXPECT: A = matrix[n x (k+m)]
+% EXPECT_FIXPOINT: A = matrix[None x None]   (override when --fixpoint active)
 ```
 
-The test runner (`run_all_tests.py`) validates these expectations against analysis results. All test files are organized in `tests/` subdirectories by category: `basics/`, `symbolic/`, `indexing/`, `control_flow/`, `literals/`, `builtins/`, and `recovery/` (discovered dynamically via `glob("tests/**/*.m", recursive=True)`).
+The test runner (`run_all_tests.py`) validates these expectations against analysis results. All test files are organized in `tests/` subdirectories by category: `basics/`, `symbolic/`, `indexing/`, `control_flow/`, `literals/`, `builtins/`, `loops/`, and `recovery/` (discovered dynamically via `glob("tests/**/*.m", recursive=True)`).
 
 ## Critical Implementation Details
 

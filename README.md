@@ -150,6 +150,8 @@ mmshape.py file.m – analyze a file (IR-based)
 
 `--tests` – run full test suite
 
+`--fixpoint` – use fixed-point iteration for loop analysis
+
 Exit codes:
 
 0 – success

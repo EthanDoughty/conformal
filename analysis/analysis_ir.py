@@ -23,6 +23,8 @@ _BUILTINS_WITH_SHAPE_RULES = {
     "reshape", "repmat",  # matrix manipulation (new)
 }
 
+MAX_LOOP_ITERATIONS = 3  # Maximum iterations for fixed-point loop analysis
+
 from ir import (
     Program, Stmt,
     Assign, ExprStmt, While, For, If, OpaqueStmt,
@@ -31,17 +33,18 @@ from ir import (
 )
 
 import analysis.diagnostics as diag
-from runtime.env import Env
+from runtime.env import Env, join_env
 from runtime.shapes import Shape, Dim, shape_of_zeros, shape_of_ones, join_dim, mul_dim
 from analysis.analysis_core import shapes_definitely_incompatible
 from analysis.matrix_literals import infer_matrix_literal_shape, as_matrix_shape, dims_definitely_conflict
 
 
-def analyze_program_ir(program: Program) -> Tuple[Env, List[str]]:
+def analyze_program_ir(program: Program, fixpoint: bool = False) -> Tuple[Env, List[str]]:
     """Analyze a complete Mini-MATLAB program for shape consistency.
 
     Args:
         program: IR program to analyze
+        fixpoint: If True, use fixed-point iteration for loop analysis
 
     Returns:
         Tuple of (final environment, list of warning messages)
@@ -49,17 +52,45 @@ def analyze_program_ir(program: Program) -> Tuple[Env, List[str]]:
     env = Env()
     warnings: List[str] = []
     for stmt in program.body:
-        analyze_stmt_ir(stmt, env, warnings)
+        analyze_stmt_ir(stmt, env, warnings, fixpoint=fixpoint)
+    # Deduplicate warnings while preserving order
+    warnings = list(dict.fromkeys(warnings))
     return env, warnings
 
 
-def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str]) -> Env:
+def _analyze_loop_body(body: list, env: Env, warnings: List[str], fixpoint: bool) -> None:
+    """Analyze a loop body, optionally using fixed-point iteration.
+
+    Modifies env in place. When fixpoint is True, iterates until the
+    environment converges or MAX_LOOP_ITERATIONS is reached, then joins
+    with the pre-loop environment to model "loop may not execute".
+    """
+    if not fixpoint:
+        for s in body:
+            analyze_stmt_ir(s, env, warnings, fixpoint=fixpoint)
+        return
+
+    pre_loop_env = env.copy()
+    for iteration in range(MAX_LOOP_ITERATIONS):
+        prev_bindings = env.bindings.copy()
+        for s in body:
+            analyze_stmt_ir(s, env, warnings, fixpoint=fixpoint)
+        if env.bindings == prev_bindings:
+            break
+
+    # Post-loop join: model "loop may execute 0 times"
+    merged = join_env(pre_loop_env, env)
+    env.bindings = merged.bindings
+
+
+def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str], fixpoint: bool = False) -> Env:
     """Analyze a statement and update environment with inferred shapes.
 
     Args:
         stmt: Statement to analyze
         env: Current environment (modified in place)
         warnings: List to append warnings to
+        fixpoint: If True, use fixed-point iteration for loop analysis
 
     Returns:
         Updated environment
@@ -80,14 +111,15 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str]) -> Env:
 
     if isinstance(stmt, While):
         _ = eval_expr_ir(stmt.cond, env, warnings)
-        for s in stmt.body:
-            analyze_stmt_ir(s, env, warnings)
+        _analyze_loop_body(stmt.body, env, warnings, fixpoint)
         return env
 
     if isinstance(stmt, For):
-        # Naive single-pass analysis (no fixed-point iteration)
-        for s in stmt.body:
-            analyze_stmt_ir(s, env, warnings)
+        # Bind loop variable to scalar
+        env.set(stmt.var, Shape.scalar())
+        # Evaluate iterator expression for side effects
+        _ = eval_expr_ir(stmt.it, env, warnings)
+        _analyze_loop_body(stmt.body, env, warnings, fixpoint)
         return env
 
     if isinstance(stmt, If):
@@ -97,11 +129,10 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str]) -> Env:
         else_env = env.copy()
 
         for s in stmt.then_body:
-            analyze_stmt_ir(s, then_env, warnings)
+            analyze_stmt_ir(s, then_env, warnings, fixpoint=fixpoint)
         for s in stmt.else_body:
-            analyze_stmt_ir(s, else_env, warnings)
+            analyze_stmt_ir(s, else_env, warnings, fixpoint=fixpoint)
 
-        from runtime.env import join_env
         merged = join_env(then_env, else_env)
         env.bindings = merged.bindings
         return env

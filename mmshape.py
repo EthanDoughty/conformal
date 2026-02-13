@@ -11,13 +11,14 @@ from analysis import analyze_program, analyze_program_ir
 from analysis.diagnostics import has_unsupported
 
 
-def run_file(file_path: str, compare: bool, strict: bool = False) -> int:
+def run_file(file_path: str, compare: bool, strict: bool = False, fixpoint: bool = False) -> int:
     """Analyze a single Mini-MATLAB file.
 
     Args:
         file_path: Path to .m file to analyze
         compare: If True, compare legacy vs IR analyzer outputs
         strict: If True, exit with error if unsupported constructs detected
+        fixpoint: If True, use fixed-point iteration for loop analysis
 
     Returns:
         Exit code (0 for success, 1 for error)
@@ -37,7 +38,7 @@ def run_file(file_path: str, compare: bool, strict: bool = False) -> int:
     ir_prog = lower_program(syntax_ast)
 
     # Default behavior: run IR analysis
-    env_ir, warnings_ir = analyze_program_ir(ir_prog)
+    env_ir, warnings_ir = analyze_program_ir(ir_prog, fixpoint=fixpoint)
 
     if compare:
         env_syntax, warnings_syntax = analyze_program(syntax_ast)
@@ -78,18 +79,19 @@ def run_file(file_path: str, compare: bool, strict: bool = False) -> int:
     return 0
 
 
-def run_tests(strict: bool = False) -> int:
+def run_tests(strict: bool = False, fixpoint: bool = False) -> int:
     """Run the full test suite.
 
     Args:
         strict: If True, exit with error if unsupported constructs detected
+        fixpoint: If True, use fixed-point iteration for loop analysis
 
     Returns:
         Exit code (0 for all tests passed, 1 otherwise)
     """
     # Import here so normal usage doesn't load test code
     import run_all_tests
-    return run_all_tests.main(return_code=True, strict=strict)
+    return run_all_tests.main(return_code=True, strict=strict, fixpoint=fixpoint)
 
 
 def main() -> int:
@@ -118,16 +120,21 @@ def main() -> int:
         action="store_true",
         help="Exit with error if unsupported constructs detected"
     )
+    parser.add_argument(
+        "--fixpoint",
+        action="store_true",
+        help="Use fixed-point iteration for loop analysis"
+    )
     args = parser.parse_args()
 
     if args.tests:
-        return run_tests(strict=args.strict)
+        return run_tests(strict=args.strict, fixpoint=args.fixpoint)
 
     if not args.file:
         parser.print_help()
         return 1
 
-    return run_file(args.file, compare=args.compare, strict=args.strict)
+    return run_file(args.file, compare=args.compare, strict=args.strict, fixpoint=args.fixpoint)
 
 
 if __name__ == "__main__":

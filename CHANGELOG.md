@@ -6,8 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.8.6] - 2026-02-13
 ### Added
-- Nine specialized Claude Code agents for development workflow
+- Fixed-point iteration for loop analysis via `--fixpoint` CLI flag (max 3 iterations with convergence detection)
+- `EXPECT_FIXPOINT:` test directive for fixpoint-specific expectations
+- New test category `tests/loops/` with 10 test files
+
+### Fixed
+- `For` loop handler now binds loop variable to scalar shape
+- Warning deduplication preserves first-occurrence order via `dict.fromkeys`
 
 ## [0.8.5] - 2026-02-13
 ### Added

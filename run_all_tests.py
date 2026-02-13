@@ -23,6 +23,7 @@ TEST_FILES = sorted(glob.glob("tests/**/*.m", recursive=True), key=test_sort_key
 COMPARE = False
 
 EXPECT_RE = re.compile(r"%\s*EXPECT:\s*(.+)$")
+EXPECT_FIXPOINT_RE = re.compile(r"%\s*EXPECT_FIXPOINT:\s*(.+)$")
 EXPECT_WARNINGS_RE = re.compile(r"warnings\s*=\s*(\d+)\s*$", re.IGNORECASE)
 EXPECT_BINDING_RE = re.compile(r"([A-Za-z_]\w*)\s*=\s*(.+)$")
 
@@ -31,12 +32,33 @@ def normalize_shape_str(s: str) -> str:
     return re.sub(r"\s+", "", s.strip())
 
 
-def parse_expectations(src: str) -> Tuple[Dict[str, str], int | None]:
+def parse_expectations(src: str, fixpoint: bool = False) -> Tuple[Dict[str, str], int | None]:
     expected_shapes: Dict[str, str] = {}
     expected_warning_count: int | None = None
+    # Fixpoint-specific expectations override defaults when in fixpoint mode
+    fp_shapes: Dict[str, str] = {}
+    fp_warning_count: int | None = None
+    has_fp_expectations = False
 
     for line in src.splitlines():
-        m = EXPECT_RE.match(line.strip())
+        stripped = line.strip()
+
+        # Check for EXPECT_FIXPOINT: lines
+        m_fp = EXPECT_FIXPOINT_RE.match(stripped)
+        if m_fp:
+            has_fp_expectations = True
+            payload = m_fp.group(1).strip()
+            m_warn = EXPECT_WARNINGS_RE.match(payload)
+            if m_warn:
+                fp_warning_count = int(m_warn.group(1))
+                continue
+            m_bind = EXPECT_BINDING_RE.match(payload)
+            if m_bind:
+                fp_shapes[m_bind.group(1)] = normalize_shape_str(m_bind.group(2).strip())
+            continue
+
+        # Check for EXPECT: lines
+        m = EXPECT_RE.match(stripped)
         if not m:
             continue
 
@@ -53,15 +75,22 @@ def parse_expectations(src: str) -> Tuple[Dict[str, str], int | None]:
             shape_str = m_bind.group(2).strip()
             expected_shapes[var] = normalize_shape_str(shape_str)
 
+    # In fixpoint mode, override with fixpoint-specific expectations
+    if fixpoint and has_fp_expectations:
+        expected_shapes.update(fp_shapes)
+        if fp_warning_count is not None:
+            expected_warning_count = fp_warning_count
+
     return expected_shapes, expected_warning_count
 
 
-def run_test(path: str, compare: bool = True) -> tuple[bool, bool]:
+def run_test(path: str, compare: bool = True, fixpoint: bool = False) -> tuple[bool, bool]:
     """Run a test file and return (passed, has_unsupported_warnings).
 
     Args:
         path: Path to test file
         compare: Whether to compare legacy vs IR analysis
+        fixpoint: If True, use fixed-point iteration for loop analysis
 
     Returns:
         Tuple of (test_passed, has_unsupported_stmt_warnings)
@@ -72,7 +101,7 @@ def run_test(path: str, compare: bool = True) -> tuple[bool, bool]:
         return False, False
 
     src = open(path, "r").read()
-    expected_shapes, expected_warning_count = parse_expectations(src)
+    expected_shapes, expected_warning_count = parse_expectations(src, fixpoint=fixpoint)
 
     try:
         syntax_ast = parse_matlab(src)
@@ -83,7 +112,7 @@ def run_test(path: str, compare: bool = True) -> tuple[bool, bool]:
     ir_prog = lower_program(syntax_ast)
 
     # IR is the source of truth for expectations.
-    env, warnings = analyze_program_ir(ir_prog)
+    env, warnings = analyze_program_ir(ir_prog, fixpoint=fixpoint)
 
     # Check for unsupported statement warnings using shared helper
     has_unsupported_warnings = has_unsupported(warnings)
@@ -138,12 +167,13 @@ def run_test(path: str, compare: bool = True) -> tuple[bool, bool]:
     return passed, has_unsupported_warnings
 
 
-def main(return_code: bool = False, strict: bool = False) -> int:
+def main(return_code: bool = False, strict: bool = False, fixpoint: bool = False) -> int:
     """Run all tests.
 
     Args:
         return_code: If True, return exit code instead of exiting
         strict: If True, exit with error if unsupported constructs detected
+        fixpoint: If True, use fixed-point iteration for loop analysis
 
     Returns:
         Exit code (0 for all tests passed, 1 otherwise)
@@ -151,13 +181,14 @@ def main(return_code: bool = False, strict: bool = False) -> int:
     total = 0
     ok = 0
     compare = "--compare" in sys.argv
-    # Accept strict from parameter or sys.argv for backwards compatibility
+    # Accept strict and fixpoint from parameters or sys.argv for backwards compatibility
     strict = strict or "--strict" in sys.argv
+    fixpoint = fixpoint or "--fixpoint" in sys.argv
     any_unsupported = False
 
     for path in TEST_FILES:
         total += 1
-        passed, has_unsupported = run_test(path, compare=compare)
+        passed, has_unsupported = run_test(path, compare=compare, fixpoint=fixpoint)
         if passed:
             ok += 1
         if has_unsupported:
