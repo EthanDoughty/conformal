@@ -21,6 +21,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Renamed test-runner2 to semantic-differential-auditor for clarity
 - Enhanced validation pipeline with quality, structural, and semantic checks
 
+## [0.8.3] - 2026-02-13
+### Changed
+- Extracted shared indexing logic into `_eval_indexing()` helper in analysis/analysis_ir.py
+- Consolidated three duplicate copies of indexing logic (Apply-colon, Apply-default, Index handler)
+- Typed Apply.args properly as `List[IndexArg]` in ir/ir.py (was bare `List`)
+
+## [0.8.2] - 2026-02-13
+### Added
+- Unified `Apply` IR node for call-vs-index disambiguation at analysis time
+- Parser now emits `['apply', ...]` for all `foo(...)` expressions (no parse-time decision)
+- `unwrap_arg()` helper in analysis/analysis_ir.py for extracting Expr from IndexArg
+- Test30.m for Apply node disambiguation (colon→indexing, unbound→W_UNKNOWN_FUNCTION, bound→indexing)
+
+### Changed
+- Call-vs-index disambiguation moved from parse time (parser) to analysis time (analyzer)
+- Analyzer uses colon/range presence, builtin whitelist, and variable binding to disambiguate
+- `pretty_expr_ir` in analysis/diagnostics.py now handles Apply nodes
+
 ## [0.8.1] - 2026-02-13
 ### Added
 - Expanded builtin function set from 4 to 19 functions (KNOWN_BUILTINS in frontend/matlab_parser.py)

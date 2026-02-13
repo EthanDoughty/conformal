@@ -383,7 +383,7 @@ Test files use inline assertions in MATLAB comments:
 % EXPECT: A = matrix[n x (k+m)]
 ```
 
-The test runner parses these expectations and validates them against the analysis results. All test files are in `tests/` and numbered test1.m through test27.m.
+The test runner parses these expectations and validates them against the analysis results. All test files are in `tests/` (dynamically discovered via glob pattern).
 
 ## Important Implementation Details
 

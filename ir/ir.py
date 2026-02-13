@@ -59,7 +59,7 @@ class Apply(Expr):
     and the presence of colon/range arguments.
     """
     base: Expr
-    args: List  # List[IndexArg]
+    args: List[IndexArg]
 
 # ---- Indexing ----
 
