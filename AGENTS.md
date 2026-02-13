@@ -78,7 +78,7 @@ This project uses **9 specialized Claude Code agents** with distinct, non-overla
 #### structural-ci-gatekeeper
 - **Purpose**: Validates test infrastructure and CLI mechanics
 - **Responsibilities**:
-  - Test discovery (`glob("tests/test*.m")` finds all tests)
+  - Test discovery (`glob("tests/**/*.m", recursive=True)` finds all tests)
   - CLI mechanics (`--tests`, `--strict`, `--compare` work correctly)
   - Exit codes (correct for success/failure)
   - Warning code stability (all use `W_*` prefix)
@@ -300,15 +300,15 @@ Task(subagent_type="spec-writer", prompt="...", description="...")
 ## Running Tests
 
 - **Full test suite**: `python3 run_all_tests.py` or `make test`
-  - Runs all test files (discovered via `glob("tests/test*.m")`)
+  - Runs all test files (discovered via `glob("tests/**/*.m", recursive=True)`)
   - Automatically validates inline expectations (comments starting with `% EXPECT:`)
   - Reports pass/fail status for each test
 
-- **Single test**: `python3 mmshape.py tests/testN.m` or `make run FILE=tests/testN.m`
+- **Single test**: `python3 mmshape.py tests/basics/inner_dim_mismatch.m` or `make run FILE=tests/basics/inner_dim_mismatch.m`
   - Runs analysis on a single test file
   - Displays warnings and final environment
 
-- **Compare mode**: `python3 mmshape.py --compare tests/testN.m` or `make compare FILE=tests/testN.m`
+- **Compare mode**: `python3 mmshape.py --compare tests/control_flow/if_branch_mismatch.m` or `make compare FILE=tests/control_flow/if_branch_mismatch.m`
   - Compares legacy syntax analyzer vs IR analyzer
   - Useful for debugging differences between the two pipelines
 
@@ -414,8 +414,8 @@ The IR analyzer is the source of truth for test expectations.
 The analyzer continues after detecting errors to provide maximum information. When a definite mismatch is detected (e.g., inner dimension mismatch in `A*B`), it emits a warning and treats the result as `unknown` to allow analysis to continue.
 
 ## Known Behaviors
-- Test discovery is dynamic in `run_all_tests.py` (`glob("tests/test*.m")`), so treat files in `tests/` as source of truth if docs disagree.
+- Test discovery is dynamic in `run_all_tests.py` (`glob("tests/**/*.m", recursive=True)`), so treat files in `tests/` subdirectories as source of truth if docs disagree.
 - `run_all_tests.py --compare` currently does not execute compare-mode output due to a wiring bug (the parsed flag is not used at runtime).
-- `python3 mmshape.py --tests --compare` currently behaves like `--tests` only; compare mode is only reliable for single-file runs (`mmshape.py --compare tests/testN.m`).
-- `--strict` fails if any `W_UNSUPPORTED_*` warning is emitted. This is expected for unsupported-construct recovery tests: `tests/test22.m`, `tests/test23.m`, `tests/test24.m`, `tests/test25.m`, and `tests/test27.m`.
+- `python3 mmshape.py --tests --compare` currently behaves like `--tests` only; compare mode is only reliable for single-file runs (`mmshape.py --compare tests/category/test_name.m`).
+- `--strict` fails if any `W_UNSUPPORTED_*` warning is emitted. This is expected for unsupported-construct recovery tests in `tests/recovery/`: `struct_field.m`, `cell_array.m`, `multiple_assignment.m`, `multiline_braces.m`, and `end_in_parens.m`.
 - IR analysis is the default for CLI analysis (`mmshape.py`) and for test expectations, while legacy analysis remains available for per-file comparison.

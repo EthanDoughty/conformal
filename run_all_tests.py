@@ -14,13 +14,12 @@ from analysis.diagnostics import has_unsupported
 from runtime.shapes import Shape
 
 
-def test_sort_key(path: str) -> int:
-    """Extract numeric suffix from test filename for sorting."""
-    match = re.search(r'test(\d+)\.m$', path)
-    return int(match.group(1)) if match else 0
+def test_sort_key(path: str) -> str:
+    """Sort test files alphabetically by full path."""
+    return path
 
 
-TEST_FILES = sorted(glob.glob("tests/test*.m"), key=test_sort_key)
+TEST_FILES = sorted(glob.glob("tests/**/*.m", recursive=True), key=test_sort_key)
 COMPARE = False
 
 EXPECT_RE = re.compile(r"%\s*EXPECT:\s*(.+)$")

@@ -18,17 +18,17 @@ python3 mmshape.py --tests         # via CLI
 
 **Analyze a single file**:
 ```bash
-make run FILE=tests/test4.m        # or: python3 mmshape.py tests/test4.m
+make run FILE=tests/basics/inner_dim_mismatch.m        # or: python3 mmshape.py tests/basics/inner_dim_mismatch.m
 ```
 
 **Compare legacy vs IR analyzer** (single file only):
 ```bash
-make compare FILE=tests/test4.m    # or: python3 mmshape.py --compare tests/test4.m
+make compare FILE=tests/control_flow/if_branch_mismatch.m    # or: python3 mmshape.py --compare tests/control_flow/if_branch_mismatch.m
 ```
 
 **Strict mode** (fail on unsupported constructs):
 ```bash
-python3 mmshape.py --strict tests/test22.m
+python3 mmshape.py --strict tests/recovery/struct_field.m
 ```
 
 **Clean build artifacts**:
@@ -131,7 +131,7 @@ Tests use inline assertions in MATLAB comments:
 % EXPECT: A = matrix[n x (k+m)]
 ```
 
-The test runner (`run_all_tests.py`) validates these expectations against analysis results. All test files are in `tests/` (discovered dynamically via `glob("tests/test*.m")`).
+The test runner (`run_all_tests.py`) validates these expectations against analysis results. All test files are organized in `tests/` subdirectories by category: `basics/`, `symbolic/`, `indexing/`, `control_flow/`, `literals/`, `builtins/`, and `recovery/` (discovered dynamically via `glob("tests/**/*.m", recursive=True)`).
 
 ## Critical Implementation Details
 
@@ -161,9 +161,9 @@ When a definite mismatch is detected (e.g., inner dimension mismatch in `A*B`), 
 
 ## Known Behaviors and Gotchas
 
-- Test discovery is dynamic via `glob("tests/test*.m")` in `run_all_tests.py`
+- Test discovery is dynamic via `glob("tests/**/*.m", recursive=True)` in `run_all_tests.py`
 - `--compare` mode only works reliably for single-file runs; `--tests --compare` ignores the compare flag
-- `--strict` mode fails if any `W_UNSUPPORTED_*` warning is emitted (expected for test22.m, test23.m, test24.m, test25.m, test27.m)
+- `--strict` mode fails if any `W_UNSUPPORTED_*` warning is emitted (expected for recovery tests: `tests/recovery/struct_field.m`, `tests/recovery/cell_array.m`, `tests/recovery/multiple_assignment.m`, `tests/recovery/multiline_braces.m`, `tests/recovery/end_in_parens.m`)
 - When editing parser/lowering, check delimiter syncing and token precedence carefully
 
 ## Agent Workflow

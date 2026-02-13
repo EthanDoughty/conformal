@@ -178,7 +178,7 @@ Escalate to Ethan (Integrator) if:
 ## Test Case Deep Dives
 
 When analyzing failing tests, reference:
-- `tests/test1.m` – `tests/test27.m`: What feature each tests
+- Test files in `tests/` subdirectories (basics/, symbolic/, indexing/, control_flow/, literals/, builtins/, recovery/)
 - Expected shapes and symbolic dimensions per test
 - Control flow patterns (if/else, while) per test
 - Known edge cases (e.g., concatenation with symbolic dimensions)

@@ -88,25 +88,37 @@ Each test file:
 
 | Tests | Category
 |------|------------
-| 1-4  | Basic arithmetic
-| 5    | Colon vectors and transpose
-| 6    | Symbolic dimensions
-| 7    | Scalar Expansion
-| 8    | Elementwise mismatches
-| 9    | Indexing semantics
-| 10   | Control-flow joins
-| 11-14| Matrix literals
-| 15   | Symbolic Concatenation
-| 16-18| Indexing Slices and Invalid Scalar Indexing
-| 19-20| Range Indexing Slices
-| 21   | Invalid non-scalar index argument
-| 22-25| Unsupported construct recovery (parse recovery tests)
-| 26   | Extended control flow patterns
-| 27   | Advanced symbolic dimension tracking
-| 28   | Expanded builtins and unknown function warning
-| 29   | Multiline matrix literals with newline separators
-| 30   | Apply node disambiguation (colon/builtin/unbound/indexing)
-| 31   | Rich builtin shape rules (eye/rand/randn/abs/sqrt/transpose/length/numel)
+| basics/valid_add.m | Basic addition
+| basics/invalid_add.m | Invalid addition (dimension mismatch)
+| basics/matrix_multiply.m | Matrix multiplication
+| basics/inner_dim_mismatch.m | Inner dimension mismatch
+| basics/scalar_matrix_ops.m | Scalar-matrix operations
+| basics/elementwise_ops.m | Elementwise operations with errors
+| basics/reassignment.m | Variable reassignment
+| symbolic/dimension_tracking.m | Colon vectors and symbolic dimensions
+| symbolic/dimension_arithmetic.m | Symbolic dimension arithmetic
+| indexing/scalar_index.m | Scalar indexing
+| indexing/slice_index.m | Slice indexing
+| indexing/range_index.m | Range indexing
+| indexing/linear_index.m | Linear indexing (errors)
+| indexing/invalid_row_index.m | Invalid row index
+| indexing/invalid_col_index.m | Invalid column index
+| indexing/invalid_linear_index.m | Invalid linear index
+| control_flow/if_branch_mismatch.m | Control-flow joins with mismatches
+| control_flow/suspicious_comparison.m | Matrix-scalar comparisons
+| literals/matrix_literal.m | Matrix literals
+| literals/horzcat_vertcat.m | Horizontal and vertical concatenation
+| literals/symbolic_concat.m | Symbolic concatenation
+| builtins/unknown_function.m | Unknown function warning
+| builtins/shape_preserving.m | Shape-preserving builtins
+| builtins/call_vs_index.m | Call vs index disambiguation
+| builtins/constructors.m | Rich builtin shape rules (eye/rand/randn/abs/sqrt/transpose/length/numel)
+| recovery/struct_field.m | Unsupported struct field access
+| recovery/cell_array.m | Unsupported cell array indexing
+| recovery/multiple_assignment.m | Unsupported multiple assignment
+| recovery/multiline_braces.m | Unsupported multiline cell indexing
+| recovery/dot_elementwise.m | Dot-elementwise edge cases
+| recovery/end_in_parens.m | Unsupported end in parentheses
 
 ## Getting Started
 
@@ -116,10 +128,10 @@ Clone and Verify
 `make test`
 
 Analyze a File
-`make run FILE=tests/test4.m`
+`make run FILE=tests/basics/inner_dim_mismatch.m`
 
 Compare IR vs Legacy Analyzer
-`make compare FILE=tests/test4.m`
+`make compare FILE=tests/control_flow/if_branch_mismatch.m`
 
 Example Output
 `Warnings:`
