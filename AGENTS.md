@@ -98,29 +98,26 @@ This file is for the **orchestrator (Coop)** and human integrator. Individual ag
 
 ### Operations
 
-#### documentation-maintainer
-- **Purpose**: Keeps all documentation synchronized with code
+#### documentation-maintainer (proactive)
+- **Purpose**: Keeps documentation synchronized with code after feature changes
 - **Responsibilities**:
-  - Sync CLAUDE.md, AGENTS.md, README.md with codebase
-  - Validate docstrings match function signatures
-  - Maintain CHANGELOG.md entries
-  - Check cross-references and examples
-  - Ensure inline comments are accurate
-- **Triggers**: After agent changes, API changes, before version bump, monthly review
-- **Output**: DOCUMENTATION SYNC REPORT (drift score + fixes)
-- **Does NOT**: Change code behavior, make architectural decisions
+  - Update CHANGELOG.md, README.md, CLAUDE.md after code changes
+  - Use change-type→document mapping to decide what needs updating
+- **Triggers**: Proactively after implementer adds features, builtins, or shape rules
+- **Output**: CHANGES MADE + VERIFICATION + SYNC STATUS
+- **Does NOT**: Validate docstrings/comments (QA's job), change code behavior
 
-#### release-coordinator
-- **Purpose**: Orchestrates version bumps and release process
+#### release-coordinator (proactive)
+- **Purpose**: Final pipeline step — organizes commits, handles versioning
 - **Responsibilities**:
-  - Run all validation agents before release
-  - Propose version number and CHANGELOG entries
-  - Verify release checklist complete
-  - Coordinate release workflow
-  - **ALWAYS asks user approval** before changing commit messages or README.md
-- **Triggers**: Before version bump, monthly release prep, on demand
-- **Output**: RELEASE READINESS REPORT (status + proposed changes)
-- **Does NOT**: Auto-commit, auto-tag, or auto-push without approval
+  - Organize changes into logical commits (feature, docs, infrastructure)
+  - Propose version numbers (decimal: 0.8.5, not semver)
+  - Draft CHANGELOG entries
+  - Run pre-commit validation (`python3 mmshape.py --tests`)
+  - **ALWAYS asks user approval** before committing
+- **Triggers**: Proactively after QA and doc-maintainer complete — final step before user review
+- **Output**: CHANGES SUMMARY + PROPOSED COMMITS + VERSION + CHANGELOG DRAFT + STATUS
+- **Does NOT**: Implement features, modify code files, push without approval
 
 ### Project Governance
 
@@ -169,8 +166,8 @@ Task(subagent_type="spec-writer", prompt="...", description="...")
 - **quality-assurance**: Runs after code changes, focuses on quality not correctness
 - **test validation**: Must use BOTH structural-ci-gatekeeper AND semantic-differential-auditor for comprehensive coverage
 - **test-fixer**: Only produces minimal patches; does not add features or refactor
-- **documentation-maintainer**: Syncs docs after agent/API changes, before releases
-- **release-coordinator**: ALWAYS asks user approval before changing commit messages or README.md
+- **documentation-maintainer**: Proactively syncs docs after feature changes (CHANGELOG, README, CLAUDE.md)
+- **release-coordinator**: Proactively organizes commits at end of pipeline; ALWAYS asks user approval before committing
 
 ## Pipeline Workflows
 
@@ -183,23 +180,17 @@ Task(subagent_type="spec-writer", prompt="...", description="...")
    ↓
 3. mentor-reviewer: Reviews plan, asks 3-7 questions
    ↓
-4. Human: Answers questions in TASK.md
+4. Human: Answers questions → mentor-reviewer approves
    ↓
-5. mentor-reviewer: Approves approach
+5. implementer: Implements code, runs initial tests
    ↓
-6. implementer: Implements code, runs initial tests
+6. quality-assurance (proactive): Checks code quality and style
    ↓
-7. quality-assurance: Checks code quality, style, documentation
+7. documentation-maintainer (proactive): Syncs docs with changes
    ↓
-8. structural-ci-gatekeeper: Validates infrastructure
+8. release-coordinator (proactive): Organizes commits, proposes version
    ↓
-9. semantic-differential-auditor: Validates correctness
-   ↓
-10. If failures:
-    test-fixer: Produces minimal patch
-    Go to step 7
-    ↓
-11. Human Integrator: Reviews all validation → MERGE
+9. Human Integrator: Approves commits → MERGE
 ```
 
 ### Workflow 2: Quick Bug Fix
@@ -209,13 +200,11 @@ Task(subagent_type="spec-writer", prompt="...", description="...")
    ↓
 2. implementer: Reads context, produces fix, runs tests
    ↓
-3. quality-assurance: Quick quality check (style, hygiene)
+3. quality-assurance (proactive): Quick quality check
    ↓
-4. structural-ci-gatekeeper: Validates infrastructure
+4. release-coordinator (proactive): Organizes commit
    ↓
-5. semantic-differential-auditor: Validates correctness
-   ↓
-6. Human Integrator: Reviews → MERGE
+5. Human Integrator: Approves → MERGE
 ```
 
 ### Workflow 3: Architecture Review Only
@@ -246,22 +235,18 @@ Task(subagent_type="spec-writer", prompt="...", description="...")
 5. All green → Human: MERGE
 ```
 
-### Workflow 5: Version Release
+### Workflow 5: Version Release (Standalone)
 
 ```
 1. Human: "Prepare release for v0.8"
    ↓
-2. release-coordinator: Runs all validation agents
-   (quality-assurance, structural-ci-gatekeeper,
-    semantic-differential-auditor, documentation-maintainer)
+2. release-coordinator: Reviews all changes since last version
    ↓
-3. release-coordinator: Reports status, proposes CHANGELOG + version
+3. release-coordinator: Proposes commits, version, CHANGELOG
    ↓
-4. Human: Approves (or edits) via AskUserQuestion
+4. Human: Approves → release-coordinator commits
    ↓
-5. release-coordinator: Updates files, reports READY
-   ↓
-6. Human: Reviews, commits, tags, pushes
+5. Human: Tags and pushes
 ```
 
 For project architecture, commands, test format, shape system, and known behaviors, see **CLAUDE.md** (auto-loaded for all agents).

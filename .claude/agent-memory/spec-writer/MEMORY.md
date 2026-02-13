@@ -24,6 +24,8 @@
 - `Dim`: int | str (symbolic) | None (unknown)
 - `join_dim(a, b)`: Returns `a` if `a==b`, else `None` (loses precision)
 - `dims_definitely_conflict(a, b)`: Conservative check (returns False if either is None)
+- `add_dim(a, b)`: Additive symbolic arithmetic (lines 93-108) — returns `a+b` for ints, `"(a+b)"` for symbolic, `None` if either is `None`
+- `sum_dims(dimensions)`: Sums a list of dimensions using `add_dim` (lines 110-124)
 
 ## Environment Operations (`runtime/env.py`)
 - `Env`: Dict[str, Shape] with get/set/copy methods
@@ -45,13 +47,18 @@
   - Base is unbound variable → emit `W_UNKNOWN_FUNCTION`, return unknown
   - Otherwise → treat as indexing
 
-## Analyzer Call Handling (Phase 2 COMPLETE, Phase 3 IN PROGRESS)
-- Lines 165-224 of `analysis_ir.py`: Apply node evaluation with runtime disambiguation
-- Line 16: `_BUILTINS_WITH_SHAPE_RULES` set tracks which builtins have implemented shape rules
-- Currently handled: `zeros`, `ones`, `size`, `isscalar` (v0.8.3)
-- Other builtins in `KNOWN_BUILTINS` return `unknown` silently (line 215)
-- Unrecognized functions emit `W_UNKNOWN_FUNCTION` and return `unknown` (lines 219-220)
-- **Phase 3 goal**: Add shape rules for `eye`, `rand`, `randn`, `abs`, `sqrt`, `transpose`, `length`, `numel`
+## Analyzer Call Handling (Phase 3 COMPLETE as of v0.8.4)
+- Lines 201-285 of `analysis_ir.py`: Apply node evaluation with runtime disambiguation
+- Line 16-23: `_BUILTINS_WITH_SHAPE_RULES` set tracks which builtins have implemented shape rules
+- Currently handled (v0.8.4): `zeros`, `ones`, `eye`, `rand`, `randn`, `abs`, `sqrt`, `transpose`, `length`, `numel`, `size`, `isscalar`
+- Still missing from 19-function whitelist: `reshape`, `repmat`, `linspace`, `diag`, `det`, `inv`, `norm`
+- Other builtins in `KNOWN_BUILTINS` return `unknown` silently (line 276)
+- Unrecognized functions emit `W_UNKNOWN_FUNCTION` and return `unknown` (lines 280-281)
+- **Builtin shape rule patterns**:
+  - Matrix constructors: Check arg count (0/1/2), use `expr_to_dim_ir` + `unwrap_arg`, return matrix shapes
+  - Element-wise ops: Use `_eval_index_arg_to_shape` to get input shape, return same shape
+  - Query functions: Evaluate arg to force side effects, return scalar
+  - Transpose: Extract dimensions and swap them
 
 ## Warning Infrastructure (`analysis/diagnostics.py`)
 - Warning functions return strings starting with `W_*` code
