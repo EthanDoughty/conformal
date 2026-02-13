@@ -107,6 +107,35 @@ def add_dim(a: Dim, b: Dim) -> Dim:
     return f"({a}+{b})"
 
 
+def mul_dim(a: Dim, b: Dim) -> Dim:
+    """Multiply two dimensions symbolically.
+
+    Args:
+        a: First dimension
+        b: Second dimension
+
+    Returns:
+        Product of dimensions (concrete if both are ints, symbolic otherwise)
+        Short-circuits: mul_dim(0, x) → 0, mul_dim(1, x) → x (both directions)
+    """
+    # Short-circuit: 0 * x = 0 (and x * 0 = 0)
+    if a == 0 or b == 0:
+        return 0
+    # Short-circuit: 1 * x = x (and x * 1 = x)
+    if a == 1:
+        return b
+    if b == 1:
+        return a
+    # Unknown dimension in either position
+    if a is None or b is None:
+        return None
+    # Both concrete: multiply
+    if isinstance(a, int) and isinstance(b, int):
+        return a * b
+    # Symbolic: create symbolic product
+    return f"({a}*{b})"
+
+
 def sum_dims(dimensions: list[Dim]) -> Dim:
     """Sum a list of dimensions.
 

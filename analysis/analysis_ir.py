@@ -20,6 +20,7 @@ _BUILTINS_WITH_SHAPE_RULES = {
     "transpose",          # transpose (swap rows/cols)
     "length", "numel",    # query functions (return scalar)
     "size", "isscalar",   # other builtins with shape rules
+    "reshape", "repmat",  # matrix manipulation (new)
 }
 
 from ir import (
@@ -31,7 +32,7 @@ from ir import (
 
 import analysis.diagnostics as diag
 from runtime.env import Env
-from runtime.shapes import Shape, Dim, shape_of_zeros, shape_of_ones, join_dim
+from runtime.shapes import Shape, Dim, shape_of_zeros, shape_of_ones, join_dim, mul_dim
 from analysis.analysis_core import shapes_definitely_incompatible
 from analysis.matrix_literals import infer_matrix_literal_shape, as_matrix_shape, dims_definitely_conflict
 
@@ -272,6 +273,46 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str]) -> Shape:
                 if fname in {"length", "numel"} and len(expr.args) == 1:
                     _ = _eval_index_arg_to_shape(expr.args[0], env, warnings)
                     return Shape.scalar()
+                # Reshape function: return matrix[m x n] from args 2 and 3
+                if fname == "reshape" and len(expr.args) == 3:
+                    try:
+                        # Evaluate first arg for side effects, discard its shape
+                        _ = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings)
+                        # Extract dimensions from args 2 and 3
+                        m = expr_to_dim_ir(unwrap_arg(expr.args[1]), env)
+                        n = expr_to_dim_ir(unwrap_arg(expr.args[2]), env)
+                        return Shape.matrix(m, n)
+                    except ValueError:
+                        # Colon/Range in args: cannot reshape with colons
+                        pass
+                # Repmat function: replicate matrix
+                if fname == "repmat" and len(expr.args) == 3:
+                    try:
+                        # Evaluate first arg to get its shape
+                        a_shape = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings)
+                        # Extract replication factors from args 2 and 3
+                        m = expr_to_dim_ir(unwrap_arg(expr.args[1]), env)
+                        n = expr_to_dim_ir(unwrap_arg(expr.args[2]), env)
+
+                        # If a is unknown, result is unknown
+                        if a_shape.is_unknown():
+                            return Shape.unknown()
+
+                        # If a is scalar, treat as 1x1 matrix
+                        if a_shape.is_scalar():
+                            a_rows = 1
+                            a_cols = 1
+                        else:
+                            a_rows = a_shape.rows
+                            a_cols = a_shape.cols
+
+                        # Result is [a_rows * m x a_cols * n]
+                        result_rows = mul_dim(a_rows, m)
+                        result_cols = mul_dim(a_cols, n)
+                        return Shape.matrix(result_rows, result_cols)
+                    except ValueError:
+                        # Colon/Range in args: cannot repmat with colons
+                        pass
                 # Known builtin without a matching shape rule: return unknown silently
                 return Shape.unknown()
 
