@@ -131,9 +131,6 @@ Clone and Verify
 Analyze a File
 `make run FILE=tests/basics/inner_dim_mismatch.m`
 
-Compare IR vs Legacy Analyzer
-`make compare FILE=tests/control_flow/if_branch_mismatch.m`
-
 Example Output
 `Warnings:`
   `- Line 11: Dimension mismatch in expression (A * x):`
@@ -146,9 +143,9 @@ Example Output
 
 mmshape.py file.m – analyze a file (IR-based)
 
-`--compare` – compare legacy vs IR analyzer
-
 `--tests` – run full test suite
+
+`--strict` – fail on unsupported constructs
 
 `--fixpoint` – use fixed-point iteration for loop analysis
 

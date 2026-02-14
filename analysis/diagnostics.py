@@ -18,16 +18,8 @@ def pretty_expr_ir(expr: Expr) -> str:
         return f"(-{pretty_expr_ir(expr.operand)})"
     if isinstance(expr, Transpose):
         return pretty_expr_ir(expr.operand) + "'"
-    if isinstance(expr, Call):
-        func = pretty_expr_ir(expr.func)
-        args = ", ".join(pretty_expr_ir(a) for a in expr.args)
-        return f"{func}({args})"
     if isinstance(expr, Apply):
         base = pretty_expr_ir(expr.base) if isinstance(expr.base, Var) else "<expr>"
-        args_s = ", ".join(pretty_index_arg_ir(a) for a in expr.args)
-        return f"{base}({args_s})"
-    if isinstance(expr, Index):
-        base = pretty_expr_ir(expr.base)
         args_s = ", ".join(pretty_index_arg_ir(a) for a in expr.args)
         return f"{base}({args_s})"
     if isinstance(expr, MatrixLit):

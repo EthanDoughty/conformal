@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This project implements a static shape and dimension analysis for Mini-MATLAB, a subset of the MATLAB programming language. The analyzer detects matrix-related errors (dimension mismatches, incompatible operations) before runtime by reasoning about matrix shapes, symbolic dimensions, and control flow without executing code.
 
-**Key principle**: The IR-based analyzer (`analysis/analysis_ir.py`) is the authoritative implementation. The legacy syntax-based analyzer exists only for regression comparison.
+**Key principle**: The IR-based analyzer (`analysis/analysis_ir.py`) is the authoritative implementation.
 
 ## Essential Commands
 
@@ -19,11 +19,6 @@ python3 mmshape.py --tests         # via CLI
 **Analyze a single file**:
 ```bash
 make run FILE=tests/basics/inner_dim_mismatch.m        # or: python3 mmshape.py tests/basics/inner_dim_mismatch.m
-```
-
-**Compare legacy vs IR analyzer** (single file only):
-```bash
-make compare FILE=tests/control_flow/if_branch_mismatch.m    # or: python3 mmshape.py --compare tests/control_flow/if_branch_mismatch.m
 ```
 
 **Strict mode** (fail on unsupported constructs):
@@ -97,7 +92,7 @@ python3 tools/ai_local.py --no-context "explain lattice widening in abstract int
 
 3. **Analysis** (`analysis/`) — Static shape inference
    - `analysis_ir.py`: **Main IR-based analyzer** (default, authoritative)
-   - `analysis_legacy.py`: Legacy syntax-based analyzer (for comparison only)
+   - `builtins.py`: Builtin function catalog (`KNOWN_BUILTINS`, shape rule registry)
    - `analysis_core.py`: Shared compatibility checks
    - `matrix_literals.py`: Matrix literal shape inference
    - `diagnostics.py`: Warning message generation
@@ -153,11 +148,11 @@ The test runner (`run_all_tests.py`) validates these expectations against analys
    - Used by current analyzer (authoritative)
    - Lowering: `frontend/lower_ir.py` converts syntax → IR
 
-### Analysis Modes
+### Apply Node (Unified Call/Index)
 
-- **Default**: IR-based (`analyze_program_ir`) — this is the source of truth
-- **Legacy**: Syntax-based (`analyze_program_legacy`) — for regression only
-- **Compare**: Runs both and reports differences (single-file only)
+- `Apply` is the sole IR node for both function calls and array indexing (`foo(...)`)
+- Parser emits `Apply` for all parenthesized expressions (no parse-time disambiguation)
+- Analyzer disambiguates based on: colon/range in args → indexing, `KNOWN_BUILTINS` → call, bound variable → indexing, unknown name → `W_UNKNOWN_FUNCTION`
 
 ### Best-Effort Analysis
 
@@ -169,7 +164,6 @@ When a definite mismatch is detected (e.g., inner dimension mismatch in `A*B`), 
 ## Known Behaviors and Gotchas
 
 - Test discovery is dynamic via `glob("tests/**/*.m", recursive=True)` in `run_all_tests.py`
-- `--compare` mode only works reliably for single-file runs; `--tests --compare` ignores the compare flag
 - `--strict` mode fails if any `W_UNSUPPORTED_*` warning is emitted (expected for recovery tests: `tests/recovery/struct_field.m`, `tests/recovery/cell_array.m`, `tests/recovery/multiple_assignment.m`, `tests/recovery/multiline_braces.m`, `tests/recovery/end_in_parens.m`)
 - When editing parser/lowering, check delimiter syncing and token precedence carefully
 
@@ -199,7 +193,7 @@ All agents must preserve the core invariant: IR analyzer is authoritative.
 ## Project Invariants
 
 - IR analyzer (`analysis_ir.py`) is the source of truth for test expectations
-- Legacy analyzer exists only for regression comparison
+- Apply is the sole IR node for call/index expressions (Call/Index removed)
 - All tests must pass: `python3 mmshape.py --tests`
 - New warning codes must use `W_*` prefix and be stable
 - Minimal diffs; avoid broad refactors unless explicitly requested

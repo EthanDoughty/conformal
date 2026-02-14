@@ -167,20 +167,11 @@ def lower_expr(expr: Any) -> Expr:
     if tag == "transpose":
         return Transpose(line=expr[1], operand=lower_expr(expr[2]))
 
-    if tag == "call":
-        return Call(line=expr[1], func=lower_expr(expr[2]), args=[lower_expr(arg) for arg in expr[3]])
-
     if tag == "apply":
         return Apply(line=expr[1], base=lower_expr(expr[2]), args=[lower_index_arg(arg) for arg in expr[3]])
 
     if tag == "matrix":
         return MatrixLit(line=expr[1], rows=[[lower_expr(elem) for elem in row] for row in expr[2]])
-
-    if tag == "index":
-        base = lower_expr(expr[2])
-        args_list = expr[3]
-        lowered_args = [lower_index_arg(arg) for arg in args_list]
-        return Index(line=expr[1], base=base, args=lowered_args)
 
     if tag in {"+", "-", "*", "/", ".*", "./", "==", "~=", "<", "<=", ">", ">=", "&&", "||", ":"}:
         return BinOp(line=expr[1], op=tag, left=lower_expr(expr[2]), right=lower_expr(expr[3]))

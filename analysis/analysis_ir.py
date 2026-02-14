@@ -9,26 +9,14 @@ dimensions and detecting dimension mismatches at compile time.
 from __future__ import annotations
 from typing import List, Tuple
 
-from frontend.matlab_parser import KNOWN_BUILTINS
-
-# Builtins with explicit shape rules (handled above in eval_expr_ir).
-# Everything else in KNOWN_BUILTINS returns unknown silently.
-_BUILTINS_WITH_SHAPE_RULES = {
-    "zeros", "ones",      # matrix constructors (2-arg form)
-    "eye", "rand", "randn",  # matrix constructors (0/1/2-arg forms)
-    "abs", "sqrt",        # element-wise (pass through shape)
-    "transpose",          # transpose (swap rows/cols)
-    "length", "numel",    # query functions (return scalar)
-    "size", "isscalar",   # other builtins with shape rules
-    "reshape", "repmat",  # matrix manipulation (new)
-}
+from analysis.builtins import KNOWN_BUILTINS, BUILTINS_WITH_SHAPE_RULES
 
 MAX_LOOP_ITERATIONS = 3  # Maximum iterations for fixed-point loop analysis
 
 from ir import (
     Program, Stmt,
     Assign, ExprStmt, While, For, If, OpaqueStmt,
-    Expr, Var, Const, MatrixLit, Call, Apply, Transpose, Neg, Index, BinOp,
+    Expr, Var, Const, MatrixLit, Apply, Transpose, Neg, BinOp,
     IndexArg, Colon, Range, IndexExpr,
 )
 
@@ -202,34 +190,6 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str]) -> Shape:
         ]
         return infer_matrix_literal_shape(shape_rows, expr.line, warnings)
 
-    if isinstance(expr, Call):
-        if isinstance(expr.func, Var):
-            fname = expr.func.name
-            if fname in {"zeros", "ones"} and len(expr.args) == 2:
-                r_dim = expr_to_dim_ir(expr.args[0], env)
-                c_dim = expr_to_dim_ir(expr.args[1], env)
-                return shape_of_zeros(r_dim, c_dim) if fname == "zeros" else shape_of_ones(r_dim, c_dim)
-            if fname == "size":
-                if len(expr.args) == 1:
-                    # size(A) returns a 1x2 row vector [rows, cols]
-                    eval_expr_ir(expr.args[0], env, warnings)
-                    return Shape.matrix(1, 2)
-                elif len(expr.args) == 2:
-                    # size(A, dim) returns a scalar
-                    eval_expr_ir(expr.args[0], env, warnings)
-                    return Shape.scalar()
-            if fname == "isscalar" and len(expr.args) == 1:
-                # isscalar(x) always returns a logical scalar
-                eval_expr_ir(expr.args[0], env, warnings)
-                return Shape.scalar()
-            # Known builtin without a shape rule: return unknown silently
-            if fname in KNOWN_BUILTINS:
-                return Shape.unknown()
-            # Unrecognized function: emit warning and return unknown
-            warnings.append(diag.warn_unknown_function(expr.line, fname))
-
-        return Shape.unknown()
-
     if isinstance(expr, Apply):
         line = expr.line
 
@@ -365,15 +325,6 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str]) -> Shape:
     if isinstance(expr, Neg):
         return eval_expr_ir(expr.operand, env, warnings)
 
-    if isinstance(expr, Index):
-        line = expr.line
-        base_shape = eval_expr_ir(expr.base, env, warnings)
-        # If base is an unbound variable, it might be a call to an undefined function
-        if base_shape.is_unknown() and isinstance(expr.base, Var) and expr.base.name not in env.bindings:
-            warnings.append(diag.warn_unknown_function(line, expr.base.name))
-            return Shape.unknown()
-        return _eval_indexing(base_shape, expr.args, line, expr, env, warnings)
-
     if isinstance(expr, BinOp):
         op = expr.op
         line = expr.line
@@ -384,7 +335,7 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str]) -> Shape:
     return Shape.unknown()
 
 def _eval_indexing(base_shape: Shape, args, line: int, expr, env: Env, warnings: List[str]) -> Shape:
-    """Shared indexing logic for Index and Apply-as-indexing nodes.
+    """Indexing logic for Apply-as-indexing nodes.
 
     Args:
         base_shape: Shape of the base expression being indexed

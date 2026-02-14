@@ -1,4 +1,4 @@
-.PHONY: test run compare clean lm-up lm-down ai-local lm-status ask chat
+.PHONY: test run clean lm-up lm-down ai-local lm-status ask chat
 
 PY=python3
 
@@ -8,10 +8,6 @@ test:
 run:
 	@if [ -z "$(FILE)" ]; then echo "Usage: make run FILE=tests/basics/valid_add.m"; exit 1; fi
 	$(PY) mmshape.py "$(FILE)"
-
-compare:
-	@if [ -z "$(FILE)" ]; then echo "Usage: make compare FILE=tests/basics/valid_add.m"; exit 1; fi
-	$(PY) mmshape.py --compare "$(FILE)"
 
 clean:
 	find . -type d -name "__pycache__" -prune -exec rm -rf {} \;

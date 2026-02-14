@@ -9,7 +9,7 @@ from typing import Dict, List, Tuple
 
 from frontend.matlab_parser import parse_matlab
 from frontend.lower_ir import lower_program
-from analysis import analyze_program_ir, analyze_program_legacy
+from analysis import analyze_program_ir
 from analysis.diagnostics import has_unsupported
 from runtime.shapes import Shape
 
@@ -20,7 +20,6 @@ def test_sort_key(path: str) -> str:
 
 
 TEST_FILES = sorted(glob.glob("tests/**/*.m", recursive=True), key=test_sort_key)
-COMPARE = False
 
 EXPECT_RE = re.compile(r"%\s*EXPECT:\s*(.+)$")
 EXPECT_FIXPOINT_RE = re.compile(r"%\s*EXPECT_FIXPOINT:\s*(.+)$")
@@ -84,12 +83,11 @@ def parse_expectations(src: str, fixpoint: bool = False) -> Tuple[Dict[str, str]
     return expected_shapes, expected_warning_count
 
 
-def run_test(path: str, compare: bool = True, fixpoint: bool = False) -> tuple[bool, bool]:
+def run_test(path: str, fixpoint: bool = False) -> tuple[bool, bool]:
     """Run a test file and return (passed, has_unsupported_warnings).
 
     Args:
         path: Path to test file
-        compare: Whether to compare legacy vs IR analysis
         fixpoint: If True, use fixed-point iteration for loop analysis
 
     Returns:
@@ -116,28 +114,6 @@ def run_test(path: str, compare: bool = True, fixpoint: bool = False) -> tuple[b
 
     # Check for unsupported statement warnings using shared helper
     has_unsupported_warnings = has_unsupported(warnings)
-
-    # Optional: compare legacy vs IR for sanity.
-    if COMPARE:
-        env_s, warnings_s = analyze_program_legacy(syntax_ast)
-
-        print("==== Compare: syntax vs IR ====")
-        print("syntax env:", env_s)
-        print("IR env    :", env)
-
-        if env_s.bindings != env.bindings:
-            print("ENV DIFF!")
-            print("syntax warnings:", warnings_s)
-            print("IR warnings    :", warnings)
-            print()
-
-        if len(warnings_s) != len(warnings):
-            print(f"WARNING COUNT DIFF: {len(warnings_s)} vs {len(warnings)}")
-            print("syntax warnings:", warnings_s)
-            print("IR warnings    :", warnings)
-        else:
-            print("Warnings match.")
-        print()
 
     if not warnings:
         print("No dimension warnings.")
@@ -180,7 +156,6 @@ def main(return_code: bool = False, strict: bool = False, fixpoint: bool = False
     """
     total = 0
     ok = 0
-    compare = "--compare" in sys.argv
     # Accept strict and fixpoint from parameters or sys.argv for backwards compatibility
     strict = strict or "--strict" in sys.argv
     fixpoint = fixpoint or "--fixpoint" in sys.argv
@@ -188,7 +163,7 @@ def main(return_code: bool = False, strict: bool = False, fixpoint: bool = False
 
     for path in TEST_FILES:
         total += 1
-        passed, has_unsupported = run_test(path, compare=compare, fixpoint=fixpoint)
+        passed, has_unsupported = run_test(path, fixpoint=fixpoint)
         if passed:
             ok += 1
         if has_unsupported:

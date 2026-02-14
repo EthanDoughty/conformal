@@ -45,12 +45,6 @@ class Transpose(Expr):
     operand: Expr
 
 @dataclass(frozen=True)
-class Call(Expr):
-    """Function call (e.g., zeros(3,4))."""
-    func: Expr
-    args: List[Expr]
-
-@dataclass(frozen=True)
 class Apply(Expr):
     """Unified apply node for runtime call-vs-index disambiguation.
 
@@ -83,12 +77,6 @@ class Range(IndexArg):
 class IndexExpr(IndexArg):
     """Single expression index."""
     expr: Expr
-
-@dataclass(frozen=True)
-class Index(Expr):
-    """Indexing operation (A(i,j), A(:,j), A(2:5,:))."""
-    base: Expr
-    args: List[IndexArg]
 
 # ---- Matrix literals ----
 

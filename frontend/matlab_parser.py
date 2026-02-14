@@ -4,15 +4,6 @@ import re
 from dataclasses import dataclass
 from typing import List, Tuple, Any, Union
 
-# Builtins recognized as function calls (not array indexing).
-# Sorted alphabetically for maintainability.
-KNOWN_BUILTINS = {
-    "abs", "det", "diag", "eye", "inv", "isscalar",
-    "length", "linspace", "norm", "numel", "ones",
-    "rand", "randn", "repmat", "reshape", "size",
-    "sqrt", "transpose", "zeros",
-}
-
 TokenKind = str
 
 @dataclass
