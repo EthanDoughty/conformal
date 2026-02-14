@@ -21,7 +21,7 @@ if fname == "builtin_name" and len(expr.args) == N:
 
 **Key helpers**:
 - `unwrap_arg(arg)`: IndexArg → Expr (raises ValueError for Colon/Range)
-- `expr_to_dim_ir(expr, env)`: Expr → Dim (int | str | None)
+- `expr_to_dim_ir(expr, env)`: Expr → Dim (int | str | None) — supports arithmetic (`n+1`, `2*m`, `n-1`)
 - `_eval_index_arg_to_shape(arg, env, warnings)`: IndexArg → Shape
 
 ### Shape Rule Categories
@@ -105,3 +105,11 @@ if arg_shape.is_matrix():
 - **IR analyzer is authoritative**: Legacy analyzer exists only for regression comparison
 - **Warning codes use W_* prefix** and must be stable
 - **All tests must pass** in both default and --fixpoint modes
+
+## Dimension Arithmetic (runtime/shapes.py)
+
+- `add_dim(a, b)`: Concrete ints folded (`2 + 3 → 5`), symbolic becomes `"(a+b)"`
+- `mul_dim(a, b)`: Concrete ints folded (`2 * 3 → 6`), symbolic becomes `"(a*b)"`
+  - Short-circuits: `0 * x → 0`, `1 * x → x`
+- **Subtraction**: No `sub_dim` helper. Use `add_dim(a, -b)` for concrete, `add_dim(a, f"-{b}")` for symbolic
+- **expr_to_dim_ir supports BinOp**: Recursively extracts dims from `+`, `-`, `*` (returns None for other ops)

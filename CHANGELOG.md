@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Dimension arithmetic in builtin arguments: `expr_to_dim_ir` now evaluates `+`, `-`, `*` in dimension expressions
+- Support for `zeros(n+1, m)`, `reshape(A, 2*n, m+1)`, etc. with symbolic arithmetic
+- Concrete arithmetic folding (e.g., `zeros(2+3, 4*2)` → `matrix[5 x 8]`)
+- Test file `tests/builtins/dim_arithmetic.m` with 9 dimension arithmetic cases
 - Shape rules for 5 new builtins: `det` (→scalar), `diag` (vector↔diagonal matrix), `inv` (pass-through for square), `linspace` (→row vector), `norm` (→scalar)
 - Complete builtin shape rule coverage: `BUILTINS_WITH_SHAPE_RULES == KNOWN_BUILTINS` (19/19)
 - Test file `tests/builtins/remaining_builtins.m` with 19 expectations for new builtins

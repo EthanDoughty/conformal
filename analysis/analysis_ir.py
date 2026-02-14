@@ -9,7 +9,7 @@ dimensions and detecting dimension mismatches at compile time.
 from __future__ import annotations
 from typing import List, Tuple
 
-from analysis.builtins import KNOWN_BUILTINS, BUILTINS_WITH_SHAPE_RULES
+from analysis.builtins import KNOWN_BUILTINS
 
 MAX_LOOP_ITERATIONS = 3  # Maximum iterations for fixed-point loop analysis
 
@@ -22,7 +22,7 @@ from ir import (
 
 import analysis.diagnostics as diag
 from runtime.env import Env, join_env
-from runtime.shapes import Shape, Dim, shape_of_zeros, shape_of_ones, join_dim, mul_dim
+from runtime.shapes import Shape, Dim, shape_of_zeros, shape_of_ones, join_dim, mul_dim, add_dim
 from analysis.analysis_core import shapes_definitely_incompatible
 from analysis.matrix_literals import infer_matrix_literal_shape, as_matrix_shape, dims_definitely_conflict
 
@@ -521,6 +521,31 @@ def expr_to_dim_ir(expr: Expr, env: Env) -> Dim:
         return None
     if isinstance(expr, Var):
         return expr.name
+    if isinstance(expr, BinOp):
+        # Recursively extract dimensions from left and right operands
+        left_dim = expr_to_dim_ir(expr.left, env)
+        right_dim = expr_to_dim_ir(expr.right, env)
+
+        # If either operand cannot be extracted, return None
+        if left_dim is None or right_dim is None:
+            return None
+
+        # Handle supported operators
+        if expr.op == "+":
+            return add_dim(left_dim, right_dim)
+        elif expr.op == "-":
+            # Negate right operand for subtraction
+            if isinstance(right_dim, int):
+                negated_right = -right_dim
+            else:
+                # Symbolic dimension: wrap in negation
+                negated_right = f"-{right_dim}"
+            return add_dim(left_dim, negated_right)
+        elif expr.op == "*":
+            return mul_dim(left_dim, right_dim)
+        else:
+            # Unsupported operators: .*, ./, /, :, etc.
+            return None
     return None
 
 

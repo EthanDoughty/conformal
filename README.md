@@ -64,6 +64,7 @@ The analysis supports:
 - symbolic dimension joins across control flow
 - symbolic dimension addition for matrix concatenation (e.g. `n x (k+m)`)
 - symbolic dimension multiplication for replication (e.g. `(n*k)`)
+- symbolic dimension arithmetic in builtin arguments (e.g. `zeros(n+1, m)`)
 
 ## Project Structure
 

@@ -120,7 +120,7 @@ Each expression gets a shape from this abstract domain:
 
 **Key features**:
 - Symbolic dimension tracking (e.g., `n`, `m` represent dimensions)
-- Symbolic arithmetic for concatenation (e.g., `n x (k+m)`) and multiplication (e.g., `(n*k)`)
+- Symbolic arithmetic for concatenation (e.g., `n x (k+m)`), multiplication (e.g., `(n*k)`), and dimension expressions (e.g., `zeros(n+1, m)`)
 - Control flow joins (merges `if`/`else` branches conservatively)
 - Single-pass loop analysis by default (optional fixed-point iteration via `--fixpoint`)
 

@@ -104,6 +104,10 @@ def add_dim(a: Dim, b: Dim) -> Dim:
         return None
     if isinstance(a, int) and isinstance(b, int):
         return a + b
+    if isinstance(b, (int, float)) and b < 0:
+        return f"({a}-{-b})"
+    if isinstance(b, str) and b.startswith("-"):
+        return f"({a}-{b[1:]})"
     return f"({a}+{b})"
 
 

@@ -98,3 +98,15 @@
 - New test file: tests/builtins/remaining_builtins.m (19 expectations: 1 warnings + 18 shapes)
 - Test count: 44 total
 - **Documentation impact**: CHANGELOG.md ✓, README.md ✓ (test table updated)
+
+### v0.9.1 Dimension Arithmetic in Builtin Arguments
+- Enhanced `expr_to_dim_ir` to handle BinOp (+, -, *) in dimension arguments
+- Symbolic arithmetic now works in builtin calls: zeros(n+1, m), reshape(A, 2*n, m+1)
+- Concrete arithmetic folding: zeros(2+3, 4*2) → matrix[5 x 8]
+- New test file: tests/builtins/dim_arithmetic.m (9 cases, 0 warnings)
+- Test count: 45 total
+- **Documentation pattern**: Dimension capabilities appear in THREE places:
+  1. CHANGELOG.md [Unreleased] — Feature description + test file
+  2. CLAUDE.md line 122 — "Key features" symbolic arithmetic list
+  3. README.md line 65 — "The analysis supports" bullet list
+- **Key insight**: When symbolic dimension capabilities expand, check all three locations

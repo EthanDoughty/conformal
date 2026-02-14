@@ -83,6 +83,14 @@
 - `W_UNSUPPORTED_STMT` used for opaque statements
 - All warnings include line number
 
+## Dimension Extraction (`expr_to_dim_ir`)
+- **Current implementation**: Lines 507-524 of `analysis_ir.py`
+- **Supported**: `Const` → int, `Var` → symbolic name, everything else → `None`
+- **Missing**: BinOp handling (arithmetic on dimensions)
+- **Usage sites**: All builtin constructors that take dimension args (`zeros`, `ones`, `eye`, `rand`, `randn`, `reshape`, `repmat`, `linspace`)
+- **Extension pattern**: Recurse into `BinOp` nodes, use `add_dim`/`mul_dim` from shapes.py
+- **Current precision loss**: `zeros(n+1, m)` → `matrix[None x m]` instead of `matrix[(n+1) x m]`
+
 ## Spec Writing Best Practices
 - **Scope narrowing critical**: Path-sensitive analysis is expensive; pragmatic subset needed
 - **Test-first approach**: Define concrete test cases that demonstrate the improvement

@@ -1,156 +1,48 @@
-# Task: Phase 3 — Complete Builtin Shape Rules (v0.9.0)
+# Task: Extend expr_to_dim_ir to Support Arithmetic Expressions
 
 ## Goal
-Implement shape rules for all remaining builtins that currently return `unknown`, plus fill
-the `zeros(n)`/`ones(n)` 1-arg gap. After this, every builtin in `KNOWN_BUILTINS` has a
-precise shape rule. Milestone version: **0.9.0**.
+Enable `expr_to_dim_ir` in `analysis/analysis_ir.py` to extract symbolic dimensions from arithmetic expressions (`n+1`, `2*m`, `k+m+1`), allowing constructors like `zeros(n+1, m)` and `reshape(A, 2*n, k)` to produce precise symbolic shapes instead of `matrix[None x ...]`.
 
 ## Scope
-
-### A. New shape rules (5 builtins)
-
-| Builtin | Signature(s) | Output shape |
-|---------|-------------|-------------|
-| `det` | `det(A)` | `scalar` |
-| `diag` | `diag(v)` where v is vector (`n x 1` or `1 x n`) | `matrix[n x n]` |
-| `diag` | `diag(A)` where A is matrix (`m x n`, neither dim is 1) | `matrix[None x 1]` (can't compute `min(m,n)` symbolically) |
-| `diag` | `diag(A)` where A is `unknown` or `matrix[None x None]` | `unknown` (can't distinguish vector from matrix) |
-| `inv` | `inv(A)` where A is square (`n x n`) | `matrix[n x n]` (pass-through) |
-| `inv` | `inv(A)` where A is non-square (`m x n`, m != n) | `unknown` (mathematically undefined) |
-| `linspace` | `linspace(a, b)` | `matrix[1 x 100]` (MATLAB default) |
-| `linspace` | `linspace(a, b, n)` | `matrix[1 x n]` (n via `expr_to_dim_ir`) |
-| `norm` | `norm(x)` | `scalar` |
-
-### B. Fix existing gap (2 builtins)
-
-| Builtin | Signature | Current behavior | Fixed behavior |
-|---------|-----------|-----------------|---------------|
-| `zeros` | `zeros(n)` | Falls through to `unknown` | `matrix[n x n]` (mirrors `eye(n)`) |
-| `ones` | `ones(n)` | Falls through to `unknown` | `matrix[n x n]` (mirrors `eye(n)`) |
-
-### C. Update registry
-- Add `det`, `diag`, `inv`, `linspace`, `norm` to `BUILTINS_WITH_SHAPE_RULES` in `analysis/builtins.py`
-- After this, `BUILTINS_WITH_SHAPE_RULES == KNOWN_BUILTINS` (19/19)
+- Modify `expr_to_dim_ir` function (lines 507-524 of `analysis/analysis_ir.py`) to handle `BinOp` nodes
+- Support operators: `+`, `-`, `*` (minimum viable set)
+- Recurse into BinOp operands to build composite symbolic dimensions
+- Use existing `add_dim` and `mul_dim` from `runtime/shapes.py`
 
 ## Non-goals
-- `zeros([m, n])` array syntax (requires `MatrixLit` arg inspection — different code path, <5% usage)
-- 3D arrays (`zeros(m, n, p)`) — shape domain is 2D only; existing fall-through to `unknown` is fine
-- Refactoring `unwrap_arg`/`expr_to_dim_ir` pattern (optional nice-to-have, not required)
-- Extending `expr_to_dim_ir` to handle `BinOp` expressions like `n+1` (future work)
-- Parser, IR, or lowering changes (pure analysis-layer work)
+- No changes to shape domain (`runtime/shapes.py`)
+- No new dimension arithmetic functions (add_dim/mul_dim already exist)
+- No support for division (not useful for dimensions)
+- No changes to builtin handlers (they already call `expr_to_dim_ir`)
+- No changes to test infrastructure
 
-## Implementation Notes
-
-### diag — shape-dependent dispatch
-This is the trickiest rule. Decision tree:
-1. Input is `scalar` → `matrix[1 x 1]`
-2. Input is `matrix[n x 1]` or `matrix[1 x n]` (one dim is concretely 1) → `matrix[n x n]`
-3. Input is `matrix[m x n]` where both dims are known and equal → could be either; treat as matrix extraction → `matrix[None x 1]`
-4. Input is `matrix[m x n]` where both dims are known and different → matrix extraction → `matrix[None x 1]`
-5. Input is `unknown` or `matrix[None x None]` → `unknown` (can't distinguish vector from matrix)
-
-Key soundness requirement: only dispatch to "vector → diagonal matrix" when we can **prove** the input is a vector (one dimension is concretely 1).
-
-### inv — pass-through with squareness check
-- If both dims are known and equal: pass through shape
-- If both dims are symbolic and identical (same symbol): pass through shape
-- If dims are known and different: return `unknown` (mathematically undefined, but no warning — could be runtime-determined)
-- If dims are unknown: return `unknown`
-
-### zeros(n) / ones(n) — 1-arg constructor form
-Add `elif len(expr.args) == 1` branch above the existing 2-arg branch. Same pattern as `eye(n)`:
-extract dim via `expr_to_dim_ir`, return `matrix[dim x dim]`.
-
-### Optional refactor (nice-to-have)
-The `zeros`/`ones`/`eye`/`rand`/`randn` family all share identical 1-arg/2-arg dispatch logic.
-A `_builtin_constructor_shape(args, env)` helper could reduce repetition. Only do this if the
-implementer finds the code getting unwieldy — not required for correctness.
-
-## Invariants
-- All existing 43 tests pass in both default and `--fixpoint` modes
-- `BUILTINS_WITH_SHAPE_RULES` becomes equal to `KNOWN_BUILTINS` (19/19)
-- Apply remains the sole call/index IR node
-- No parser, IR, or lowering changes
+## Invariants Impacted
+- IR analyzer authoritative: Preserved (only extending expr_to_dim_ir)
+- All tests pass: Must preserve (44 existing tests continue passing)
+- Shape domain operations: Relies on existing add_dim/mul_dim behavior
 
 ## Acceptance Criteria
-- [ ] `det(A)` → `scalar`
-- [ ] `diag(v)` for vector → `matrix[n x n]`
-- [ ] `diag(A)` for matrix → `matrix[None x 1]`
-- [ ] `diag(unknown)` → `unknown` (soundness)
-- [ ] `inv(A)` for square matrix → pass-through shape
-- [ ] `inv(A)` for non-square/unknown → `unknown`
-- [ ] `linspace(a, b)` → `matrix[1 x 100]`
-- [ ] `linspace(a, b, n)` → `matrix[1 x n]`
-- [ ] `norm(x)` → `scalar`
-- [ ] `zeros(n)` → `matrix[n x n]` (was `unknown`)
-- [ ] `ones(n)` → `matrix[n x n]` (was `unknown`)
-- [ ] All 5 new builtins in `BUILTINS_WITH_SHAPE_RULES`
-- [ ] New test file `tests/builtins/remaining_builtins.m` passes
-- [ ] All existing tests pass: `python3 mmshape.py --tests` and `python3 mmshape.py --fixpoint --tests`
+- [ ] `zeros(n+1, m)` produces `matrix[(n+1) x m]` not `matrix[None x m]`
+- [ ] `zeros(2*n, 3)` produces `matrix[(2*n) x 3]` not `matrix[None x 3]`
+- [ ] `reshape(A, n+m, k)` produces `matrix[(n+m) x k]` not `matrix[None x k]`
+- [ ] `zeros(n+m+k, 1)` produces `matrix[(n+(m+k)) x 1]` (nested addition)
+- [ ] `zeros(length(A), m)` produces `matrix[None x m]` (function call returns None)
+- [ ] `zeros(n-1, m)` produces `matrix[(n+-1) x m]` (subtraction via add_dim with negative)
+- [ ] All existing tests pass: `python3 mmshape.py --tests`
 
-## Test File: `tests/builtins/remaining_builtins.m`
-
-```matlab
-% Test: Phase 3 builtin shape rules
-% EXPECT: warnings = 0
-
-% --- det ---
-A1 = eye(3);
-det_concrete = det(A1);
-% EXPECT: det_concrete = scalar
-det_symbolic = det(zeros(n, n));
-% EXPECT: det_symbolic = scalar
-
-% --- diag (vector → diagonal matrix) ---
-v1 = zeros(5, 1);
-diag_vec_concrete = diag(v1);
-% EXPECT: diag_vec_concrete = matrix[5 x 5]
-v2 = zeros(n, 1);
-diag_vec_symbolic = diag(v2);
-% EXPECT: diag_vec_symbolic = matrix[n x n]
-v3 = zeros(1, k);
-diag_row_vec = diag(v3);
-% EXPECT: diag_row_vec = matrix[k x k]
-
-% --- diag (matrix → column vector) ---
-M1 = zeros(3, 4);
-diag_mat = diag(M1);
-% EXPECT: diag_mat = matrix[None x 1]
-
-% --- inv ---
-inv_concrete = inv(eye(3));
-% EXPECT: inv_concrete = matrix[3 x 3]
-inv_symbolic = inv(zeros(n, n));
-% EXPECT: inv_symbolic = matrix[n x n]
-
-% --- linspace ---
-ls_default = linspace(0, 1);
-% EXPECT: ls_default = matrix[1 x 100]
-ls_concrete = linspace(0, 10, 50);
-% EXPECT: ls_concrete = matrix[1 x 50]
-ls_symbolic = linspace(0, 1, n);
-% EXPECT: ls_symbolic = matrix[1 x n]
-
-% --- norm ---
-norm_vec = norm(v1);
-% EXPECT: norm_vec = scalar
-norm_mat = norm(A1);
-% EXPECT: norm_mat = scalar
-
-% --- zeros/ones 1-arg form (gap fix) ---
-z_sq = zeros(4);
-% EXPECT: z_sq = matrix[4 x 4]
-z_sq_sym = zeros(n);
-% EXPECT: z_sq_sym = matrix[n x n]
-o_sq = ones(3);
-% EXPECT: o_sq = matrix[3 x 3]
-o_sq_sym = ones(n);
-% EXPECT: o_sq_sym = matrix[n x n]
+## Commands to Run
+```
+python3 mmshape.py tests/builtins/dim_arithmetic.m
+python3 mmshape.py --tests
 ```
 
-## Commands
-```bash
-python3 mmshape.py tests/builtins/remaining_builtins.m   # new test
-python3 mmshape.py --tests                                # full suite
-python3 mmshape.py --fixpoint --tests                     # fixpoint mode
-```
+## Tests to Add/Change
+- `tests/builtins/dim_arithmetic.m`: New test file covering:
+  - Simple addition: `zeros(n+1, m)` → `matrix[(n+1) x m]`
+  - Simple multiplication: `zeros(2*n, k)` → `matrix[(2*n) x k]`
+  - Nested addition: `zeros(n+m+k, 1)` → `matrix[(n+(m+k)) x 1]`
+  - Subtraction: `zeros(n-1, m)` → `matrix[(n+-1) x m]`
+  - Mixed symbolic/concrete: `zeros(n+2, 3*m)` → `matrix[(n+2) x (3*m)]`
+  - reshape with arithmetic: `reshape(A, 2*n, m+1)` → `matrix[(2*n) x (m+1)]`
+  - Edge case: `zeros(length(A), m)` → `matrix[None x m]` (nested call fails gracefully)
+  - Expected warnings: 0
