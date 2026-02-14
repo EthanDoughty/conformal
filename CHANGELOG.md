@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.9.2] - 2026-02-13
+### Added
+- Principled loop widening with guaranteed convergence (≤2 iterations)
+- Widening operators: `widen_dim()`, `widen_shape()`, and `widen_env()` in runtime/
+- 3-phase widening algorithm in `_analyze_loop_body()`: discover, stabilize, post-loop join
+- Per-dimension widening: stable dimensions preserved, conflicting dimensions → None
+- 4 new loop tests for widening behavior (widen_col_grows, widen_multiple_vars, widen_self_reference, widen_while_growth)
+
+### Changed
+- Replaced iteration-limit loop analysis (MAX_LOOP_ITERATIONS=3) with widening-based fixpoint
+- `widen_shape()` treats unknown as bottom (handles unbound variables correctly)
+- Same `widen_env()` operator used for both widening step and post-loop join
+- Updated 3 existing loop tests (EXPECT_FIXPOINT warnings: 3→1 for growth patterns)
+
+## [0.9.1] - 2026-02-13
 ### Added
 - Dimension arithmetic in builtin arguments: `expr_to_dim_ir` now evaluates `+`, `-`, `*` in dimension expressions
 - Support for `zeros(n+1, m)`, `reshape(A, 2*n, m+1)`, etc. with symbolic arithmetic

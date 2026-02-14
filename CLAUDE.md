@@ -102,11 +102,12 @@ python3 tools/ai_local.py --no-context "explain lattice widening in abstract int
 - `shapes.py`: Abstract shape domain
   - `Shape`: `scalar | matrix[r x c] | unknown`
   - `Dim`: `int | str (symbolic) | None (unknown)`
-  - Key functions: `join_dim`, `dims_definitely_conflict`, `add_dim`
+  - Key functions: `join_dim`, `dims_definitely_conflict`, `add_dim`, `widen_dim`, `widen_shape`
 
 - `env.py`: Variable environment
   - `Env`: Maps variable names → shapes
   - `join_env`: Merges branches in control flow
+  - `widen_env`: Widens environments for loop analysis (used for both widening step and post-loop join)
 
 ### Shape System
 
@@ -122,7 +123,8 @@ Each expression gets a shape from this abstract domain:
 - Symbolic dimension tracking (e.g., `n`, `m` represent dimensions)
 - Symbolic arithmetic for concatenation (e.g., `n x (k+m)`), multiplication (e.g., `(n*k)`), and dimension expressions (e.g., `zeros(n+1, m)`)
 - Control flow joins (merges `if`/`else` branches conservatively)
-- Single-pass loop analysis by default (optional fixed-point iteration via `--fixpoint`)
+- Single-pass loop analysis by default (optional widening-based fixpoint via `--fixpoint`)
+- **Widening-based loop analysis**: 3-phase algorithm (discover, stabilize, post-loop join) guarantees convergence in ≤2 iterations by widening conflicting dimensions to None while preserving stable dimensions
 
 ## Test File Format
 

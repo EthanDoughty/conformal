@@ -46,7 +46,7 @@ The subset includes:
 - symbolic dimensions
 - indexing and transpose
 
-Loops are analyzed conservatively using a single pass, which keeps the analysis focused on shape reasoning rather than loop invariants. This design choice is fine for the intended test cases and avoids unnecessary complexity.
+Loops are analyzed using a single pass by default, or with principled widening via `--fixpoint` for guaranteed convergence. The widening-based analysis accelerates convergence (≤2 iterations) by widening conflicting dimensions to unknown while preserving stable dimensions.
 
 ## Shape System
 
@@ -65,6 +65,7 @@ The analysis supports:
 - symbolic dimension addition for matrix concatenation (e.g. `n x (k+m)`)
 - symbolic dimension multiplication for replication (e.g. `(n*k)`)
 - symbolic dimension arithmetic in builtin arguments (e.g. `zeros(n+1, m)`)
+- widening for loop convergence (stable dims preserved, conflicting dims → None)
 
 ## Project Structure
 

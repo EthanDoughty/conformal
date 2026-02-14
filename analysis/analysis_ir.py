@@ -11,7 +11,6 @@ from typing import List, Tuple
 
 from analysis.builtins import KNOWN_BUILTINS
 
-MAX_LOOP_ITERATIONS = 3  # Maximum iterations for fixed-point loop analysis
 
 from ir import (
     Program, Stmt,
@@ -21,7 +20,7 @@ from ir import (
 )
 
 import analysis.diagnostics as diag
-from runtime.env import Env, join_env
+from runtime.env import Env, join_env, widen_env
 from runtime.shapes import Shape, Dim, shape_of_zeros, shape_of_ones, join_dim, mul_dim, add_dim
 from analysis.analysis_core import shapes_definitely_incompatible
 from analysis.matrix_literals import infer_matrix_literal_shape, as_matrix_shape, dims_definitely_conflict
@@ -47,28 +46,39 @@ def analyze_program_ir(program: Program, fixpoint: bool = False) -> Tuple[Env, L
 
 
 def _analyze_loop_body(body: list, env: Env, warnings: List[str], fixpoint: bool) -> None:
-    """Analyze a loop body, optionally using fixed-point iteration.
+    """Analyze a loop body, optionally using widening-based fixed-point iteration.
 
-    Modifies env in place. When fixpoint is True, iterates until the
-    environment converges or MAX_LOOP_ITERATIONS is reached, then joins
-    with the pre-loop environment to model "loop may not execute".
+    Modifies env in place. When fixpoint is True, uses a 3-phase widening algorithm:
+    - Phase 1 (Discover): Analyze body once, widen conflicting dimensions
+    - Phase 2 (Stabilize): Re-analyze with widened dims if widening changed anything
+    - Phase 3 (Post-loop join): Model "loop may not execute" by widening pre-loop env with final env
+
+    This guarantees convergence in <=2 iterations (vs unpredictable with iteration limit).
     """
     if not fixpoint:
         for s in body:
             analyze_stmt_ir(s, env, warnings, fixpoint=fixpoint)
         return
 
+    # Phase 1 (Discover): Analyze body once to discover dimension conflicts
     pre_loop_env = env.copy()
-    for iteration in range(MAX_LOOP_ITERATIONS):
-        prev_bindings = env.bindings.copy()
+    for s in body:
+        analyze_stmt_ir(s, env, warnings, fixpoint=fixpoint)
+
+    # Widen: stable dimensions preserved, conflicting dimensions -> None
+    widened = widen_env(pre_loop_env, env)
+
+    # Phase 2 (Stabilize): Re-analyze if widening changed anything
+    # (widened dims like None x 1 should stabilize immediately in body)
+    if widened.bindings != env.bindings:
+        env.bindings = widened.bindings
         for s in body:
             analyze_stmt_ir(s, env, warnings, fixpoint=fixpoint)
-        if env.bindings == prev_bindings:
-            break
 
-    # Post-loop join: model "loop may execute 0 times"
-    merged = join_env(pre_loop_env, env)
-    env.bindings = merged.bindings
+    # Phase 3 (Post-loop join): Model "loop may execute 0 times"
+    # Use widen_env (same operator) to join pre-loop and post-loop states
+    final = widen_env(pre_loop_env, env)
+    env.bindings = final.bindings
 
 
 def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str], fixpoint: bool = False) -> Env:

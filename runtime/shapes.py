@@ -156,6 +156,60 @@ def sum_dims(dimensions: list[Dim]) -> Dim:
         total = add_dim(total, dim)
     return total
 
+
+# Widening operators for fixpoint loop analysis
+
+def widen_dim(old: Dim, new: Dim) -> Dim:
+    """Widen dimension: stable dims preserved, conflicting dims -> None.
+
+    Used in fixpoint loop analysis to accelerate convergence.
+    If old == new, the dimension is stable; otherwise widen to None.
+
+    Args:
+        old: Dimension from previous iteration
+        new: Dimension from current iteration
+
+    Returns:
+        old if dimensions match, None otherwise
+    """
+    if old == new:
+        return old
+    return None
+
+
+def widen_shape(old: Shape, new: Shape) -> Shape:
+    """Widen shape pointwise. Treats unknown as bottom (for unbound vars).
+
+    Used in fixpoint loop analysis for both widening and post-loop join.
+
+    Critical: unknown is treated as bottom (no information), so:
+    - widen(unknown, s) = s  (unbound var gets new shape)
+    - widen(s, unknown) = s  (symmetric)
+
+    This handles variables first assigned inside a loop body correctly,
+    since Env.get() returns unknown for unbound variables.
+
+    Args:
+        old: Shape from previous iteration or pre-loop environment
+        new: Shape from current iteration
+
+    Returns:
+        Widened shape (unknown as bottom, pointwise widen_dim for matrices)
+    """
+    if old.is_unknown():
+        return new          # unknown = no info (unbound var) -> adopt new
+    if new.is_unknown():
+        return old          # symmetric
+    if old.is_scalar() and new.is_scalar():
+        return Shape.scalar()
+    if old.is_matrix() and new.is_matrix():
+        return Shape.matrix(
+            widen_dim(old.rows, new.rows),
+            widen_dim(old.cols, new.cols),
+        )
+    return Shape.unknown()  # different kinds (scalar vs matrix) -> unknown
+
+
 # Shape lattice join
 
 def join_shape(s1: Shape, s2: Shape) -> Shape:

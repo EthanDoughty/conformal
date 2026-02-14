@@ -3,7 +3,7 @@
 % With --fixpoint: join preserves column dimension, rows become None
 % EXPECT: warnings = 1
 % EXPECT: A = matrix[4 x 1]
-% EXPECT_FIXPOINT: warnings = 3
+% EXPECT_FIXPOINT: warnings = 1
 % EXPECT_FIXPOINT: A = matrix[None x 1]
 
 A = zeros(3, 1);

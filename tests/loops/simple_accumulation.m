@@ -3,7 +3,7 @@
 % Emits reassignment warning due to incompatible shapes
 % EXPECT: warnings = 1
 % EXPECT: A = matrix[3 x 3]
-% EXPECT_FIXPOINT: warnings = 3
+% EXPECT_FIXPOINT: warnings = 1
 % EXPECT_FIXPOINT: A = matrix[None x 3]
 
 A = zeros(2, 3);
