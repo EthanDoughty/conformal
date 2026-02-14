@@ -134,6 +134,28 @@ class OpaqueStmt(Stmt):
     raw: str = ""  # Optional: original source text
 
 @dataclass(frozen=True)
+class FunctionDef(Stmt):
+    """Function definition.
+
+    Represents: function [out1, out2] = name(in1, in2)
+    Or single return: function result = name(in1)
+    Or procedure: function name(in1)
+    """
+    name: str
+    params: List[str]  # Input parameter names
+    output_vars: List[str]  # Output variable names (empty for procedures)
+    body: List[Stmt]
+
+@dataclass(frozen=True)
+class AssignMulti(Stmt):
+    """Multiple assignment (destructuring).
+
+    Represents: [a, b, c] = expr
+    """
+    targets: List[str]  # Variable names to assign
+    expr: Expr  # Expression (must evaluate to multiple values)
+
+@dataclass(frozen=True)
 class Program:
     """Top-level program consisting of statements."""
     body: List[Stmt]

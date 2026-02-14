@@ -7,6 +7,26 @@ from typing import Any, List
 from ir.ir import *
 
 
+def lower_function(func: Any) -> FunctionDef:
+    """Convert syntax function to IR FunctionDef.
+
+    Args:
+        func: ['function', line, output_vars, name, params, body]
+
+    Returns:
+        IR FunctionDef
+    """
+    tag, line, output_vars, name, params, body = func
+    assert tag == "function"
+    return FunctionDef(
+        line=line,
+        name=name,
+        params=params,
+        output_vars=output_vars,
+        body=[lower_stmt(s) for s in body]
+    )
+
+
 def extract_targets_from_tokens(tokens: List[Any]) -> List[str]:
     """Conservatively extract target variable names from raw tokens.
 
@@ -80,13 +100,20 @@ def lower_program(ast: Any) -> Program:
     """Convert syntax AST to IR Program.
 
     Args:
-        ast: List-based syntax AST with ['seq', stmt1, stmt2, ...]
+        ast: List-based syntax AST with ['seq', item1, item2, ...]
+        Items can be statements or function definitions.
 
     Returns:
         IR Program
     """
     assert isinstance(ast, list) and ast and ast[0] == "seq"
-    return Program(body=[lower_stmt(s) for s in ast[1:]])
+    body = []
+    for item in ast[1:]:
+        if isinstance(item, list) and item[0] == "function":
+            body.append(lower_function(item))
+        else:
+            body.append(lower_stmt(item))
+    return Program(body=body)
 
 
 def lower_stmt(stmt: Any) -> Stmt:
@@ -103,6 +130,13 @@ def lower_stmt(stmt: Any) -> Stmt:
     if tag == "assign":
         line, name, expr = stmt[1], stmt[2], stmt[3]
         return Assign(line=line, name=name, expr=lower_expr(expr))
+
+    if tag == "assign_multi":
+        # ['assign_multi', line, targets, expr]
+        line = stmt[1]
+        targets = stmt[2]
+        expr = lower_expr(stmt[3])
+        return AssignMulti(line=line, targets=targets, expr=expr)
 
     if tag == "expr":
         expr = stmt[1]

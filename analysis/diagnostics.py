@@ -160,3 +160,14 @@ def warn_unknown_function(line: int, name: str) -> str:
         Warning message string with code W_UNKNOWN_FUNCTION
     """
     return f"Line {line}: Function '{name}' is not recognized; treating result as unknown [W_UNKNOWN_FUNCTION]"
+
+def warn_unsupported_multi_assign(line: int) -> str:
+    """Warning for unsupported destructuring assignment (Phase A stub).
+
+    Args:
+        line: Source line number
+
+    Returns:
+        Warning message string with code W_UNSUPPORTED_MULTI_ASSIGN
+    """
+    return f"W_UNSUPPORTED_MULTI_ASSIGN line {line}: Destructuring assignment not yet supported (Phase C)"

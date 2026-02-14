@@ -14,7 +14,7 @@ from analysis.builtins import KNOWN_BUILTINS
 
 from ir import (
     Program, Stmt,
-    Assign, ExprStmt, While, For, If, OpaqueStmt,
+    Assign, ExprStmt, While, For, If, OpaqueStmt, FunctionDef, AssignMulti,
     Expr, Var, Const, MatrixLit, Apply, Transpose, Neg, BinOp,
     IndexArg, Colon, Range, IndexExpr,
 )
@@ -141,6 +141,17 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str], fixpoint: bool = 
         # Havoc all target variables (set to unknown)
         for target_name in stmt.targets:
             env.set(target_name, Shape.unknown())
+        return env
+
+    if isinstance(stmt, FunctionDef):
+        # Phase A stub: skip function definitions (Phase C will register them)
+        return env
+
+    if isinstance(stmt, AssignMulti):
+        # Phase A stub: set all targets to unknown and emit warning
+        warnings.append(diag.warn_unsupported_multi_assign(stmt.line))
+        for target in stmt.targets:
+            env.set(target, Shape.unknown())
         return env
 
     return env

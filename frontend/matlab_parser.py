@@ -14,7 +14,7 @@ class Token:
     line: int  # line number
 
 # MATLAB keywords in the subset
-KEYWORDS = {"for", "while", "if", "else", "end"}
+KEYWORDS = {"for", "while", "if", "else", "end", "function"}
 
 # Simple tokenization rules
 TOKEN_SPEC = [
@@ -160,8 +160,8 @@ class MatlabParser:
     # top-level program
 
     def parse_program(self) -> Any:
-        """Internal form: ['seq', stmt1, stmt2, ...]"""
-        stmts = []
+        """Internal form: ['seq', item1, item2, ...] where items can be statements or functions"""
+        items = []
         while not self.at_end():
             while self.current().kind == "NEWLINE" or self.current().value == ";":
                 if self.current().kind == "NEWLINE":
@@ -169,11 +169,84 @@ class MatlabParser:
                 else:
                     self.eat(";")
                 if self.at_end():
-                    return ["seq"] + stmts
+                    return ["seq"] + items
             if self.at_end():
                 break
-            stmts.append(self.parse_stmt())
-        return ["seq"] + stmts
+            # Check for function definition
+            if self.current().kind == "FUNCTION":
+                items.append(self.parse_function())
+            else:
+                items.append(self.parse_stmt())
+        return ["seq"] + items
+
+    # function definitions
+
+    def parse_function(self) -> Any:
+        """Parse function declaration.
+        Internal: ['function', line, output_vars, name, params, body]
+
+        Syntax:
+          function result = name(arg1, arg2)           # single return
+          function [out1, out2] = name(arg1, arg2)    # multiple returns
+          function name(arg1, arg2)                   # procedure (no return)
+        """
+        func_tok = self.eat("FUNCTION")
+        line = func_tok.line
+
+        # Parse output variables (or none for procedure)
+        output_vars = []
+
+        # Check for procedure form: next token is ID followed by (
+        if self.current().kind == "ID":
+            # Peek ahead: is it "ID(" (procedure) or "ID =" (single return)?
+            lookahead_tok = self.tokens[self.i + 1] if self.i + 1 < len(self.tokens) else None
+            if lookahead_tok and lookahead_tok.value == "(":
+                # Procedure form: function name(args)
+                name = self.eat("ID").value
+                self.eat("(")
+            elif lookahead_tok and lookahead_tok.value == "=":
+                # Single return: function result = name(args)
+                output_vars.append(self.eat("ID").value)
+                self.eat("=")
+                name = self.eat("ID").value
+                self.eat("(")
+            else:
+                raise ParseError(f"Expected '=' or '(' after function name at {self.current().pos}")
+        elif self.current().value == "[":
+            # Multiple outputs: function [a, b] = name(args)
+            self.eat("[")
+            output_vars.append(self.eat("ID").value)
+            while self.current().value == ",":
+                self.eat(",")
+                output_vars.append(self.eat("ID").value)
+            self.eat("]")
+            self.eat("=")
+            name = self.eat("ID").value
+            self.eat("(")
+        else:
+            raise ParseError(f"Expected function output or name at {self.current().pos}")
+
+        # Parse parameters
+        params = []
+        if self.current().value != ")":
+            params.append(self.eat("ID").value)
+            while self.current().value == ",":
+                self.eat(",")
+                params.append(self.eat("ID").value)
+        self.eat(")")
+
+        # Skip newline/semicolon after closing ) if present
+        if self.current().kind == "NEWLINE" or self.current().value == ";":
+            if self.current().kind == "NEWLINE":
+                self.eat("NEWLINE")
+            else:
+                self.eat(";")
+
+        # Parse function body
+        body = self.parse_block(until_kinds=("END",))
+        self.eat("END")
+
+        return ["function", line, output_vars, name, params, body]
 
     # statements
 
@@ -211,7 +284,43 @@ class MatlabParser:
             return self.recover_to_stmt_boundary(start_line)
 
     def parse_simple_stmt(self) -> Any:
-        """For now, only support ID '=' expr, otherwise, treat it as a bare expression statement: expr;"""
+        """Parse assignment or expression statement.
+
+        Supports:
+        - ID = expr
+        - [ID, ID, ...] = expr  (destructuring assignment)
+        - expr (expression statement)
+        """
+        if self.current().value == "[":
+            # Check for destructuring assignment: [a, b] = expr
+            # Lookahead to distinguish from matrix literal
+            saved_pos = self.i
+            try:
+                self.eat("[")
+                # Parse ID list
+                targets = [self.eat("ID").value]
+                while self.current().value == ",":
+                    self.eat(",")
+                    targets.append(self.eat("ID").value)
+                self.eat("]")
+
+                # Check for =
+                if self.current().value == "=":
+                    # Destructuring assignment confirmed
+                    eq_tok = self.eat("=")
+                    expr = self.parse_expr()
+                    return ["assign_multi", eq_tok.line, targets, expr]
+                else:
+                    # Not destructuring, backtrack and parse as matrix literal
+                    self.i = saved_pos
+                    expr = self.parse_expr()
+                    return ["expr", expr]
+            except ParseError:
+                # Backtrack and parse as matrix literal
+                self.i = saved_pos
+                expr = self.parse_expr()
+                return ["expr", expr]
+
         if self.current().kind == "ID":
             id_tok = self.eat("ID")
             if self.current().value == "=":
@@ -219,7 +328,7 @@ class MatlabParser:
                 expr = self.parse_expr()
                 return ["assign", id_tok.line, id_tok.value, expr]
             else:
-                expr_tail = self.parse_expr_rest(["var", id_tok.value], 0)
+                expr_tail = self.parse_expr_rest(["var", id_tok.line, id_tok.value], 0)
                 return ["expr", expr_tail]
         else:
             expr = self.parse_expr()
