@@ -15,7 +15,7 @@ from analysis.builtins import KNOWN_BUILTINS
 
 from ir import (
     Program, Stmt,
-    Assign, ExprStmt, While, For, If, OpaqueStmt, FunctionDef, AssignMulti,
+    Assign, ExprStmt, While, For, If, OpaqueStmt, FunctionDef, AssignMulti, Return,
     Expr, Var, Const, MatrixLit, Apply, Transpose, Neg, BinOp,
     IndexArg, Colon, Range, IndexExpr,
 )
@@ -35,11 +35,16 @@ class FunctionSignature:
     output_vars: List[str]
     body: List[Stmt]
 
+class EarlyReturn(Exception):
+    """Raised by return statement to exit function body analysis."""
+    pass
+
 @dataclass
 class AnalysisContext:
     """Threaded analysis state (replaces loose parameters)."""
     function_registry: Dict[str, FunctionSignature] = field(default_factory=dict)
     analyzing_functions: Set[str] = field(default_factory=set)
+    analysis_cache: Dict[tuple, tuple] = field(default_factory=dict)
     fixpoint: bool = False
 
 
@@ -75,13 +80,66 @@ def analyze_program_ir(program: Program, fixpoint: bool = False, ctx: AnalysisCo
             )
 
     # Pass 2: Analyze script statements (non-functions)
-    for item in program.body:
-        if not isinstance(item, FunctionDef):
-            analyze_stmt_ir(item, env, warnings, ctx)
+    try:
+        for item in program.body:
+            if not isinstance(item, FunctionDef):
+                analyze_stmt_ir(item, env, warnings, ctx)
+    except EarlyReturn:
+        pass  # Script-level return stops analysis
 
     # Deduplicate warnings while preserving order
     warnings = list(dict.fromkeys(warnings))
     return env, warnings
+
+
+def _format_dual_location_warning(func_warn: str, func_name: str, call_line: int) -> str:
+    """Reformat a function-internal warning with call-site context.
+
+    Args:
+        func_warn: Warning message from function body
+        func_name: Name of the called function
+        call_line: Line number of the call site
+
+    Returns:
+        Warning message with dual-location context
+    """
+    # Extract warning line from func_warn
+    # Formats: "W_... line N: ..." or "Line N: ..."
+    # Check for both " line " (lowercase) and "Line " (capitalized at start)
+    body_line = None
+    prefix = None
+    message = None
+
+    if " line " in func_warn:
+        # Format: "W_... line N: message"
+        parts = func_warn.split(" line ", 1)
+        prefix = parts[0]
+        rest = parts[1]
+        if ": " in rest:
+            body_line = rest.split(": ", 1)[0].split(" ")[0]
+            message = rest.split(": ", 1)[1]
+    elif func_warn.startswith("Line "):
+        # Format: "Line N: message"
+        rest = func_warn[5:]  # Skip "Line "
+        if ": " in rest:
+            body_line = rest.split(": ", 1)[0]
+            message = rest.split(": ", 1)[1]
+            prefix = "Line"
+
+    if body_line and message and prefix:
+        # Check if already has call context
+        if "(in " not in func_warn:
+            # Add call context
+            if prefix == "Line":
+                return f"Line {body_line} (in {func_name}, called from line {call_line}): {message}"
+            else:
+                return f"{prefix} line {body_line} (in {func_name}, called from line {call_line}): {message}"
+        else:
+            # Already has call context, return as-is
+            return func_warn
+    else:
+        # Could not parse, return as-is
+        return func_warn
 
 
 def analyze_function_call(
@@ -94,7 +152,7 @@ def analyze_function_call(
 ) -> List[Shape]:
     """Analyze user-defined function call and return output shapes.
 
-    Re-analyzes function body at every call site (no caching).
+    Uses polymorphic caching keyed by (func_name, arg_shapes tuple).
 
     Args:
         func_name: Name of function to call
@@ -125,6 +183,19 @@ def analyze_function_call(
         warnings.append(diag.warn_recursive_function(line, func_name))
         return [Shape.unknown()] * max(len(sig.output_vars), 1)
 
+    # Evaluate arg shapes for cache key
+    arg_shapes = tuple(_eval_index_arg_to_shape(arg, env, warnings, ctx) for arg in args)
+    cache_key = (func_name, arg_shapes)
+
+    # Check cache
+    if cache_key in ctx.analysis_cache:
+        cached_shapes, cached_warnings = ctx.analysis_cache[cache_key]
+        # Replay warnings with current call site's dual-location formatting
+        for func_warn in cached_warnings:
+            formatted = _format_dual_location_warning(func_warn, func_name, line)
+            warnings.append(formatted)
+        return list(cached_shapes)  # Return copy
+
     # Mark function as currently being analyzed
     ctx.analyzing_functions.add(func_name)
 
@@ -134,8 +205,7 @@ def analyze_function_call(
         func_warnings: List[str] = []
 
         # Bind parameters to argument shapes + set up dimension aliases
-        for param_name, arg in zip(sig.params, args):
-            arg_shape = _eval_index_arg_to_shape(arg, env, warnings, ctx)
+        for param_name, arg, arg_shape in zip(sig.params, args, arg_shapes):
             func_env.set(param_name, arg_shape)
 
             # Dimension aliasing: if arg is a Var, extract its dimension
@@ -145,49 +215,11 @@ def analyze_function_call(
                     func_env.dim_aliases[param_name] = caller_dim
 
         # Analyze function body (inherit fixpoint setting)
-        for stmt in sig.body:
-            analyze_stmt_ir(stmt, func_env, func_warnings, ctx)
-
-        # Prepend call context to function warnings (dual-location format)
-        for func_warn in func_warnings:
-            # Extract warning line from func_warn
-            # Formats: "W_... line N: ..." or "Line N: ..."
-            # Check for both " line " (lowercase) and "Line " (capitalized at start)
-            body_line = None
-            prefix = None
-            message = None
-
-            if " line " in func_warn:
-                # Format: "W_... line N: message"
-                parts = func_warn.split(" line ", 1)
-                prefix = parts[0]
-                rest = parts[1]
-                if ": " in rest:
-                    body_line = rest.split(": ", 1)[0].split(" ")[0]
-                    message = rest.split(": ", 1)[1]
-            elif func_warn.startswith("Line "):
-                # Format: "Line N: message"
-                rest = func_warn[5:]  # Skip "Line "
-                if ": " in rest:
-                    body_line = rest.split(": ", 1)[0]
-                    message = rest.split(": ", 1)[1]
-                    prefix = "Line"
-
-            if body_line and message and prefix:
-                # Check if already has call context
-                if "(in " not in func_warn:
-                    # Add call context
-                    if prefix == "Line":
-                        new_warn = f"Line {body_line} (in {func_name}, called from line {line}): {message}"
-                    else:
-                        new_warn = f"{prefix} line {body_line} (in {func_name}, called from line {line}): {message}"
-                    warnings.append(new_warn)
-                else:
-                    # Already has call context, append as-is
-                    warnings.append(func_warn)
-            else:
-                # Could not parse, append as-is
-                warnings.append(func_warn)
+        try:
+            for stmt in sig.body:
+                analyze_stmt_ir(stmt, func_env, func_warnings, ctx)
+        except EarlyReturn:
+            pass  # Function returned early — outputs are current env values
 
         # Extract return values from output variables
         result_shapes = []
@@ -200,7 +232,17 @@ def analyze_function_call(
                 result_shapes.append(shape)
 
         # Return output shapes (or single unknown if no outputs)
-        return result_shapes if result_shapes else [Shape.unknown()]
+        result = result_shapes if result_shapes else [Shape.unknown()]
+
+        # Store in cache before formatting warnings
+        ctx.analysis_cache[cache_key] = (result, list(func_warnings))
+
+        # Format warnings for current call site
+        for func_warn in func_warnings:
+            formatted = _format_dual_location_warning(func_warn, func_name, line)
+            warnings.append(formatted)
+
+        return result
 
     finally:
         # Remove function from analyzing set
@@ -216,16 +258,23 @@ def _analyze_loop_body(body: list, env: Env, warnings: List[str], ctx: AnalysisC
     - Phase 3 (Post-loop join): Model "loop may not execute" by widening pre-loop env with final env
 
     This guarantees convergence in <=2 iterations (vs unpredictable with iteration limit).
+    Catches EarlyReturn at boundary (stops iteration, doesn't propagate).
     """
     if not ctx.fixpoint:
-        for s in body:
-            analyze_stmt_ir(s, env, warnings, ctx)
+        try:
+            for s in body:
+                analyze_stmt_ir(s, env, warnings, ctx)
+        except EarlyReturn:
+            pass  # Stop iteration, don't propagate
         return
 
     # Phase 1 (Discover): Analyze body once to discover dimension conflicts
     pre_loop_env = env.copy()
-    for s in body:
-        analyze_stmt_ir(s, env, warnings, ctx)
+    try:
+        for s in body:
+            analyze_stmt_ir(s, env, warnings, ctx)
+    except EarlyReturn:
+        pass  # Phase 1 stopped early
 
     # Widen: stable dimensions preserved, conflicting dimensions -> None
     widened = widen_env(pre_loop_env, env)
@@ -234,8 +283,11 @@ def _analyze_loop_body(body: list, env: Env, warnings: List[str], ctx: AnalysisC
     # (widened dims like None x 1 should stabilize immediately in body)
     if widened.bindings != env.bindings:
         env.bindings = widened.bindings
-        for s in body:
-            analyze_stmt_ir(s, env, warnings, ctx)
+        try:
+            for s in body:
+                analyze_stmt_ir(s, env, warnings, ctx)
+        except EarlyReturn:
+            pass  # Phase 2 stopped early
 
     # Phase 3 (Post-loop join): Model "loop may execute 0 times"
     # Use widen_env (same operator) to join pre-loop and post-loop states
@@ -288,13 +340,34 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str], ctx: AnalysisCont
         then_env = env.copy()
         else_env = env.copy()
 
-        for s in stmt.then_body:
-            analyze_stmt_ir(s, then_env, warnings, ctx)
-        for s in stmt.else_body:
-            analyze_stmt_ir(s, else_env, warnings, ctx)
+        then_returned = False
+        else_returned = False
 
-        merged = join_env(then_env, else_env)
-        env.bindings = merged.bindings
+        try:
+            for s in stmt.then_body:
+                analyze_stmt_ir(s, then_env, warnings, ctx)
+        except EarlyReturn:
+            then_returned = True
+
+        try:
+            for s in stmt.else_body:
+                analyze_stmt_ir(s, else_env, warnings, ctx)
+        except EarlyReturn:
+            else_returned = True
+
+        if then_returned and else_returned:
+            # Both branches return — propagate
+            raise EarlyReturn()
+        elif then_returned:
+            # Only then returns — use else env
+            env.bindings = else_env.bindings
+        elif else_returned:
+            # Only else returns — use then env
+            env.bindings = then_env.bindings
+        else:
+            # Neither returns — normal join
+            merged = join_env(then_env, else_env)
+            env.bindings = merged.bindings
         return env
 
     if isinstance(stmt, OpaqueStmt):
@@ -304,6 +377,12 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str], ctx: AnalysisCont
         for target_name in stmt.targets:
             env.set(target_name, Shape.unknown())
         return env
+
+    if isinstance(stmt, Return):
+        if not ctx.analyzing_functions:
+            # Script context: warn and stop
+            warnings.append(diag.warn_return_outside_function(stmt.line))
+        raise EarlyReturn()
 
     if isinstance(stmt, FunctionDef):
         # Phase A stub: skip function definitions (Phase C will register them)

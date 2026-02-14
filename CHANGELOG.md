@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-02-14
+### Added
+- Polymorphic caching for function analysis keyed by (func_name, arg_shapes)
+- Warning replay: Cached warnings replayed with current call-site line number
+- Return statement support (keyword, IR node, EarlyReturn exception)
+- Catch-at-boundary semantics: EarlyReturn caught in If, loops, and program boundaries
+- W_RETURN_OUTSIDE_FUNCTION warning for return in script context
+- 5 new test files in tests/functions/ (cache_hit, cache_miss, cache_hit_with_warning, return_statement, return_in_script)
+- Total test count: 71 (was 66)
+
+### Changed
+- AnalysisContext dataclass: Added analysis_cache field (Dict[tuple, tuple])
+- Function analysis: Re-analysis only on cache miss (arg shapes change)
+- Loop analysis: Catches EarlyReturn at boundary (stops iteration, doesn't propagate)
+- If statement: Catches EarlyReturn from non-returned branch
+- Program analysis: Catches EarlyReturn at script level (stops analysis)
+
+### Added (Infrastructure)
+- _format_dual_location_warning() helper: Extracted for reuse in warning replay
+- Return IR node: Represents return statement (no value in MATLAB)
+- EarlyReturn exception: Signals early function exit
+- KEYWORDS updated: Added "return" keyword to parser
+
 ## [0.10.0] - 2026-02-14
 ### Added
 - User-defined function support with 3 syntactic forms (single return, multi-return, procedure)

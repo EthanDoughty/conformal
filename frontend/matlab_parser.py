@@ -14,7 +14,7 @@ class Token:
     line: int  # line number
 
 # MATLAB keywords in the subset
-KEYWORDS = {"for", "while", "if", "else", "end", "function"}
+KEYWORDS = {"for", "while", "if", "else", "end", "function", "return"}
 
 # Simple tokenization rules
 TOKEN_SPEC = [
@@ -262,6 +262,9 @@ class MatlabParser:
                 return self.parse_while()
             elif tok.kind == "IF":
                 return self.parse_if()
+            elif tok.kind == "RETURN":
+                tok = self.eat("RETURN")
+                return ["return", tok.line]
             elif tok.kind == "NEWLINE":
                 self.eat("NEWLINE")
                 return ["skip"]

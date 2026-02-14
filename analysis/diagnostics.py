@@ -195,3 +195,7 @@ def warn_multi_assign_builtin(line: int, func_name: str) -> str:
 def warn_multi_assign_count_mismatch(line: int, func_name: str, expected: int, got: int) -> str:
     """Warning for destructuring assignment target count mismatch."""
     return f"W_MULTI_ASSIGN_COUNT_MISMATCH line {line}: function {func_name} returns {expected} values, got {got} targets"
+
+def warn_return_outside_function(line: int) -> str:
+    """Warning for return statement outside function body."""
+    return f"W_RETURN_OUTSIDE_FUNCTION line {line}: return statement outside function body"

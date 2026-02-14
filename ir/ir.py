@@ -156,6 +156,11 @@ class AssignMulti(Stmt):
     expr: Expr  # Expression (must evaluate to multiple values)
 
 @dataclass(frozen=True)
+class Return(Stmt):
+    """Return statement (early exit from function). MATLAB return has no value."""
+    pass
+
+@dataclass(frozen=True)
 class Program:
     """Top-level program consisting of statements."""
     body: List[Stmt]

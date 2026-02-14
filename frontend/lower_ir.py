@@ -162,6 +162,9 @@ def lower_stmt(stmt: Any) -> Stmt:
         body = [lower_stmt(x) for x in stmt[3]]
         return For(line=iterator_expr.line, var=var_name, it=iterator_expr, body=body)
 
+    if tag == "return":
+        return Return(line=stmt[1])
+
     if tag == "raw_stmt":
         # ['raw_stmt', line, tokens, raw_text]
         line = stmt[1]

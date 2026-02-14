@@ -88,13 +88,15 @@ python3 tools/ai_local.py --no-context "explain lattice widening in abstract int
 
 2. **IR** (`ir/`) — Typed intermediate representation
    - `ir.py`: Dataclass definitions (Expr, Stmt, Program)
+   - Statement nodes: Assign, ExprStmt, While, For, If, OpaqueStmt, FunctionDef, AssignMulti, Return
    - Clean, typed nodes vs. legacy `['assign', line, name, expr]` format
 
 3. **Analysis** (`analysis/`) — Static shape inference
    - `analysis_ir.py`: **Main IR-based analyzer** (default, authoritative)
      - Interprocedural analysis for user-defined functions (call-site specific)
-     - AnalysisContext: Threads analysis state (function registry, recursion guard, fixpoint flag)
+     - AnalysisContext: Threads analysis state (function registry, recursion guard, polymorphic cache, fixpoint flag)
      - FunctionSignature: Registered function metadata
+     - EarlyReturn exception: Signals early function exit (caught at boundaries)
    - `builtins.py`: Builtin function catalog (`KNOWN_BUILTINS`, shape rule registry)
    - `analysis_core.py`: Shared compatibility checks
    - `matrix_literals.py`: Matrix literal shape inference
@@ -168,10 +170,14 @@ The test runner (`run_all_tests.py`) validates these expectations against analys
   - Procedure: `function name(params)` (no return values)
 - **Two-pass analysis**: Pass 1 registers all function definitions, Pass 2 analyzes script statements
 - **Interprocedural analysis**: Functions are analyzed at each call site with caller's argument shapes
+- **Polymorphic caching**: Analysis results cached per (func_name, arg_shapes) to avoid redundant re-analysis
+- **Warning replay**: Cached warnings replayed with current call-site line number on cache hit
 - **Dimension aliasing**: Symbolic dimension names propagate across function boundaries (e.g., `make_matrix(n, m)` returns `matrix[n x m]` where `n` and `m` are the caller's symbolic dimensions)
 - **Recursion guard**: Recursive function calls emit `W_RECURSIVE_FUNCTION` and return unknown
 - **Dual-location warnings**: Warnings in function bodies show both call site line and body line
 - **Destructuring assignment**: `[a, b] = func(x)` binds multiple return values to variables
+- **Return statement**: `return` keyword exits function early (MATLAB return has no value)
+- **Catch-at-boundary**: EarlyReturn caught in If (non-returned branch used), loops (stop iteration), program (stop script)
 
 ### Best-Effort Analysis
 

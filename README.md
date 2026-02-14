@@ -43,7 +43,7 @@ The subset includes:
 - assignments and expressions
 - function calls (19 recognized builtins with full shape rule coverage)
 - user-defined functions (single/multi-return/procedure forms with interprocedural analysis)
-- control flow (if, for, while)
+- control flow (if, for, while, return)
 - symbolic dimensions
 - indexing and transpose
 
@@ -127,6 +127,11 @@ Each test file:
 | functions/function_then_script.m | Function definitions followed by script
 | functions/call_with_mismatch.m | Function call with dimension mismatch
 | functions/recursion.m | Recursive function calls
+| functions/cache_hit.m | Polymorphic cache hit (same arg shapes)
+| functions/cache_miss.m | Polymorphic cache miss (different arg shapes)
+| functions/cache_hit_with_warning.m | Warning replay on cache hit
+| functions/return_statement.m | Return statement (early exit)
+| functions/return_in_script.m | Return in script context (warning)
 | recovery/struct_field.m | Unsupported struct field access
 | recovery/cell_array.m | Unsupported cell array indexing
 | recovery/multiple_assignment.m | Unsupported multiple assignment
