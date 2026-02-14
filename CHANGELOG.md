@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-02-14
+### Added
+- Extended control flow constructs: elseif, break, continue, switch/case, try/catch
+- 8 new parser keywords: elseif, break, continue, switch, case, otherwise, try, catch
+- 5 new IR nodes: IfChain (replaces If), Switch, Try, Break, Continue
+- Exception handling: EarlyBreak and EarlyContinue exceptions for loop control flow
+- Full exception handling in all branch handlers (IfChain, Switch, Try)
+- 12 new test files in tests/control_flow/ (elseif chains, break/continue, switch/case, try/catch)
+- Total test count: 92 (was 80)
+
+### Changed
+- If statement now supports elseif chains via IfChain IR node
+- Loop analysis catches EarlyBreak and EarlyContinue exceptions
+
 ## [0.10.2] - 2026-02-14
 ### Added
 - Test coverage polish: 11 new test files for edge cases and integration scenarios

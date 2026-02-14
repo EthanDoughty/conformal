@@ -88,7 +88,7 @@ python3 tools/ai_local.py --no-context "explain lattice widening in abstract int
 
 2. **IR** (`ir/`) — Typed intermediate representation
    - `ir.py`: Dataclass definitions (Expr, Stmt, Program)
-   - Statement nodes: Assign, ExprStmt, While, For, If, OpaqueStmt, FunctionDef, AssignMulti, Return
+   - Statement nodes: Assign, ExprStmt, While, For, IfChain, Switch, Try, Break, Continue, OpaqueStmt, FunctionDef, AssignMulti, Return
    - Clean, typed nodes vs. legacy `['assign', line, name, expr]` format
 
 3. **Analysis** (`analysis/`) — Static shape inference
@@ -97,6 +97,7 @@ python3 tools/ai_local.py --no-context "explain lattice widening in abstract int
      - AnalysisContext: Threads analysis state (function registry, recursion guard, polymorphic cache, fixpoint flag)
      - FunctionSignature: Registered function metadata
      - EarlyReturn exception: Signals early function exit (caught at boundaries)
+     - EarlyBreak/EarlyContinue exceptions: Signals loop control flow (caught in loop handlers)
    - `builtins.py`: Builtin function catalog (`KNOWN_BUILTINS`, shape rule registry)
    - `analysis_core.py`: Shared compatibility checks
    - `matrix_literals.py`: Matrix literal shape inference

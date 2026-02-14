@@ -14,7 +14,13 @@ class Token:
     line: int  # line number
 
 # MATLAB keywords in the subset
-KEYWORDS = {"for", "while", "if", "else", "end", "function", "return"}
+KEYWORDS = {
+    "for", "while", "if", "else", "elseif", "end",
+    "switch", "case", "otherwise",
+    "try", "catch",
+    "break", "continue",
+    "function", "return"
+}
 
 # Simple tokenization rules
 TOKEN_SPEC = [
@@ -128,7 +134,7 @@ class MatlabParser:
             tok = self.current()
 
             # Check for block-ending keywords at depth 0
-            if depth == 0 and tok.kind in {"END", "ELSE", "ELSEIF"}:
+            if depth == 0 and tok.kind in {"END", "ELSE", "ELSEIF", "CASE", "OTHERWISE", "CATCH"}:
                 break
 
             # Check for statement boundary at depth 0 (using token kind for semicolon)
@@ -262,6 +268,16 @@ class MatlabParser:
                 return self.parse_while()
             elif tok.kind == "IF":
                 return self.parse_if()
+            elif tok.kind == "SWITCH":
+                return self.parse_switch()
+            elif tok.kind == "TRY":
+                return self.parse_try()
+            elif tok.kind == "BREAK":
+                tok = self.eat("BREAK")
+                return ["break", tok.line]
+            elif tok.kind == "CONTINUE":
+                tok = self.eat("CONTINUE")
+                return ["continue", tok.line]
             elif tok.kind == "RETURN":
                 tok = self.eat("RETURN")
                 return ["return", tok.line]
@@ -366,16 +382,73 @@ class MatlabParser:
         return ["while", cond, body]
 
     def parse_if(self) -> Any:
-        """Internal: ['if', cond, then_body, else_body]"""
+        """Internal: ['if', cond, then_body, elseifs, else_body]
+        where elseifs = [[cond2, body2], [cond3, body3], ...]
+        """
         self.eat("IF")
         cond = self.parse_expr()
-        then_body = self.parse_block(until_kinds=("ELSE", "END"))
+        then_body = self.parse_block(until_kinds=("ELSE", "ELSEIF", "END"))
+
+        elseifs = []
+        while self.current().kind == "ELSEIF":
+            self.eat("ELSEIF")
+            elif_cond = self.parse_expr()
+            elif_body = self.parse_block(until_kinds=("ELSE", "ELSEIF", "END"))
+            elseifs.append([elif_cond, elif_body])
+
         else_body = [["skip"]]
         if self.current().kind == "ELSE":
             self.eat("ELSE")
             else_body = self.parse_block(until_kinds=("END",))
+
         self.eat("END")
-        return ["if", cond, then_body, else_body]
+        return ["if", cond, then_body, elseifs, else_body]
+
+    def parse_switch(self) -> Any:
+        """Internal: ['switch', expr, cases, otherwise_body]
+        where cases = [[case_val1, body1], [case_val2, body2], ...]
+        """
+        self.eat("SWITCH")
+        expr = self.parse_expr()
+
+        # Skip newline after switch expression
+        if self.current().kind == "NEWLINE":
+            self.eat("NEWLINE")
+
+        cases = []
+        while self.current().kind == "CASE":
+            self.eat("CASE")
+            case_val = self.parse_expr()
+            case_body = self.parse_block(until_kinds=("CASE", "OTHERWISE", "END"))
+            cases.append([case_val, case_body])
+
+        otherwise_body = [["skip"]]
+        if self.current().kind == "OTHERWISE":
+            self.eat("OTHERWISE")
+            otherwise_body = self.parse_block(until_kinds=("END",))
+
+        self.eat("END")
+        return ["switch", expr, cases, otherwise_body]
+
+    def parse_try(self) -> Any:
+        """Internal: ['try', try_body, catch_body]
+        Note: Ignores optional catch variable (catch err)
+        """
+        self.eat("TRY")
+        # parse_block will handle the initial newline
+        try_body = self.parse_block(until_kinds=("CATCH", "END"))
+
+        catch_body = [["skip"]]
+        if self.current().kind == "CATCH":
+            self.eat("CATCH")
+            # Skip optional error variable
+            if self.current().kind == "ID":
+                self.eat("ID")
+            # parse_block will handle the newline after catch/variable
+            catch_body = self.parse_block(until_kinds=("END",))
+
+        self.eat("END")
+        return ["try", try_body, catch_body]
 
     def parse_block(self, until_kinds: Tuple[str, ...]) -> List[Any]:
         """Internal: [stmt1, stmt2, ...] (or [['skip']] if empty)"""

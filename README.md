@@ -43,7 +43,7 @@ The subset includes:
 - assignments and expressions
 - function calls (19 recognized builtins with full shape rule coverage)
 - user-defined functions (single/multi-return/procedure forms with interprocedural analysis)
-- control flow (if, for, while, return)
+- control flow (if/elseif/else, for, while, switch/case, try/catch, break, continue, return)
 - symbolic dimensions
 - indexing and transpose
 
@@ -111,6 +111,19 @@ Each test file:
 | indexing/invalid_linear_index.m | Invalid linear index
 | control_flow/if_branch_mismatch.m | Control-flow joins with mismatches
 | control_flow/suspicious_comparison.m | Matrix-scalar comparisons
+| control_flow/if_else_error_branch.m | If-else with error in branch
+| control_flow/elseif_chain.m | Elseif chains
+| control_flow/elseif_no_else.m | Elseif without else
+| control_flow/elseif_mismatch.m | Elseif branch mismatches
+| control_flow/break_simple.m | Break statement in loop
+| control_flow/continue_simple.m | Continue statement in loop
+| control_flow/break_nested_loop.m | Break in nested loops
+| control_flow/switch_basic.m | Switch/case statement
+| control_flow/switch_no_otherwise.m | Switch without otherwise
+| control_flow/switch_mismatch.m | Switch case type mismatches
+| control_flow/try_catch_basic.m | Try/catch exception handling
+| control_flow/try_catch_no_error.m | Try/catch with no error
+| control_flow/try_nested.m | Nested try/catch
 | literals/matrix_literal.m | Matrix literals
 | literals/horzcat_vertcat.m | Horizontal and vertical concatenation
 | literals/symbolic_concat.m | Symbolic concatenation

@@ -144,10 +144,21 @@ def lower_stmt(stmt: Any) -> Stmt:
         return ExprStmt(line=line, expr=lower_expr(expr))
 
     if tag == "if":
+        # Updated for v0.11.0: handle 5-element format with elseifs
+        # ['if', cond, then_body, elseifs, else_body]
         cond = lower_expr(stmt[1])
         then_body = [lower_stmt(x) for x in stmt[2]]
-        else_body = [lower_stmt(x) for x in stmt[3]]
-        return If(line=cond.line, cond=cond, then_body=then_body, else_body=else_body)
+        elseifs = stmt[3]  # [[cond2, body2], ...]
+        else_body = [lower_stmt(x) for x in stmt[4]]
+
+        if not elseifs:
+            # Simple if/else (backward compatible)
+            return If(line=cond.line, cond=cond, then_body=then_body, else_body=else_body)
+        else:
+            # IfChain
+            conditions = [cond] + [lower_expr(ec) for ec, _ in elseifs]
+            bodies = [then_body] + [[lower_stmt(s) for s in body] for _, body in elseifs]
+            return IfChain(line=cond.line, conditions=conditions, bodies=bodies, else_body=else_body)
 
     if tag == "while":
         cond = lower_expr(stmt[1])
@@ -164,6 +175,27 @@ def lower_stmt(stmt: Any) -> Stmt:
 
     if tag == "return":
         return Return(line=stmt[1])
+
+    if tag == "switch":
+        # ['switch', expr, cases, otherwise_body]
+        expr = lower_expr(stmt[1])
+        cases = [(lower_expr(case_val), [lower_stmt(s) for s in case_body])
+                 for case_val, case_body in stmt[2]]
+        otherwise = [lower_stmt(s) for s in stmt[3]]
+        return Switch(line=expr.line, expr=expr, cases=cases, otherwise=otherwise)
+
+    if tag == "try":
+        # ['try', try_body, catch_body]
+        line = stmt[1][0][1] if stmt[1] and isinstance(stmt[1][0], list) and len(stmt[1][0]) > 1 else 0
+        try_body = [lower_stmt(s) for s in stmt[1]]
+        catch_body = [lower_stmt(s) for s in stmt[2]]
+        return Try(line=line, try_body=try_body, catch_body=catch_body)
+
+    if tag == "break":
+        return Break(line=stmt[1])
+
+    if tag == "continue":
+        return Continue(line=stmt[1])
 
     if tag == "raw_stmt":
         # ['raw_stmt', line, tokens, raw_text]

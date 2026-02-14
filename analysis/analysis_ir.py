@@ -15,7 +15,8 @@ from analysis.builtins import KNOWN_BUILTINS
 
 from ir import (
     Program, Stmt,
-    Assign, ExprStmt, While, For, If, OpaqueStmt, FunctionDef, AssignMulti, Return,
+    Assign, ExprStmt, While, For, If, IfChain, Switch, Try, Break, Continue,
+    OpaqueStmt, FunctionDef, AssignMulti, Return,
     Expr, Var, Const, MatrixLit, Apply, Transpose, Neg, BinOp,
     IndexArg, Colon, Range, IndexExpr,
 )
@@ -37,6 +38,14 @@ class FunctionSignature:
 
 class EarlyReturn(Exception):
     """Raised by return statement to exit function body analysis."""
+    pass
+
+class EarlyBreak(Exception):
+    """Raised by break statement to exit loop."""
+    pass
+
+class EarlyContinue(Exception):
+    """Raised by continue statement to skip to next iteration."""
     pass
 
 @dataclass
@@ -86,6 +95,8 @@ def analyze_program_ir(program: Program, fixpoint: bool = False, ctx: AnalysisCo
                 analyze_stmt_ir(item, env, warnings, ctx)
     except EarlyReturn:
         pass  # Script-level return stops analysis
+    except (EarlyBreak, EarlyContinue):
+        pass  # Break/continue outside loop (graceful degradation)
 
     # Deduplicate warnings while preserving order
     warnings = list(dict.fromkeys(warnings))
@@ -258,13 +269,13 @@ def _analyze_loop_body(body: list, env: Env, warnings: List[str], ctx: AnalysisC
     - Phase 3 (Post-loop join): Model "loop may not execute" by widening pre-loop env with final env
 
     This guarantees convergence in <=2 iterations (vs unpredictable with iteration limit).
-    Catches EarlyReturn at boundary (stops iteration, doesn't propagate).
+    Catches EarlyReturn/EarlyBreak/EarlyContinue at boundary (stops iteration, doesn't propagate).
     """
     if not ctx.fixpoint:
         try:
             for s in body:
                 analyze_stmt_ir(s, env, warnings, ctx)
-        except EarlyReturn:
+        except (EarlyReturn, EarlyBreak, EarlyContinue):
             pass  # Stop iteration, don't propagate
         return
 
@@ -273,7 +284,7 @@ def _analyze_loop_body(body: list, env: Env, warnings: List[str], ctx: AnalysisC
     try:
         for s in body:
             analyze_stmt_ir(s, env, warnings, ctx)
-    except EarlyReturn:
+    except (EarlyReturn, EarlyBreak, EarlyContinue):
         pass  # Phase 1 stopped early
 
     # Widen: stable dimensions preserved, conflicting dimensions -> None
@@ -286,7 +297,7 @@ def _analyze_loop_body(body: list, env: Env, warnings: List[str], ctx: AnalysisC
         try:
             for s in body:
                 analyze_stmt_ir(s, env, warnings, ctx)
-        except EarlyReturn:
+        except (EarlyReturn, EarlyBreak, EarlyContinue):
             pass  # Phase 2 stopped early
 
     # Phase 3 (Post-loop join): Model "loop may execute 0 times"
@@ -383,6 +394,133 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str], ctx: AnalysisCont
             # Script context: warn and stop
             warnings.append(diag.warn_return_outside_function(stmt.line))
         raise EarlyReturn()
+
+    if isinstance(stmt, Break):
+        raise EarlyBreak()
+
+    if isinstance(stmt, Continue):
+        raise EarlyContinue()
+
+    if isinstance(stmt, IfChain):
+        # Evaluate all conditions for side effects
+        for cond in stmt.conditions:
+            _ = eval_expr_ir(cond, env, warnings, ctx)
+
+        # Analyze all branches, tracking which ones returned/broke/continued
+        all_bodies = list(stmt.bodies) + [stmt.else_body]
+        branch_envs = []
+        returned_flags = []
+        deferred_exception = None  # EarlyBreak or EarlyContinue to re-raise
+
+        for body in all_bodies:
+            branch_env = env.copy()
+            returned = False
+            try:
+                for s in body:
+                    analyze_stmt_ir(s, branch_env, warnings, ctx)
+            except EarlyReturn:
+                returned = True
+            except (EarlyBreak, EarlyContinue) as exc:
+                # Break/continue inside if inside loop: record and re-raise after join
+                returned = True  # Exclude from join (same as EarlyReturn)
+                deferred_exception = exc
+            branch_envs.append(branch_env)
+            returned_flags.append(returned)
+
+        # If ALL branches returned/broke, propagate
+        if all(returned_flags):
+            if deferred_exception:
+                raise type(deferred_exception)()
+            raise EarlyReturn()
+
+        # Join only non-returned branches
+        live_envs = [e for e, r in zip(branch_envs, returned_flags) if not r]
+        if live_envs:
+            result = live_envs[0]
+            for other in live_envs[1:]:
+                result = join_env(result, other)
+            env.bindings = result.bindings
+        return env
+
+    if isinstance(stmt, Switch):
+        _ = eval_expr_ir(stmt.expr, env, warnings, ctx)
+        for case_val, _ in stmt.cases:
+            _ = eval_expr_ir(case_val, env, warnings, ctx)
+
+        all_bodies = [body for _, body in stmt.cases] + [stmt.otherwise]
+        branch_envs = []
+        returned_flags = []
+        deferred_exception = None
+
+        for body in all_bodies:
+            branch_env = env.copy()
+            returned = False
+            try:
+                for s in body:
+                    analyze_stmt_ir(s, branch_env, warnings, ctx)
+            except EarlyReturn:
+                returned = True
+            except (EarlyBreak, EarlyContinue) as exc:
+                returned = True
+                deferred_exception = exc
+            branch_envs.append(branch_env)
+            returned_flags.append(returned)
+
+        if all(returned_flags):
+            if deferred_exception:
+                raise type(deferred_exception)()
+            raise EarlyReturn()
+
+        live_envs = [e for e, r in zip(branch_envs, returned_flags) if not r]
+        if live_envs:
+            result = live_envs[0]
+            for other in live_envs[1:]:
+                result = join_env(result, other)
+            env.bindings = result.bindings
+        return env
+
+    if isinstance(stmt, Try):
+        pre_try_env = env.copy()
+
+        # Analyze try block
+        try_env = env.copy()
+        try_returned = False
+        deferred_exception = None
+        try:
+            for s in stmt.try_body:
+                analyze_stmt_ir(s, try_env, warnings, ctx)
+        except EarlyReturn:
+            try_returned = True
+        except (EarlyBreak, EarlyContinue) as exc:
+            try_returned = True
+            deferred_exception = exc
+
+        # Analyze catch block (starts from pre-try state)
+        catch_env = pre_try_env.copy()
+        catch_returned = False
+        try:
+            for s in stmt.catch_body:
+                analyze_stmt_ir(s, catch_env, warnings, ctx)
+        except EarlyReturn:
+            catch_returned = True
+        except (EarlyBreak, EarlyContinue) as exc:
+            catch_returned = True
+            if not deferred_exception:
+                deferred_exception = exc
+
+        # Propagation logic (same as If handler)
+        if try_returned and catch_returned:
+            if deferred_exception:
+                raise type(deferred_exception)()
+            raise EarlyReturn()
+        elif try_returned:
+            env.bindings = catch_env.bindings
+        elif catch_returned:
+            env.bindings = try_env.bindings
+        else:
+            result = join_env(try_env, catch_env)
+            env.bindings = result.bindings
+        return env
 
     if isinstance(stmt, FunctionDef):
         # Phase A stub: skip function definitions (Phase C will register them)

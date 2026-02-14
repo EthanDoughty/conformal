@@ -85,13 +85,17 @@ class Shape:
 # Dimension helpers
 
 def join_dim(a: Dim, b: Dim) -> Dim:
-    """Join two dimensions in the lattice."""
+    """Join two dimensions in the lattice.
+
+    None represents "unknown dimension" (top for dims).
+    When joining different concrete values or any value with None, result is None.
+    """
     if a == b:
         return a
-    if a is None:
-        return b
-    if b is None:
-        return a
+    # None is absorbing (unknown dimension stays unknown)
+    if a is None or b is None:
+        return None
+    # Different concrete values → unknown
     return None
 
 

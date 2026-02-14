@@ -8,7 +8,7 @@ It provides a cleaner representation than the list-based syntax AST.
 
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import List
+from typing import List, Tuple
 
 # ----- Expressions -----
 
@@ -158,6 +158,41 @@ class AssignMulti(Stmt):
 @dataclass(frozen=True)
 class Return(Stmt):
     """Return statement (early exit from function). MATLAB return has no value."""
+    pass
+
+@dataclass(frozen=True)
+class IfChain(Stmt):
+    """If-elseif-else chain.
+
+    Represents: if c1 ... elseif c2 ... elseif c3 ... else ... end
+    conditions[0] is the if condition, rest are elseif conditions.
+    bodies[0] is the then body, rest are elseif bodies.
+    """
+    conditions: List[Expr]
+    bodies: List[List[Stmt]]
+    else_body: List[Stmt]
+
+@dataclass(frozen=True)
+class Switch(Stmt):
+    """Switch/case statement (MATLAB semantics: no fall-through)."""
+    expr: Expr
+    cases: List[Tuple[Expr, List[Stmt]]]
+    otherwise: List[Stmt]
+
+@dataclass(frozen=True)
+class Try(Stmt):
+    """Try/catch error handling."""
+    try_body: List[Stmt]
+    catch_body: List[Stmt]
+
+@dataclass(frozen=True)
+class Break(Stmt):
+    """Break statement (exit loop)."""
+    pass
+
+@dataclass(frozen=True)
+class Continue(Stmt):
+    """Continue statement (skip to next iteration)."""
     pass
 
 @dataclass(frozen=True)

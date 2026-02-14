@@ -199,3 +199,11 @@ def warn_multi_assign_count_mismatch(line: int, func_name: str, expected: int, g
 def warn_return_outside_function(line: int) -> str:
     """Warning for return statement outside function body."""
     return f"W_RETURN_OUTSIDE_FUNCTION line {line}: return statement outside function body"
+
+def warn_break_outside_loop(line: int) -> str:
+    """Warning for break statement outside loop (v0.11.1 will validate)."""
+    return f"W_BREAK_OUTSIDE_LOOP line {line}: break statement outside loop (treated as no-op)"
+
+def warn_continue_outside_loop(line: int) -> str:
+    """Warning for continue statement outside loop (v0.11.1 will validate)."""
+    return f"W_CONTINUE_OUTSIDE_LOOP line {line}: continue statement outside loop (treated as no-op)"
