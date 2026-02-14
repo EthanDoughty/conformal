@@ -1,12 +1,10 @@
 % Test: Unknown function result overwrites variable in loop body
-% Known limitation: fixpoint mode loses unknown-as-error info
-% because widen_shape treats unknown as bottom (unbound var semantics).
-% Correct fixpoint answer would be A = unknown, but widening
-% returns the pre-loop shape since widen_shape(matrix, unknown) = matrix.
+% v0.9.3: Fixed with Shape.bottom() — widen(matrix, unknown) now gives unknown
+% (unknown is top/error, not bottom/unbound)
 % EXPECT: warnings = 1
 % EXPECT: A = unknown
 % EXPECT_FIXPOINT: warnings = 1
-% EXPECT_FIXPOINT: A = matrix[3 x 3]
+% EXPECT_FIXPOINT: A = unknown
 
 A = zeros(3, 3);
 for i = 1:n

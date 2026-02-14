@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-02-14
+### Fixed
+- Soundness bug: `Shape.unknown()` conflated unbound variables (bottom) with errors (top)
+- `widen_shape(matrix, error_unknown)` now correctly returns unknown (was returning matrix)
+- False positive: unknown function in loop no longer causes spurious downstream warnings in fixpoint mode
+
+### Changed
+- `Env.get()` returns `Shape.bottom()` for unbound variables (was `Shape.unknown()`)
+- `join_shape(unknown, X)` now returns unknown for soundness (precision regression, more sound)
+- `widen_shape`/`join_shape` lattice semantics: bottom is identity, unknown is absorbing top
+
+### Added
+- `Shape.bottom()` as distinct lattice element (identity in join/widen)
+- 6 new edge case tests for bottom/error distinction
+- Total test count: 58 (was 52)
+
 ## [0.9.2] - 2026-02-13
 ### Added
 - Principled loop widening with guaranteed convergence (≤2 iterations)
@@ -17,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Replaced iteration-limit loop analysis (MAX_LOOP_ITERATIONS=3) with widening-based fixpoint
-- `widen_shape()` treats unknown as bottom (handles unbound variables correctly)
+- `widen_shape()` treats unknown as bottom (superseded by Shape.bottom() in 0.9.3)
 - Same `widen_env()` operator used for both widening step and post-loop join
 - Updated 3 existing loop tests (EXPECT_FIXPOINT warnings: 3→1 for growth patterns)
 

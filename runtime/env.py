@@ -19,8 +19,8 @@ class Env:
         return Env(bindings=self.bindings.copy())
 
     def get(self, name: str) -> Shape:
-        """Get the shape of a variable, or unknown if not found."""
-        return self.bindings.get(name, Shape.unknown())
+        """Get the shape of a variable, or bottom if not found."""
+        return self.bindings.get(name, Shape.bottom())
 
     def set(self, name: str, shape: Shape) -> None:
         """Set the shape of a variable."""

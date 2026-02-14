@@ -188,7 +188,10 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str]) -> Shape:
     """
     # Variables / constants
     if isinstance(expr, Var):
-        return env.get(expr.name)
+        shape = env.get(expr.name)
+        # Convert bottom -> unknown at expression evaluation boundary
+        # (bottom is internal to Env, expression eval never sees it)
+        return shape if not shape.is_bottom() else Shape.unknown()
 
     if isinstance(expr, Const):
         return Shape.scalar()

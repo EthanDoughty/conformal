@@ -8,9 +8,16 @@ from runtime.shapes import Shape, Dim, dims_definitely_conflict, join_dim, sum_d
 
 
 def as_matrix_shape(s: Shape) -> Shape:
-    """Treat scalar as 1x1 matrix for concatenation."""
+    """Treat scalar as 1x1 matrix for concatenation.
+
+    Defensive: bottom should never reach here (converted at Var eval boundary),
+    but if it does, return unknown.
+    """
     if s.is_scalar():
         return Shape.matrix(1, 1)
+    if s.is_bottom():
+        # Safety net: bottom leaked into concat logic (should never happen)
+        return Shape.unknown()
     return s
 
 

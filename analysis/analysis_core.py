@@ -15,8 +15,9 @@ def shapes_definitely_incompatible(old: Shape, new: Shape) -> bool:
     Returns:
         True if shapes are definitely incompatible, False otherwise
     """
-    # If either is unknown, don't claim incompatibility
-    if old.is_unknown() or new.is_unknown():
+    # If either is unknown or bottom, don't claim incompatibility
+    # (bottom is compatible with everything; unknown is indeterminate)
+    if old.is_unknown() or new.is_unknown() or old.is_bottom() or new.is_bottom():
         return False
 
     # Scalar vs matrix is definitely incompatible for reassignment

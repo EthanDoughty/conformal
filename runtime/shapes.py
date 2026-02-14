@@ -44,6 +44,11 @@ class Shape:
         """Create an unknown shape (for error cases)."""
         return Shape(kind="unknown")
 
+    @staticmethod
+    def bottom() -> "Shape":
+        """Create a bottom shape (no information / unbound variable)."""
+        return Shape(kind="bottom")
+
     # Predicates
 
     def is_scalar(self) -> bool:
@@ -58,6 +63,10 @@ class Shape:
         """Check if this is an unknown shape."""
         return self.kind == "unknown"
 
+    def is_bottom(self) -> bool:
+        """Check if this is a bottom shape."""
+        return self.kind == "bottom"
+
     # Pretty print / debug
 
     def __str__(self) -> str:
@@ -65,6 +74,8 @@ class Shape:
             return "scalar"
         if self.kind == "matrix":
             return f"matrix[{self.rows} x {self.cols}]"
+        if self.kind == "bottom":
+            return "bottom"  # Should never appear in user-visible output
         return "unknown"
 
     def __repr__(self) -> str:
@@ -178,28 +189,33 @@ def widen_dim(old: Dim, new: Dim) -> Dim:
 
 
 def widen_shape(old: Shape, new: Shape) -> Shape:
-    """Widen shape pointwise. Treats unknown as bottom (for unbound vars).
+    """Widen shape pointwise. Bottom is identity, unknown is absorbing top.
 
     Used in fixpoint loop analysis for both widening and post-loop join.
 
-    Critical: unknown is treated as bottom (no information), so:
-    - widen(unknown, s) = s  (unbound var gets new shape)
-    - widen(s, unknown) = s  (symmetric)
-
-    This handles variables first assigned inside a loop body correctly,
-    since Env.get() returns unknown for unbound variables.
+    Lattice semantics:
+    - bottom is identity: widen(bottom, s) = s, widen(s, bottom) = s
+    - unknown is top: widen(unknown, s) = unknown, widen(s, unknown) = unknown
+    - Pointwise widening for matrices: stable dims preserved, conflicts -> None
 
     Args:
         old: Shape from previous iteration or pre-loop environment
         new: Shape from current iteration
 
     Returns:
-        Widened shape (unknown as bottom, pointwise widen_dim for matrices)
+        Widened shape with bottom-as-identity, unknown-as-top, pointwise widen_dim
     """
-    if old.is_unknown():
-        return new          # unknown = no info (unbound var) -> adopt new
-    if new.is_unknown():
-        return old          # symmetric
+    # Bottom is identity (no information from unbound variable)
+    if old.is_bottom():
+        return new
+    if new.is_bottom():
+        return old
+
+    # Unknown is absorbing top (error/indeterminate propagates)
+    if old.is_unknown() or new.is_unknown():
+        return Shape.unknown()
+
+    # Both known kinds: pointwise widening
     if old.is_scalar() and new.is_scalar():
         return Shape.scalar()
     if old.is_matrix() and new.is_matrix():
@@ -213,13 +229,31 @@ def widen_shape(old: Shape, new: Shape) -> Shape:
 # Shape lattice join
 
 def join_shape(s1: Shape, s2: Shape) -> Shape:
-    """Pointwise join of two shapes"""
-    if s1.is_unknown():
+    """Pointwise join of two shapes. Bottom is identity, unknown is absorbing top.
+
+    Lattice semantics:
+    - bottom is identity: join(bottom, s) = s, join(s, bottom) = s
+    - unknown is top: join(unknown, s) = unknown, join(s, unknown) = unknown
+    - Pointwise join_dim for matrices
+
+    Args:
+        s1: First shape
+        s2: Second shape
+
+    Returns:
+        Joined shape
+    """
+    # Bottom is identity
+    if s1.is_bottom():
         return s2
-    if s2.is_unknown():
+    if s2.is_bottom():
         return s1
 
-    # both known kinds
+    # Unknown is absorbing top
+    if s1.is_unknown() or s2.is_unknown():
+        return Shape.unknown()
+
+    # Both known kinds: pointwise join
     if s1.is_scalar() and s2.is_scalar():
         return Shape.scalar()
 

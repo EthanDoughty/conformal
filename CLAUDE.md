@@ -100,7 +100,7 @@ python3 tools/ai_local.py --no-context "explain lattice widening in abstract int
 ### Runtime Components (`runtime/`)
 
 - `shapes.py`: Abstract shape domain
-  - `Shape`: `scalar | matrix[r x c] | unknown`
+  - `Shape`: `scalar | matrix[r x c] | unknown | bottom (internal)`
   - `Dim`: `int | str (symbolic) | None (unknown)`
   - Key functions: `join_dim`, `dims_definitely_conflict`, `add_dim`, `widen_dim`, `widen_shape`
 
@@ -117,7 +117,8 @@ Each expression gets a shape from this abstract domain:
   - Concrete integers (e.g., `3`, `4`)
   - Symbolic names (e.g., `n`, `m`, `k`)
   - Unknown (`None`)
-- **unknown**: When shape cannot be determined
+- **unknown**: Error or indeterminate shape (lattice top)
+- **bottom**: Unbound variable / no information (lattice identity, internal-only — converted to unknown at expression eval boundary)
 
 **Key features**:
 - Symbolic dimension tracking (e.g., `n`, `m` represent dimensions)
