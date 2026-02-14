@@ -13,10 +13,11 @@ from runtime.shapes import Shape, join_shape, widen_shape
 class Env:
     """Mapping from variable names to their inferred shapes."""
     bindings: Dict[str, Shape] = field(default_factory=dict)
+    dim_aliases: Dict[str, str] = field(default_factory=dict)
 
     def copy(self) -> "Env":
         """Create a shallow copy of this environment."""
-        return Env(bindings=self.bindings.copy())
+        return Env(bindings=self.bindings.copy(), dim_aliases=self.dim_aliases.copy())
 
     def get(self, name: str) -> Shape:
         """Get the shape of a variable, or bottom if not found."""

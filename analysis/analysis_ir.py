@@ -7,7 +7,8 @@ dimensions and detecting dimension mismatches at compile time.
 """
 
 from __future__ import annotations
-from typing import List, Tuple
+from dataclasses import dataclass, field
+from typing import List, Tuple, Dict, Set
 
 from analysis.builtins import KNOWN_BUILTINS
 
@@ -26,44 +27,64 @@ from analysis.analysis_core import shapes_definitely_incompatible
 from analysis.matrix_literals import infer_matrix_literal_shape, as_matrix_shape, dims_definitely_conflict
 
 
-def analyze_program_ir(program: Program, fixpoint: bool = False) -> Tuple[Env, List[str]]:
+@dataclass
+class FunctionSignature:
+    """Registered user-defined function signature."""
+    name: str
+    params: List[str]
+    output_vars: List[str]
+    body: List[Stmt]
+
+@dataclass
+class AnalysisContext:
+    """Threaded analysis state (replaces loose parameters)."""
+    function_registry: Dict[str, FunctionSignature] = field(default_factory=dict)
+    analyzing_functions: Set[str] = field(default_factory=set)
+    fixpoint: bool = False
+
+
+def analyze_program_ir(program: Program, fixpoint: bool = False, ctx: AnalysisContext = None) -> Tuple[Env, List[str]]:
     """Analyze a complete Mini-MATLAB program for shape consistency.
 
     Args:
         program: IR program to analyze
         fixpoint: If True, use fixed-point iteration for loop analysis
+        ctx: Analysis context (created if not provided)
 
     Returns:
         Tuple of (final environment, list of warning messages)
     """
+    if ctx is None:
+        ctx = AnalysisContext(fixpoint=fixpoint)
+
     env = Env()
     warnings: List[str] = []
     for stmt in program.body:
-        analyze_stmt_ir(stmt, env, warnings, fixpoint=fixpoint)
+        analyze_stmt_ir(stmt, env, warnings, ctx)
     # Deduplicate warnings while preserving order
     warnings = list(dict.fromkeys(warnings))
     return env, warnings
 
 
-def _analyze_loop_body(body: list, env: Env, warnings: List[str], fixpoint: bool) -> None:
+def _analyze_loop_body(body: list, env: Env, warnings: List[str], ctx: AnalysisContext) -> None:
     """Analyze a loop body, optionally using widening-based fixed-point iteration.
 
-    Modifies env in place. When fixpoint is True, uses a 3-phase widening algorithm:
+    Modifies env in place. When ctx.fixpoint is True, uses a 3-phase widening algorithm:
     - Phase 1 (Discover): Analyze body once, widen conflicting dimensions
     - Phase 2 (Stabilize): Re-analyze with widened dims if widening changed anything
     - Phase 3 (Post-loop join): Model "loop may not execute" by widening pre-loop env with final env
 
     This guarantees convergence in <=2 iterations (vs unpredictable with iteration limit).
     """
-    if not fixpoint:
+    if not ctx.fixpoint:
         for s in body:
-            analyze_stmt_ir(s, env, warnings, fixpoint=fixpoint)
+            analyze_stmt_ir(s, env, warnings, ctx)
         return
 
     # Phase 1 (Discover): Analyze body once to discover dimension conflicts
     pre_loop_env = env.copy()
     for s in body:
-        analyze_stmt_ir(s, env, warnings, fixpoint=fixpoint)
+        analyze_stmt_ir(s, env, warnings, ctx)
 
     # Widen: stable dimensions preserved, conflicting dimensions -> None
     widened = widen_env(pre_loop_env, env)
@@ -73,7 +94,7 @@ def _analyze_loop_body(body: list, env: Env, warnings: List[str], fixpoint: bool
     if widened.bindings != env.bindings:
         env.bindings = widened.bindings
         for s in body:
-            analyze_stmt_ir(s, env, warnings, fixpoint=fixpoint)
+            analyze_stmt_ir(s, env, warnings, ctx)
 
     # Phase 3 (Post-loop join): Model "loop may execute 0 times"
     # Use widen_env (same operator) to join pre-loop and post-loop states
@@ -81,20 +102,20 @@ def _analyze_loop_body(body: list, env: Env, warnings: List[str], fixpoint: bool
     env.bindings = final.bindings
 
 
-def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str], fixpoint: bool = False) -> Env:
+def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str], ctx: AnalysisContext) -> Env:
     """Analyze a statement and update environment with inferred shapes.
 
     Args:
         stmt: Statement to analyze
         env: Current environment (modified in place)
         warnings: List to append warnings to
-        fixpoint: If True, use fixed-point iteration for loop analysis
+        ctx: Analysis context
 
     Returns:
         Updated environment
     """
     if isinstance(stmt, Assign):
-        new_shape = eval_expr_ir(stmt.expr, env, warnings)
+        new_shape = eval_expr_ir(stmt.expr, env, warnings, ctx)
         old_shape = env.get(stmt.name)
 
         if stmt.name in env.bindings and shapes_definitely_incompatible(old_shape, new_shape):
@@ -104,32 +125,32 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str], fixpoint: bool = 
         return env
 
     if isinstance(stmt, ExprStmt):
-        _ = eval_expr_ir(stmt.expr, env, warnings)
+        _ = eval_expr_ir(stmt.expr, env, warnings, ctx)
         return env
 
     if isinstance(stmt, While):
-        _ = eval_expr_ir(stmt.cond, env, warnings)
-        _analyze_loop_body(stmt.body, env, warnings, fixpoint)
+        _ = eval_expr_ir(stmt.cond, env, warnings, ctx)
+        _analyze_loop_body(stmt.body, env, warnings, ctx)
         return env
 
     if isinstance(stmt, For):
         # Bind loop variable to scalar
         env.set(stmt.var, Shape.scalar())
         # Evaluate iterator expression for side effects
-        _ = eval_expr_ir(stmt.it, env, warnings)
-        _analyze_loop_body(stmt.body, env, warnings, fixpoint)
+        _ = eval_expr_ir(stmt.it, env, warnings, ctx)
+        _analyze_loop_body(stmt.body, env, warnings, ctx)
         return env
 
     if isinstance(stmt, If):
-        _ = eval_expr_ir(stmt.cond, env, warnings)
+        _ = eval_expr_ir(stmt.cond, env, warnings, ctx)
 
         then_env = env.copy()
         else_env = env.copy()
 
         for s in stmt.then_body:
-            analyze_stmt_ir(s, then_env, warnings, fixpoint=fixpoint)
+            analyze_stmt_ir(s, then_env, warnings, ctx)
         for s in stmt.else_body:
-            analyze_stmt_ir(s, else_env, warnings, fixpoint=fixpoint)
+            analyze_stmt_ir(s, else_env, warnings, ctx)
 
         merged = join_env(then_env, else_env)
         env.bindings = merged.bindings
@@ -157,7 +178,7 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str], fixpoint: bool = 
     return env
 
 
-def _eval_index_arg_to_shape(arg: IndexArg, env: Env, warnings: List[str]) -> Shape:
+def _eval_index_arg_to_shape(arg: IndexArg, env: Env, warnings: List[str], ctx: AnalysisContext) -> Shape:
     """Evaluate an IndexArg to a Shape.
 
     Handles:
@@ -169,12 +190,13 @@ def _eval_index_arg_to_shape(arg: IndexArg, env: Env, warnings: List[str]) -> Sh
         arg: IndexArg to evaluate
         env: Current environment
         warnings: List to append warnings to
+        ctx: Analysis context
 
     Returns:
         Shape of the argument
     """
     if isinstance(arg, IndexExpr):
-        return eval_expr_ir(arg.expr, env, warnings)
+        return eval_expr_ir(arg.expr, env, warnings, ctx)
     elif isinstance(arg, Range):
         # Range creates a row vector; shape depends on the bounds
         # For simplicity, we assume ranges create 1 x N matrices
@@ -186,13 +208,14 @@ def _eval_index_arg_to_shape(arg: IndexArg, env: Env, warnings: List[str]) -> Sh
     return Shape.unknown()
 
 
-def eval_expr_ir(expr: Expr, env: Env, warnings: List[str]) -> Shape:
+def eval_expr_ir(expr: Expr, env: Env, warnings: List[str], ctx: AnalysisContext) -> Shape:
     """Evaluate an expression to infer its shape.
 
     Args:
         expr: Expression to evaluate
         env: Current environment with variable shapes
         warnings: List to append warnings to
+        ctx: Analysis context
 
     Returns:
         Inferred shape of the expression
@@ -209,7 +232,7 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str]) -> Shape:
 
     if isinstance(expr, MatrixLit):
         shape_rows = [
-            [as_matrix_shape(eval_expr_ir(e, env, warnings)) for e in row]
+            [as_matrix_shape(eval_expr_ir(e, env, warnings, ctx)) for e in row]
             for row in expr.rows
         ]
         return infer_matrix_literal_shape(shape_rows, expr.line, warnings)
@@ -246,21 +269,21 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str]) -> Shape:
                 if fname == "size":
                     if len(expr.args) == 1:
                         try:
-                            eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings)
+                            eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
                             return Shape.matrix(1, 2)
                         except ValueError:
                             # Colon in arg: treat as indexing
                             pass
                     elif len(expr.args) == 2:
                         try:
-                            eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings)
+                            eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
                             return Shape.scalar()
                         except ValueError:
                             # Colon in arg: treat as indexing
                             pass
                 if fname == "isscalar" and len(expr.args) == 1:
                     try:
-                        eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings)
+                        eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
                         return Shape.scalar()
                     except ValueError:
                         # Colon in arg: treat as indexing
@@ -284,23 +307,23 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str]) -> Shape:
                             pass
                 # Element-wise operations: abs, sqrt (output shape = input shape)
                 if fname in {"abs", "sqrt"} and len(expr.args) == 1:
-                    arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings)
+                    arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
                     return arg_shape
                 # Transpose function: swap row/col dimensions
                 if fname == "transpose" and len(expr.args) == 1:
-                    arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings)
+                    arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
                     if arg_shape.is_matrix():
                         return Shape.matrix(arg_shape.cols, arg_shape.rows)
                     return arg_shape
                 # Query functions: length, numel (return scalar)
                 if fname in {"length", "numel"} and len(expr.args) == 1:
-                    _ = _eval_index_arg_to_shape(expr.args[0], env, warnings)
+                    _ = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
                     return Shape.scalar()
                 # Reshape function: return matrix[m x n] from args 2 and 3
                 if fname == "reshape" and len(expr.args) == 3:
                     try:
                         # Evaluate first arg for side effects, discard its shape
-                        _ = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings)
+                        _ = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
                         # Extract dimensions from args 2 and 3
                         m = expr_to_dim_ir(unwrap_arg(expr.args[1]), env)
                         n = expr_to_dim_ir(unwrap_arg(expr.args[2]), env)
@@ -312,7 +335,7 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str]) -> Shape:
                 if fname == "repmat" and len(expr.args) == 3:
                     try:
                         # Evaluate first arg to get its shape
-                        a_shape = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings)
+                        a_shape = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
                         # Extract replication factors from args 2 and 3
                         m = expr_to_dim_ir(unwrap_arg(expr.args[1]), env)
                         n = expr_to_dim_ir(unwrap_arg(expr.args[2]), env)
@@ -339,11 +362,11 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str]) -> Shape:
                 # Scalar-returning operations: det, norm
                 if fname in {"det", "norm"} and len(expr.args) == 1:
                     # Evaluate arg for side effects, return scalar
-                    _ = _eval_index_arg_to_shape(expr.args[0], env, warnings)
+                    _ = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
                     return Shape.scalar()
                 # diag: shape-dependent dispatch
                 if fname == "diag" and len(expr.args) == 1:
-                    arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings)
+                    arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
                     if arg_shape.is_scalar():
                         # scalar → 1x1 matrix
                         return Shape.matrix(1, 1)
@@ -363,7 +386,7 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str]) -> Shape:
                     return Shape.unknown()
                 # inv: pass-through for square matrices
                 if fname == "inv" and len(expr.args) == 1:
-                    arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings)
+                    arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
                     if arg_shape.is_matrix():
                         r, c = arg_shape.rows, arg_shape.cols
                         # Check if square (same dims)
@@ -379,8 +402,8 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str]) -> Shape:
                     if len(expr.args) == 2:
                         # linspace(a, b) → 1 x 100 (MATLAB default)
                         try:
-                            _ = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings)
-                            _ = eval_expr_ir(unwrap_arg(expr.args[1]), env, warnings)
+                            _ = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
+                            _ = eval_expr_ir(unwrap_arg(expr.args[1]), env, warnings, ctx)
                             return Shape.matrix(1, 100)
                         except ValueError:
                             # Colon/Range in args
@@ -388,8 +411,8 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str]) -> Shape:
                     elif len(expr.args) == 3:
                         # linspace(a, b, n) → 1 x n
                         try:
-                            _ = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings)
-                            _ = eval_expr_ir(unwrap_arg(expr.args[1]), env, warnings)
+                            _ = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
+                            _ = eval_expr_ir(unwrap_arg(expr.args[1]), env, warnings, ctx)
                             n = expr_to_dim_ir(unwrap_arg(expr.args[2]), env)
                             return Shape.matrix(1, n)
                         except ValueError:
@@ -404,28 +427,28 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str]) -> Shape:
                 return Shape.unknown()
 
         # Default: treat as indexing (bound variable)
-        base_shape = eval_expr_ir(expr.base, env, warnings)
-        return _eval_indexing(base_shape, expr.args, line, expr, env, warnings)
+        base_shape = eval_expr_ir(expr.base, env, warnings, ctx)
+        return _eval_indexing(base_shape, expr.args, line, expr, env, warnings, ctx)
 
     if isinstance(expr, Transpose):
-        inner = eval_expr_ir(expr.operand, env, warnings)
+        inner = eval_expr_ir(expr.operand, env, warnings, ctx)
         if inner.is_matrix():
             return Shape.matrix(inner.cols, inner.rows)
         return inner
 
     if isinstance(expr, Neg):
-        return eval_expr_ir(expr.operand, env, warnings)
+        return eval_expr_ir(expr.operand, env, warnings, ctx)
 
     if isinstance(expr, BinOp):
         op = expr.op
         line = expr.line
-        left_shape = eval_expr_ir(expr.left, env, warnings)
-        right_shape = eval_expr_ir(expr.right, env, warnings)
+        left_shape = eval_expr_ir(expr.left, env, warnings, ctx)
+        right_shape = eval_expr_ir(expr.right, env, warnings, ctx)
         return eval_binop_ir(op, left_shape, right_shape, warnings, expr.left, expr.right, line)
 
     return Shape.unknown()
 
-def _eval_indexing(base_shape: Shape, args, line: int, expr, env: Env, warnings: List[str]) -> Shape:
+def _eval_indexing(base_shape: Shape, args, line: int, expr, env: Env, warnings: List[str], ctx: AnalysisContext) -> Shape:
     """Indexing logic for Apply-as-indexing nodes.
 
     Args:
@@ -435,6 +458,7 @@ def _eval_indexing(base_shape: Shape, args, line: int, expr, env: Env, warnings:
         expr: Original expression (for diagnostics)
         env: Current environment
         warnings: List to append warnings to
+        ctx: Analysis context
 
     Returns:
         Inferred shape of the indexing result
@@ -456,8 +480,8 @@ def _eval_indexing(base_shape: Shape, args, line: int, expr, env: Env, warnings:
         if len(args) == 2:
             a1, a2 = args
 
-            r_extent = index_arg_to_extent_ir(a1, env, warnings, line)
-            c_extent = index_arg_to_extent_ir(a2, env, warnings, line)
+            r_extent = index_arg_to_extent_ir(a1, env, warnings, line, ctx)
+            c_extent = index_arg_to_extent_ir(a2, env, warnings, line, ctx)
 
             def is_allowed_unknown(a: IndexArg) -> bool:
                 return isinstance(a, (Colon, Range))
@@ -486,7 +510,8 @@ def index_arg_to_extent_ir(
     arg: IndexArg,
     env: Env,
     warnings: List[str],
-    line: int
+    line: int,
+    ctx: AnalysisContext
 ) -> Dim:
     """
     Return how many rows/cols this index selects:
@@ -501,8 +526,8 @@ def index_arg_to_extent_ir(
         start_expr = arg.start
         end_expr = arg.end
 
-        start_shape = eval_expr_ir(start_expr, env, warnings)
-        end_shape = eval_expr_ir(end_expr, env, warnings)
+        start_shape = eval_expr_ir(start_expr, env, warnings, ctx)
+        end_shape = eval_expr_ir(end_expr, env, warnings, ctx)
 
         if start_shape.is_matrix() or end_shape.is_matrix():
             warnings.append(diag.warn_range_endpoints_must_be_scalar(line, arg, start_shape, end_shape))
@@ -520,7 +545,7 @@ def index_arg_to_extent_ir(
         return None
 
     if isinstance(arg, IndexExpr):
-        s = eval_expr_ir(arg.expr, env, warnings)
+        s = eval_expr_ir(arg.expr, env, warnings, ctx)
         if s.is_matrix():
             warnings.append(diag.warn_non_scalar_index_arg(line, arg, s))
             return None
