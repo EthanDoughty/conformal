@@ -49,6 +49,37 @@
 **isscalar** (return logical scalar):
 - `isscalar(x)` → `scalar`
 
+### Scalar-Returning Operations
+
+**det, norm** (evaluate arg, return scalar):
+- `det(A)` → `scalar` (determinant)
+- `norm(A)` → `scalar` (matrix/vector norm)
+- No dimension validation (MATLAB-compliant — det defined for non-square)
+
+### Shape-Dependent Dispatch
+
+**diag** (vector ↔ diagonal matrix):
+- `diag(scalar)` → `matrix[1 x 1]`
+- `diag(matrix[n x 1])` → `matrix[n x n]` (column vector → diagonal)
+- `diag(matrix[1 x k])` → `matrix[k x k]` (row vector → diagonal)
+- `diag(matrix[m x n])` → `matrix[None x 1]` (matrix → diagonal extraction)
+- **Conservative cases**:
+  - `diag(matrix[None x None])` → `matrix[None x 1]` (can't prove vectorness)
+  - `diag(matrix[n x m])` (symbolic, different names) → `matrix[None x 1]` (can't prove vectorness)
+- **Implementation**: Uses `== 1` check only on concrete dims; symbolic names don't spuriously match
+
+**inv** (pass-through for square):
+- `inv(matrix[n x n])` → `matrix[n x n]` (square → same shape)
+- `inv(matrix[m x n])` where `m ≠ n` → `unknown` (non-square or can't prove square)
+- **Edge case**: `inv(matrix[None x None])` → `matrix[None x None]` (both dims unknown, assume square)
+
+### Row Vector Generators
+
+**linspace** (linearly spaced points):
+- `linspace(a, b)` → `matrix[1 x 100]` (MATLAB default: 100 points)
+- `linspace(a, b, n)` → `matrix[1 x n]` (n points, symbolic n supported)
+- Evaluates first two args for side effects
+
 ## Matrix Operations (Pre-Phase 3)
 
 **Matrix Multiplication** (`*`):

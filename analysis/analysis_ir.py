@@ -203,6 +203,14 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str]) -> Shape:
                 # Known builtin: try function call first (even with colon/range)
                 # Ranges/colons in builtin args are valid (e.g., length(1:10))
                 # Treat as a function call
+                if fname in {"zeros", "ones"} and len(expr.args) == 1:
+                    # zeros(n) / ones(n) → matrix[n x n]
+                    try:
+                        d = expr_to_dim_ir(unwrap_arg(expr.args[0]), env)
+                        return shape_of_zeros(d, d) if fname == "zeros" else shape_of_ones(d, d)
+                    except ValueError:
+                        # Colon/Range in arg: treat as indexing
+                        pass
                 if fname in {"zeros", "ones"} and len(expr.args) == 2:
                     try:
                         r_dim = expr_to_dim_ir(unwrap_arg(expr.args[0]), env)
@@ -304,6 +312,65 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str]) -> Shape:
                     except ValueError:
                         # Colon/Range in args: cannot repmat with colons
                         pass
+                # Scalar-returning operations: det, norm
+                if fname in {"det", "norm"} and len(expr.args) == 1:
+                    # Evaluate arg for side effects, return scalar
+                    _ = _eval_index_arg_to_shape(expr.args[0], env, warnings)
+                    return Shape.scalar()
+                # diag: shape-dependent dispatch
+                if fname == "diag" and len(expr.args) == 1:
+                    arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings)
+                    if arg_shape.is_scalar():
+                        # scalar → 1x1 matrix
+                        return Shape.matrix(1, 1)
+                    if arg_shape.is_matrix():
+                        r, c = arg_shape.rows, arg_shape.cols
+                        # Check if it's provably a vector (one dim is concretely 1)
+                        if r == 1:
+                            # Row vector 1×n → diagonal n×n
+                            return Shape.matrix(c, c)
+                        if c == 1:
+                            # Column vector n×1 → diagonal n×n
+                            return Shape.matrix(r, r)
+                        # Matrix (neither dim is 1, or unknown dims) → extract diagonal
+                        # Result is min(m,n) x 1, but we can't compute min symbolically
+                        return Shape.matrix(None, 1)
+                    # Unknown shape → unknown result
+                    return Shape.unknown()
+                # inv: pass-through for square matrices
+                if fname == "inv" and len(expr.args) == 1:
+                    arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings)
+                    if arg_shape.is_matrix():
+                        r, c = arg_shape.rows, arg_shape.cols
+                        # Check if square (same dims)
+                        if r == c:
+                            # Pass through shape for square matrices
+                            return Shape.matrix(r, c)
+                        # Non-square or unknown dims → unknown
+                        return Shape.unknown()
+                    # Scalar or unknown → unknown
+                    return Shape.unknown()
+                # linspace: row vector generator
+                if fname == "linspace":
+                    if len(expr.args) == 2:
+                        # linspace(a, b) → 1 x 100 (MATLAB default)
+                        try:
+                            _ = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings)
+                            _ = eval_expr_ir(unwrap_arg(expr.args[1]), env, warnings)
+                            return Shape.matrix(1, 100)
+                        except ValueError:
+                            # Colon/Range in args
+                            pass
+                    elif len(expr.args) == 3:
+                        # linspace(a, b, n) → 1 x n
+                        try:
+                            _ = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings)
+                            _ = eval_expr_ir(unwrap_arg(expr.args[1]), env, warnings)
+                            n = expr_to_dim_ir(unwrap_arg(expr.args[2]), env)
+                            return Shape.matrix(1, n)
+                        except ValueError:
+                            # Colon/Range in args
+                            pass
                 # Known builtin without a matching shape rule: return unknown silently
                 return Shape.unknown()
 

@@ -1,102 +1,107 @@
 # Implementer Memory
 
-## Phase 1 Implementation (Expanded Builtins & Unknown Functions)
-✅ COMPLETED — All 29 tests pass
+## Key Implementation Patterns
 
-### Key Files Modified
-1. **frontend/matlab_parser.py** line 348: Builtin set expanded to 19 functions
-   - Original: `{"zeros", "ones", "size", "isscalar"}`
-   - Expanded: Added 15 more: `randn`, `eye`, `rand`, `sqrt`, `abs`, `length`, `numel`, `diag`, `inv`, `det`, `norm`, `linspace`, `reshape`, `transpose`, `repmat`
-   - Only these recognized functions become Call nodes in IR
+### Builtin Shape Rules Pattern (analysis/analysis_ir.py)
+Located in `eval_expr_ir`, Apply handler for `fname in KNOWN_BUILTINS` branch.
 
-2. **analysis/diagnostics.py**: Added `warn_unknown_function(line, name)` function
-   - Returns message with code `W_UNKNOWN_FUNCTION`
-   - Used for truly unrecognized functions, NOT for builtins without shape rules
+**Standard structure**:
+```python
+if fname == "builtin_name" and len(expr.args) == N:
+    try:
+        # Extract args via unwrap_arg (raises ValueError for Colon/Range)
+        arg_expr = unwrap_arg(expr.args[0])
+        # Convert to dim via expr_to_dim_ir, or eval via eval_expr_ir
+        result_shape = ...
+        return result_shape
+    except ValueError:
+        # Colon/Range in args: fall through to indexing
+        pass
+```
 
-3. **analysis/analysis_ir.py** line 152+: Critical soundness fix
-   - Changed fallback from `Shape.scalar()` to `Shape.unknown()` for unrecognized calls
-   - Added silent handling for known builtins without shape rules (return `unknown` no warning)
-   - Added warning emit for Index applied to unbound variables (e.g., `my_func(x)`)
-   - Key insight: Index handles unbound variable calls since parser only creates Call nodes for recognized builtins
+**Key helpers**:
+- `unwrap_arg(arg)`: IndexArg → Expr (raises ValueError for Colon/Range)
+- `expr_to_dim_ir(expr, env)`: Expr → Dim (int | str | None)
+- `_eval_index_arg_to_shape(arg, env, warnings)`: IndexArg → Shape
 
-4. **tests/builtins/unknown_function.m**: Test for Phase 1
-   - Tests `randn` (recognized builtin, unknown result, silent)
-   - Tests `my_custom_func` (unrecognized, emits warning, unknown result)
-   - Tests propagation of `unknown` through arithmetic
+### Shape Rule Categories
 
-## Phase 2 Implementation (Unified Apply Node)
-✅ COMPLETED — All 30 tests pass (now 31 with Phase 3)
+**1. Scalar-returning** (det, norm):
+```python
+if fname in {"det", "norm"} and len(expr.args) == 1:
+    _ = _eval_index_arg_to_shape(expr.args[0], env, warnings)
+    return Shape.scalar()
+```
 
-### Files Modified
-[See detailed history above - Phase 2 completed]
+**2. Pass-through** (abs, sqrt):
+```python
+if fname in {"abs", "sqrt"} and len(expr.args) == 1:
+    arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings)
+    return arg_shape
+```
 
-## Phase 3 Implementation (Rich Builtin Shape Rules)
-✅ COMPLETED — All 31 tests pass
+**3. Dimension swap** (transpose):
+```python
+if fname == "transpose" and len(expr.args) == 1:
+    arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings)
+    if arg_shape.is_matrix():
+        return Shape.matrix(arg_shape.cols, arg_shape.rows)
+    return arg_shape
+```
 
-### Files Modified
-1. **analysis/analysis_ir.py** — Added shape rules for 10 builtins
-   - Updated `_BUILTINS_WITH_SHAPE_RULES` set to include: eye, rand, randn, abs, sqrt, transpose, length, numel
-   - Added `_eval_index_arg_to_shape()` helper — evaluates IndexArg to Shape (handles IndexExpr, Range, Colon)
-   - Removed early-exit for Colon/Range (known builtins can accept ranges/colons)
-   - Added shape rules in Apply handler:
-     * **eye, rand, randn**: 0-arg→scalar, 1-arg→n×n, 2-arg→m×n (like zeros/ones)
-     * **abs, sqrt**: pass-through shape (output = input shape)
-     * **transpose**: swap dimensions (rows↔cols)
-     * **length, numel**: return scalar
+**4. Constructor with dim extraction** (zeros, ones, eye, rand, randn):
+```python
+if fname in {"zeros", "ones"} and len(expr.args) == 1:
+    try:
+        d = expr_to_dim_ir(unwrap_arg(expr.args[0]), env)
+        return shape_of_zeros(d, d)  # or shape_of_ones
+    except ValueError:
+        pass
+```
 
-2. **tests/builtins/shape_preserving.m** — Tests shape-preserving builtins
-   - Validates pass-through shape behavior
+**5. Shape-dependent dispatch** (diag):
+```python
+# Only return matrix[n x n] when we can PROVE input is a vector (one dim == 1)
+if arg_shape.is_matrix():
+    r, c = arg_shape.rows, arg_shape.cols
+    if r == 1:
+        return Shape.matrix(c, c)  # Row vector → diagonal
+    if c == 1:
+        return Shape.matrix(r, r)  # Col vector → diagonal
+    return Shape.matrix(None, 1)  # Matrix → extract diagonal
+```
 
-3. **tests/builtins/constructors.m** — Comprehensive builtin test
-   - Tests all 10 builtin shape rules
-   - Covers 0-arg, 1-arg, 2-arg forms
-   - Tests concrete and symbolic dimensions
-   - Tests edge case: `eye(0)` → `matrix[0 x 0]`
-   - Tests Range arguments: `length(1:10)` → `scalar`
+**6. Squareness check** (inv):
+```python
+if arg_shape.is_matrix():
+    r, c = arg_shape.rows, arg_shape.cols
+    if r == c:  # Works for both concrete ints and same symbolic names
+        return Shape.matrix(r, c)  # Pass through
+    return Shape.unknown()
+```
 
-### Key Implementation Notes
-- Changed architecture: Known builtins are checked BEFORE checking for Colon/Range
-  - This allows builtins to accept Range/Colon args (e.g., `length(1:10)`)
-  - Indexing forced only for unknown variables
-- `_eval_index_arg_to_shape()` enables handling of Range/Colon in builtin args
-  - Range → matrix[1 x None] (row vector)
-  - Colon → unknown (cannot evaluate standalone)
-- All 31 tests pass (Phase 1+2+3 complete)
+## Critical File Locations
 
-### Architecture Decision
-The original "Colon/Range force indexing" decision was too conservative for builtin functions.
-Refined approach:
-- Colon/Range force indexing for **unknown variables** (ambiguity → indexing)
-- Colon/Range allowed in **known builtin** args (builtin can interpret them)
-This maintains soundness while enabling valid patterns like `length(1:10)`.
+- **Builtin catalog**: `analysis/builtins.py`
+  - `KNOWN_BUILTINS`: Functions recognized as calls (not indexing)
+  - `BUILTINS_WITH_SHAPE_RULES`: Subset with explicit shape rules
+  - After Phase 3: Both sets are equal (19/19)
 
-## Test Suite Refactoring (Flat to Categorized)
-✅ COMPLETED — All 31 tests pass in new structure
+- **Shape rules**: `analysis/analysis_ir.py` line 193-370 (Apply handler)
+- **Test discovery**: `run_all_tests.py` uses `glob("tests/**/*.m", recursive=True)`
+- **Test categories**: basics, builtins, control_flow, indexing, literals, loops, recovery, symbolic
 
-### Files Modified
-1. **All 31 test files moved** using `git mv` (preserves history):
-   - tests/test1-8.m → tests/basics/
-   - tests/test5-6.m → tests/symbolic/
-   - tests/test9,16-21.m → tests/indexing/
-   - tests/test10-11.m → tests/control_flow/
-   - tests/test13-15.m → tests/literals/
-   - tests/test22-27.m → tests/recovery/
-   - tests/test28-31.m → tests/builtins/
+## Soundness Principles
 
-2. **run_all_tests.py** — Updated test discovery:
-   - Line 17: Changed `test_sort_key()` from numeric suffix to alphabetical path
-   - Line 23: Changed glob from `tests/test*.m` to `tests/**/*.m` with `recursive=True`
-   - Sorting now fully alphabetical by path
+1. **Conservative on unknown inputs**: diag(unknown) → unknown, not matrix[None x None]
+2. **Prove before refining**: Only return precise shape when we can prove it (e.g., diag vector check)
+3. **Silent fallback for unimplemented builtins**: Known builtin without shape rule → unknown (no warning)
+4. **Warning for truly unknown functions**: Unbound variable in call position → W_UNKNOWN_FUNCTION
 
-3. **Documentation updated**:
-   - CLAUDE.md: Updated example paths, glob pattern, strict mode recovery tests list
-   - README.md: Updated test category descriptions with new paths
-   - AGENTS.md: Updated glob patterns, example paths, recovery tests list
-   - semantic-differential-auditor.md: Updated test reference format
+## Common Gotchas
 
-### Key Verification
-- All 31 tests still pass after move
-- All 166 EXPECT lines preserved exactly
-- New glob finds exactly 31 files
-- `--strict` mode correctly detects recovery tests
-- Alphabetical sorting is deterministic
+- **Never modify tests** unless TASK.md explicitly requires it
+- **Minimal diffs**: Don't refactor "while you're in there"
+- **IR analyzer is authoritative**: Legacy analyzer exists only for regression comparison
+- **Warning codes use W_* prefix** and must be stable
+- **All tests must pass** in both default and --fixpoint modes

@@ -41,7 +41,7 @@ The language subset and analysis design were chosen to isolate a fragment of MAT
 The subset includes:
 
 - assignments and expressions
-- function calls (zeros, ones)
+- function calls (19 recognized builtins with full shape rule coverage)
 - control flow (if, for, while)
 - symbolic dimensions
 - indexing and transpose
@@ -113,7 +113,8 @@ Each test file:
 | builtins/unknown_function.m | Unknown function warning
 | builtins/shape_preserving.m | Shape-preserving builtins
 | builtins/call_vs_index.m | Call vs index disambiguation
-| builtins/constructors.m | Rich builtin shape rules (eye/rand/randn/abs/sqrt/transpose/length/numel)
+| builtins/constructors.m | Matrix constructors and element-wise builtins
+| builtins/remaining_builtins.m | Complete builtin coverage (det/diag/inv/linspace/norm)
 | recovery/struct_field.m | Unsupported struct field access
 | recovery/cell_array.m | Unsupported cell array indexing
 | recovery/multiple_assignment.m | Unsupported multiple assignment

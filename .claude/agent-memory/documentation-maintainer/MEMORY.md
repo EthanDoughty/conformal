@@ -22,10 +22,12 @@
 - CLAUDE.md mentions warning code stability but does not list all codes
 
 ### Builtin Functions
-- Source of truth: `KNOWN_BUILTINS` constant in frontend/matlab_parser.py (whitelist: 19 functions)
-- Shape rules: `_BUILTINS_WITH_SHAPE_RULES` in analysis/analysis_ir.py (14 functions as of v0.8.5)
+- Source of truth: `KNOWN_BUILTINS` constant in analysis/builtins.py (centralized as of v0.8.6)
+- Shape rules: `BUILTINS_WITH_SHAPE_RULES` in analysis/builtins.py
+- **v0.8.7 milestone**: Full coverage (19/19 — KNOWN_BUILTINS == BUILTINS_WITH_SHAPE_RULES)
 - CLAUDE.md and README.md do NOT list individual builtins (too volatile)
 - Document new shape rules in CHANGELOG.md with function signatures
+- New builtins added in Phase 3: det, diag, inv, linspace, norm
 
 ### Test Organization (Updated v0.8.5+)
 - Discovery: Dynamic via `glob("tests/**/*.m", recursive=True)`
@@ -88,3 +90,11 @@
   - README.md line 65 (analysis supports bullet list)
 - New test: tests/builtins/reshape_repmat.m (7 assertions)
 - Test count: 32 total
+
+### v0.8.7 Complete Builtin Coverage (Phase 3)
+- Shape rules for 5 new builtins: det, diag, inv, linspace, norm
+- Fixed zeros(n)/ones(n) 1-arg gap (now returns n×n, was unknown)
+- Achieved full coverage: BUILTINS_WITH_SHAPE_RULES == KNOWN_BUILTINS (19/19)
+- New test file: tests/builtins/remaining_builtins.m (19 expectations: 1 warnings + 18 shapes)
+- Test count: 44 total
+- **Documentation impact**: CHANGELOG.md ✓, README.md ✓ (test table updated)

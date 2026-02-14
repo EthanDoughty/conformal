@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Shape rules for 5 new builtins: `det` (→scalar), `diag` (vector↔diagonal matrix), `inv` (pass-through for square), `linspace` (→row vector), `norm` (→scalar)
+- Complete builtin shape rule coverage: `BUILTINS_WITH_SHAPE_RULES == KNOWN_BUILTINS` (19/19)
+- Test file `tests/builtins/remaining_builtins.m` with 19 expectations for new builtins
+
+### Fixed
+- `zeros(n)` and `ones(n)` 1-arg forms now correctly return `matrix[n x n]` instead of unknown
+
 ### Removed
 - `--compare` mode and `make compare` target (legacy analyzer no longer tested)
 - `Call` and `Index` IR nodes (unified under `Apply`)
@@ -13,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Moved `KNOWN_BUILTINS` from parser to `analysis/builtins.py` (fixed layering violation)
 
-### Added
+### Added (Infrastructure)
 - `analysis/builtins.py`: centralized builtin function catalog
 - Test `tests/builtins/apply_disambiguation.m` for Apply node edge cases
 

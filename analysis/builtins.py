@@ -18,11 +18,15 @@ KNOWN_BUILTINS = {
 # Builtins with explicit shape rules (handled in eval_expr_ir).
 # Everything else in KNOWN_BUILTINS returns unknown silently.
 BUILTINS_WITH_SHAPE_RULES = {
-    "zeros", "ones",      # matrix constructors (2-arg form)
+    "zeros", "ones",      # matrix constructors (1/2-arg forms)
     "eye", "rand", "randn",  # matrix constructors (0/1/2-arg forms)
     "abs", "sqrt",        # element-wise (pass through shape)
     "transpose",          # transpose (swap rows/cols)
     "length", "numel",    # query functions (return scalar)
     "size", "isscalar",   # other builtins with shape rules
-    "reshape", "repmat",  # matrix manipulation (new)
+    "reshape", "repmat",  # matrix manipulation
+    "det", "norm",        # scalar-returning operations
+    "diag",               # shape-dependent (vector↔diagonal matrix)
+    "inv",                # matrix inverse (pass-through for square)
+    "linspace",           # row vector generator
 }
