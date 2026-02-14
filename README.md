@@ -120,7 +120,7 @@ Each test file:
 | builtins/constructors.m | Matrix constructors and element-wise builtins
 | builtins/remaining_builtins.m | Complete builtin coverage (det/diag/inv/linspace/norm)
 | functions/simple_function.m | Basic user-defined function
-| functions/multiple_returns.m | Multi-return function with destructuring
+| functions/multiple_returns.m | Multi-return function with destructuring (+ single-output usage)
 | functions/matrix_constructor.m | Function returning symbolic-shaped matrix
 | functions/procedure.m | Procedure (no return values)
 | functions/unknown_in_function.m | Unknown shapes in function bodies
@@ -130,8 +130,17 @@ Each test file:
 | functions/cache_hit.m | Polymorphic cache hit (same arg shapes)
 | functions/cache_miss.m | Polymorphic cache miss (different arg shapes)
 | functions/cache_hit_with_warning.m | Warning replay on cache hit
-| functions/return_statement.m | Return statement (early exit)
+| functions/return_statement.m | Return statement (early exit + unreachable code)
 | functions/return_in_script.m | Return in script context (warning)
+| functions/return_in_if.m | Return statement inside if-branch
+| functions/return_in_loop.m | Return statement inside loop body
+| functions/cache_symbolic_args.m | Cache with symbolic dimension arguments
+| functions/cache_warning_replay.m | Warning replay on cache hit
+| functions/early_return_multi_output.m | Early return in multi-output function
+| functions/function_in_loop.m | Function call inside loop body
+| functions/nested_function_calls.m | Nested user-defined function calls
+| functions/procedure_with_return.m | Procedure with explicit return
+| functions/arg_count_mismatch_cached.m | Arg count mismatch (no cache interaction)
 | recovery/struct_field.m | Unsupported struct field access
 | recovery/cell_array.m | Unsupported cell array indexing
 | recovery/multiple_assignment.m | Unsupported multiple assignment

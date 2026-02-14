@@ -1,293 +1,283 @@
-# Task: Polymorphic Caching and Return Statement Support (v0.10.1)
+# Task: Test Coverage Polish Pass (v0.10.2)
 
 ## Goal
-Optimize user-defined function analysis by caching results per unique argument shape tuple. Add explicit `return` statement support with early exit semantics via `EarlyReturn` exception with catch-at-boundary precision in control flow.
+Fill identified test coverage gaps in function features (v0.10.0-v0.10.1) by adding targeted tests for return statement edge cases, cache interactions, and function+control flow combinations.
 
 ## Scope
-- **Polymorphic caching**: Cache `(List[Shape], List[str])` (output shapes + raw warnings) keyed by `(func_name, tuple of arg shapes)`
-- **Warning replay**: On cache hit, replay cached warnings with current call site's dual-location formatting
-- **No custom `Shape.__hash__`/`__eq__`**: `@dataclass(frozen=True)` already provides correct implementations
-- **Explicit return**: Parse `return` keyword, add `Return` IR node, raise `EarlyReturn` exception
-- **Catch-at-boundary**: Catch `EarlyReturn` in `If` (join non-returned branch) and loop handlers (stop iteration, don't propagate)
-- **Return in script**: Stop analysis of subsequent statements (raise `EarlyReturn`, catch in `analyze_program_ir`)
-- 5 new tests (2 caching, 1 cache+warning, 2 return)
+- Add 9 new test files covering undertested code paths
+- Extend 2 existing test files with additional scenarios
+- Focus on: return in if/loop, cache with symbolic args, multi-return + early return, function calls inside loops
+- All new tests in `tests/functions/` directory
 
 ## Non-goals
-- Cross-file cache persistence
-- Cache eviction/LRU policy
-- Custom `Shape.__hash__`/`__eq__` (frozen dataclass already provides)
-- Symbolic expression canonicalization (n+m != m+n for cache keys)
-- Multiple return points with different output shapes per branch
+- No analyzer code changes (pure test addition)
+- No new features or shape rules
+- No refactoring of existing tests
+- No changes to test infrastructure or runner
 
 ## Invariants Impacted
-- **IR analyzer authoritative**: Preserved
-- **All tests pass**: 66 existing + 5 new = 71
-- **Deterministic**: Cache is deterministic
-- **`analyze_stmt_ir` signature unchanged**: Returns `Env`, early exit via exception
+- **All tests pass**: 71 existing + 11 new = 82 total
+- **IR analyzer authoritative**: Preserved (no code changes)
+- **Test format**: Standard `% EXPECT:` inline assertions
 
 ## Acceptance Criteria
-- [ ] `AnalysisContext.analysis_cache: Dict[Tuple[str, Tuple[Shape, ...]], Tuple[List[Shape], List[str]]]`
-- [ ] Cache hit replays warnings with dual-location formatting for current call site
-- [ ] Cache miss analyzes and stores `(result_shapes, raw_warnings)` before returning
-- [ ] Parser recognizes `return` keyword
-- [ ] `Return` IR node (no expression — MATLAB return has no value)
-- [ ] `EarlyReturn` exception raised by `Return` handler in function context
-- [ ] `EarlyReturn` caught at boundaries: `If` handler, `_analyze_loop_body`, `analyze_function_call`, `analyze_program_ir`
-- [ ] `If` handler: if one branch returns, result env is the non-returned branch's env; if both return, re-raise
-- [ ] Loop handler: catch `EarlyReturn`, do post-loop join, don't propagate
-- [ ] Script-level `return`: emit `W_RETURN_OUTSIDE_FUNCTION`, stop analysis (raise `EarlyReturn`, catch in `analyze_program_ir`)
-- [ ] All 71 tests pass (66 existing + 5 new)
+- [ ] All 82 tests pass: `python3 mmshape.py --tests`
+- [ ] All 82 tests pass in fixpoint mode: `python3 mmshape.py --fixpoint --tests`
+- [ ] New tests cover identified gaps: return in if-branch, return in loop, cache+symbolic, cache+warning replay, multi-return+early exit, function in loop, procedure+return
+- [ ] Test files follow existing naming conventions and organization
+- [ ] Each test has clear description comment explaining what it validates
 
 ## Commands to Run
 ```bash
 python3 mmshape.py --tests
 python3 mmshape.py --fixpoint --tests
-python3 mmshape.py tests/functions/cache_hit.m
-python3 mmshape.py tests/functions/cache_miss.m
-python3 mmshape.py tests/functions/cache_hit_with_warning.m
-python3 mmshape.py tests/functions/return_statement.m
-python3 mmshape.py tests/functions/return_in_script.m
+python3 mmshape.py tests/functions/return_in_if.m
+python3 mmshape.py tests/functions/return_in_loop.m
+python3 mmshape.py tests/functions/cache_symbolic_args.m
+python3 mmshape.py tests/functions/cache_warning_replay.m
+python3 mmshape.py tests/functions/early_return_multi_output.m
+python3 mmshape.py tests/functions/function_in_loop.m
+python3 mmshape.py tests/functions/nested_function_calls.m
+python3 mmshape.py tests/functions/procedure_with_return.m
+python3 mmshape.py tests/functions/arg_count_mismatch_cached.m
 ```
 
 ## Tests to Add
 
-### `tests/functions/cache_hit.m`
+### 1. `tests/functions/return_in_if.m` (NEW)
+**Gap**: No test for return inside if-branch in function body (auditor finding #1)
+**Code path**: `If` handler catches `EarlyReturn` from then-branch, uses else-branch env
 ```matlab
-% Test: Polymorphic cache hit (same argument shapes)
+% Test: Return statement inside if-branch
+% If then-branch returns early, result env is else-branch env
+% EXPECT: warnings = 0
+% EXPECT: A = matrix[4 x 4]
+
+function y = conditional_return(x, cond)
+    if cond
+        y = x;
+        return;
+    else
+        y = x + x;
+    end
+end
+
+A = conditional_return(zeros(4, 4), 1);
+```
+
+### 2. `tests/functions/return_in_loop.m` (NEW)
+**Gap**: No test for return inside loop body in function (auditor finding #2)
+**Code path**: `_analyze_loop_body` catches `EarlyReturn` at boundary, doesn't propagate
+```matlab
+% Test: Return statement inside loop body
+% Loop catches EarlyReturn, does post-loop join, doesn't propagate to caller
 % EXPECT: warnings = 0
 % EXPECT: A = matrix[3 x 3]
-% EXPECT: B = matrix[3 x 3]
-% EXPECT: C = matrix[3 x 3]
 
-function y = square_matrix(x)
+function y = loop_with_return(x)
+    for i = 1:10
+        if i > 5
+            y = x;
+            return;
+        end
+    end
+    y = zeros(1, 1);
+end
+
+A = loop_with_return(zeros(3, 3));
+```
+
+### 3. `tests/functions/cache_symbolic_args.m` (NEW)
+**Gap**: Cache with symbolic dimension arguments not explicitly tested (auditor finding #3)
+**Code path**: Cache key includes symbolic shapes, hits when symbolic names match
+```matlab
+% Test: Polymorphic cache with symbolic dimension arguments
+% Cache key is (func_name, (arg_shapes...)), symbolic dims must match exactly
+% EXPECT: warnings = 0
+% EXPECT: A = matrix[n x n]
+% EXPECT: B = matrix[n x n]
+% EXPECT: C = matrix[m x m]
+
+function y = make_square(x)
     y = x * x;
+end
+
+A = make_square(zeros(n, n));
+B = make_square(zeros(n, n));  % Cache hit (same symbolic n)
+C = make_square(zeros(m, m));  % Cache miss (different symbolic m)
+```
+
+### 4. `tests/functions/cache_warning_replay.m` (NEW)
+**Gap**: Cache hit warning replay with dual-location formatting not tested separately
+**Code path**: Cache hit replays warnings via `_format_dual_location_warning`
+```matlab
+% Test: Cache hit replays warnings at each call site with correct line numbers
+% First call analyzes and caches warning; second call replays at different line
+% EXPECT: warnings = 2
+% EXPECT: A = unknown
+% EXPECT: B = unknown
+
+function y = inner_mismatch(x)
+    y = x * x;
+end
+
+A = inner_mismatch(zeros(3, 4));  % Line 10: cache miss, emit warning
+B = inner_mismatch(zeros(3, 4));  % Line 11: cache hit, replay warning
+```
+
+### 5. `tests/functions/early_return_multi_output.m` (NEW)
+**Gap**: Early return in multi-output function not tested
+**Code path**: Multiple output vars, return early, unset outputs become unknown
+```matlab
+% Test: Early return in multi-output function leaves some outputs unset
+% output2 never assigned before return → bottom → unknown at boundary
+% EXPECT: warnings = 0
+% EXPECT: A = matrix[3 x 3]
+% EXPECT: B = unknown
+
+function [output1, output2] = partial_return(x)
+    output1 = x;
+    return;
+    output2 = x';
+end
+
+[A, B] = partial_return(zeros(3, 3));
+```
+
+### 6. `tests/functions/function_in_loop.m` (NEW)
+**Gap**: Function call inside loop body not tested (potential cache interaction)
+**Code path**: Loop calls function multiple times, cache should hit on 2nd+ iterations
+```matlab
+% Test: Function called inside loop body (cache interaction)
+% Each iteration calls func with same arg shape → cache hits after first
+% EXPECT: warnings = 0
+% EXPECT: A = matrix[3 x 3]
+
+function y = identity(x)
+    y = x;
 end
 
 A = zeros(3, 3);
-B = square_matrix(A);
-C = square_matrix(zeros(3, 3));
+for i = 1:5
+    A = identity(A);
+end
 ```
 
-### `tests/functions/cache_miss.m`
+### 7. `tests/functions/nested_function_calls.m` (NEW)
+**Gap**: Function calling another user-defined function not tested
+**Code path**: Recursive registry lookup, nested analyzing_functions tracking
 ```matlab
-% Test: Polymorphic cache miss (different argument shapes)
+% Test: Nested user-defined function calls (no recursion)
+% outer calls inner; both should analyze correctly
+% EXPECT: warnings = 0
+% EXPECT: A = matrix[4 x 4]
+
+function y = inner(x)
+    y = x + x;
+end
+
+function z = outer(w)
+    z = inner(w);
+end
+
+A = outer(zeros(4, 4));
+```
+
+### 8. `tests/functions/procedure_with_return.m` (NEW)
+**Gap**: Procedure (no outputs) with explicit return not tested
+**Code path**: Return in procedure, no output vars to extract
+```matlab
+% Test: Procedure with explicit return statement
+% No output vars, return just exits early
 % EXPECT: warnings = 1
-% EXPECT: B = unknown
-% EXPECT: D = matrix[5 x 5]
+% EXPECT: A = unknown
 
-function y = square_it(x)
+function myproc(x)
     y = x * x;
+    return;
 end
 
-A = zeros(3, 4);
-B = square_it(A);
-C = zeros(5, 5);
-D = square_it(C);
+A = myproc(zeros(3, 3));
 ```
 
-### `tests/functions/cache_hit_with_warning.m`
+### 9. `tests/functions/arg_count_mismatch_cached.m` (NEW)
+**Gap**: Argument count mismatch error path not tested (cache shouldn't store bad calls)
+**Code path**: `len(args) != len(sig.params)` early-exits before cache check
 ```matlab
-% Test: Cache hit must replay warnings at each call site
-% EXPECT: warnings = 2
-% EXPECT: B = unknown
-% EXPECT: C = unknown
+% Test: Function called with wrong number of arguments
+% Arg count mismatch → warning, return unknown, no cache interaction
+% EXPECT: warnings = 1
+% EXPECT: A = unknown
 
-function y = bad_multiply(x)
-    y = x * x;
+function y = two_args(x, z)
+    y = x + z;
 end
 
-A = zeros(3, 4);
-B = bad_multiply(A);
-C = bad_multiply(A);
+A = two_args(zeros(3, 3));  % Missing 2nd arg
 ```
 
-### `tests/functions/return_statement.m`
+### 10. EXTEND `tests/functions/return_statement.m`
+**Gap**: Current test only has return after assignment; add case with unreachable code
+**Addition**: Add lines to demonstrate statements after return are not analyzed
 ```matlab
 % Test: Return statement (early exit from function)
 % EXPECT: warnings = 0
 % EXPECT: A = scalar
+% EXPECT: B = scalar
 
 function result = early_exit(x)
     result = x;
     return;
 end
 
+function result2 = unreachable_after_return(x)
+    result2 = x;
+    return;
+    result2 = zeros(100, 100);  % Not analyzed (dead code after return)
+end
+
 A = early_exit(5);
+B = unreachable_after_return(10);
 ```
 
-### `tests/functions/return_in_script.m`
+### 11. EXTEND `tests/functions/multiple_returns.m`
+**Gap**: Current test uses both outputs; add case where caller ignores one output
+**Addition**: Test single-output destructuring of multi-output function
 ```matlab
-% Test: Return in script context stops analysis
-% EXPECT: warnings = 1
+% Test: Function with multiple return values
+% EXPECT: warnings = 0
+% EXPECT: A = matrix[3 x 4]
+% EXPECT: B = matrix[4 x 3]
+% EXPECT: C = matrix[3 x 4]
 
-A = zeros(3, 3);
-return;
-B = A * A;
+function [out1, out2] = transpose_pair(in1)
+    out1 = in1;
+    out2 = in1';
+end
+
+[A, B] = transpose_pair(zeros(3, 4));
+C = transpose_pair(zeros(3, 4));  % Only use first output (implicitly)
 ```
 
-## Design Notes
+## Coverage Gaps Addressed
 
-### No Custom Shape Hashing
-`@dataclass(frozen=True)` auto-generates `__hash__` and `__eq__` based on all fields (`kind`, `rows`, `cols`). These are correct for cache keys — structural equality matches semantic equality.
+### Auditor-Identified Gaps (Resolved)
+1. **Return in if-branch**: `return_in_if.m` tests `EarlyReturn` caught by `If` handler
+2. **Return in loop**: `return_in_loop.m` tests `EarlyReturn` caught by loop handler
+3. **Cache + symbolic dims**: `cache_symbolic_args.m` tests cache keys with symbolic shapes
 
-### Cache Structure
-```python
-@dataclass
-class AnalysisContext:
-    function_registry: Dict[str, FunctionSignature] = field(default_factory=dict)
-    analyzing_functions: Set[str] = field(default_factory=set)
-    analysis_cache: Dict[Tuple[str, Tuple[Shape, ...]], Tuple[List[Shape], List[str]]] = field(default_factory=dict)
-    fixpoint: bool = False
-```
-
-Cache value is `(output_shapes, raw_warnings)` where raw_warnings are the function-internal warnings BEFORE dual-location formatting.
-
-### Cache Logic in analyze_function_call
-```python
-# Evaluate arg shapes for cache key
-arg_shapes = tuple(_eval_index_arg_to_shape(arg, env, warnings, ctx) for arg in args)
-cache_key = (func_name, arg_shapes)
-
-# Check cache
-if cache_key in ctx.analysis_cache:
-    cached_shapes, cached_warnings = ctx.analysis_cache[cache_key]
-    # Replay warnings with current call site's dual-location formatting
-    for func_warn in cached_warnings:
-        formatted = _format_dual_location_warning(func_warn, func_name, line)
-        warnings.append(formatted)
-    return list(cached_shapes)  # Return copy
-
-# ... analyze function body ...
-# Store raw warnings (before dual-location formatting)
-ctx.analysis_cache[cache_key] = (result, list(func_warnings))
-# Then format warnings for current call site
-for func_warn in func_warnings:
-    formatted = _format_dual_location_warning(func_warn, func_name, line)
-    warnings.append(formatted)
-```
-
-Extract dual-location formatting into `_format_dual_location_warning(warn, func_name, call_line)` helper.
-
-### EarlyReturn Exception
-```python
-class EarlyReturn(Exception):
-    """Raised by return statement to exit function body analysis."""
-    pass
-```
-
-### Return Handler in analyze_stmt_ir
-```python
-if isinstance(stmt, Return):
-    if not ctx.analyzing_functions:
-        # Script context: warn and stop
-        warnings.append(diag.warn_return_outside_function(stmt.line))
-    raise EarlyReturn()
-```
-
-### Catch-at-Boundary: If Handler
-```python
-if isinstance(stmt, If):
-    _ = eval_expr_ir(stmt.cond, env, warnings, ctx)
-    then_env = env.copy()
-    else_env = env.copy()
-
-    then_returned = False
-    else_returned = False
-
-    try:
-        for s in stmt.then_body:
-            analyze_stmt_ir(s, then_env, warnings, ctx)
-    except EarlyReturn:
-        then_returned = True
-
-    try:
-        for s in stmt.else_body:
-            analyze_stmt_ir(s, else_env, warnings, ctx)
-    except EarlyReturn:
-        else_returned = True
-
-    if then_returned and else_returned:
-        # Both branches return — propagate
-        raise EarlyReturn()
-    elif then_returned:
-        # Only then returns — use else env
-        env.bindings = else_env.bindings
-    elif else_returned:
-        # Only else returns — use then env
-        env.bindings = then_env.bindings
-    else:
-        # Neither returns — normal join
-        merged = join_env(then_env, else_env)
-        env.bindings = merged.bindings
-    return env
-```
-
-### Catch-at-Boundary: Loop Handler
-```python
-def _analyze_loop_body(body, env, warnings, ctx):
-    if not ctx.fixpoint:
-        try:
-            for s in body:
-                analyze_stmt_ir(s, env, warnings, ctx)
-        except EarlyReturn:
-            pass  # Stop iteration, don't propagate
-        return
-
-    # Fixpoint mode: catch EarlyReturn in each phase
-    pre_loop_env = env.copy()
-    try:
-        for s in body:
-            analyze_stmt_ir(s, env, warnings, ctx)
-    except EarlyReturn:
-        pass  # Phase 1 stopped early
-
-    widened = widen_env(pre_loop_env, env)
-    if widened.bindings != env.bindings:
-        env.bindings = widened.bindings
-        try:
-            for s in body:
-                analyze_stmt_ir(s, env, warnings, ctx)
-        except EarlyReturn:
-            pass  # Phase 2 stopped early
-
-    final = widen_env(pre_loop_env, env)
-    env.bindings = final.bindings
-```
-
-### Catch in analyze_function_call
-```python
-try:
-    for stmt in sig.body:
-        analyze_stmt_ir(stmt, func_env, func_warnings, ctx)
-except EarlyReturn:
-    pass  # Function returned early — outputs are current env values
-```
-
-### Catch in analyze_program_ir
-```python
-try:
-    for item in program.body:
-        if not isinstance(item, FunctionDef):
-            analyze_stmt_ir(item, env, warnings, ctx)
-except EarlyReturn:
-    pass  # Script-level return stops analysis
-```
-
-### Parser Changes
-Add `"return"` to KEYWORDS. In `parse_stmt()`, check for RETURN token before falling through to `parse_simple_stmt()`.
-
-### Diagnostics
-```python
-def warn_return_outside_function(line: int) -> str:
-    """Warning for return statement outside function body."""
-    return f"W_RETURN_OUTSIDE_FUNCTION line {line}: return statement outside function body"
-```
+### Additional Gaps Found
+4. **Cache warning replay**: `cache_warning_replay.m` tests dual-location warning formatting
+5. **Early return + multi-output**: `early_return_multi_output.m` tests unset outputs → unknown
+6. **Function in loop**: `function_in_loop.m` tests cache interaction with loop iterations
+7. **Nested function calls**: `nested_function_calls.m` tests user-function calling user-function
+8. **Procedure + return**: `procedure_with_return.m` tests return in zero-output function
+9. **Arg count mismatch**: `arg_count_mismatch_cached.m` tests error before cache lookup
+10. **Unreachable code after return**: Extended `return_statement.m` tests dead code not analyzed
+11. **Multi-output single-use**: Extended `multiple_returns.m` tests caller using only first output
 
 ## Estimated Diff
-- Parser: +10 lines (return keyword + parse_return)
-- IR: +8 lines (Return node)
-- Lowering: +4 lines (return case)
-- Analyzer: +80 lines (cache logic, EarlyReturn, catch-at-boundary, warning helper)
-- Diagnostics: +4 lines (warn_return_outside_function)
-- Tests: 5 new files (~55 lines)
-- **Total: ~161 lines** across 6 files + 5 test files
+- **9 new test files**: ~110 lines total (avg 12 lines per test)
+- **2 extended test files**: ~20 lines of additions
+- **Total**: ~130 lines of new test code, 0 lines of analyzer changes
+- **Test count**: 71 → 82 (+11 tests)

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-02-14
+### Added
+- Test coverage polish: 11 new test files for edge cases and integration scenarios
+- Return statement edge cases: return_in_if.m (return in if-branch), return_in_loop.m (return in loop body), early_return_multi_output.m (partial output assignment)
+- Cache edge cases: cache_symbolic_args.m (symbolic dimension cache keys), cache_warning_replay.m (warning replay verification), arg_count_mismatch_cached.m (arg count error without cache interaction)
+- Integration tests: function_in_loop.m (cache in loop), nested_function_calls.m (non-recursive nesting), procedure_with_return.m (procedure early exit)
+- Extended existing tests: return_statement.m (added unreachable code case), multiple_returns.m (added single-output usage of multi-output function)
+- Total test count: 80 (was 71)
+
 ## [0.10.1] - 2026-02-14
 ### Added
 - Polymorphic caching for function analysis keyed by (func_name, arg_shapes)
