@@ -92,6 +92,9 @@ python3 tools/ai_local.py --no-context "explain lattice widening in abstract int
 
 3. **Analysis** (`analysis/`) — Static shape inference
    - `analysis_ir.py`: **Main IR-based analyzer** (default, authoritative)
+     - Interprocedural analysis for user-defined functions (call-site specific)
+     - AnalysisContext: Threads analysis state (function registry, recursion guard, fixpoint flag)
+     - FunctionSignature: Registered function metadata
    - `builtins.py`: Builtin function catalog (`KNOWN_BUILTINS`, shape rule registry)
    - `analysis_core.py`: Shared compatibility checks
    - `matrix_literals.py`: Matrix literal shape inference
@@ -136,7 +139,7 @@ Tests use inline assertions in MATLAB comments:
 % EXPECT_FIXPOINT: A = matrix[None x None]   (override when --fixpoint active)
 ```
 
-The test runner (`run_all_tests.py`) validates these expectations against analysis results. All test files are organized in `tests/` subdirectories by category: `basics/`, `symbolic/`, `indexing/`, `control_flow/`, `literals/`, `builtins/`, `loops/`, and `recovery/` (discovered dynamically via `glob("tests/**/*.m", recursive=True)`).
+The test runner (`run_all_tests.py`) validates these expectations against analysis results. All test files are organized in `tests/` subdirectories by category: `basics/`, `symbolic/`, `indexing/`, `control_flow/`, `literals/`, `builtins/`, `loops/`, `recovery/`, and `functions/` (discovered dynamically via `glob("tests/**/*.m", recursive=True)`).
 
 ## Critical Implementation Details
 
@@ -155,7 +158,20 @@ The test runner (`run_all_tests.py`) validates these expectations against analys
 
 - `Apply` is the sole IR node for both function calls and array indexing (`foo(...)`)
 - Parser emits `Apply` for all parenthesized expressions (no parse-time disambiguation)
-- Analyzer disambiguates based on: colon/range in args → indexing, `KNOWN_BUILTINS` → call, bound variable → indexing, unknown name → `W_UNKNOWN_FUNCTION`
+- Analyzer disambiguates based on: colon/range in args → indexing, `KNOWN_BUILTINS` → builtin call, user-defined function → function call, bound variable → indexing, unknown name → `W_UNKNOWN_FUNCTION`
+
+### User-Defined Functions
+
+- Functions are defined with `function` keyword in 3 forms:
+  - Single return: `function result = name(params)`
+  - Multi-return: `function [out1, out2] = name(params)`
+  - Procedure: `function name(params)` (no return values)
+- **Two-pass analysis**: Pass 1 registers all function definitions, Pass 2 analyzes script statements
+- **Interprocedural analysis**: Functions are analyzed at each call site with caller's argument shapes
+- **Dimension aliasing**: Symbolic dimension names propagate across function boundaries (e.g., `make_matrix(n, m)` returns `matrix[n x m]` where `n` and `m` are the caller's symbolic dimensions)
+- **Recursion guard**: Recursive function calls emit `W_RECURSIVE_FUNCTION` and return unknown
+- **Dual-location warnings**: Warnings in function bodies show both call site line and body line
+- **Destructuring assignment**: `[a, b] = func(x)` binds multiple return values to variables
 
 ### Best-Effort Analysis
 
@@ -167,8 +183,9 @@ When a definite mismatch is detected (e.g., inner dimension mismatch in `A*B`), 
 ## Known Behaviors and Gotchas
 
 - Test discovery is dynamic via `glob("tests/**/*.m", recursive=True)` in `run_all_tests.py`
-- `--strict` mode fails if any `W_UNSUPPORTED_*` warning is emitted (expected for recovery tests: `tests/recovery/struct_field.m`, `tests/recovery/cell_array.m`, `tests/recovery/multiple_assignment.m`, `tests/recovery/multiline_braces.m`, `tests/recovery/end_in_parens.m`)
+- `--strict` mode fails if any `W_UNSUPPORTED_*` warning is emitted (expected for recovery tests in `tests/recovery/`)
 - When editing parser/lowering, check delimiter syncing and token precedence carefully
+- User-defined functions are analyzed per-call-site (context-sensitive), not once globally
 
 ## Agent Workflow
 

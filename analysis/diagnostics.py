@@ -171,3 +171,27 @@ def warn_unsupported_multi_assign(line: int) -> str:
         Warning message string with code W_UNSUPPORTED_MULTI_ASSIGN
     """
     return f"W_UNSUPPORTED_MULTI_ASSIGN line {line}: Destructuring assignment not yet supported (Phase C)"
+
+def warn_function_arg_count_mismatch(line: int, func_name: str, expected: int, got: int) -> str:
+    """Warning for function called with wrong number of arguments."""
+    return f"W_FUNCTION_ARG_COUNT_MISMATCH line {line}: function {func_name} expects {expected} arguments, got {got}"
+
+def warn_recursive_function(line: int, func_name: str) -> str:
+    """Warning for recursive function call (not supported, returns unknown)."""
+    return f"W_RECURSIVE_FUNCTION line {line}: recursive call to {func_name} not supported (returns unknown)"
+
+def warn_procedure_in_expr(line: int, func_name: str) -> str:
+    """Warning for procedure (no return value) used in expression context."""
+    return f"W_PROCEDURE_IN_EXPR line {line}: procedure {func_name} has no return value, cannot be used in expression"
+
+def warn_multi_assign_non_call(line: int) -> str:
+    """Warning for destructuring assignment with non-function-call RHS."""
+    return f"W_MULTI_ASSIGN_NON_CALL line {line}: destructuring assignment requires function call on RHS"
+
+def warn_multi_assign_builtin(line: int, func_name: str) -> str:
+    """Warning for destructuring assignment with builtin function (no multi-return)."""
+    return f"W_MULTI_ASSIGN_BUILTIN line {line}: builtin {func_name} does not support multiple returns"
+
+def warn_multi_assign_count_mismatch(line: int, func_name: str, expected: int, got: int) -> str:
+    """Warning for destructuring assignment target count mismatch."""
+    return f"W_MULTI_ASSIGN_COUNT_MISMATCH line {line}: function {func_name} returns {expected} values, got {got} targets"

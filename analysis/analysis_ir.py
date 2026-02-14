@@ -46,6 +46,10 @@ class AnalysisContext:
 def analyze_program_ir(program: Program, fixpoint: bool = False, ctx: AnalysisContext = None) -> Tuple[Env, List[str]]:
     """Analyze a complete Mini-MATLAB program for shape consistency.
 
+    Two-pass analysis:
+    1. Register all function definitions
+    2. Analyze script statements (non-function statements in program body)
+
     Args:
         program: IR program to analyze
         fixpoint: If True, use fixed-point iteration for loop analysis
@@ -59,11 +63,148 @@ def analyze_program_ir(program: Program, fixpoint: bool = False, ctx: AnalysisCo
 
     env = Env()
     warnings: List[str] = []
-    for stmt in program.body:
-        analyze_stmt_ir(stmt, env, warnings, ctx)
+
+    # Pass 1: Register function definitions
+    for item in program.body:
+        if isinstance(item, FunctionDef):
+            ctx.function_registry[item.name] = FunctionSignature(
+                name=item.name,
+                params=item.params,
+                output_vars=item.output_vars,
+                body=item.body
+            )
+
+    # Pass 2: Analyze script statements (non-functions)
+    for item in program.body:
+        if not isinstance(item, FunctionDef):
+            analyze_stmt_ir(item, env, warnings, ctx)
+
     # Deduplicate warnings while preserving order
     warnings = list(dict.fromkeys(warnings))
     return env, warnings
+
+
+def analyze_function_call(
+    func_name: str,
+    args: List[IndexArg],
+    line: int,
+    env: Env,
+    warnings: List[str],
+    ctx: AnalysisContext
+) -> List[Shape]:
+    """Analyze user-defined function call and return output shapes.
+
+    Re-analyzes function body at every call site (no caching).
+
+    Args:
+        func_name: Name of function to call
+        args: Argument list from Apply node
+        line: Call site line number
+        env: Caller's environment
+        warnings: List to append warnings to
+        ctx: Analysis context
+
+    Returns:
+        List of output shapes (one per output_var in function signature)
+    """
+    if func_name not in ctx.function_registry:
+        # Should not reach here (checked by caller)
+        return [Shape.unknown()]
+
+    sig = ctx.function_registry[func_name]
+
+    # Check argument count
+    if len(args) != len(sig.params):
+        warnings.append(diag.warn_function_arg_count_mismatch(
+            line, func_name, expected=len(sig.params), got=len(args)
+        ))
+        return [Shape.unknown()] * max(len(sig.output_vars), 1)
+
+    # Recursion guard
+    if func_name in ctx.analyzing_functions:
+        warnings.append(diag.warn_recursive_function(line, func_name))
+        return [Shape.unknown()] * max(len(sig.output_vars), 1)
+
+    # Mark function as currently being analyzed
+    ctx.analyzing_functions.add(func_name)
+
+    try:
+        # Analyze function body with fresh workspace
+        func_env = Env()
+        func_warnings: List[str] = []
+
+        # Bind parameters to argument shapes + set up dimension aliases
+        for param_name, arg in zip(sig.params, args):
+            arg_shape = _eval_index_arg_to_shape(arg, env, warnings, ctx)
+            func_env.set(param_name, arg_shape)
+
+            # Dimension aliasing: if arg is a Var, extract its dimension
+            if isinstance(arg, IndexExpr) and isinstance(arg.expr, Var):
+                caller_dim = expr_to_dim_ir(arg.expr, env)
+                if caller_dim is not None:
+                    func_env.dim_aliases[param_name] = caller_dim
+
+        # Analyze function body (inherit fixpoint setting)
+        for stmt in sig.body:
+            analyze_stmt_ir(stmt, func_env, func_warnings, ctx)
+
+        # Prepend call context to function warnings (dual-location format)
+        for func_warn in func_warnings:
+            # Extract warning line from func_warn
+            # Formats: "W_... line N: ..." or "Line N: ..."
+            # Check for both " line " (lowercase) and "Line " (capitalized at start)
+            body_line = None
+            prefix = None
+            message = None
+
+            if " line " in func_warn:
+                # Format: "W_... line N: message"
+                parts = func_warn.split(" line ", 1)
+                prefix = parts[0]
+                rest = parts[1]
+                if ": " in rest:
+                    body_line = rest.split(": ", 1)[0].split(" ")[0]
+                    message = rest.split(": ", 1)[1]
+            elif func_warn.startswith("Line "):
+                # Format: "Line N: message"
+                rest = func_warn[5:]  # Skip "Line "
+                if ": " in rest:
+                    body_line = rest.split(": ", 1)[0]
+                    message = rest.split(": ", 1)[1]
+                    prefix = "Line"
+
+            if body_line and message and prefix:
+                # Check if already has call context
+                if "(in " not in func_warn:
+                    # Add call context
+                    if prefix == "Line":
+                        new_warn = f"Line {body_line} (in {func_name}, called from line {line}): {message}"
+                    else:
+                        new_warn = f"{prefix} line {body_line} (in {func_name}, called from line {line}): {message}"
+                    warnings.append(new_warn)
+                else:
+                    # Already has call context, append as-is
+                    warnings.append(func_warn)
+            else:
+                # Could not parse, append as-is
+                warnings.append(func_warn)
+
+        # Extract return values from output variables
+        result_shapes = []
+        for out_var in sig.output_vars:
+            shape = func_env.get(out_var)
+            # Convert bottom (unset output var) to unknown
+            if shape.is_bottom():
+                result_shapes.append(Shape.unknown())
+            else:
+                result_shapes.append(shape)
+
+        # Return output shapes (or single unknown if no outputs)
+        return result_shapes if result_shapes else [Shape.unknown()]
+
+    finally:
+        # Remove function from analyzing set
+        ctx.analyzing_functions.discard(func_name)
 
 
 def _analyze_loop_body(body: list, env: Env, warnings: List[str], ctx: AnalysisContext) -> None:
@@ -169,8 +310,39 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str], ctx: AnalysisCont
         return env
 
     if isinstance(stmt, AssignMulti):
-        # Phase A stub: set all targets to unknown and emit warning
-        warnings.append(diag.warn_unsupported_multi_assign(stmt.line))
+        # Destructuring assignment: [a, b] = expr
+        if not isinstance(stmt.expr, Apply) or not isinstance(stmt.expr.base, Var):
+            warnings.append(diag.warn_multi_assign_non_call(stmt.line))
+            for target in stmt.targets:
+                env.set(target, Shape.unknown())
+            return env
+
+        fname = stmt.expr.base.name
+
+        # Check if builtin (builtins don't support multiple returns)
+        if fname in KNOWN_BUILTINS:
+            warnings.append(diag.warn_multi_assign_builtin(stmt.line, fname))
+            for target in stmt.targets:
+                env.set(target, Shape.unknown())
+            return env
+
+        # Check function registry
+        if fname in ctx.function_registry:
+            output_shapes = analyze_function_call(fname, stmt.expr.args, stmt.line, env, warnings, ctx)
+
+            if len(stmt.targets) != len(output_shapes):
+                warnings.append(diag.warn_multi_assign_count_mismatch(
+                    stmt.line, fname, expected=len(output_shapes), got=len(stmt.targets)
+                ))
+                for target in stmt.targets:
+                    env.set(target, Shape.unknown())
+            else:
+                for target, shape in zip(stmt.targets, output_shapes):
+                    env.set(target, shape)
+            return env
+
+        # Not a known function
+        warnings.append(diag.warn_unknown_function(stmt.line, fname))
         for target in stmt.targets:
             env.set(target, Shape.unknown())
         return env
@@ -423,6 +595,22 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str], ctx: AnalysisContext
 
             # Check if variable is unbound (unknown function)
             if fname not in env.bindings:
+                # Check function registry before giving up
+                if fname in ctx.function_registry:
+                    output_shapes = analyze_function_call(fname, expr.args, line, env, warnings, ctx)
+
+                    # Check if procedure (no return value)
+                    if len(ctx.function_registry[fname].output_vars) == 0:
+                        warnings.append(diag.warn_procedure_in_expr(line, fname))
+                        return Shape.unknown()
+
+                    if len(output_shapes) == 1:
+                        return output_shapes[0]
+                    else:
+                        # Multiple returns in expression context, use first return value
+                        return output_shapes[0]
+
+                # Truly unknown function
                 warnings.append(diag.warn_unknown_function(line, fname))
                 return Shape.unknown()
 
@@ -569,6 +757,9 @@ def expr_to_dim_ir(expr: Expr, env: Env) -> Dim:
             return int(v)
         return None
     if isinstance(expr, Var):
+        # Check for dimension alias first (propagates caller's dim name)
+        if expr.name in env.dim_aliases:
+            return env.dim_aliases[expr.name]
         return expr.name
     if isinstance(expr, BinOp):
         # Recursively extract dimensions from left and right operands

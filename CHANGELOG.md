@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-02-14
+### Added
+- User-defined function support with 3 syntactic forms (single return, multi-return, procedure)
+- Interprocedural shape inference (call-site specific analysis with caller's argument shapes)
+- Dimension aliasing across function boundaries (symbolic dimension names propagate)
+- Destructuring assignment for multiple return values (`[a, b] = func(x)`)
+- AnalysisContext dataclass for threading analysis state (function registry, recursion guard, fixpoint flag)
+- FunctionSignature dataclass for registered function metadata
+- Two-pass program analysis (Pass 1: register functions, Pass 2: analyze script)
+- Recursion guard to prevent infinite loops on recursive calls
+- Dual-location warnings for function bodies (shows both call site and body location)
+- 6 new warning codes: W_FUNCTION_ARG_COUNT_MISMATCH, W_RECURSIVE_FUNCTION, W_PROCEDURE_IN_EXPR, W_MULTI_ASSIGN_NON_CALL, W_MULTI_ASSIGN_BUILTIN, W_MULTI_ASSIGN_COUNT_MISMATCH
+- 8 new test files in `tests/functions/` category
+- Total test count: 66 (was 58)
+
+### Changed
+- IR nodes: Added FunctionDef and AssignMulti
+- Test categories: Now 9 directories (added `functions/` to existing 8)
+- Apply node disambiguation now checks user-defined function registry
+
 ## [0.9.3] - 2026-02-14
 ### Fixed
 - Soundness bug: `Shape.unknown()` conflated unbound variables (bottom) with errors (top)

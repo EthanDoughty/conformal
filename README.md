@@ -42,6 +42,7 @@ The subset includes:
 
 - assignments and expressions
 - function calls (19 recognized builtins with full shape rule coverage)
+- user-defined functions (single/multi-return/procedure forms with interprocedural analysis)
 - control flow (if, for, while)
 - symbolic dimensions
 - indexing and transpose
@@ -66,6 +67,7 @@ The analysis supports:
 - symbolic dimension multiplication for replication (e.g. `(n*k)`)
 - symbolic dimension arithmetic in builtin arguments (e.g. `zeros(n+1, m)`)
 - widening for loop convergence (stable dims preserved, conflicting dims → None)
+- dimension aliasing across function boundaries (caller's symbolic names propagate to callee)
 
 ## Project Structure
 
@@ -117,6 +119,14 @@ Each test file:
 | builtins/call_vs_index.m | Call vs index disambiguation
 | builtins/constructors.m | Matrix constructors and element-wise builtins
 | builtins/remaining_builtins.m | Complete builtin coverage (det/diag/inv/linspace/norm)
+| functions/simple_function.m | Basic user-defined function
+| functions/multiple_returns.m | Multi-return function with destructuring
+| functions/matrix_constructor.m | Function returning symbolic-shaped matrix
+| functions/procedure.m | Procedure (no return values)
+| functions/unknown_in_function.m | Unknown shapes in function bodies
+| functions/function_then_script.m | Function definitions followed by script
+| functions/call_with_mismatch.m | Function call with dimension mismatch
+| functions/recursion.m | Recursive function calls
 | recovery/struct_field.m | Unsupported struct field access
 | recovery/cell_array.m | Unsupported cell array indexing
 | recovery/multiple_assignment.m | Unsupported multiple assignment
@@ -169,13 +179,13 @@ Exit codes:
 - The analyzer is strict on provable dimension errors. When an operation is definitely invalid (e.g., inner-dimension mismatch in A*B), it emits a warning and treats the expression result as unknown.
 
 ## Limitations
-This tool does not support: 
-- user-defined functions
+This tool does not support:
 - cell arrays or structs
 - strings
 - file I/O
 - plotting or graphics
 - precise loop invariants
+- nested functions or anonymous functions
 
 ## Motivation and Future Directions
 
@@ -183,7 +193,7 @@ I felt that it was very rewarding to use MATLAB as the source language for a sta
 
 Possible future extensions include:
 
-- user-defined functions and interprocedural shape inference
+- nested functions and anonymous functions
 - stricter invalidation semantics for definite errors
 - richer symbolic constraint solving
 - IDE or language-server integration
