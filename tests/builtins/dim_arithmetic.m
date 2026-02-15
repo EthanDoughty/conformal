@@ -11,7 +11,7 @@ B = zeros(2*n, k);
 
 % Nested addition
 C = zeros(n+m+k, 1);
-% EXPECT: C = matrix[((n+m)+k) x 1]
+% EXPECT: C = matrix[(k+m+n) x 1]
 
 % Subtraction
 D = zeros(n-1, m);

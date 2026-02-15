@@ -23,7 +23,7 @@ from ir import (
 
 import analysis.diagnostics as diag
 from runtime.env import Env, join_env, widen_env
-from runtime.shapes import Shape, Dim, shape_of_zeros, shape_of_ones, join_dim, mul_dim, add_dim, join_shape
+from runtime.shapes import Shape, Dim, SymDim, shape_of_zeros, shape_of_ones, join_dim, mul_dim, add_dim, join_shape
 from analysis.analysis_core import shapes_definitely_incompatible
 from analysis.matrix_literals import infer_matrix_literal_shape, as_matrix_shape, dims_definitely_conflict
 
@@ -1237,7 +1237,7 @@ def expr_to_dim_ir(expr: Expr, env: Env) -> Dim:
         # Check for dimension alias first (propagates caller's dim name)
         if expr.name in env.dim_aliases:
             return env.dim_aliases[expr.name]
-        return expr.name
+        return SymDim.var(expr.name)
     if isinstance(expr, BinOp):
         # Recursively extract dimensions from left and right operands
         left_dim = expr_to_dim_ir(expr.left, env)
@@ -1251,13 +1251,8 @@ def expr_to_dim_ir(expr: Expr, env: Env) -> Dim:
         if expr.op == "+":
             return add_dim(left_dim, right_dim)
         elif expr.op == "-":
-            # Negate right operand for subtraction
-            if isinstance(right_dim, int):
-                negated_right = -right_dim
-            else:
-                # Symbolic dimension: wrap in negation
-                negated_right = f"-{right_dim}"
-            return add_dim(left_dim, negated_right)
+            # Subtraction via negation
+            return add_dim(left_dim, mul_dim(-1, right_dim))
         elif expr.op == "*":
             return mul_dim(left_dim, right_dim)
         else:

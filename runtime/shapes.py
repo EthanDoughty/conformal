@@ -9,11 +9,142 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Union
 
+# A monomial: sorted tuple of (variable_name, exponent) pairs.
+# Empty tuple = constant monomial (1).
+Monomial = tuple  # tuple[tuple[str, int], ...]
+
+
+@dataclass(frozen=True)
+class SymDim:
+    """Canonical symbolic dimension expression (multivariate polynomial).
+
+    Sorted tuple of (monomial, coefficient) pairs.
+    Canonical by construction: sorted, collected, no zero coefficients.
+    """
+    _terms: tuple  # tuple[tuple[Monomial, int], ...]
+
+    @staticmethod
+    def const(value: int) -> "SymDim":
+        """Create a constant symbolic dimension."""
+        if value == 0:
+            return SymDim(_terms=())
+        return SymDim(_terms=(((), value),))
+
+    @staticmethod
+    def var(name: str) -> "SymDim":
+        """Create a variable symbolic dimension."""
+        return SymDim(_terms=(((((name, 1),), 1)),))
+
+    @staticmethod
+    def zero() -> "SymDim":
+        """Create zero symbolic dimension."""
+        return SymDim(_terms=())
+
+    def __add__(self, other: "SymDim") -> "SymDim":
+        """Add two symbolic dimensions."""
+        # Merge terms from both polynomials
+        term_dict = {}
+        for mono, coeff in self._terms:
+            term_dict[mono] = term_dict.get(mono, 0) + coeff
+        for mono, coeff in other._terms:
+            term_dict[mono] = term_dict.get(mono, 0) + coeff
+
+        # Remove zero coefficients and sort
+        terms = [(mono, coeff) for mono, coeff in term_dict.items() if coeff != 0]
+        terms.sort(key=lambda t: self._mono_key(t[0]))
+        return SymDim(_terms=tuple(terms))
+
+    def __neg__(self) -> "SymDim":
+        """Negate a symbolic dimension."""
+        return SymDim(_terms=tuple((mono, -coeff) for mono, coeff in self._terms))
+
+    def __sub__(self, other: "SymDim") -> "SymDim":
+        """Subtract two symbolic dimensions."""
+        return self + (-other)
+
+    def __mul__(self, other: "SymDim") -> "SymDim":
+        """Multiply two symbolic dimensions."""
+        # Cross-product of terms
+        term_dict = {}
+        for mono1, coeff1 in self._terms:
+            for mono2, coeff2 in other._terms:
+                # Multiply monomials: combine variable exponents
+                var_dict = {}
+                for var, exp in mono1:
+                    var_dict[var] = var_dict.get(var, 0) + exp
+                for var, exp in mono2:
+                    var_dict[var] = var_dict.get(var, 0) + exp
+                # Sort variables to get canonical monomial
+                new_mono = tuple(sorted(var_dict.items()))
+                # Add to term dict
+                term_dict[new_mono] = term_dict.get(new_mono, 0) + coeff1 * coeff2
+
+        # Remove zeros and sort
+        terms = [(mono, coeff) for mono, coeff in term_dict.items() if coeff != 0]
+        terms.sort(key=lambda t: self._mono_key(t[0]))
+        return SymDim(_terms=tuple(terms))
+
+    def is_const(self) -> bool:
+        """Check if this is a constant (no variables)."""
+        return len(self._terms) == 0 or (len(self._terms) == 1 and self._terms[0][0] == ())
+
+    def const_value(self) -> Optional[int]:
+        """Return constant value if this is a constant, else None."""
+        if len(self._terms) == 0:
+            return 0
+        if len(self._terms) == 1 and self._terms[0][0] == ():
+            return self._terms[0][1]
+        return None
+
+    @staticmethod
+    def _mono_key(mono: Monomial) -> tuple:
+        """Sort key for monomials: higher degree first, then alphabetical."""
+        degree = sum(exp for var, exp in mono)
+        return (-degree, mono)
+
+    def __str__(self) -> str:
+        """Format polynomial with degree-descending, alphabetical display."""
+        if len(self._terms) == 0:
+            return "0"
+
+        parts = []
+        for mono, coeff in self._terms:
+            if mono == ():
+                # Constant term
+                parts.append(str(coeff))
+            else:
+                # Variable term
+                var_parts = []
+                for var, exp in mono:
+                    if exp == 1:
+                        var_parts.append(var)
+                    else:
+                        var_parts.append(f"{var}^{exp}")
+                var_str = "*".join(var_parts)
+
+                if coeff == 1:
+                    parts.append(var_str)
+                elif coeff == -1:
+                    parts.append(f"-{var_str}")
+                else:
+                    parts.append(f"{coeff}*{var_str}")
+
+        # Join with + or - (handle negative coefficients)
+        result = parts[0]
+        for part in parts[1:]:
+            if part.startswith("-"):
+                result += part  # Already has minus sign
+            else:
+                result += "+" + part
+
+        return result
+
+
 # A dimension can be:
 # - an int (e.g., 3, 4) for concrete dimensions
-# - a symbolic name (e.g., "n", "m") for unknown but tracked dimensions
+# - a SymDim for symbolic dimension expressions
 # - None for completely unknown dimensions
-Dim = Union[int, str, None]
+Dim = Union[int, SymDim, None]
 
 
 @dataclass(frozen=True)
@@ -131,7 +262,7 @@ class Shape:
         if self.kind == "scalar":
             return "scalar"
         if self.kind == "matrix":
-            return f"matrix[{self.rows} x {self.cols}]"
+            return f"matrix[{_dim_str(self.rows)} x {_dim_str(self.cols)}]"
         if self.kind == "string":
             return "string"
         if self.kind == "struct":
@@ -140,7 +271,7 @@ class Shape:
             field_strs = [f"{name}: {shape}" for name, shape in self._fields if not shape.is_bottom()]
             return "struct{" + ", ".join(field_strs) + "}"
         if self.kind == "cell":
-            return f"cell[{self.rows} x {self.cols}]"
+            return f"cell[{_dim_str(self.rows)} x {_dim_str(self.cols)}]"
         if self.kind == "function_handle":
             return "function_handle"
         if self.kind == "bottom":
@@ -152,6 +283,27 @@ class Shape:
 
 
 # Dimension helpers
+
+def _dim_str(d: Dim) -> str:
+    """Format a dimension for display in shape strings."""
+    if d is None:
+        return "None"
+    if isinstance(d, int):
+        return str(d)
+    if isinstance(d, SymDim):
+        s = str(d)
+        # Bare constant or bare variable: no parens
+        cv = d.const_value()
+        if cv is not None:
+            return str(cv)
+        # Check if it's a bare variable: single term, coeff 1, single var with exp 1
+        if len(d._terms) == 1:
+            mono, coeff = d._terms[0]
+            if coeff == 1 and len(mono) == 1 and mono[0][1] == 1:
+                return mono[0][0]  # Just the variable name
+        return f"({s})"
+    return str(d)
+
 
 def join_dim(a: Dim, b: Dim) -> Dim:
     """Join two dimensions in the lattice.
@@ -168,11 +320,35 @@ def join_dim(a: Dim, b: Dim) -> Dim:
     return None
 
 
+def _to_symdim(d: Dim) -> SymDim:
+    """Convert a Dim to SymDim (helper for arithmetic)."""
+    if isinstance(d, int):
+        return SymDim.const(d)
+    if isinstance(d, SymDim):
+        return d
+    raise TypeError(f"Cannot convert {type(d)} to SymDim")
+
+
 def dims_definitely_conflict(a: Dim, b: Dim) -> bool:
     """Return True if we can prove the dimensions are different"""
     if a is None or b is None:
         return False
-    return a != b
+    if a == b:
+        return False
+    # Both concrete ints
+    if isinstance(a, int) and isinstance(b, int):
+        return True  # a != b already checked above
+    # Check if difference is a nonzero constant
+    try:
+        sa, sb = _to_symdim(a), _to_symdim(b)
+        diff = sa - sb
+        cv = diff.const_value()
+        if cv is not None and cv != 0:
+            return True
+    except TypeError:
+        pass
+    return False
+
 
 def add_dim(a: Dim, b: Dim) -> Dim:
     """Add two dimensions symbolically.
@@ -188,11 +364,10 @@ def add_dim(a: Dim, b: Dim) -> Dim:
         return None
     if isinstance(a, int) and isinstance(b, int):
         return a + b
-    if isinstance(b, (int, float)) and b < 0:
-        return f"({a}-{-b})"
-    if isinstance(b, str) and b.startswith("-"):
-        return f"({a}-{b[1:]})"
-    return f"({a}+{b})"
+    sa, sb = _to_symdim(a), _to_symdim(b)
+    result = sa + sb
+    cv = result.const_value()
+    return cv if cv is not None else result
 
 
 def mul_dim(a: Dim, b: Dim) -> Dim:
@@ -221,7 +396,10 @@ def mul_dim(a: Dim, b: Dim) -> Dim:
     if isinstance(a, int) and isinstance(b, int):
         return a * b
     # Symbolic: create symbolic product
-    return f"({a}*{b})"
+    sa, sb = _to_symdim(a), _to_symdim(b)
+    result = sa * sb
+    cv = result.const_value()
+    return cv if cv is not None else result
 
 
 def sum_dims(dimensions: list[Dim]) -> Dim:

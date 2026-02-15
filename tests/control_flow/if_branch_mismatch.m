@@ -3,11 +3,14 @@
 % A + B has incompatible dimensions (k vs n), so the analysis should detect it
 % v0.9.3: Precision regression — then-branch error (unknown) now propagates through join
 % (join_shape treats unknown as absorbing top). More sound, less precise.
+% v0.13.0: Canonical SymDim — dims_definitely_conflict only returns True for provable
+% constant differences (e.g., n+1 vs n). Since k vs n could be equal at runtime,
+% no warning is emitted. Result is matrix[n x None] (column dimension unknown).
 
-% EXPECT: warnings = 1
+% EXPECT: warnings = 0
 % EXPECT: A = matrix[n x k]
 % EXPECT: B = matrix[n x n]
-% EXPECT: C = unknown
+% EXPECT: C = matrix[n x None]
 % EXPECT: k = scalar
 % EXPECT: n = scalar
 

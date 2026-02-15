@@ -10,7 +10,7 @@
 % EXPECT: A = matrix[n x k]
 % EXPECT: B = matrix[n x m]
 % EXPECT: C = matrix[n x (k+m)]
-% EXPECT: D = matrix[(n+n) x k]
+% EXPECT: D = matrix[(2*n) x k]
 
 n = 4;
 k = 5;

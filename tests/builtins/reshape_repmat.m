@@ -4,7 +4,7 @@
 % EXPECT: reshape_symbolic = matrix[n x m]
 % EXPECT: repmat_scalar = matrix[2 x 3]
 % EXPECT: repmat_concrete = matrix[4 x 6]
-% EXPECT: repmat_symbolic = matrix[(n*k) x (m*k)]
+% EXPECT: repmat_symbolic = matrix[(k*n) x (k*m)]
 % EXPECT: reshape_from_scalar = matrix[3 x 2]
 % EXPECT: reshape_nonmatching = matrix[4 x 4]
 
