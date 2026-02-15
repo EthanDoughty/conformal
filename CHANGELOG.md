@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.2] - 2026-02-14
+### Added
+- Cell array support: 8th shape kind `cell[r x c]` tracking container dimensions
+- Cell literal syntax: `{1, 2; 3, 4}` parsed via shared `_parse_delimited_rows` helper
+- Curly-brace content indexing: `c{i}`, `c{i,j}` returns `unknown` (element shapes deferred to v0.13.0+)
+- `cell(n)` and `cell(m, n)` builtin constructors with symbolic dimension support
+- `CellLit` and `CurlyApply` IR nodes (mirrors MatrixLit/Apply pattern)
+- W_CURLY_INDEXING_NON_CELL warning for curly indexing on non-cell values
+- `pretty_expr_ir` support for CellLit and CurlyApply in diagnostics
+- 9 new test files in tests/cells/ (127 total, was 118)
+- New test category: tests/cells/ (11th category)
+
+### Changed
+- Extracted `_parse_delimited_rows(end_token)` from `parse_matrix_literal` (shared by matrix and cell literals)
+- Lexer: added `}` to transpose context set (`c{1}'` now correctly lexed as transpose)
+- `starts_expr` updated to include `{` (cell literals in implicit column separation)
+- `join_shape` and `widen_shape` handle cell kind (pointwise on dimensions)
+- README refreshed: removed "Mini-MATLAB" framing, added Warns column to test table, updated to 127 tests
+
 ## [0.12.1] - 2026-02-14
 ### Added
 - Lambda body analysis at call sites with polymorphic caching (replaces W_LAMBDA_CALL_APPROXIMATE approximation)
