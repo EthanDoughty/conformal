@@ -4,6 +4,7 @@
 
 ### Static Shape & Dimension Analysis for MATLAB
 
+[![Version](https://img.shields.io/badge/version-0.13.1-orange.svg)](#motivation-and-future-directions)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![Tests](https://img.shields.io/badge/tests-137%20passing-brightgreen.svg)](#test-suite)
 [![No Dependencies](https://img.shields.io/badge/dependencies-none-green.svg)](#requirements)
@@ -15,7 +16,7 @@
 
 ---
 
-Conformal is a static analyzer that detects matrix dimension errors in MATLAB code before runtime. It uses a custom parser and abstract interpreter designed specifically for MATLAB-style matrix semantics — reasoning about shapes, symbolic dimensions, and control flow without executing code or requiring a MATLAB installation.
+Conformal catches matrix dimension errors in MATLAB code before you run it. You write `A * B` where the inner dimensions don't match, and instead of finding out at runtime, Conformal tells you at analysis time. It tracks shapes through assignments, function calls, control flow, loops, and symbolic dimensions, all without needing MATLAB installed.
 
 ## Requirements
 
@@ -194,7 +195,7 @@ Control-flow join semantics for if/elseif/else, switch/case, try/catch, break, a
 | `try_catch_no_error.m` | Catch block unused when no error in try block | 0 |
 | `try_nested.m` | Nested try/catch blocks work correctly | 0 |
 
-**Key feature**: Conservative join semantics ensure soundness — when branches disagree on a variable's shape, the analyzer joins to the least upper bound (often `unknown`).
+**Key feature**: Conservative join semantics. When branches disagree on a variable's shape, the analyzer joins to the least upper bound (often `unknown`).
 
 </details>
 
@@ -346,7 +347,7 @@ Struct creation, field access, and control-flow joins.
 | `struct_field_reassign.m` | Field reassignment with different shape updates field map | 0 |
 | `struct_in_control_flow.m` | Struct shape join takes union of fields from both branches | 0 |
 
-**Key feature**: Struct join uses union-with-bottom semantics — fields present in only one branch get `bottom` in the other, then join to `unknown` (sound approximation).
+**Key feature**: Struct join uses union-with-bottom semantics. Fields present in only one branch get `bottom` in the other, then join to `unknown`.
 
 </details>
 
@@ -372,7 +373,7 @@ Cell array literals, curly-brace indexing, and element assignment (v0.12.2-0.12.
 | `cell_range_indexing.m` | Range indexing `C{1:3}` on cell arrays | 0 |
 | `curly_indexing_non_cell.m` | Curly indexing on non-cell value is an error | 1 |
 
-**Key feature**: Cell arrays use abstract shape `cell[r x c]` with per-element content tracking deferred (all indexing returns `unknown` — sound over-approximation).
+**Key feature**: Cell arrays use abstract shape `cell[r x c]`. Per-element tracking is deferred; all indexing returns `unknown` for now.
 
 </details>
 
@@ -390,7 +391,7 @@ Parser error recovery and unsupported construct handling (graceful degradation).
 | `dot_elementwise.m` | Dot-elementwise edge cases handled | 0 |
 | `end_in_parens.m` | `end` keyword inside parentheses unsupported | 1 |
 
-**Key feature**: Best-effort analysis — when the parser encounters unsupported syntax, it emits `W_UNSUPPORTED_*` warning, treats the expression as `unknown`, and continues analysis to provide maximum information.
+**Key feature**: Best-effort analysis. When the parser encounters unsupported syntax, it emits a `W_UNSUPPORTED_*` warning, treats the result as `unknown`, and keeps going.
 
 </details>
 
@@ -477,11 +478,11 @@ Exit codes:
 
 ## Why Python?
 
-Python is a deliberate choice for this project. The analyzer performs symbolic tree transformations — pattern matching on AST nodes, dictionary-based environments, lattice joins over algebraic data types — and Python excels at this kind of work. Features like dataclass IR nodes, dynamic dispatch, and first-class dictionaries made it possible to build a parser, IR, abstract interpreter, symbolic polynomial domain, and interprocedural analysis engine with 137 tests in a compact codebase with zero third-party dependencies.
+Most of the work in this project is tree manipulation: walking ASTs, matching patterns on IR nodes, joining lattice elements, and tracking dictionaries of variable shapes. Python is well-suited for this. Dataclasses make clean IR nodes, dicts are first-class, and there's no compile step slowing down iteration. The entire analyzer ships as a single codebase with zero dependencies.
 
-The tradeoff is runtime performance. For CLI usage and small-to-medium files, Python is more than fast enough. For real-time IDE integration (the 1.0 goal), latency matters more — but the mitigation is incremental analysis and caching, not a rewrite. The architecture (parser → IR → analysis) is cleanly layered, so performance-critical paths could be selectively optimized if profiling identifies bottlenecks.
+The obvious downside is speed. For CLI use and files up to a few hundred lines, it's plenty fast. For IDE integration (the 1.0 goal), latency will matter more. The plan there is incremental analysis and per-function caching, not a full rewrite. The pipeline is cleanly layered (parser → IR → analysis), so if profiling reveals a bottleneck, it can be addressed without rearchitecting.
 
-Ultimately, what matters most for adoption isn't the implementation language — it's the distribution format. A VS Code extension that bundles everything and "just works" is worth more than a fast engine that's hard to install.
+For adoption, the distribution story matters more than the language. A VS Code extension that bundles everything and just works will get more users than a fast binary that requires manual setup.
 
 ## Limitations
 
@@ -505,15 +506,16 @@ I felt that it was very rewarding to use MATLAB as the source language for a sta
 
 **IDE / LSP Integration (1.0)**
 
-The 1.0 milestone is a Language Server Protocol (LSP) implementation that brings shape warnings directly into editors. The plan combines a Python LSP backend with a VS Code extension frontend:
+The 1.0 goal is getting Conformal into editors. The plan is a hybrid: a Python LSP server ([pygls](https://github.com/openlawlibrary/pygls)) that runs the analyzer as a long-lived process, wrapped in a TypeScript VS Code extension that handles the editor side.
 
-- **Python LSP server** ([pygls](https://github.com/openlawlibrary/pygls)): Runs the analyzer as a long-lived process, serving diagnostics over the LSP protocol. Incremental analysis (per-function caching, dirty-file tracking) keeps response times low. This reuses the existing analysis engine with no rewrite.
-- **VS Code extension** (TypeScript): A thin client that manages the LSP lifecycle, bundles a Python runtime (or discovers a system Python), and provides editor integration — squiggly underlines on dimension mismatches, hover tooltips showing inferred shapes (`matrix[3 x n]`), and go-to-definition for user-defined functions.
-- **Bundled distribution**: The extension packages the Python analyzer as a dependency so users install one thing from the VS Code marketplace. No manual Python setup, no pip, no virtualenv.
+What that looks like in practice:
+- Squiggly underlines on dimension mismatches as you type
+- Hover tooltips showing inferred shapes (`matrix[3 x n]`)
+- The extension bundles everything, so users install one thing from the VS Code marketplace. No Python setup, no pip.
 
-This hybrid architecture (TypeScript extension shell + Python analysis core) is a proven pattern used by production language servers like Pylance, ruff, and jedi-language-server. It preserves the existing codebase while delivering a native editor experience.
+This is the same split architecture that Pylance, ruff, and jedi-language-server use. The Python analysis engine stays as-is; the TypeScript layer is just a thin LSP client.
 
 **Long-term**
-- Support for additional editors (Neovim, MATLAB Online via web LSP)
-- Workspace-level analysis (multi-file projects, cross-file function resolution)
-- Integration with MATLAB's own Code Analyzer warnings
+- Additional editors (Neovim, MATLAB Online)
+- Workspace-level analysis across multiple files
+- Integration with MATLAB's built-in Code Analyzer
