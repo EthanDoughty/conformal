@@ -18,6 +18,26 @@
 
 Conformal catches matrix dimension errors in MATLAB code before you run it. You write `A * B` where the inner dimensions don't match, and instead of finding out at runtime, Conformal tells you at analysis time. It tracks shapes through assignments, function calls, control flow, loops, and symbolic dimensions, all without needing MATLAB installed.
 
+```matlab
+A = zeros(3, 4);
+B = ones(5, 2);
+C = A * B;
+D = [A; B];
+```
+
+```
+$ python3 conformal.py example.m
+
+Warnings:
+  - Line 3: Dimension mismatch in expression (A * B):
+    inner dims 4 vs 5 (shapes matrix[3 x 4] and matrix[5 x 2])
+  - Line 4: Vertical concatenation requires equal column counts
+    across rows; got 4 and 2 in matrix literal.
+
+Final environment:
+    Env{A: matrix[3 x 4], B: matrix[5 x 2], C: unknown, D: unknown}
+```
+
 ## Requirements
 
 - Python 3.10+
@@ -414,21 +434,6 @@ python3 conformal.py --fixpoint --tests
 python3 conformal.py --strict --tests
 ```
 
-Test counts by category:
-- Basics: 7
-- Symbolic: 6
-- Indexing: 7
-- Control Flow: 15
-- Literals: 7
-- Builtins: 9
-- Loops: 22
-- Functions: 39 (21 named + 18 lambdas)
-- Structs: 5
-- Cells: 14
-- Recovery: 6
-
-Total: 137 tests
-
 ## Getting Started
 
 Clone and Verify:
@@ -438,19 +443,9 @@ cd conformal
 make test
 ```
 
-Analyze a File:
+Analyze a file:
 ```bash
 make run FILE=tests/basics/inner_dim_mismatch.m
-```
-
-Example Output:
-```
-Warnings:
-  - Line 11: Dimension mismatch in expression (A * x):
-    inner dims 4 vs 5 (shapes matrix[3 x 4] and matrix[5 x 1])
-
-Final environment:
-    Env{A: matrix[3 x 4], x: matrix[5 x 1], y: unknown}
 ```
 
 ## CLI Options
@@ -469,16 +464,6 @@ Exit codes:
 
 `1` – parse error, analyzer mismatch, or test failure
 
-## Notes and Challenges
-
-- The IR enforces structural invariants absent in the raw syntax AST
-
-- Matrix literals are parsed with MATLAB-aware rules.
-
-- The analyzer uses best-effort inference; Even when a definite mismatch is detected, it continues analysis to provide as much information as possible.
-
-- The analyzer is strict on provable dimension errors. When an operation is definitely invalid (e.g., inner-dimension mismatch in A*B), it emits a warning and treats the expression result as unknown.
-
 ## Why Python?
 
 Most of the work in this project is tree manipulation: walking ASTs, matching patterns on IR nodes, joining lattice elements, and tracking dictionaries of variable shapes. Python is well-suited for this. Dataclasses make clean IR nodes, dicts are first-class, and there's no compile step slowing down iteration. The entire analyzer ships as a single codebase with zero dependencies.
@@ -489,11 +474,20 @@ For adoption, the distribution story matters more than the language. A VS Code e
 
 ## Limitations
 
-This tool does not support:
-- File I/O
-- Plotting or graphics
-- Precise loop invariants
-- Nested functions
+Conformal analyzes a subset of MATLAB. Here's what it doesn't cover:
+
+| Category | What's missing |
+|----------|---------------|
+| Scope | Single-file analysis only. No cross-file function resolution or `addpath` handling. |
+| Functions | No nested functions. No `varargin`/`varargout`. No `eval`, `feval`, or `str2func`. |
+| Builtins | 21 builtins recognized. Toolbox functions (`fft`, `eig`, `svd`, `conv`, `filter`, ...) are not modeled and produce an unknown-function warning. |
+| Cell arrays | Dimensions are tracked but element types are not. `C{i}` always returns `unknown`. |
+| Data types | No classes, no maps, no tables, no N-D arrays (only 2-D matrices). No complex number tracking. |
+| Syntax | No command-style calls (`save file.mat`), no `global`/`persistent`, no `parfor`, no `classdef`. |
+| I/O and graphics | No `load`, `save`, `fprintf`, `plot`, or any side-effecting functions. |
+| Dynamic features | No `eval`, no dynamic field access (`s.(name)`), no runtime type introspection beyond `iscell`/`isscalar`. |
+
+These are deliberate scope boundaries, not bugs. The analyzer focuses on the matrix-heavy computational core of MATLAB where dimension errors are most common and most costly.
 
 ## Motivation and Future Directions
 
