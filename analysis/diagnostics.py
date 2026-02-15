@@ -225,6 +225,10 @@ def warn_curly_indexing_non_cell(line: int, base_shape: Shape) -> str:
     """Warning for curly indexing on non-cell value."""
     return f"W_CURLY_INDEXING_NON_CELL line {line}: Curly indexing on non-cell value ({base_shape})"
 
+def warn_cell_assign_non_cell(line: int, base_name: str, base_shape: Shape) -> str:
+    """Warning for cell assignment on non-cell variable."""
+    return f"W_CELL_ASSIGN_NON_CELL line {line}: Cell assignment to non-cell variable '{base_name}' ({base_shape})"
+
 def warn_return_outside_function(line: int) -> str:
     """Warning for return statement outside function body."""
     return f"W_RETURN_OUTSIDE_FUNCTION line {line}: return statement outside function body"

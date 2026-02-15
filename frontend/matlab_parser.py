@@ -419,6 +419,24 @@ class MatlabParser:
                         base = ["field_access", id_tok.line, base, field]
                     expr_tail = self.parse_expr_rest(base, 0)
                     return ["expr", expr_tail]
+            # Check for cell assignment: ID{i} = expr or ID{i,j} = expr
+            elif self.current().value == "{":
+                # Parse curly index args
+                self.eat("{")
+                args = self.parse_paren_args()  # Reuse arg parser
+                self.eat("}")
+
+                # Check for assignment
+                if self.current().value == "=":
+                    eq_tok = self.eat("=")
+                    expr = self.parse_expr()
+                    return ["cell_assign", eq_tok.line, id_tok.value, args, expr]
+                else:
+                    # Not assignment, construct CurlyApply expression
+                    base = ["var", id_tok.line, id_tok.value]
+                    left = ["curly_apply", id_tok.line, base, args]
+                    expr_tail = self.parse_expr_rest(left, 0)
+                    return ["expr", expr_tail]
             elif self.current().value == "=":
                 self.eat("=")
                 expr = self.parse_expr()

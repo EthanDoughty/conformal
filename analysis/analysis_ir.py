@@ -15,7 +15,7 @@ from analysis.builtins import KNOWN_BUILTINS
 
 from ir import (
     Program, Stmt,
-    Assign, StructAssign, ExprStmt, While, For, If, IfChain, Switch, Try, Break, Continue,
+    Assign, StructAssign, CellAssign, ExprStmt, While, For, If, IfChain, Switch, Try, Break, Continue,
     OpaqueStmt, FunctionDef, AssignMulti, Return,
     Expr, Var, Const, StringLit, FieldAccess, Lambda, FuncHandle, MatrixLit, CellLit, Apply, CurlyApply, Transpose, Neg, BinOp,
     IndexArg, Colon, Range, IndexExpr,
@@ -344,6 +344,33 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str], ctx: AnalysisCont
         updated_shape = _update_struct_field(base_shape, stmt.fields, rhs_shape, stmt.line, warnings)
 
         env.set(stmt.base_name, updated_shape)
+        return env
+
+    if isinstance(stmt, CellAssign):
+        # Cell element assignment: c{i} = expr
+        # Evaluate RHS
+        rhs_shape = eval_expr_ir(stmt.expr, env, warnings, ctx)
+
+        # Evaluate index args for side effects
+        for arg in stmt.args:
+            _ = _eval_index_arg_to_shape(arg, env, warnings, ctx)
+
+        # Get current base variable shape
+        base_shape = env.get(stmt.base_name)
+
+        # Verify base is cell (or bottom for unbound variables)
+        if base_shape.is_bottom():
+            # Unbound variable: create cell with unknown dimensions
+            env.set(stmt.base_name, Shape.cell(None, None))
+        elif not base_shape.is_cell():
+            # Base is not a cell: warn and keep original shape
+            warnings.append(diag.warn_cell_assign_non_cell(stmt.line, stmt.base_name, base_shape))
+            # Don't modify env (keep base_shape unchanged)
+        else:
+            # Base is cell: preserve shape (element assignment doesn't change container dims)
+            # env already has correct cell shape, no update needed
+            pass
+
         return env
 
     if isinstance(stmt, ExprStmt):

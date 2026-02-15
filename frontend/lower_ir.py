@@ -139,6 +139,14 @@ def lower_stmt(stmt: Any) -> Stmt:
         expr = lower_expr(stmt[4])
         return StructAssign(line=line, base_name=base_name, fields=fields, expr=expr)
 
+    if tag == "cell_assign":
+        # ['cell_assign', line, base_name, args, expr]
+        line = stmt[1]
+        base_name = stmt[2]
+        args = [lower_index_arg(arg) for arg in stmt[3]]
+        expr = lower_expr(stmt[4])
+        return CellAssign(line=line, base_name=base_name, args=args, expr=expr)
+
     if tag == "assign_multi":
         # ['assign_multi', line, targets, expr]
         line = stmt[1]

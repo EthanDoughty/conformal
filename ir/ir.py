@@ -146,6 +146,16 @@ class StructAssign(Stmt):
     expr: Expr
 
 @dataclass(frozen=True)
+class CellAssign(Stmt):
+    """Cell element assignment (c{i} = expr or c{i,j} = expr).
+
+    Modifies cell variable in-place. Args are indexing arguments (no field chain).
+    """
+    base_name: str
+    args: List[IndexArg]  # Curly index arguments
+    expr: Expr
+
+@dataclass(frozen=True)
 class ExprStmt(Stmt):
     """Expression statement (evaluates but doesn't assign)."""
     expr: Expr
