@@ -200,7 +200,12 @@ def analyze_function_call(
 
     # Evaluate arg shapes for cache key
     arg_shapes = tuple(_eval_index_arg_to_shape(arg, env, warnings, ctx) for arg in args)
-    cache_key = (func_name, arg_shapes)
+    # Compute dimension aliases for cache key (symbolic var names differ per call site)
+    arg_dim_aliases = tuple(
+        (param, expr_to_dim_ir(arg.expr, env)) if isinstance(arg, IndexExpr) else (param, None)
+        for param, arg in zip(sig.params, args)
+    )
+    cache_key = (func_name, arg_shapes, arg_dim_aliases)
 
     # Check cache
     if cache_key in ctx.analysis_cache:
@@ -749,7 +754,12 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str], ctx: AnalysisContext
                     if callable_id in ctx._lambda_metadata:
                         # Lambda body analysis
                         params, body_expr, closure_env = ctx._lambda_metadata[callable_id]
-                        cache_key = ("lambda", callable_id, tuple(arg_shapes))
+                        # Compute dimension aliases for cache key
+                        arg_dim_aliases = tuple(
+                            (param, expr_to_dim_ir(arg.expr, env)) if isinstance(arg, IndexExpr) else (param, None)
+                            for param, arg in zip(params, expr.args)
+                        )
+                        cache_key = ("lambda", callable_id, tuple(arg_shapes), arg_dim_aliases)
 
                         # Cache check
                         if cache_key in ctx.analysis_cache:
