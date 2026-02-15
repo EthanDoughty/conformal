@@ -43,12 +43,13 @@ The subset includes:
 - assignments and expressions
 - function calls (19 recognized builtins with full shape rule coverage)
 - user-defined functions (single/multi-return/procedure forms with interprocedural analysis)
+- anonymous functions (lambda body analysis at call sites with closure capture)
+- function handles (named handles dispatch to their targets)
 - control flow (if/elseif/else, for, while, switch/case, try/catch, break, continue, return)
 - symbolic dimensions
 - indexing and transpose
 - strings (char array literals with MATLAB-faithful arithmetic)
 - structs (field access and assignment with chained dot notation)
-- anonymous functions and function handles
 
 Loops are analyzed using a single pass by default, or with principled widening via `--fixpoint` for guaranteed convergence. The widening-based analysis accelerates convergence (≤2 iterations) by widening conflicting dimensions to unknown while preserving stable dimensions.
 
@@ -74,6 +75,8 @@ The analysis supports:
 - symbolic dimension arithmetic in builtin arguments (e.g. `zeros(n+1, m)`)
 - widening for loop convergence (stable dims preserved, conflicting dims → None)
 - dimension aliasing across function boundaries (caller's symbolic names propagate to callee)
+- lambda body analysis at call sites (polymorphic caching per argument shapes)
+- closure capture for anonymous functions (by-value environment capture at definition)
 
 ## Project Structure
 
@@ -165,10 +168,22 @@ Each test file:
 | functions/procedure_with_return.m | Procedure with explicit return
 | functions/arg_count_mismatch_cached.m | Arg count mismatch (no cache interaction)
 | functions/lambda_basic.m | Anonymous function definition and assignment
-| functions/lambda_call_approximate.m | Lambda call with approximate analysis warning
+| functions/lambda_call_approximate.m | Lambda call with body analysis (no longer approximate)
 | functions/lambda_zero_args.m | Zero-argument lambda functions
 | functions/function_handle_from_name.m | Named function handles (`@myFunc`)
 | functions/function_handle_join.m | Function handle join in control flow
+| functions/lambda_store_retrieve.m | Lambda storage with distinct IDs
+| functions/lambda_closure_capture.m | Closure captures environment by-value
+| functions/lambda_call_basic.m | Lambda body analysis with shape inference
+| functions/lambda_call_closure.m | Lambda uses closure variable in body
+| functions/lambda_polymorphic_cache.m | Same lambda, different arg shapes (cache)
+| functions/lambda_recursive.m | Self-referencing lambda (recursion guard)
+| functions/lambda_arg_count_mismatch.m | Lambda argument count mismatch
+| functions/lambda_dim_aliasing.m | Dimension aliasing through lambda calls
+| functions/lambda_zero_args_call.m | Zero-argument lambda call
+| functions/lambda_control_flow_join.m | Lambda in if/else branches, joined call
+| functions/handle_dispatch_builtin.m | Named handle dispatches to builtin
+| functions/handle_dispatch_user_func.m | Named handle dispatches to user function
 | structs/struct_create_assign.m | Struct creation and field assignment
 | structs/struct_field_access.m | Chained struct field access (`s.a.b`)
 | structs/struct_field_not_found.m | Missing struct field warning
@@ -232,7 +247,6 @@ This tool does not support:
 - plotting or graphics
 - precise loop invariants
 - nested functions
-- lambda body analysis (deferred to v0.12.1)
 
 ## Motivation and Future Directions
 
@@ -240,7 +254,7 @@ I felt that it was very rewarding to use MATLAB as the source language for a sta
 
 Possible future extensions include:
 
-- nested functions and anonymous functions
+- nested functions
 - stricter invalidation semantics for definite errors
 - richer symbolic constraint solving
 - IDE or language-server integration
