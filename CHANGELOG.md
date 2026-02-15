@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-02-15
+### Added
+- `iscell()` builtin function for type queries (returns scalar)
+- Rational symbolic dimension coefficients: `SymDim` uses `Fraction` internally for exact division (e.g., `n/2`)
+- `__truediv__` operator for `SymDim` (division by constant only)
+- Smart display format for rationals: `n/2` for simple cases, `(3/2)*n` for complex
+- Cell range indexing test: `c{i:j}` confirmed working via existing CurlyApply infrastructure
+- Python unit tests for `SymDim` internals (tests/test_shapes.py, 8 tests)
+- 3 new MATLAB test files (137 total, was 134)
+
+### Fixed
+- Polymorphic cache key missing `dim_aliases`, causing wrong symbolic var names on cache hit
+
+### Changed
+- `SymDim._terms` coefficients from `int` to `Fraction`
+- `SymDim.const_value()` returns `int` only if denominator is 1
+- README test suite section overhauled with collapsible categories
+
 ## [0.13.0] - 2026-02-14
 ### Added
 - `SymDim` frozen dataclass: canonical polynomial representation for symbolic dimensions
