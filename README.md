@@ -463,7 +463,16 @@ Exit codes:
 
 - The analyzer is strict on provable dimension errors. When an operation is definitely invalid (e.g., inner-dimension mismatch in A*B), it emits a warning and treats the expression result as unknown.
 
+## Why Python?
+
+Python is a deliberate choice for this project. The analyzer performs symbolic tree transformations — pattern matching on AST nodes, dictionary-based environments, lattice joins over algebraic data types — and Python excels at this kind of work. Features like dataclass IR nodes, dynamic dispatch, and first-class dictionaries made it possible to build a parser, IR, abstract interpreter, symbolic polynomial domain, and interprocedural analysis engine with 137 tests in a compact codebase with zero third-party dependencies.
+
+The tradeoff is runtime performance. For CLI usage and small-to-medium files, Python is more than fast enough. For real-time IDE integration (the 1.0 goal), latency matters more — but the mitigation is incremental analysis and caching, not a rewrite. The architecture (parser → IR → analysis) is cleanly layered, so performance-critical paths could be selectively optimized if profiling identifies bottlenecks.
+
+Ultimately, what matters most for adoption isn't the implementation language — it's the distribution format. A VS Code extension that bundles everything and "just works" is worth more than a fast engine that's hard to install.
+
 ## Limitations
+
 This tool does not support:
 - File I/O
 - Plotting or graphics
@@ -474,9 +483,25 @@ This tool does not support:
 
 I felt that it was very rewarding to use MATLAB as the source language for a static analysis tool. I wanted to choose something that was niche enough to be interesting and unique, while also being relevant to modern topics. MATLAB was perfect for this, as it is a language used widely for its scientific computing ability compared to other languages.
 
-Possible future extensions include:
+### Roadmap
 
-- Nested functions
-- Stricter invalidation semantics for definite errors
-- Richer symbolic constraint solving
-- IDE or language-server integration
+**Near-term**
+- Symbolic constraint solving (builds on the `SymDim` polynomial domain)
+- Nested function support
+- Per-element cell array tracking
+- Expanded builtin coverage (toolbox functions)
+
+**IDE / LSP Integration (1.0)**
+
+The 1.0 milestone is a Language Server Protocol (LSP) implementation that brings shape warnings directly into editors. The plan combines a Python LSP backend with a VS Code extension frontend:
+
+- **Python LSP server** ([pygls](https://github.com/openlawlibrary/pygls)): Runs the analyzer as a long-lived process, serving diagnostics over the LSP protocol. Incremental analysis (per-function caching, dirty-file tracking) keeps response times low. This reuses the existing analysis engine with no rewrite.
+- **VS Code extension** (TypeScript): A thin client that manages the LSP lifecycle, bundles a Python runtime (or discovers a system Python), and provides editor integration — squiggly underlines on dimension mismatches, hover tooltips showing inferred shapes (`matrix[3 x n]`), and go-to-definition for user-defined functions.
+- **Bundled distribution**: The extension packages the Python analyzer as a dependency so users install one thing from the VS Code marketplace. No manual Python setup, no pip, no virtualenv.
+
+This hybrid architecture (TypeScript extension shell + Python analysis core) is a proven pattern used by production language servers like Pylance, ruff, and jedi-language-server. It preserves the existing codebase while delivering a native editor experience.
+
+**Long-term**
+- Support for additional editors (Neovim, MATLAB Online via web LSP)
+- Workspace-level analysis (multi-file projects, cross-file function resolution)
+- Integration with MATLAB's own Code Analyzer warnings
