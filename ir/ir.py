@@ -28,6 +28,11 @@ class Const(Expr):
     value: float
 
 @dataclass(frozen=True)
+class StringLit(Expr):
+    """String literal ('hello' or "world")."""
+    value: str
+
+@dataclass(frozen=True)
 class Neg(Expr):
     """Unary negation (-x)."""
     operand: Expr
@@ -43,6 +48,23 @@ class BinOp(Expr):
 class Transpose(Expr):
     """Matrix transpose (A')."""
     operand: Expr
+
+@dataclass(frozen=True)
+class FieldAccess(Expr):
+    """Struct field access (s.field or s.a.b for nested)."""
+    base: Expr
+    field: str  # Outermost field in chain (nested as FieldAccess(FieldAccess(...), field))
+
+@dataclass(frozen=True)
+class Lambda(Expr):
+    """Anonymous function (@(x) x+1 or @(x,y) x+y)."""
+    params: List[str]
+    body: Expr
+
+@dataclass(frozen=True)
+class FuncHandle(Expr):
+    """Named function handle (@myFunc)."""
+    name: str
 
 @dataclass(frozen=True)
 class Apply(Expr):
@@ -96,6 +118,16 @@ class Stmt:
 class Assign(Stmt):
     """Assignment statement (x = expr)."""
     name: str
+    expr: Expr
+
+@dataclass(frozen=True)
+class StructAssign(Stmt):
+    """Struct field assignment (s.field = expr or s.a.b = expr).
+
+    For chained access like s.a.b = expr, fields = ["a", "b"] (flat list).
+    """
+    base_name: str
+    fields: List[str]  # Chain of field names
     expr: Expr
 
 @dataclass(frozen=True)

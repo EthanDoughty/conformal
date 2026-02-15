@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-02-14
+### Added
+- **Phase 1: String literals** with context-sensitive lexer for `'` disambiguation (string start vs transpose)
+- String shape kind: `Shape.string()` for char array literals (both `'hello'` and `"hello"` syntax)
+- String concatenation via horzcat: `['hello', ' ', 'world']` returns string
+- String arithmetic semantics: `'hello' + ' '` produces numeric row vector (MATLAB-faithful)
+- W_STRING_ARITHMETIC warning for invalid string operations (string + matrix/scalar with non-`+` operators)
+- 4 new test files in tests/literals/ (string_literal, string_horzcat, string_matrix_error, string_in_control_flow)
+- **Phase 2: Struct support** with field access and assignment
+- Struct shape kind: `Shape.struct(fields)` with sorted-tuple storage for hashability
+- Chained dot access: `s.a.b = 5`, `x = s.a.b` (nested FieldAccess IR nodes)
+- Union-with-bottom join semantics: missing fields get `Shape.bottom()` (identity in join, not `unknown`)
+- FieldAccess IR node for struct field reads (chained via nested nodes)
+- StructAssign IR statement for struct field writes (`s.a.b = expr`)
+- W_STRUCT_FIELD_NOT_FOUND warning when accessing non-existent struct field
+- W_FIELD_ACCESS_NON_STRUCT warning when using dot access on non-struct value
+- 5 new test files in tests/structs/ (struct_create_assign, struct_field_access, struct_field_not_found, struct_in_control_flow, struct_field_reassign)
+- New test category: tests/structs/ (10th category)
+- **Phase 3: Anonymous functions and function handles**
+- Function handle shape kind: `Shape.function_handle()` for lambdas and named handles
+- Lambda IR node for anonymous function expressions: `@(x, y) expr`
+- FuncHandle IR node for named function handles: `@myFunc`
+- Closure tracking in AnalysisContext with monotonic closure counter (avoids line number collision)
+- Lambda calls emit W_LAMBDA_CALL_APPROXIMATE and return unknown (body analysis deferred to v0.12.1)
+- Function handle variables shadow builtins in Apply disambiguation (matches MATLAB scoping)
+- 5 new test files in tests/functions/ (lambda_basic, lambda_call_approximate, lambda_zero_args, function_handle_from_name, function_handle_join)
+- Total test count: 106 (was 92)
+
+### Changed
+- Promoted tests/recovery/struct_field.m from W_UNSUPPORTED_STMT to W_FIELD_ACCESS_NON_STRUCT (recovery→first-class support)
+- Apply node disambiguation: function_handle variables override KNOWN_BUILTINS lookup (handle shadows builtin)
+- Lexer: context-sensitive `'` token handling based on previous token (ID/`)'/`]`/NUMBER → transpose, else → string start)
+- Test categories: 10 directories (added structs/)
+
 ## [0.11.0] - 2026-02-14
 ### Added
 - Extended control flow constructs: elseif, break, continue, switch/case, try/catch

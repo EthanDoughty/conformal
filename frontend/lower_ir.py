@@ -131,6 +131,14 @@ def lower_stmt(stmt: Any) -> Stmt:
         line, name, expr = stmt[1], stmt[2], stmt[3]
         return Assign(line=line, name=name, expr=lower_expr(expr))
 
+    if tag == "struct_assign":
+        # ['struct_assign', line, base_name, fields, expr]
+        line = stmt[1]
+        base_name = stmt[2]
+        fields = stmt[3]
+        expr = lower_expr(stmt[4])
+        return StructAssign(line=line, base_name=base_name, fields=fields, expr=expr)
+
     if tag == "assign_multi":
         # ['assign_multi', line, targets, expr]
         line = stmt[1]
@@ -230,11 +238,26 @@ def lower_expr(expr: Any) -> Expr:
     if tag == "const":
         return Const(line=expr[1], value=float(expr[2]))
 
+    if tag == "string":
+        return StringLit(line=expr[1], value=expr[2])
+
     if tag == "neg":
         return Neg(line=expr[1], operand=lower_expr(expr[2]))
 
     if tag == "transpose":
         return Transpose(line=expr[1], operand=lower_expr(expr[2]))
+
+    if tag == "field_access":
+        # ['field_access', line, base_expr, field_name]
+        return FieldAccess(line=expr[1], base=lower_expr(expr[2]), field=expr[3])
+
+    if tag == "lambda":
+        # ['lambda', line, params, body_expr]
+        return Lambda(line=expr[1], params=expr[2], body=lower_expr(expr[3]))
+
+    if tag == "func_handle":
+        # ['func_handle', line, name]
+        return FuncHandle(line=expr[1], name=expr[2])
 
     if tag == "apply":
         return Apply(line=expr[1], base=lower_expr(expr[2]), args=[lower_index_arg(arg) for arg in expr[3]])

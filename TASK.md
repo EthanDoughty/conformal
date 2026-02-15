@@ -1,848 +1,548 @@
-# Task: Extended Control Flow Constructs (v0.11.0)
+# Task: Language Extensions v0.12.0 — Strings, Structs, Anonymous Functions
 
 ## Goal
-Implement four related control flow constructs missing from Mini-MATLAB: elseif chains, break/continue loop control, switch/case, and try/catch error handling.
+Expand the Mini-MATLAB subset with three new language features: string/char-array literals, struct support with field access, and anonymous functions/function handles. Each feature requires parser changes, new IR nodes, lowering logic, shape domain extensions, analyzer semantics, and comprehensive tests.
+
+Phase 4 (nested functions) is deferred to v0.13.0 due to complexity.
+
+## Phasing Strategy
+
+**Phase 1: Strings** (Simplest)
+- Context-sensitive lexing: `'` is string start after operators/`=`/`(`/`;`/`,`/`[`; transpose after ID/`)` /`]`/NUMBER
+- Both `'hello'` and `"hello"` supported via context-sensitive lexer
+- MATLAB-faithful `+` on strings: produces numeric row vector (not string concat)
+- String concatenation via horzcat: `['hello', ' ', 'world']`
+- New shape kind: `Shape.string()`
+
+**Phase 2: Structs** (Moderate)
+- New shape kind: `Shape.struct(fields)` with sorted-tuple storage for hashability
+- Chained dot access from the start: `s.a.b = 5`, `x = s.a.b`
+- Union-with-bottom join semantics (missing fields get `Shape.bottom()`, not `unknown`)
+- Promotes `tests/recovery/struct_field.m` from `W_UNSUPPORTED_STMT` to `W_FIELD_ACCESS_NON_STRUCT`
+
+**Phase 3: Anonymous Functions** (Moderate-High)
+- New shape kind: `Shape.function_handle()`
+- `@(x) expr` lambda syntax and `@myFunc` named function handles
+- Function handle variables shadow builtins in Apply disambiguation
+- Lambda calls return `unknown` with `W_LAMBDA_CALL_APPROXIMATE` (body analysis deferred to v0.12.1)
+
+**Order**: Phase 1 → Phase 2 → Phase 3. Each phase passes all tests before starting the next.
+
+## Design Decisions (from review)
+
+1. **String token**: Context-sensitive lexing. Track previous token to disambiguate `'` as string start vs transpose.
+2. **Struct join**: Union with bottom. Missing fields get `Shape.bottom()` (identity in join). Precise and sound.
+3. **Struct depth**: Chained from start. `StructAssign(base_name: str, fields: List[str], expr: Expr)`.
+4. **String `+`**: Follows MATLAB. `'hello' + ' '` produces numeric vector. String concat via `['a', 'b']` horzcat.
+5. **Handle shadows builtins**: Yes. Function handle variable overrides `KNOWN_BUILTINS` lookup. Matches real MATLAB scoping.
+6. **Struct hashability**: Sorted tuple of pairs: `fields: Tuple[Tuple[str, Shape], ...]` with a `fields_dict` property.
+7. **Lambda closure key**: Monotonic counter in AnalysisContext (not line number, avoids collision).
+8. **`struct_field.m` expectation**: Keep `warnings = 1`, keep `B = unknown`. Warning code changes from `W_UNSUPPORTED_STMT` to `W_FIELD_ACCESS_NON_STRUCT`.
 
 ## Scope
-- **Parser**: Add keywords (elseif, break, continue, switch, case, otherwise, try, catch), parsing rules
-- **IR**: Add nodes (IfChain, Break, Continue, Switch, Try)
-- **Lowering**: Convert syntax AST to IR for new constructs
-- **Analyzer**: Implement control flow semantics with appropriate environment joins
-- **Tests**: 12 new test files (3 per feature) covering basic usage, edge cases, and interactions
+
+### Phase 1: Strings
+
+**Lexer changes** (`matlab_parser.py`):
+- Add `DQSTRING` token: `r'"[^"]*"'` — always a double-quoted string (no ambiguity)
+- For single-quoted strings: context-sensitive `'` disambiguation in `lex()`:
+  - After ID, `)`, `]`, NUMBER, TRANSPOSE → emit `TRANSPOSE` token
+  - After OP, `=`, `(`, `,`, `;`, `[`, NEWLINE, start-of-file, keywords → scan ahead for matching `'`, emit `STRING` token with contents
+  - Both `STRING` and `DQSTRING` tokens map to the same `StringLit` IR node
+- Remove the standalone `TRANSPOSE` regex entry (handled in context-sensitive logic)
+
+**IR changes** (`ir/ir.py`):
+```python
+@dataclass(frozen=True)
+class StringLit(Expr):
+    """String literal ('hello' or "world")."""
+    value: str
+```
+
+**Lowering** (`lower_ir.py`):
+- Add case for `"string"` tag → `StringLit(line=..., value=...)`
+
+**Shape domain** (`shapes.py`):
+- Add `Shape.string()` constructor: `Shape(kind="string")`
+- Add `is_string()` predicate
+- Update `join_shape`: string+string=string, string+other=unknown
+- Update `widen_shape`: same as join
+- Update `__str__`: return `"string"` for string kind
+
+**Analyzer** (`analysis_ir.py`):
+- `StringLit` handler in `eval_expr_ir` → return `Shape.string()`
+- BinOp `+` with two strings → `Shape.matrix(1, None)` (MATLAB: char + char = numeric row vector, length unknown without concrete tracking)
+- BinOp with string + matrix/scalar → emit `W_STRING_ARITHMETIC` warning, return `Shape.unknown()`
+- MatrixLit with string elements → string in row = `Shape.string()` as scalar-like element (horzcat of strings is valid MATLAB)
+
+**Diagnostics** (`diagnostics.py`):
+- `warn_string_arithmetic(line, op, left_shape, right_shape)` → `W_STRING_ARITHMETIC`
+
+**Tests** (4 files in `tests/literals/`):
+1. `string_literal.m`: Basic string assignment → `Shape.string()`
+2. `string_horzcat.m`: `s = ['hello', ' ', 'world']` → tests horzcat with strings
+3. `string_matrix_error.m`: `A + 'error'` → warning + unknown
+4. `string_in_control_flow.m`: String/scalar join → unknown
+
+### Phase 2: Structs
+
+**Parser changes** (`matlab_parser.py`):
+- `parse_postfix` case for dot access: after `DOT`, eat `ID` → `["field_access", line, base, field_name]`
+- Distinguish `A.field` from `A.*B`: DOT followed by ID → field access (existing `DOTOP` token already handles `.*` and `./`)
+- Struct field assignment in `parse_simple_stmt`: detect `ID DOT ID (DOT ID)* = expr` pattern → `["struct_assign", line, base_name, [field1, field2, ...], rhs_expr]`
+
+**IR changes** (`ir/ir.py`):
+```python
+@dataclass(frozen=True)
+class FieldAccess(Expr):
+    """Struct field access (s.field or s.a.b)."""
+    base: Expr
+    field: str  # Outermost field in chain parsed as nested FieldAccess nodes
+
+@dataclass(frozen=True)
+class StructAssign(Stmt):
+    """Struct field assignment (s.field = expr or s.a.b = expr)."""
+    base_name: str
+    fields: List[str]  # Chain of field names [a, b] for s.a.b = expr
+    expr: Expr
+```
+
+Note: `FieldAccess` is nested for chained reads (`s.a.b` → `FieldAccess(FieldAccess(Var("s"), "a"), "b")`).
+`StructAssign` uses a flat field list since the LHS is always `ID.field.field...`.
+
+**Lowering** (`lower_ir.py`):
+- `"field_access"` tag → `FieldAccess(line, base=lower_expr(base), field=field_name)`
+- `"struct_assign"` tag → `StructAssign(line, base_name, fields, lower_expr(rhs))`
+
+**Shape domain** (`shapes.py`):
+```python
+@staticmethod
+def struct(fields: dict) -> "Shape":
+    """Create a struct shape with given fields.
+    Stored as sorted tuple of pairs for hashability.
+    """
+    return Shape(kind="struct", rows=None, cols=None,
+                 _fields=tuple(sorted(fields.items())))
+
+@property
+def fields_dict(self) -> dict:
+    """Get fields as a dict (for struct shapes only)."""
+    return dict(self._fields) if self.kind == "struct" else {}
+```
+
+- Add `_fields: Tuple[Tuple[str, "Shape"], ...] = ()` to Shape dataclass
+- Add `is_struct()` predicate
+- Update `join_shape` for structs:
+  - Same field set → pointwise `join_shape` on field values
+  - Different field sets → union of all field names, missing fields use `Shape.bottom()` (identity in join), then pointwise join
+- Update `widen_shape` similarly
+- Update `__str__`: `"struct{x: scalar, y: matrix[3 x 1]}"` format
+
+**Analyzer** (`analysis_ir.py`):
+- `FieldAccess` handler in `eval_expr_ir`:
+  - Evaluate base → get shape
+  - If struct: look up field in `fields_dict`, return field shape (or warn `W_STRUCT_FIELD_NOT_FOUND` if missing)
+  - If not struct: warn `W_FIELD_ACCESS_NON_STRUCT`, return `unknown`
+- `StructAssign` handler in `analyze_stmt_ir`:
+  - Evaluate RHS expr
+  - Get current base variable shape (may be `bottom` if unbound)
+  - Walk the field chain: for `s.a.b = expr`, update nested struct shape
+  - Set base variable to updated struct
+  - If base is bottom → create fresh struct from chain
+  - If base is struct → update existing struct (preserving other fields)
+  - If base is non-struct → warn, treat as fresh struct
+
+**Diagnostics** (`diagnostics.py`):
+- `warn_struct_field_not_found(line, field, struct_shape)` → `W_STRUCT_FIELD_NOT_FOUND`
+- `warn_field_access_non_struct(line, base_shape)` → `W_FIELD_ACCESS_NON_STRUCT`
+
+**Tests** (5 files in `tests/structs/` — new directory):
+1. `struct_create_assign.m`: Create struct via field assignment → `struct{x: scalar, y: matrix[3 x 1]}`
+2. `struct_field_access.m`: Read struct fields → extracts correct shapes
+3. `struct_field_not_found.m`: Access non-existent field → warning + unknown
+4. `struct_in_control_flow.m`: Struct joined in if/else branches → pointwise field join
+5. `struct_field_reassign.m`: Reassign field with different shape → `struct{x: matrix[3 x 3]}` (was scalar)
+
+**Existing test update**:
+- `tests/recovery/struct_field.m`: Keep `warnings = 1`, keep `B = unknown`. Warning code changes from `W_UNSUPPORTED_STMT` to `W_FIELD_ACCESS_NON_STRUCT`. The test now exercises the first-class field access path instead of recovery.
+
+### Phase 3: Anonymous Functions
+
+**Lexer changes** (`matlab_parser.py`):
+- Add `@` to the OP token pattern (add `@` to the character class in OP regex)
+
+**Parser changes** (`matlab_parser.py`):
+- In `parse_expr` prefix handling, when `@` is encountered:
+  - If next token is `(` → anonymous function: `@(params) body_expr` → `["lambda", line, params, body_expr]`
+  - If next token is `ID` → named function handle: `@myFunc` → `["func_handle", line, name]`
+- New `parse_anonymous_function` method:
+  ```python
+  def parse_anonymous_function(self):
+      at_tok = self.eat("@")
+      self.eat("(")
+      params = []
+      if self.current().value != ")":
+          params.append(self.eat("ID").value)
+          while self.current().value == ",":
+              self.eat(",")
+              params.append(self.eat("ID").value)
+      self.eat(")")
+      body = self.parse_expr()
+      return ["lambda", at_tok.line, params, body]
+  ```
+
+**IR changes** (`ir/ir.py`):
+```python
+@dataclass(frozen=True)
+class Lambda(Expr):
+    """Anonymous function (@(x) x+1 or @(x,y) x+y)."""
+    params: List[str]
+    body: Expr
+
+@dataclass(frozen=True)
+class FuncHandle(Expr):
+    """Named function handle (@myFunc)."""
+    name: str
+```
+
+**Lowering** (`lower_ir.py`):
+- `"lambda"` tag → `Lambda(line, params, lower_expr(body))`
+- `"func_handle"` tag → `FuncHandle(line, name)`
+
+**Shape domain** (`shapes.py`):
+- Add `Shape.function_handle()` constructor: `Shape(kind="function_handle")`
+- Add `is_function_handle()` predicate
+- Update `join_shape`: fh+fh=fh, fh+other=unknown
+- Update `widen_shape`: same
+- Update `__str__`: return `"function_handle"` for fh kind
+
+**Analyzer** (`analysis_ir.py`):
+- `Lambda` handler in `eval_expr_ir`:
+  - Snapshot current env as closure (store in `ctx._lambda_closures[ctx._next_lambda_id]`, increment counter)
+  - Return `Shape.function_handle()`
+- `FuncHandle` handler in `eval_expr_ir`:
+  - Check if name is in `ctx.function_registry` or `KNOWN_BUILTINS` → return `Shape.function_handle()`
+  - Otherwise → warn `W_UNKNOWN_FUNCTION`, return `Shape.function_handle()`
+- Update Apply disambiguation order:
+  1. Colon/Range in args → force indexing
+  2. **Check base variable shape is `function_handle` → function call (return `unknown`, emit `W_LAMBDA_CALL_APPROXIMATE`)**
+  3. Check base is known builtin → builtin call
+  4. Check base in function_registry → user-defined function call
+  5. Otherwise → indexing or unknown function
+- Add to AnalysisContext:
+  ```python
+  _lambda_closures: Dict[int, Env] = field(default_factory=dict)
+  _next_lambda_id: int = 0
+  ```
+
+**Diagnostics** (`diagnostics.py`):
+- `warn_lambda_call_approximate(line, var_name)` → `W_LAMBDA_CALL_APPROXIMATE`
+
+**Tests** (5 files in `tests/functions/`):
+1. `lambda_basic.m`: Anonymous function assignment → `Shape.function_handle()`
+2. `lambda_call_approximate.m`: Calling lambda → warning + unknown
+3. `lambda_zero_args.m`: `f = @() 42` → function_handle (zero-arg lambda)
+4. `function_handle_from_name.m`: `f = @myFunc` → function_handle
+5. `function_handle_join.m`: `if c; f = @(x) x; else; f = 5; end` → unknown (fh join scalar)
 
 ## Non-goals
-- No optimization or dead code elimination (e.g., unreachable case branches)
-- No validation of switch case values (constant folding, duplicate detection)
-- No analysis of catch block error variables (MATLAB's MException objects)
-- No break/continue validation outside loop (EarlyBreak/EarlyContinue caught at top level gracefully)
-- Keywords `case`, `catch`, `otherwise`, `break`, `continue` are reserved (cannot be variable names)
+
+- **Phase 4 (nested functions)**: Deferred to v0.13.0
+- **Lambda body analysis**: v0.12.0 treats all lambda calls as `unknown`; interprocedural lambda inference deferred to v0.12.1
+- **Struct literal syntax**: `struct('x', 1, 'y', 2)` constructor deferred
+- **Cell arrays**: Still in recovery mode
+- **String indexing/comparison**: No `s(1:3)`, no `strcmp`
+- **Function handle signatures**: No arg count validation when calling function handles
+- **Dynamic struct arrays**: No `s(i).field`
 
 ## Invariants Impacted
-- **All tests pass**: 80 existing + 12 new = 92 total
-- **IR analyzer authoritative**: Preserved (analyzer implements semantics)
-- **Best-effort analysis**: All constructs continue analysis after warnings
-- **Test format**: Standard `% EXPECT:` inline assertions
+
+- **Shape domain**: Extended from 4 kinds (scalar, matrix, unknown, bottom) to 7 (+ string, struct, function_handle)
+  - All new kinds implement join/widen semantics (Preserved)
+  - `Shape` remains frozen dataclass (Preserved — struct uses sorted tuple)
+- **IR node coverage**: New expr nodes (StringLit, FieldAccess, Lambda, FuncHandle) and stmt nodes (StructAssign) all have lowering and analysis handlers (Preserved)
+- **Recovery mode**: Struct field access promoted from OpaqueStmt → first-class (Tightened)
+- **Test discovery**: New `tests/structs/` directory (9 → 10 categories) (Extended)
+- **Analyzer soundness**: Conservative unknown fallback for unsupported cases (Preserved)
+- **Apply disambiguation**: Function handle check inserted before builtin check (Changed — shadows builtins)
 
 ## Acceptance Criteria
-- [ ] All 92 tests pass: `python3 mmshape.py --tests`
-- [ ] All 92 tests pass in fixpoint mode: `python3 mmshape.py --fixpoint --tests`
-- [ ] Parser accepts all four constructs without syntax errors
-- [ ] Analyzer produces correct environment joins for elseif chains (multi-way join)
-- [ ] Analyzer handles break/continue with 3-phase widening loop analysis correctly
-- [ ] Switch/case joins all case environments (no fall-through)
-- [ ] Try/catch uses conservative join (try-env + catch-env)
-- [ ] New warning codes stable (W_BREAK_OUTSIDE_LOOP, W_CONTINUE_OUTSIDE_LOOP)
+
+### Phase 1: Strings
+- [ ] Context-sensitive lexer disambiguates `'` as string vs transpose
+- [ ] Both `'hello'` and `"hello"` parse as StringLit
+- [ ] `Shape.string()` with join/widen support
+- [ ] `+` on two strings → `Shape.matrix(1, None)` (numeric vector)
+- [ ] String + matrix → warning + unknown
+- [ ] All 4 string tests pass
+- [ ] All 92 existing tests pass
+
+### Phase 2: Structs
+- [ ] Dot field access parsed correctly (doesn't break `.*` operator)
+- [ ] Chained access works: `s.a.b` reads and `s.a.b = expr` assigns
+- [ ] `Shape.struct(fields)` with sorted-tuple storage is hashable
+- [ ] Union-with-bottom join: missing fields get `Shape.bottom()`
+- [ ] `W_STRUCT_FIELD_NOT_FOUND` and `W_FIELD_ACCESS_NON_STRUCT` warnings
+- [ ] `tests/recovery/struct_field.m` now uses `W_FIELD_ACCESS_NON_STRUCT` (not `W_UNSUPPORTED_STMT`)
+- [ ] All 5 struct tests pass
+- [ ] All previous tests pass
+
+### Phase 3: Anonymous Functions
+- [ ] `@(x) expr` and `@myFunc` parse correctly
+- [ ] `Shape.function_handle()` with join/widen support
+- [ ] Function handle variables shadow builtins in Apply disambiguation
+- [ ] Lambda calls emit `W_LAMBDA_CALL_APPROXIMATE` and return unknown
+- [ ] All 5 lambda tests pass
+- [ ] All previous tests pass
 
 ## Commands to Run
+
 ```bash
+# Phase 1
+python3 mmshape.py tests/literals/string_literal.m
+python3 mmshape.py tests/literals/string_horzcat.m
+python3 mmshape.py tests/literals/string_matrix_error.m
+python3 mmshape.py tests/literals/string_in_control_flow.m
 python3 mmshape.py --tests
+
+# Phase 2
+python3 mmshape.py tests/structs/struct_create_assign.m
+python3 mmshape.py tests/structs/struct_field_access.m
+python3 mmshape.py tests/structs/struct_field_not_found.m
+python3 mmshape.py tests/structs/struct_in_control_flow.m
+python3 mmshape.py tests/structs/struct_field_reassign.m
+python3 mmshape.py tests/recovery/struct_field.m
+python3 mmshape.py --tests
+
+# Phase 3
+python3 mmshape.py tests/functions/lambda_basic.m
+python3 mmshape.py tests/functions/lambda_call_approximate.m
+python3 mmshape.py tests/functions/lambda_zero_args.m
+python3 mmshape.py tests/functions/function_handle_from_name.m
+python3 mmshape.py tests/functions/function_handle_join.m
+python3 mmshape.py --tests
+
+# All modes
 python3 mmshape.py --fixpoint --tests
-python3 mmshape.py tests/control_flow/elseif_chain.m
-python3 mmshape.py tests/control_flow/elseif_no_else.m
-python3 mmshape.py tests/control_flow/elseif_nested.m
-python3 mmshape.py tests/control_flow/break_simple.m
-python3 mmshape.py tests/control_flow/continue_simple.m
-python3 mmshape.py tests/control_flow/break_nested_loop.m
-python3 mmshape.py tests/control_flow/switch_basic.m
-python3 mmshape.py tests/control_flow/switch_no_otherwise.m
-python3 mmshape.py tests/control_flow/switch_mismatch.m
-python3 mmshape.py tests/control_flow/try_catch_basic.m
-python3 mmshape.py tests/control_flow/try_catch_no_error.m
-python3 mmshape.py tests/control_flow/try_nested.m
 ```
-
-## Design Notes
-
-### 1. IfChain: Nested If vs First-Class Node
-**Decision**: Use first-class `IfChain` IR node to preserve source fidelity and simplify analyzer logic.
-
-**Lowering approach**:
-```python
-# Syntax: ['if', cond1, then1, elseifs, else_body]
-#   where elseifs = [[cond2, body2], [cond3, body3], ...]
-# IR: IfChain(line, conditions, bodies, else_body)
-#   conditions: List[Expr]  # [cond1, cond2, cond3, ...]
-#   bodies: List[List[Stmt]]  # [then1, then2, then3, ...]
-#   else_body: List[Stmt]
-```
-
-**Analyzer semantics**:
-```python
-# Evaluate all conditions (side effects)
-# Copy env for each branch
-# Analyze each body independently
-# Join all branch environments (N-way join)
-for cond in conditions:
-    eval_expr_ir(cond, ...)
-branch_envs = [env.copy() for _ in (bodies + [else_body])]
-for body, branch_env in zip(bodies + [else_body], branch_envs):
-    for stmt in body:
-        analyze_stmt_ir(stmt, branch_env, ...)
-# Multi-way join using iterative join_env
-result = branch_envs[0]
-for other in branch_envs[1:]:
-    result = join_env(result, other)
-env.bindings = result.bindings
-```
-
-### 2. Break/Continue: Exception-Based Control Flow
-**Decision**: Use `EarlyBreak` and `EarlyContinue` exceptions (like `EarlyReturn`) to unwind loop analysis.
-
-**IR nodes**:
-```python
-@dataclass(frozen=True)
-class Break(Stmt):
-    """Break statement (exit enclosing loop)."""
-    pass
-
-@dataclass(frozen=True)
-class Continue(Stmt):
-    """Continue statement (skip to next iteration)."""
-    pass
-```
-
-**Analyzer semantics**:
-- `Break` raises `EarlyBreak` exception
-- `Continue` raises `EarlyContinue` exception
-- `_analyze_loop_body` catches both at boundary (doesn't propagate)
-- For **default mode**: break/continue stops current iteration, result is env at break/continue point
-- For **fixpoint mode** (3-phase widening):
-  - Phase 1 (Discover): If break/continue occurs, use env-at-break as post-iteration env
-  - Phase 2 (Stabilize): Re-analyze with widened env; break/continue again stops iteration
-  - Phase 3 (Post-loop join): Widen pre-loop and post-break/continue envs (models partial execution)
-
-**Top-level catch**: `analyze_program_ir` must catch `EarlyBreak` and `EarlyContinue` alongside `EarlyReturn` at script level so break/continue outside loops degrades gracefully instead of crashing.
-
-### 3. Switch/Case: Multi-Way Branch (No Fall-Through)
-**Decision**: MATLAB switch semantics differ from C — each case executes independently, no fall-through.
-
-**IR node**:
-```python
-@dataclass(frozen=True)
-class Switch(Stmt):
-    """Switch/case statement.
-
-    MATLAB switch does not fall through (unlike C).
-    Each case is an independent branch.
-    """
-    expr: Expr  # Switch expression
-    cases: List[Tuple[Expr, List[Stmt]]]  # [(case_val1, body1), ...]
-    otherwise: List[Stmt]  # Otherwise block (may be empty)
-```
-
-**Analyzer semantics**:
-```python
-# Evaluate switch expression for side effects
-switch_shape = eval_expr_ir(stmt.expr, env, ...)
-# Evaluate all case expressions for side effects (even if unreachable)
-for case_val, _ in stmt.cases:
-    eval_expr_ir(case_val, env, ...)
-# Analyze each case body + otherwise independently
-branch_envs = []
-for _, case_body in stmt.cases:
-    branch_env = env.copy()
-    for s in case_body:
-        analyze_stmt_ir(s, branch_env, ...)
-    branch_envs.append(branch_env)
-# Otherwise branch
-otherwise_env = env.copy()
-for s in stmt.otherwise:
-    analyze_stmt_ir(s, otherwise_env, ...)
-branch_envs.append(otherwise_env)
-# Multi-way join (same as elseif)
-result = branch_envs[0]
-for other in branch_envs[1:]:
-    result = join_env(result, other)
-env.bindings = result.bindings
-```
-
-**Non-goal**: No validation of case value types or detection of unreachable cases.
-
-### 4. Try/Catch: Conservative Join
-**Decision**: For shape analysis, catch block sees environment where any statement in try may have failed. Conservative approach: catch starts with pre-try env.
-
-**IR node**:
-```python
-@dataclass(frozen=True)
-class Try(Stmt):
-    """Try/catch error handling.
-
-    For shape analysis: catch block models "any statement in try may fail".
-    Conservative: catch starts with pre-try environment.
-    """
-    try_body: List[Stmt]
-    catch_body: List[Stmt]
-    # Note: MATLAB catch can bind error to variable (catch err), but we ignore it
-```
-
-**Analyzer semantics**:
-```python
-# Analyze try block
-pre_try_env = env.copy()
-try_env = env.copy()
-for stmt in stmt.try_body:
-    analyze_stmt_ir(stmt, try_env, ...)
-# Analyze catch block starting from pre-try env
-# (models: error could occur at any point in try)
-catch_env = pre_try_env.copy()
-for stmt in stmt.catch_body:
-    analyze_stmt_ir(stmt, catch_env, ...)
-# Join try and catch outcomes
-result = join_env(try_env, catch_env)
-env.bindings = result.bindings
-```
-
-**Non-goal**: No analysis of MATLAB's MException object (error variable in `catch err`).
-
-## Parser Changes
-
-### Keywords Addition
-```python
-# frontend/matlab_parser.py line 17
-KEYWORDS = {
-    "for", "while", "if", "else", "elseif", "end",
-    "switch", "case", "otherwise",
-    "try", "catch",
-    "break", "continue",
-    "function", "return"
-}
-```
-
-### Parsing Rules
-
-**IfChain** (modify `parse_if`):
-```python
-def parse_if(self) -> Any:
-    """Internal: ['if', cond, then_body, elseifs, else_body]
-    where elseifs = [[cond2, body2], [cond3, body3], ...]
-    """
-    self.eat("IF")
-    cond = self.parse_expr()
-    then_body = self.parse_block(until_kinds=("ELSE", "ELSEIF", "END"))
-
-    elseifs = []
-    while self.current().kind == "ELSEIF":
-        self.eat("ELSEIF")
-        elif_cond = self.parse_expr()
-        elif_body = self.parse_block(until_kinds=("ELSE", "ELSEIF", "END"))
-        elseifs.append([elif_cond, elif_body])
-
-    else_body = [["skip"]]
-    if self.current().kind == "ELSE":
-        self.eat("ELSE")
-        else_body = self.parse_block(until_kinds=("END",))
-
-    self.eat("END")
-    return ["if", cond, then_body, elseifs, else_body]
-```
-
-**Switch** (new):
-```python
-def parse_switch(self) -> Any:
-    """Internal: ['switch', expr, cases, otherwise_body]
-    where cases = [[case_val1, body1], [case_val2, body2], ...]
-    """
-    switch_tok = self.eat("SWITCH")
-    expr = self.parse_expr()
-
-    cases = []
-    while self.current().kind == "CASE":
-        self.eat("CASE")
-        case_val = self.parse_expr()
-        case_body = self.parse_block(until_kinds=("CASE", "OTHERWISE", "END"))
-        cases.append([case_val, case_body])
-
-    otherwise_body = [["skip"]]
-    if self.current().kind == "OTHERWISE":
-        self.eat("OTHERWISE")
-        otherwise_body = self.parse_block(until_kinds=("END",))
-
-    self.eat("END")
-    return ["switch", expr, cases, otherwise_body]
-```
-
-**Try** (new):
-```python
-def parse_try(self) -> Any:
-    """Internal: ['try', try_body, catch_body]
-    Note: Ignores optional catch variable (catch err)
-    """
-    self.eat("TRY")
-    try_body = self.parse_block(until_kinds=("CATCH", "END"))
-
-    catch_body = [["skip"]]
-    if self.current().kind == "CATCH":
-        self.eat("CATCH")
-        # Skip optional error variable
-        if self.current().kind == "ID":
-            self.eat("ID")
-        catch_body = self.parse_block(until_kinds=("END",))
-
-    self.eat("END")
-    return ["try", try_body, catch_body]
-```
-
-**Break/Continue** (modify `parse_stmt`):
-```python
-# In parse_stmt, add:
-elif tok.kind == "BREAK":
-    tok = self.eat("BREAK")
-    return ["break", tok.line]
-elif tok.kind == "CONTINUE":
-    tok = self.eat("CONTINUE")
-    return ["continue", tok.line]
-elif tok.kind == "SWITCH":
-    return self.parse_switch()
-elif tok.kind == "TRY":
-    return self.parse_try()
-```
-
-**Recovery**: Update `recover_to_stmt_boundary` to add `CASE`, `OTHERWISE`, `CATCH` to the set of block-ending keywords (alongside existing `END`, `ELSE`, `ELSEIF`). Without this, parse error recovery inside a switch case could eat into the next case.
-
-## IR Node Definitions
-
-```python
-# ir/ir.py — Add to Stmt subclasses
-
-@dataclass(frozen=True)
-class IfChain(Stmt):
-    """If-elseif-else chain.
-
-    Represents: if c1 ... elseif c2 ... elseif c3 ... else ... end
-    conditions[0] is the if condition, rest are elseif conditions.
-    bodies[0] is the then body, rest are elseif bodies.
-    """
-    conditions: List[Expr]
-    bodies: List[List[Stmt]]
-    else_body: List[Stmt]
-
-@dataclass(frozen=True)
-class Switch(Stmt):
-    """Switch/case statement (MATLAB semantics: no fall-through)."""
-    expr: Expr
-    cases: List[Tuple[Expr, List[Stmt]]]  # [(case_val, body), ...]
-    otherwise: List[Stmt]
-
-@dataclass(frozen=True)
-class Try(Stmt):
-    """Try/catch error handling."""
-    try_body: List[Stmt]
-    catch_body: List[Stmt]
-
-@dataclass(frozen=True)
-class Break(Stmt):
-    """Break statement (exit loop)."""
-    pass
-
-@dataclass(frozen=True)
-class Continue(Stmt):
-    """Continue statement (skip to next iteration)."""
-    pass
-```
-
-## Lowering Changes
-
-```python
-# frontend/lower_ir.py — Add to lower_stmt
-
-if tag == "if":
-    # Updated: handle elseifs
-    cond = lower_expr(stmt[1])
-    then_body = [lower_stmt(x) for x in stmt[2]]
-    elseifs = stmt[3]  # [[cond2, body2], ...]
-    else_body = [lower_stmt(x) for x in stmt[4]]
-
-    if not elseifs:
-        # Simple if/else (backward compatible)
-        return If(line=cond.line, cond=cond, then_body=then_body, else_body=else_body)
-    else:
-        # IfChain chain
-        conditions = [cond] + [lower_expr(ec) for ec, _ in elseifs]
-        bodies = [then_body] + [[lower_stmt(s) for s in body] for _, body in elseifs]
-        return IfChain(line=cond.line, conditions=conditions, bodies=bodies, else_body=else_body)
-
-if tag == "switch":
-    # ['switch', expr, cases, otherwise_body]
-    expr = lower_expr(stmt[1])
-    cases = [(lower_expr(case_val), [lower_stmt(s) for s in case_body])
-             for case_val, case_body in stmt[2]]
-    otherwise = [lower_stmt(s) for s in stmt[3]]
-    return Switch(line=expr.line, expr=expr, cases=cases, otherwise=otherwise)
-
-if tag == "try":
-    # ['try', try_body, catch_body]
-    line = stmt[1][0][1] if stmt[1] else 0  # Line from first stmt in try_body
-    try_body = [lower_stmt(s) for s in stmt[1]]
-    catch_body = [lower_stmt(s) for s in stmt[2]]
-    return Try(line=line, try_body=try_body, catch_body=catch_body)
-
-if tag == "break":
-    return Break(line=stmt[1])
-
-if tag == "continue":
-    return Continue(line=stmt[1])
-```
-
-## Analyzer Changes
-
-### Exception Definitions
-```python
-# analysis/analysis_ir.py — Add after EarlyReturn
-
-class EarlyBreak(Exception):
-    """Raised by break statement to exit loop."""
-    pass
-
-class EarlyContinue(Exception):
-    """Raised by continue statement to skip to next iteration."""
-    pass
-```
-
-### Statement Handlers
-
-**IfChain** (with full EarlyReturn/EarlyBreak/EarlyContinue handling):
-```python
-if isinstance(stmt, IfChain):
-    # Evaluate all conditions for side effects
-    for cond in stmt.conditions:
-        _ = eval_expr_ir(cond, env, warnings, ctx)
-
-    # Analyze all branches, tracking which ones returned/broke/continued
-    all_bodies = list(stmt.bodies) + [stmt.else_body]
-    branch_envs = []
-    returned_flags = []
-    deferred_exception = None  # EarlyBreak or EarlyContinue to re-raise
-
-    for body in all_bodies:
-        branch_env = env.copy()
-        returned = False
-        try:
-            for s in body:
-                analyze_stmt_ir(s, branch_env, warnings, ctx)
-        except EarlyReturn:
-            returned = True
-        except (EarlyBreak, EarlyContinue) as exc:
-            # Break/continue inside if inside loop: record and re-raise after join
-            returned = True  # Exclude from join (same as EarlyReturn)
-            deferred_exception = exc
-        branch_envs.append(branch_env)
-        returned_flags.append(returned)
-
-    # If ALL branches returned/broke, propagate
-    if all(returned_flags):
-        if deferred_exception:
-            raise type(deferred_exception)()
-        raise EarlyReturn()
-
-    # Join only non-returned branches
-    live_envs = [e for e, r in zip(branch_envs, returned_flags) if not r]
-    result = live_envs[0]
-    for other in live_envs[1:]:
-        result = join_env(result, other)
-    env.bindings = result.bindings
-    return env
-```
-
-**Switch** (same EarlyReturn/EarlyBreak/EarlyContinue pattern as IfChain):
-```python
-if isinstance(stmt, Switch):
-    _ = eval_expr_ir(stmt.expr, env, warnings, ctx)
-    for case_val, _ in stmt.cases:
-        _ = eval_expr_ir(case_val, env, warnings, ctx)
-
-    all_bodies = [body for _, body in stmt.cases] + [stmt.otherwise]
-    branch_envs = []
-    returned_flags = []
-    deferred_exception = None
-
-    for body in all_bodies:
-        branch_env = env.copy()
-        returned = False
-        try:
-            for s in body:
-                analyze_stmt_ir(s, branch_env, warnings, ctx)
-        except EarlyReturn:
-            returned = True
-        except (EarlyBreak, EarlyContinue) as exc:
-            returned = True
-            deferred_exception = exc
-        branch_envs.append(branch_env)
-        returned_flags.append(returned)
-
-    if all(returned_flags):
-        if deferred_exception:
-            raise type(deferred_exception)()
-        raise EarlyReturn()
-
-    live_envs = [e for e, r in zip(branch_envs, returned_flags) if not r]
-    result = live_envs[0]
-    for other in live_envs[1:]:
-        result = join_env(result, other)
-    env.bindings = result.bindings
-    return env
-```
-
-**Try** (catches EarlyReturn/EarlyBreak/EarlyContinue per-block):
-```python
-if isinstance(stmt, Try):
-    pre_try_env = env.copy()
-
-    # Analyze try block
-    try_env = env.copy()
-    try_returned = False
-    deferred_exception = None
-    try:
-        for s in stmt.try_body:
-            analyze_stmt_ir(s, try_env, warnings, ctx)
-    except EarlyReturn:
-        try_returned = True
-    except (EarlyBreak, EarlyContinue) as exc:
-        try_returned = True
-        deferred_exception = exc
-
-    # Analyze catch block (starts from pre-try state)
-    catch_env = pre_try_env.copy()
-    catch_returned = False
-    try:
-        for s in stmt.catch_body:
-            analyze_stmt_ir(s, catch_env, warnings, ctx)
-    except EarlyReturn:
-        catch_returned = True
-    except (EarlyBreak, EarlyContinue) as exc:
-        catch_returned = True
-        if not deferred_exception:
-            deferred_exception = exc
-
-    # Propagation logic (same as If handler)
-    if try_returned and catch_returned:
-        if deferred_exception:
-            raise type(deferred_exception)()
-        raise EarlyReturn()
-    elif try_returned:
-        env.bindings = catch_env.bindings
-    elif catch_returned:
-        env.bindings = try_env.bindings
-    else:
-        result = join_env(try_env, catch_env)
-        env.bindings = result.bindings
-    return env
-```
-
-**Break/Continue**:
-```python
-if isinstance(stmt, Break):
-    # For v0.11.0: raise exception unconditionally
-    # v0.11.1 can add loop_depth validation
-    raise EarlyBreak()
-
-if isinstance(stmt, Continue):
-    raise EarlyContinue()
-```
-
-### Loop Handler Update
-
-Modify `_analyze_loop_body` to catch `EarlyBreak` and `EarlyContinue`:
-
-```python
-def _analyze_loop_body(body: list, env: Env, warnings: List[str], ctx: AnalysisContext) -> None:
-    """Analyze a loop body, handling break/continue and optionally using widening.
-
-    Catches EarlyReturn, EarlyBreak, EarlyContinue at boundary (doesn't propagate).
-    """
-    if not ctx.fixpoint:
-        try:
-            for s in body:
-                analyze_stmt_ir(s, env, warnings, ctx)
-        except (EarlyReturn, EarlyBreak, EarlyContinue):
-            pass  # Stop iteration, don't propagate
-        return
-
-    # Phase 1 (Discover)
-    pre_loop_env = env.copy()
-    try:
-        for s in body:
-            analyze_stmt_ir(s, env, warnings, ctx)
-    except (EarlyReturn, EarlyBreak, EarlyContinue):
-        pass  # Phase 1 stopped early
-
-    # Widen
-    widened = widen_env(pre_loop_env, env)
-
-    # Phase 2 (Stabilize)
-    if widened.bindings != env.bindings:
-        env.bindings = widened.bindings
-        try:
-            for s in body:
-                analyze_stmt_ir(s, env, warnings, ctx)
-        except (EarlyReturn, EarlyBreak, EarlyContinue):
-            pass  # Phase 2 stopped early
-
-    # Phase 3 (Post-loop join)
-    final = widen_env(pre_loop_env, env)
-    env.bindings = final.bindings
-```
-
-### Warning Functions
-
-```python
-# analysis/diagnostics.py — Add new warnings
-
-def warn_break_outside_loop(line: int) -> str:
-    """Warning for break statement outside loop (v0.11.1 will validate)."""
-    return f"W_BREAK_OUTSIDE_LOOP line {line}: break statement outside loop (treated as no-op)"
-
-def warn_continue_outside_loop(line: int) -> str:
-    """Warning for continue statement outside loop (v0.11.1 will validate)."""
-    return f"W_CONTINUE_OUTSIDE_LOOP line {line}: continue statement outside loop (treated as no-op)"
-```
-
-Note: For v0.11.0, break/continue outside loops will raise exceptions at script level and be caught by the top-level try/except. v0.11.1 can add loop_depth tracking to emit these warnings gracefully.
 
 ## Tests to Add
 
-### IfChain Tests (3 files)
+**Phase 1 (Strings)**: 4 tests in `tests/literals/`
 
-**1. tests/control_flow/elseif_chain.m**
+1. `tests/literals/string_literal.m`:
 ```matlab
-% Test: If-elseif-else chain with compatible branches
-% All branches assign matrix[3 x 3], join preserves shape
+% Test: String literals (both quote styles)
 % EXPECT: warnings = 0
-% EXPECT: A = matrix[3 x 3]
+% EXPECT: s = string
+% EXPECT: t = string
 
-n = 5;
-if n < 3
-    A = zeros(3, 3);
-elseif n < 6
-    A = ones(3, 3);
-elseif n < 10
-    A = eye(3);
-else
-    A = rand(3, 3);
-end
+s = 'hello';
+t = "world";
 ```
 
-**2. tests/control_flow/elseif_no_else.m**
+2. `tests/literals/string_horzcat.m`:
 ```matlab
-% Test: Elseif chain without else clause
-% Missing else branch means A may be uninitialized (bottom → unknown via join)
+% Test: String concatenation via horzcat
 % EXPECT: warnings = 0
-% EXPECT: A = matrix[4 x 4]
+% EXPECT: s = string
 
-n = 2;
-if n > 10
-    A = zeros(4, 4);
-elseif n > 5
-    A = ones(4, 4);
-end
+s = ['hello', ' ', 'world'];
 ```
 
-**3. tests/control_flow/elseif_mismatch.m**
+3. `tests/literals/string_matrix_error.m`:
 ```matlab
-% Test: Elseif branches with shape mismatch
-% Different branch shapes → join produces less precise result
-% EXPECT: warnings = 0
-% EXPECT: B = matrix[3 x None]
-
-k = 4;
-if k == 1
-    B = zeros(3, 4);
-elseif k == 2
-    B = zeros(3, 5);
-else
-    B = zeros(3, 6);
-end
-```
-
-### Break/Continue Tests (3 files)
-
-**4. tests/control_flow/break_simple.m**
-```matlab
-% Test: Break statement in for loop
-% Loop body may not complete all iterations
-% EXPECT: warnings = 0
-% EXPECT: A = matrix[10 x 10]
-% EXPECT: i = scalar
-
-A = zeros(10, 10);
-for i = 1:100
-    if i > 10
-        break;
-    end
-    A = eye(10);
-end
-```
-
-**5. tests/control_flow/continue_simple.m**
-```matlab
-% Test: Continue statement in while loop
-% Continue skips to next iteration, doesn't affect shape
-% EXPECT: warnings = 0
-% EXPECT: B = matrix[5 x 5]
-% EXPECT: count = scalar
-
-count = 0;
-B = zeros(5, 5);
-while count < 20
-    count = count + 1;
-    if count < 10
-        continue;
-    end
-    B = ones(5, 5);
-end
-```
-
-**6. tests/control_flow/break_nested_loop.m**
-```matlab
-% Test: Break in nested loop (only exits inner loop)
-% Outer loop continues after inner break
-% EXPECT: warnings = 0
-% EXPECT: C = matrix[3 x 3]
-% EXPECT: i = scalar
-% EXPECT: j = scalar
-
-C = zeros(3, 3);
-for i = 1:5
-    for j = 1:10
-        if j > 3
-            break;
-        end
-        C = eye(3);
-    end
-end
-```
-
-### Switch/Case Tests (3 files)
-
-**7. tests/control_flow/switch_basic.m**
-```matlab
-% Test: Switch/case with otherwise
-% All branches assign compatible shapes
-% EXPECT: warnings = 0
-% EXPECT: result = matrix[2 x 2]
-
-mode = 1;
-switch mode
-    case 1
-        result = zeros(2, 2);
-    case 2
-        result = ones(2, 2);
-    otherwise
-        result = eye(2);
-end
-```
-
-**8. tests/control_flow/switch_no_otherwise.m**
-```matlab
-% Test: Switch without otherwise clause
-% Missing otherwise means result may be uninitialized
-% EXPECT: warnings = 0
-% EXPECT: output = matrix[4 x 4]
-
-val = 10;
-switch val
-    case 1
-        output = zeros(4, 4);
-    case 2
-        output = ones(4, 4);
-end
-```
-
-**9. tests/control_flow/switch_mismatch.m**
-```matlab
-% Test: Switch cases with shape conflicts
-% Different case shapes → join loses precision
-% EXPECT: warnings = 0
-% EXPECT: M = matrix[None x None]
-
-choice = 3;
-switch choice
-    case 1
-        M = zeros(3, 3);
-    case 2
-        M = zeros(4, 4);
-    case 3
-        M = zeros(5, 5);
-    otherwise
-        M = zeros(6, 6);
-end
-```
-
-### Try/Catch Tests (3 files)
-
-**10. tests/control_flow/try_catch_basic.m**
-```matlab
-% Test: Try/catch with error in try block
-% A is 3x4, B is 5x3 → inner dim mismatch (4 != 5), X = unknown in try
-% Catch starts from pre-try env, assigns X = matrix[1 x 1]
-% Join: unknown (try) + matrix[1 x 1] (catch) = unknown
+% Test: String-matrix arithmetic produces warning
 % EXPECT: warnings = 1
-% EXPECT: X = unknown
+% EXPECT: A = matrix[3 x 3]
+% EXPECT: r = unknown
 
-try
-    A = zeros(3, 4);
-    B = zeros(5, 3);
-    X = A * B;
-catch
-    X = zeros(1, 1);
-end
+A = zeros(3, 3);
+r = A + 'error';
 ```
 
-**11. tests/control_flow/try_catch_no_error.m**
+4. `tests/literals/string_in_control_flow.m`:
 ```matlab
-% Test: Try/catch with no error
-% Both try and catch branches analyzed, joined
+% Test: String/scalar join across branches
 % EXPECT: warnings = 0
-% EXPECT: Y = matrix[5 x 5]
+% EXPECT: v = unknown
 
-try
-    Y = zeros(5, 5);
-catch
-    Y = ones(5, 5);
+if 1
+    v = 'hello';
+else
+    v = 5;
 end
 ```
 
-**12. tests/control_flow/try_nested.m**
+**Phase 2 (Structs)**: 5 tests in `tests/structs/` (new directory)
+
+1. `tests/structs/struct_create_assign.m`:
 ```matlab
-% Test: Nested try/catch blocks
-% Inner try/catch joins, outer try/catch joins result
+% Test: Create struct via field assignment
 % EXPECT: warnings = 0
-% EXPECT: Z = matrix[2 x 2]
+% EXPECT: s = struct{x: scalar, y: matrix[3 x 1]}
 
-try
-    try
-        Z = zeros(2, 2);
-    catch
-        Z = eye(2);
-    end
-catch
-    Z = ones(2, 2);
+s.x = 5;
+s.y = zeros(3, 1);
+```
+
+2. `tests/structs/struct_field_access.m`:
+```matlab
+% Test: Read struct fields
+% EXPECT: warnings = 0
+% EXPECT: s = struct{a: matrix[2 x 2], b: scalar}
+% EXPECT: A = matrix[2 x 2]
+% EXPECT: val = scalar
+
+s.a = zeros(2, 2);
+s.b = 10;
+A = s.a;
+val = s.b;
+```
+
+3. `tests/structs/struct_field_not_found.m`:
+```matlab
+% Test: Access non-existent field
+% EXPECT: warnings = 1
+% EXPECT: s = struct{x: scalar}
+% EXPECT: r = unknown
+
+s.x = 5;
+r = s.y;
+```
+
+4. `tests/structs/struct_in_control_flow.m`:
+```matlab
+% Test: Struct shapes joined in branches (union with bottom)
+% If-branch has {x, y}, else has {x} → join gives {x: scalar, y: bottom→scalar}
+% But bottom is filtered from display, so y appears as scalar from if-branch
+% EXPECT: warnings = 0
+% EXPECT: s = struct{x: scalar, y: scalar}
+
+s.x = 1;
+if 1
+    s.x = 5;
+    s.y = 10;
+else
+    s.x = 3;
 end
 ```
 
-## Risks & Mitigations
+5. `tests/structs/struct_field_reassign.m`:
+```matlab
+% Test: Reassign field with different shape
+% EXPECT: warnings = 0
+% EXPECT: s = struct{x: matrix[3 x 3]}
 
-**Risk**: Break/continue outside loop causes unhandled exception at script level.
-**Mitigation**: For v0.11.0, exceptions propagate naturally (analysis stops). v0.11.1 can add loop_depth tracking to emit warnings gracefully.
+s.x = 5;
+s.x = zeros(3, 3);
+```
 
-**Risk**: Multi-way join (elseif, switch) is O(N) sequential joins; large switch may be slow.
-**Mitigation**: Accept for v0.11.0 (typical switches have <10 cases). Future optimization can implement associative join tree.
+**Phase 3 (Anonymous Functions)**: 5 tests in `tests/functions/`
 
-**Risk**: Try/catch conservative join loses precision when try block has no errors.
-**Mitigation**: Acceptable for soundness. More precise analysis would require exception-flow tracking (out of scope).
+1. `tests/functions/lambda_basic.m`:
+```matlab
+% Test: Anonymous function assignment
+% EXPECT: warnings = 0
+% EXPECT: f = function_handle
 
-**Risk**: IfChain first-class node duplicates some If logic.
-**Mitigation**: Clean separation of concerns. IfChain handler is ~20 lines, manageable.
+f = @(x) x + 1;
+```
+
+2. `tests/functions/lambda_call_approximate.m`:
+```matlab
+% Test: Calling lambda returns unknown (v0.12.0 limitation)
+% EXPECT: warnings = 1
+% EXPECT: f = function_handle
+% EXPECT: r = unknown
+
+f = @(x) x * x;
+A = zeros(3, 3);
+r = f(A);
+```
+
+3. `tests/functions/lambda_zero_args.m`:
+```matlab
+% Test: Zero-argument lambda
+% EXPECT: warnings = 0
+% EXPECT: f = function_handle
+
+f = @() 42;
+```
+
+4. `tests/functions/function_handle_from_name.m`:
+```matlab
+% Test: Function handle from named function
+% EXPECT: warnings = 0
+% EXPECT: f = function_handle
+
+function y = myFunc(x)
+    y = x + 1;
+end
+
+f = @myFunc;
+```
+
+5. `tests/functions/function_handle_join.m`:
+```matlab
+% Test: Function handle joined with scalar → unknown
+% EXPECT: warnings = 0
+% EXPECT: f = unknown
+
+if 1
+    f = @(x) x;
+else
+    f = 5;
+end
+```
 
 ## Estimated Diff
 
-- **Parser** (~80 lines): 8 keywords, 3 parsing methods (parse_switch, parse_try, modify parse_if), stmt dispatch
-- **IR** (~25 lines): 5 new dataclass nodes (IfChain, Switch, Try, Break, Continue)
-- **Lowering** (~50 lines): 5 new lowering cases (if with elseifs, switch, try, break, continue)
-- **Analyzer** (~100 lines): 5 new statement handlers, 2 exception classes, loop handler update
-- **Diagnostics** (~10 lines): 2 new warning functions (break/continue outside loop — deferred)
-- **Tests** (~180 lines): 12 new test files (avg 15 lines each)
-- **Total**: ~445 lines of code + tests
+**Phase 1 (Strings)**: ~120 lines
+- Lexer: +30 lines (context-sensitive `'`, `DQSTRING` token)
+- IR: +6 lines (StringLit)
+- Lowering: +4 lines
+- Shapes: +25 lines (string kind, join/widen, __str__)
+- Analyzer: +30 lines (StringLit eval, string arithmetic)
+- Diagnostics: +5 lines
+- Tests: +30 lines (4 files)
 
-**Modified files**: 6 core files (parser, IR, lowering, analyzer, diagnostics, imports)
-**New test files**: 12 in tests/control_flow/
-**Test count**: 80 → 92 (+12)
+**Phase 2 (Structs)**: ~350 lines
+- Parser: +40 lines (dot access postfix, struct assign detection)
+- IR: +16 lines (FieldAccess, StructAssign)
+- Lowering: +20 lines
+- Shapes: +80 lines (struct kind, _fields, join/widen with union-bottom, __str__)
+- Analyzer: +100 lines (FieldAccess eval, StructAssign handler, nested struct update)
+- Diagnostics: +15 lines
+- Tests: +70 lines (5 files + 1 existing update)
+
+**Phase 3 (Anonymous Functions)**: ~200 lines
+- Lexer/Parser: +30 lines (@ token, parse_anonymous_function, parse_func_handle)
+- IR: +12 lines (Lambda, FuncHandle)
+- Lowering: +8 lines
+- Shapes: +20 lines (function_handle kind, join/widen, __str__)
+- Analyzer: +60 lines (Lambda eval, FuncHandle eval, Apply disambiguation update, closure tracking)
+- Diagnostics: +5 lines
+- Tests: +60 lines (5 files)
+
+**Grand Total (Phases 1-3)**: ~670 lines, 14 new tests, 1 existing test updated
+**Test count**: 92 → 106 (+14)
+**Test categories**: 9 → 10 (new `structs/`)
+
+## Risks
+
+**R1 (HIGH). Single-quote context-sensitive lexing.** The lexer must track previous token type to decide if `'` starts a string or is transpose. This is the most complex lexer change to date. Edge cases: `A'*B` (transpose then multiply), `f('hello')` (string arg to function), `A(:)'` (transpose of slice). Mitigation: thorough testing, keep the context table minimal and well-documented.
+
+**R2 (MEDIUM). Shape kind combinatorial explosion.** 7 shape kinds means 49 pairwise combinations in join/widen. Use a "same-kind" fast path and default to `unknown` for all cross-kind joins. Document the join table explicitly.
+
+**R3 (MEDIUM). Struct assign parser detection.** Must detect `ID.field.field... = expr` in `parse_simple_stmt` without breaking existing `ID = expr` or `ID(args) = expr` patterns. The parser eats ID first, then checks for DOT.
+
+**R4 (LOW). Lambda closure correctness.** v0.12.0 stores closures but doesn't use them (lambda calls return unknown). Closure correctness is deferred to v0.12.1 body analysis.
+
+**R5 (LOW). Frozen dataclass with new fields.** Adding `_fields` to Shape requires updating the dataclass. Since Shape is frozen, all construction sites must be reviewed. The default `_fields=()` means existing code works unchanged.
+
+## Version Numbering
+
+- **v0.12.0**: Phases 1-3 (strings, structs, anonymous functions)
+- **v0.12.1** (future): Lambda body analysis, single-quote edge case hardening
+- **v0.13.0** (future): Nested functions with shared workspace

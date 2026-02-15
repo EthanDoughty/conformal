@@ -20,12 +20,13 @@ Dim = Union[int, str, None]
 class Shape:
     """Abstract shape for MATLAB values.
 
-    Represents one of: scalar, matrix[rows x cols], or unknown.
+    Represents one of: scalar, matrix[rows x cols], string, struct, function_handle, unknown, or bottom.
     Matrix dimensions can be concrete integers, symbolic names, or None.
     """
     kind: str
     rows: Optional[Dim] = None
     cols: Optional[Dim] = None
+    _fields: tuple = ()  # For struct shapes: tuple of (field_name, Shape) pairs (sorted)
 
     # Constructors
 
@@ -49,6 +50,37 @@ class Shape:
         """Create a bottom shape (no information / unbound variable)."""
         return Shape(kind="bottom")
 
+    @staticmethod
+    def string() -> "Shape":
+        """Create a string shape (char array literal)."""
+        return Shape(kind="string")
+
+    @staticmethod
+    def struct(fields: dict) -> "Shape":
+        """Create a struct shape with given fields.
+
+        Args:
+            fields: Dict mapping field names to shapes
+
+        Returns:
+            Struct shape with fields stored as sorted tuple for hashability
+        """
+        return Shape(kind="struct", _fields=tuple(sorted(fields.items())))
+
+    @staticmethod
+    def function_handle() -> "Shape":
+        """Create a function handle shape (anonymous or named)."""
+        return Shape(kind="function_handle")
+
+    @property
+    def fields_dict(self) -> dict:
+        """Get fields as a dict (for struct shapes only).
+
+        Returns:
+            Dict of field names to shapes, or empty dict if not a struct
+        """
+        return dict(self._fields) if self.kind == "struct" else {}
+
     # Predicates
 
     def is_scalar(self) -> bool:
@@ -67,6 +99,18 @@ class Shape:
         """Check if this is a bottom shape."""
         return self.kind == "bottom"
 
+    def is_string(self) -> bool:
+        """Check if this is a string shape."""
+        return self.kind == "string"
+
+    def is_struct(self) -> bool:
+        """Check if this is a struct shape."""
+        return self.kind == "struct"
+
+    def is_function_handle(self) -> bool:
+        """Check if this is a function handle shape."""
+        return self.kind == "function_handle"
+
     # Pretty print / debug
 
     def __str__(self) -> str:
@@ -74,6 +118,15 @@ class Shape:
             return "scalar"
         if self.kind == "matrix":
             return f"matrix[{self.rows} x {self.cols}]"
+        if self.kind == "string":
+            return "string"
+        if self.kind == "struct":
+            # Format: struct{x: scalar, y: matrix[3 x 1]}
+            # Filter out bottom fields (internal-only, shouldn't appear in user output)
+            field_strs = [f"{name}: {shape}" for name, shape in self._fields if not shape.is_bottom()]
+            return "struct{" + ", ".join(field_strs) + "}"
+        if self.kind == "function_handle":
+            return "function_handle"
         if self.kind == "bottom":
             return "bottom"  # Should never appear in user-visible output
         return "unknown"
@@ -200,7 +253,8 @@ def widen_shape(old: Shape, new: Shape) -> Shape:
     Lattice semantics:
     - bottom is identity: widen(bottom, s) = s, widen(s, bottom) = s
     - unknown is top: widen(unknown, s) = unknown, widen(s, unknown) = unknown
-    - Pointwise widening for matrices: stable dims preserved, conflicts -> None
+    - Same kind → same kind (pointwise for matrices)
+    - Different kinds → unknown
 
     Args:
         old: Shape from previous iteration or pre-loop environment
@@ -227,7 +281,24 @@ def widen_shape(old: Shape, new: Shape) -> Shape:
             widen_dim(old.rows, new.rows),
             widen_dim(old.cols, new.cols),
         )
-    return Shape.unknown()  # different kinds (scalar vs matrix) -> unknown
+    if old.is_string() and new.is_string():
+        return Shape.string()
+
+    if old.is_function_handle() and new.is_function_handle():
+        return Shape.function_handle()
+
+    if old.is_struct() and new.is_struct():
+        # Union-with-bottom widen: union of all field names, missing fields get bottom
+        all_fields = set(old.fields_dict.keys()) | set(new.fields_dict.keys())
+        widened_fields = {}
+        for field_name in all_fields:
+            f_old = old.fields_dict.get(field_name, Shape.bottom())
+            f_new = new.fields_dict.get(field_name, Shape.bottom())
+            widened_fields[field_name] = widen_shape(f_old, f_new)
+        return Shape.struct(widened_fields)
+
+    # Different kinds → unknown
+    return Shape.unknown()
 
 
 # Shape lattice join
@@ -238,7 +309,8 @@ def join_shape(s1: Shape, s2: Shape) -> Shape:
     Lattice semantics:
     - bottom is identity: join(bottom, s) = s, join(s, bottom) = s
     - unknown is top: join(unknown, s) = unknown, join(s, unknown) = unknown
-    - Pointwise join_dim for matrices
+    - Same kind → same kind (pointwise for matrices)
+    - Different kinds → unknown
 
     Args:
         s1: First shape
@@ -266,6 +338,23 @@ def join_shape(s1: Shape, s2: Shape) -> Shape:
         c = join_dim(s1.cols, s2.cols)
         return Shape.matrix(r, c)
 
+    if s1.is_string() and s2.is_string():
+        return Shape.string()
+
+    if s1.is_function_handle() and s2.is_function_handle():
+        return Shape.function_handle()
+
+    if s1.is_struct() and s2.is_struct():
+        # Union-with-bottom join: union of all field names, missing fields get bottom
+        all_fields = set(s1.fields_dict.keys()) | set(s2.fields_dict.keys())
+        joined_fields = {}
+        for field_name in all_fields:
+            f1 = s1.fields_dict.get(field_name, Shape.bottom())
+            f2 = s2.fields_dict.get(field_name, Shape.bottom())
+            joined_fields[field_name] = join_shape(f1, f2)
+        return Shape.struct(joined_fields)
+
+    # Different kinds → unknown
     return Shape.unknown()
 
 

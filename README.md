@@ -46,6 +46,9 @@ The subset includes:
 - control flow (if/elseif/else, for, while, switch/case, try/catch, break, continue, return)
 - symbolic dimensions
 - indexing and transpose
+- strings (char array literals with MATLAB-faithful arithmetic)
+- structs (field access and assignment with chained dot notation)
+- anonymous functions and function handles
 
 Loops are analyzed using a single pass by default, or with principled widening via `--fixpoint` for guaranteed convergence. The widening-based analysis accelerates convergence (≤2 iterations) by widening conflicting dimensions to unknown while preserving stable dimensions.
 
@@ -58,6 +61,9 @@ Each expression is assigned a shape from a small abstract domain:
   - concrete integers
   - symbolic names (`n`, `m`, `k`)
   - unknown (`None`)
+- `string` (char array literals)
+- `struct{fields}` (struct values with named fields)
+- `function_handle` (anonymous functions and named handles)
 - `unknown`
 
 The analysis supports:
@@ -127,6 +133,10 @@ Each test file:
 | literals/matrix_literal.m | Matrix literals
 | literals/horzcat_vertcat.m | Horizontal and vertical concatenation
 | literals/symbolic_concat.m | Symbolic concatenation
+| literals/string_literal.m | String literals (char arrays)
+| literals/string_horzcat.m | String concatenation via horzcat
+| literals/string_matrix_error.m | Invalid string arithmetic warning
+| literals/string_in_control_flow.m | String/scalar join in control flow
 | builtins/unknown_function.m | Unknown function warning
 | builtins/shape_preserving.m | Shape-preserving builtins
 | builtins/call_vs_index.m | Call vs index disambiguation
@@ -154,7 +164,17 @@ Each test file:
 | functions/nested_function_calls.m | Nested user-defined function calls
 | functions/procedure_with_return.m | Procedure with explicit return
 | functions/arg_count_mismatch_cached.m | Arg count mismatch (no cache interaction)
-| recovery/struct_field.m | Unsupported struct field access
+| functions/lambda_basic.m | Anonymous function definition and assignment
+| functions/lambda_call_approximate.m | Lambda call with approximate analysis warning
+| functions/lambda_zero_args.m | Zero-argument lambda functions
+| functions/function_handle_from_name.m | Named function handles (`@myFunc`)
+| functions/function_handle_join.m | Function handle join in control flow
+| structs/struct_create_assign.m | Struct creation and field assignment
+| structs/struct_field_access.m | Chained struct field access (`s.a.b`)
+| structs/struct_field_not_found.m | Missing struct field warning
+| structs/struct_in_control_flow.m | Struct join across branches
+| structs/struct_field_reassign.m | Struct field reassignment
+| recovery/struct_field.m | Field access on non-struct value (promoted from recovery)
 | recovery/cell_array.m | Unsupported cell array indexing
 | recovery/multiple_assignment.m | Unsupported multiple assignment
 | recovery/multiline_braces.m | Unsupported multiline cell indexing
@@ -207,12 +227,12 @@ Exit codes:
 
 ## Limitations
 This tool does not support:
-- cell arrays or structs
-- strings
+- cell arrays
 - file I/O
 - plotting or graphics
 - precise loop invariants
-- nested functions or anonymous functions
+- nested functions
+- lambda body analysis (deferred to v0.12.1)
 
 ## Motivation and Future Directions
 

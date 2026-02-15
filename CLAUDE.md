@@ -88,7 +88,8 @@ python3 tools/ai_local.py --no-context "explain lattice widening in abstract int
 
 2. **IR** (`ir/`) — Typed intermediate representation
    - `ir.py`: Dataclass definitions (Expr, Stmt, Program)
-   - Statement nodes: Assign, ExprStmt, While, For, IfChain, Switch, Try, Break, Continue, OpaqueStmt, FunctionDef, AssignMulti, Return
+   - Expression nodes: Var, Number, StringLit, BinOp, UnaryOp, Apply, MatrixLit, IndexArg, FieldAccess, Lambda, FuncHandle
+   - Statement nodes: Assign, StructAssign, ExprStmt, While, For, IfChain, Switch, Try, Break, Continue, OpaqueStmt, FunctionDef, AssignMulti, Return
    - Clean, typed nodes vs. legacy `['assign', line, name, expr]` format
 
 3. **Analysis** (`analysis/`) — Static shape inference
@@ -106,7 +107,7 @@ python3 tools/ai_local.py --no-context "explain lattice widening in abstract int
 ### Runtime Components (`runtime/`)
 
 - `shapes.py`: Abstract shape domain
-  - `Shape`: `scalar | matrix[r x c] | unknown | bottom (internal)`
+  - `Shape`: `scalar | matrix[r x c] | string | struct{fields} | function_handle | unknown | bottom (internal)`
   - `Dim`: `int | str (symbolic) | None (unknown)`
   - Key functions: `join_dim`, `dims_definitely_conflict`, `add_dim`, `widen_dim`, `widen_shape`
 
@@ -123,6 +124,9 @@ Each expression gets a shape from this abstract domain:
   - Concrete integers (e.g., `3`, `4`)
   - Symbolic names (e.g., `n`, `m`, `k`)
   - Unknown (`None`)
+- **string**: Char array literals (`'hello'`, `"world"`)
+- **struct{fields}**: Struct values with named fields (e.g., `struct{x: scalar, y: matrix[3 x 1]}`)
+- **function_handle**: Anonymous functions (`@(x) expr`) or named handles (`@myFunc`)
 - **unknown**: Error or indeterminate shape (lattice top)
 - **bottom**: Unbound variable / no information (lattice identity, internal-only — converted to unknown at expression eval boundary)
 
@@ -142,7 +146,7 @@ Tests use inline assertions in MATLAB comments:
 % EXPECT_FIXPOINT: A = matrix[None x None]   (override when --fixpoint active)
 ```
 
-The test runner (`run_all_tests.py`) validates these expectations against analysis results. All test files are organized in `tests/` subdirectories by category: `basics/`, `symbolic/`, `indexing/`, `control_flow/`, `literals/`, `builtins/`, `loops/`, `recovery/`, and `functions/` (discovered dynamically via `glob("tests/**/*.m", recursive=True)`).
+The test runner (`run_all_tests.py`) validates these expectations against analysis results. All test files are organized in `tests/` subdirectories by category: `basics/`, `symbolic/`, `indexing/`, `control_flow/`, `literals/`, `builtins/`, `loops/`, `recovery/`, `functions/`, and `structs/` (10 categories total, discovered dynamically via `glob("tests/**/*.m", recursive=True)`).
 
 ## Critical Implementation Details
 
@@ -161,7 +165,7 @@ The test runner (`run_all_tests.py`) validates these expectations against analys
 
 - `Apply` is the sole IR node for both function calls and array indexing (`foo(...)`)
 - Parser emits `Apply` for all parenthesized expressions (no parse-time disambiguation)
-- Analyzer disambiguates based on: colon/range in args → indexing, `KNOWN_BUILTINS` → builtin call, user-defined function → function call, bound variable → indexing, unknown name → `W_UNKNOWN_FUNCTION`
+- Analyzer disambiguates based on: colon/range in args → indexing, function_handle variable → function call (shadows builtins), `KNOWN_BUILTINS` → builtin call, user-defined function → function call, bound variable → indexing, unknown name → `W_UNKNOWN_FUNCTION`
 
 ### User-Defined Functions
 

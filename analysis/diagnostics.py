@@ -14,10 +14,17 @@ def pretty_expr_ir(expr: Expr) -> str:
         return expr.name
     if isinstance(expr, Const):
         return str(expr.value)
+    if isinstance(expr, StringLit):
+        return f"'{expr.value}'"
     if isinstance(expr, Neg):
         return f"(-{pretty_expr_ir(expr.operand)})"
     if isinstance(expr, Transpose):
         return pretty_expr_ir(expr.operand) + "'"
+    if isinstance(expr, Lambda):
+        params = ", ".join(expr.params)
+        return f"@({params}) <body>"
+    if isinstance(expr, FuncHandle):
+        return f"@{expr.name}"
     if isinstance(expr, Apply):
         base = pretty_expr_ir(expr.base) if isinstance(expr.base, Var) else "<expr>"
         args_s = ", ".join(pretty_index_arg_ir(a) for a in expr.args)
@@ -196,6 +203,18 @@ def warn_multi_assign_count_mismatch(line: int, func_name: str, expected: int, g
     """Warning for destructuring assignment target count mismatch."""
     return f"W_MULTI_ASSIGN_COUNT_MISMATCH line {line}: function {func_name} returns {expected} values, got {got} targets"
 
+def warn_string_arithmetic(line: int, op: str, left_shape: Shape, right_shape: Shape) -> str:
+    """Warning for invalid string arithmetic (string + matrix/scalar)."""
+    return f"W_STRING_ARITHMETIC line {line}: Invalid string arithmetic ({left_shape} {op} {right_shape})"
+
+def warn_struct_field_not_found(line: int, field: str, struct_shape: Shape) -> str:
+    """Warning for accessing non-existent struct field."""
+    return f"W_STRUCT_FIELD_NOT_FOUND line {line}: Field '{field}' not found in {struct_shape}"
+
+def warn_field_access_non_struct(line: int, base_shape: Shape) -> str:
+    """Warning for field access on non-struct value."""
+    return f"W_FIELD_ACCESS_NON_STRUCT line {line}: Field access on non-struct value ({base_shape})"
+
 def warn_return_outside_function(line: int) -> str:
     """Warning for return statement outside function body."""
     return f"W_RETURN_OUTSIDE_FUNCTION line {line}: return statement outside function body"
@@ -207,3 +226,7 @@ def warn_break_outside_loop(line: int) -> str:
 def warn_continue_outside_loop(line: int) -> str:
     """Warning for continue statement outside loop (v0.11.1 will validate)."""
     return f"W_CONTINUE_OUTSIDE_LOOP line {line}: continue statement outside loop (treated as no-op)"
+
+def warn_lambda_call_approximate(line: int, var_name: str) -> str:
+    """Warning for calling function handle variable (v0.12.0 limitation)."""
+    return f"W_LAMBDA_CALL_APPROXIMATE line {line}: Calling function handle '{var_name}' returns unknown (body analysis deferred to v0.12.1)"

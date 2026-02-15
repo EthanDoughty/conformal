@@ -15,9 +15,9 @@ from analysis.builtins import KNOWN_BUILTINS
 
 from ir import (
     Program, Stmt,
-    Assign, ExprStmt, While, For, If, IfChain, Switch, Try, Break, Continue,
+    Assign, StructAssign, ExprStmt, While, For, If, IfChain, Switch, Try, Break, Continue,
     OpaqueStmt, FunctionDef, AssignMulti, Return,
-    Expr, Var, Const, MatrixLit, Apply, Transpose, Neg, BinOp,
+    Expr, Var, Const, StringLit, FieldAccess, Lambda, FuncHandle, MatrixLit, Apply, Transpose, Neg, BinOp,
     IndexArg, Colon, Range, IndexExpr,
 )
 
@@ -55,6 +55,8 @@ class AnalysisContext:
     analyzing_functions: Set[str] = field(default_factory=set)
     analysis_cache: Dict[tuple, tuple] = field(default_factory=dict)
     fixpoint: bool = False
+    _lambda_closures: Dict[int, Env] = field(default_factory=dict)
+    _next_lambda_id: int = 0
 
 
 def analyze_program_ir(program: Program, fixpoint: bool = False, ctx: AnalysisContext = None) -> Tuple[Env, List[str]]:
@@ -326,6 +328,20 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str], ctx: AnalysisCont
             warnings.append(diag.warn_reassign_incompatible(stmt.line, stmt.name, new_shape, old_shape))
 
         env.set(stmt.name, new_shape)
+        return env
+
+    if isinstance(stmt, StructAssign):
+        # Struct field assignment: s.field = expr or s.a.b = expr
+        # Evaluate RHS
+        rhs_shape = eval_expr_ir(stmt.expr, env, warnings, ctx)
+
+        # Get current base variable shape
+        base_shape = env.get(stmt.base_name)
+
+        # Walk the field chain to update nested struct
+        updated_shape = _update_struct_field(base_shape, stmt.fields, rhs_shape, stmt.line, warnings)
+
+        env.set(stmt.base_name, updated_shape)
         return env
 
     if isinstance(stmt, ExprStmt):
@@ -619,18 +635,31 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str], ctx: AnalysisContext
     if isinstance(expr, Const):
         return Shape.scalar()
 
+    if isinstance(expr, StringLit):
+        return Shape.string()
+
     if isinstance(expr, MatrixLit):
-        shape_rows = [
-            [as_matrix_shape(eval_expr_ir(e, env, warnings, ctx)) for e in row]
+        # Evaluate element shapes first (before conversion)
+        raw_shape_rows = [
+            [eval_expr_ir(e, env, warnings, ctx) for e in row]
             for row in expr.rows
         ]
-        return infer_matrix_literal_shape(shape_rows, expr.line, warnings)
+        return infer_matrix_literal_shape(raw_shape_rows, expr.line, warnings)
 
     if isinstance(expr, Apply):
         line = expr.line
 
         # Check for indexing indicators: colon or range in args
         has_colon_or_range = any(isinstance(arg, (Colon, Range)) for arg in expr.args)
+
+        # Check if base variable is a function handle (shadows builtins)
+        if isinstance(expr.base, Var):
+            base_var_name = expr.base.name
+            base_var_shape = env.get(base_var_name)
+            if base_var_shape.is_function_handle():
+                # Function handle call: v0.12.0 limitation - return unknown
+                warnings.append(diag.warn_lambda_call_approximate(line, base_var_name))
+                return Shape.unknown()
 
         # Check if base is a known builtin function
         if isinstance(expr.base, Var):
@@ -844,6 +873,40 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str], ctx: AnalysisContext
     if isinstance(expr, Neg):
         return eval_expr_ir(expr.operand, env, warnings, ctx)
 
+    if isinstance(expr, FieldAccess):
+        # Struct field access: s.field or s.a.b (nested)
+        base_shape = eval_expr_ir(expr.base, env, warnings, ctx)
+        if base_shape.is_struct():
+            field_shape = base_shape.fields_dict.get(expr.field)
+            if field_shape is None:
+                # Field not found in struct
+                warnings.append(diag.warn_struct_field_not_found(expr.line, expr.field, base_shape))
+                return Shape.unknown()
+            # Convert bottom → unknown at expression boundary
+            return field_shape if not field_shape.is_bottom() else Shape.unknown()
+        else:
+            # Base is not a struct
+            warnings.append(diag.warn_field_access_non_struct(expr.line, base_shape))
+            return Shape.unknown()
+
+    if isinstance(expr, Lambda):
+        # Anonymous function: store closure and return function_handle
+        # Increment lambda ID counter
+        lambda_id = ctx._next_lambda_id
+        ctx._next_lambda_id += 1
+        # Store snapshot of current environment as closure
+        ctx._lambda_closures[lambda_id] = env
+        return Shape.function_handle()
+
+    if isinstance(expr, FuncHandle):
+        # Named function handle: check if function exists
+        if expr.name in ctx.function_registry or expr.name in KNOWN_BUILTINS:
+            return Shape.function_handle()
+        else:
+            # Unknown function
+            warnings.append(diag.warn_unknown_function(expr.line, expr.name))
+            return Shape.function_handle()  # Still return function_handle shape
+
     if isinstance(expr, BinOp):
         op = expr.op
         line = expr.line
@@ -1026,6 +1089,66 @@ def unwrap_arg(arg: IndexArg) -> Expr:
     raise ValueError(f"Cannot unwrap {type(arg).__name__} to Expr")
 
 
+def _update_struct_field(
+    base_shape: Shape,
+    fields: List[str],
+    value_shape: Shape,
+    line: int,
+    warnings: List[str]
+) -> Shape:
+    """Update a nested struct field with a new value.
+
+    Args:
+        base_shape: Current shape of the base variable (may be bottom if unbound)
+        fields: Chain of field names (e.g., ["a", "b"] for s.a.b)
+        value_shape: Shape to assign to the field
+        line: Source line number (for warnings)
+        warnings: List to append warnings to
+
+    Returns:
+        Updated struct shape with the field set to value_shape
+    """
+    # If base is bottom (unbound variable), create fresh struct from chain
+    if base_shape.is_bottom():
+        # Build nested struct from innermost field outward
+        result = value_shape
+        for field in reversed(fields):
+            result = Shape.struct({field: result})
+        return result
+
+    # If base is not a struct, warn and treat as fresh struct
+    if not base_shape.is_struct():
+        warnings.append(diag.warn_field_access_non_struct(line, base_shape))
+        # Still create struct (best-effort recovery)
+        result = value_shape
+        for field in reversed(fields):
+            result = Shape.struct({field: result})
+        return result
+
+    # Base is struct: walk the chain and update
+    if len(fields) == 1:
+        # Simple case: s.field = value
+        updated_fields = dict(base_shape.fields_dict)
+        updated_fields[fields[0]] = value_shape
+        return Shape.struct(updated_fields)
+    else:
+        # Nested case: s.a.b = value
+        # Recursively update s.a, then update s
+        outer_field = fields[0]
+        inner_fields = fields[1:]
+
+        # Get current shape of outer field (or bottom if missing)
+        outer_field_shape = base_shape.fields_dict.get(outer_field, Shape.bottom())
+
+        # Recursively update inner fields
+        updated_inner = _update_struct_field(outer_field_shape, inner_fields, value_shape, line, warnings)
+
+        # Update outer struct with new inner value
+        updated_fields = dict(base_shape.fields_dict)
+        updated_fields[outer_field] = updated_inner
+        return Shape.struct(updated_fields)
+
+
 def eval_binop_ir(
     op: str,
     left: Shape,
@@ -1066,6 +1189,16 @@ def eval_binop_ir(
 
     if op == ":":
         return Shape.matrix(1, None)
+
+    # String arithmetic: string + string = numeric row vector (MATLAB behavior)
+    if op == "+" and left.is_string() and right.is_string():
+        return Shape.matrix(1, None)  # char + char = numeric row vector, length unknown
+
+    # String + non-string: warning + unknown
+    if op in {"+", "-", "*", ".*", "/", "./"} and (left.is_string() or right.is_string()):
+        if not (left.is_string() and right.is_string() and op == "+"):
+            warnings.append(diag.warn_string_arithmetic(line, op, left, right))
+            return Shape.unknown()
 
     if left.is_scalar() and not right.is_scalar():
         return right

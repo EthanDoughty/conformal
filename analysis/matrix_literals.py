@@ -8,12 +8,13 @@ from runtime.shapes import Shape, Dim, dims_definitely_conflict, join_dim, sum_d
 
 
 def as_matrix_shape(s: Shape) -> Shape:
-    """Treat scalar as 1x1 matrix for concatenation.
+    """Treat scalar and string as 1x1 matrix for concatenation.
 
+    Strings are treated as scalar-like elements for concatenation purposes.
     Defensive: bottom should never reach here (converted at Var eval boundary),
     but if it does, return unknown.
     """
-    if s.is_scalar():
+    if s.is_scalar() or s.is_string():
         return Shape.matrix(1, 1)
     if s.is_bottom():
         # Safety net: bottom leaked into concat logic (should never happen)
@@ -30,7 +31,8 @@ def infer_matrix_literal_shape(
     Shared matrix-literal concatenation checker/inferencer.
     Ported from old analysis.py, but operates on already-evaluated Shapes.
 
-    - scalars treated as 1x1 matrices for concat
+    - scalars and strings treated as 1x1 matrices for concat
+    - if all elements are strings, result is string (horzcat of strings)
     - horizontal concat requires equal row counts within each literal row
     - vertical concat requires equal col counts across literal rows
     - definite concat mismatch => warnings + overall Shape.unknown()
@@ -40,6 +42,20 @@ def infer_matrix_literal_shape(
     # Empty literal []
     if len(shape_rows) == 0:
         return Shape.matrix(0, 0)
+
+    # Check if all elements are strings
+    all_strings = True
+    for row in shape_rows:
+        for elem in row:
+            if not elem.is_string():
+                all_strings = False
+                break
+        if not all_strings:
+            break
+
+    if all_strings and any(len(row) > 0 for row in shape_rows):
+        # All elements are strings: horzcat produces string
+        return Shape.string()
 
     row_heights: List[Dim] = []
     row_widths: List[Dim] = []

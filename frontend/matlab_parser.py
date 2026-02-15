@@ -22,17 +22,18 @@ KEYWORDS = {
     "function", "return"
 }
 
-# Simple tokenization rules
+# Simple tokenization rules (TRANSPOSE handled separately in context-sensitive lexer)
 TOKEN_SPEC = [
+    ("DQSTRING", r'"[^"]*"'), # double-quoted strings (no ambiguity)
     ("NUMBER",   r"\d+(?:\.\d*)?"), # ints or floats
     ("ID",       r"[A-Za-z_]\w*"), # identifiers
     ("DOTOP",    r"\.\*|\./"), # element-wise ops
-    ("OP",       r"==|~=|<=|>=|&&|\|\||[+\-*/<>()=,:\[\];]"),
+    ("OP",       r"==|~=|<=|>=|&&|\|\||[+\-*/<>()=,:\[\];@]"),
     ("DOT",      r"\."), # standalone dot (for recovery from struct/method access)
     ("NEWLINE",  r"\n"),  # only real newlines
     ("SKIP",     r"[ \t]+"), # spaces/tabs
     ("COMMENT",  r"%[^\n]*"), # comments
-    ("TRANSPOSE", r"'"), # transpose operator
+    ("QUOTE",    r"'"), # single quote (context-sensitive: string or transpose)
     ("CURLYBRACE", r"[{}]"), # curly braces (for recovery from cell arrays)
     ("MISMATCH", r"."), # anything else is an error
 ]
@@ -42,41 +43,94 @@ MASTER_RE = re.compile("|".join(
 ))
 
 def lex(src: str) -> List[Token]:
-    """Turn a Mini-MATLAB source string into a list of Tokens"""
-    tokens: List[Token] = []
-    line = 1 # Start at the first line
+    """Turn a Mini-MATLAB source string into a list of Tokens.
 
-    for m in MASTER_RE.finditer(src):
+    Context-sensitive lexing for single quotes:
+    - After ID/)/]/NUMBER/TRANSPOSE → ' is TRANSPOSE
+    - After OP/=/(/,/;/[/NEWLINE/start/keywords → ' starts STRING
+    """
+    tokens: List[Token] = []
+    line = 1
+    pos = 0
+    prev_kind = None  # Track previous token for context-sensitive quote handling
+
+    while pos < len(src):
+        # Try to match at current position
+        m = MASTER_RE.match(src, pos)
+        if not m:
+            raise SyntaxError(f"Unexpected character {src[pos]!r} at position {pos}")
+
         kind = m.lastgroup
         value = m.group()
-        pos = m.start()
+        start_pos = pos
 
-        if kind == "NUMBER":
-            tokens.append(Token("NUMBER", value, pos, line))
+        if kind == "DQSTRING":
+            # Double-quoted string: strip quotes and emit STRING token
+            tokens.append(Token("STRING", value[1:-1], start_pos, line))
+            prev_kind = "STRING"
+            pos = m.end()
+        elif kind == "NUMBER":
+            tokens.append(Token("NUMBER", value, start_pos, line))
+            prev_kind = "NUMBER"
+            pos = m.end()
         elif kind == "ID":
             if value in KEYWORDS:
-                tokens.append(Token(value.upper(), value, pos, line))
+                tokens.append(Token(value.upper(), value, start_pos, line))
+                prev_kind = value.upper()
             else:
-                tokens.append(Token("ID", value, pos, line))
+                tokens.append(Token("ID", value, start_pos, line))
+                prev_kind = "ID"
+            pos = m.end()
         elif kind == "DOTOP":
-            tokens.append(Token(kind, value, pos, line))
+            tokens.append(Token(kind, value, start_pos, line))
+            prev_kind = kind
+            pos = m.end()
         elif kind == "DOT":
-            tokens.append(Token("DOT", value, pos, line))
+            tokens.append(Token("DOT", value, start_pos, line))
+            prev_kind = "DOT"
+            pos = m.end()
         elif kind == "CURLYBRACE":
-            tokens.append(Token(value, value, pos, line))
-        elif kind == "TRANSPOSE":
-            tokens.append(Token("TRANSPOSE", value, pos, line))
+            tokens.append(Token(value, value, start_pos, line))
+            prev_kind = value
+            pos = m.end()
+        elif kind == "QUOTE":
+            # Context-sensitive: is this transpose or string start?
+            if prev_kind in {"ID", ")", "]", "NUMBER", "TRANSPOSE"}:
+                tokens.append(Token("TRANSPOSE", value, start_pos, line))
+                prev_kind = "TRANSPOSE"
+                pos = m.end()
+            else:
+                # String start: scan ahead for matching closing quote
+                end_pos = start_pos + 1
+                while end_pos < len(src) and src[end_pos] != "'":
+                    if src[end_pos] == "\n":
+                        raise SyntaxError(f"Unterminated string at line {line}, pos {start_pos}")
+                    end_pos += 1
+                if end_pos >= len(src):
+                    raise SyntaxError(f"Unterminated string at line {line}, pos {start_pos}")
+                # Extract string content (between quotes)
+                string_content = src[start_pos+1:end_pos]
+                tokens.append(Token("STRING", string_content, start_pos, line))
+                prev_kind = "STRING"
+                pos = end_pos + 1  # Skip past closing quote
         elif kind == "OP":
-            tokens.append(Token(value, value, pos, line))
+            tokens.append(Token(value, value, start_pos, line))
+            prev_kind = value
+            pos = m.end()
         elif kind == "NEWLINE":
-            tokens.append(Token("NEWLINE", value, pos, line))
+            tokens.append(Token("NEWLINE", value, start_pos, line))
             if value == "\n":
                 line += 1
+            prev_kind = "NEWLINE"
+            pos = m.end()
         elif kind == "SKIP" or kind == "COMMENT":
-            continue
+            pos = m.end()
+            # Don't update prev_kind for whitespace/comments
         elif kind == "MISMATCH":
-            raise SyntaxError(f"Unexpected character {value!r} at {pos}")
-        
+            raise SyntaxError(f"Unexpected character {value!r} at {start_pos}")
+        else:
+            pos = m.end()
+
     tokens.append(Token("EOF", "", len(src), line))
     return tokens
 
@@ -299,7 +353,8 @@ class MatlabParser:
                         self.eat(";")
                 return node
         except ParseError:
-            # Recovery: consume tokens until statement boundary
+            # Recovery: reset to start of statement and consume tokens until boundary
+            self.i = start_pos
             return self.recover_to_stmt_boundary(start_line)
 
     def parse_simple_stmt(self) -> Any:
@@ -342,7 +397,29 @@ class MatlabParser:
 
         if self.current().kind == "ID":
             id_tok = self.eat("ID")
-            if self.current().value == "=":
+            # Check for struct assignment: ID.field.field... = expr
+            if self.current().kind == "DOT":
+                # Parse field chain
+                fields = []
+                while self.current().kind == "DOT":
+                    self.eat("DOT")
+                    field_name = self.eat("ID").value
+                    fields.append(field_name)
+
+                # Now check for assignment
+                if self.current().value == "=":
+                    eq_tok = self.eat("=")
+                    expr = self.parse_expr()
+                    return ["struct_assign", eq_tok.line, id_tok.value, fields, expr]
+                else:
+                    # Not assignment, construct field access expression and continue
+                    # Build nested field_access nodes: s.a.b → field_access(field_access(var(s), a), b)
+                    base = ["var", id_tok.line, id_tok.value]
+                    for field in fields:
+                        base = ["field_access", id_tok.line, base, field]
+                    expr_tail = self.parse_expr_rest(base, 0)
+                    return ["expr", expr_tail]
+            elif self.current().value == "=":
                 self.eat("=")
                 expr = self.parse_expr()
                 return ["assign", id_tok.line, id_tok.value, expr]
@@ -474,7 +551,7 @@ class MatlabParser:
 
     def parse_expr(self, min_prec: int = 0) -> Any:
         """Expression grammar with precedence:
-          prefix: NUMBER | ID | (expr) | -expr
+          prefix: NUMBER | STRING | ID | (expr) | -expr
           infix:  left op right"""
         tok = self.current()
 
@@ -486,6 +563,9 @@ class MatlabParser:
         elif tok.kind == "NUMBER":
             num_tok = self.eat("NUMBER")
             left = ["const", num_tok.line, float(num_tok.value)]
+        elif tok.kind == "STRING":
+            str_tok = self.eat("STRING")
+            left = ["string", str_tok.line, str_tok.value]
         elif tok.kind == "ID":
             id_tok = self.eat("ID")
             left = ["var", id_tok.line, id_tok.value]
@@ -496,6 +576,30 @@ class MatlabParser:
             self.eat(")")
         elif tok.value == "[":
             left = self.parse_matrix_literal()
+        elif tok.value == "@":
+            # Anonymous function or named function handle
+            at_tok = self.eat("@")
+            next_tok = self.current()
+            if next_tok.value == "(":
+                # Anonymous function: @(params) body_expr
+                self.eat("(")
+                params = []
+                if self.current().value != ")":
+                    params.append(self.eat("ID").value)
+                    while self.current().value == ",":
+                        self.eat(",")
+                        params.append(self.eat("ID").value)
+                self.eat(")")
+                body = self.parse_expr()
+                left = ["lambda", at_tok.line, params, body]
+            elif next_tok.kind == "ID":
+                # Named function handle: @myFunc
+                name = self.eat("ID").value
+                left = ["func_handle", at_tok.line, name]
+            else:
+                raise ParseError(
+                    f"Expected '(' or function name after '@' at {next_tok.pos}"
+                )
         else:
             raise ParseError(
                 f"Unexpected token {tok.kind} {tok.value!r} in expression at {tok.pos}"
@@ -520,6 +624,7 @@ class MatlabParser:
         - Indexing: A(i), A(i,j), A(:,j), A(i,:), A(:,:)
         - Calls: zeros(...), ones(...) (subset)
         - Apply: Unified node, dispatching deferred to analyzer
+        - Field access: s.field (nested: s.a.b parsed as nested field_access nodes)
         """
         while True:
             tok = self.current()
@@ -535,6 +640,17 @@ class MatlabParser:
             elif tok.kind == "TRANSPOSE":
                 t_tok = self.eat("TRANSPOSE")
                 left = ["transpose", t_tok.line, left]
+
+            elif tok.kind == "DOT":
+                # Field access: check if next token is ID (not .* or ./)
+                dot_tok = self.eat("DOT")
+                if self.current().kind == "ID":
+                    field_name = self.eat("ID").value
+                    left = ["field_access", dot_tok.line, left, field_name]
+                else:
+                    # Not field access (might be .* or ./ but those are DOTOP, not DOT)
+                    # This shouldn't happen with current lexer, but be defensive
+                    raise ParseError(f"Expected field name after '.' at {tok.pos}")
 
             else:
                 break
