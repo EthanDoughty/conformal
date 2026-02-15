@@ -20,80 +20,83 @@ Conformal catches matrix dimension errors in MATLAB code before you run it. You 
 
 ## Requirements
 
-- **Python 3.10+**
+- Python 3.10+
 - No third-party dependencies
 - Tested on Linux
 - No MATLAB installation required
 
 ## What the Analysis Detects
 
-The analyzer statically detects dimension and shape issues in the following constructs:
+All warnings include source line numbers. When the analyzer finds a definite error, it marks the result as `unknown` and keeps going so you get as many diagnostics as possible in a single pass.
 
-- **Matrix addition and subtraction** (`+`, `-`)
-- **Matrix multiplication** (`*`)
-- **Elementwise operations** (`.*`, `./`, `/`)
-- **Scalar–matrix operations** (`s*A`, `s + A`)
-- **Matrix literals** (`[1 2; 3 4]`, `[A B]`, `[A; B]`)
-- **Cell array literals** (`{1, 2; 3, 4}`)
-- **Horizontal and vertical concatenation constraints**
-- **Vector transpose** (`v'`)
-- **Colon-generated vectors** (`1:n`)
-- **MATLAB-style indexing and slices** (`A(i,j)`, `A(i,:)`, `A(:,j)`, `A(:,:)`)
-- **Curly-brace indexing** (`C{i,j}`)
-- **Cell element assignment** (`C{i} = expr`)
-- **Range indexing** (`A(2:5,:)`, `A(:,2:5)`)
-- **Matrix–scalar comparisons** (`A == 0`)
-- **Logical operators on non-scalars** (`&&`, `||`)
-- **Incompatible variable reassignments**
-- **MATLAB-aware fix suggestions**
-  - e.g. suggesting `.*` instead of `*`
+### Operations
 
-All warnings are reported with source line numbers, and the analysis continues in a "best-effort" manner even after detecting errors.
+Dimension mismatches in `+`, `-`, `*`, `.*`, `./`. Inner dimension checks for matrix multiplication. Scalar-matrix broadcasting (`s*A`, `s + A`) is handled correctly. When you use `*` where `.*` was probably intended, the analyzer suggests the fix.
+
+### Literals and concatenation
+
+Matrix literals `[1 2; 3 4]`, cell array literals `{1, 2; 3, 4}`, and string literals (`'hello'`, `"world"`). Horizontal concatenation `[A B]` checks that row counts match; vertical concatenation `[A; B]` checks columns. Symbolic dimensions compose through concatenation, so `[A B]` where A is `n x k` and B is `n x m` gives `n x (k+m)`.
+
+### Indexing
+
+Parenthesized indexing `A(i,j)`, slice indexing `A(:,j)` and `A(i,:)`, range indexing `A(2:5,:)`, linear indexing, and full-matrix `A(:,:)`. Curly-brace indexing `C{i,j}` for cell arrays. Cell element assignment `C{i} = expr`.
+
+### Functions
+
+20+ builtins with shape rules: `zeros`, `ones`, `eye`, `rand`, `randn`, `reshape`, `repmat`, `diag`, `det`, `inv`, `linspace`, `norm`, `size`, `length`, `numel`, `transpose`, `horzcat`, `vertcat`, `iscell`, `isscalar`, and more. Dimension arithmetic works inside builtin arguments, so `zeros(n+1, 2*m)` is tracked symbolically.
+
+User-defined functions are analyzed at each call site with the caller's argument shapes. Three forms: single return (`function y = f(x)`), multi-return (`function [a, b] = f(x)`), and procedures (`function f(x)`). Anonymous functions `@(x) expr` are analyzed the same way, with by-value closure capture at definition time. Function handles `@funcName` dispatch to their targets. Results are cached per argument shape tuple so the same function called with the same shapes isn't re-analyzed.
+
+### Data structures
+
+Structs with field assignment (`s.x = A`), field access, and chained dot notation (`s.x.y`). Missing field access emits a warning. Struct shapes join across branches by taking the union of fields.
+
+Cell arrays with `cell(n)` and `cell(m,n)` constructors, curly-brace indexing, and element assignment. Curly-brace indexing on a non-cell emits a warning.
+
+### Control flow
+
+`if`/`elseif`/`else`, `for`, `while`, `switch`/`case`/`otherwise`, `try`/`catch`, `break`, `continue`, `return`. When branches assign different shapes to the same variable, the analyzer joins them conservatively. Loops use a single pass by default, or widening-based fixed-point iteration via `--fixpoint` for guaranteed convergence (≤2 iterations).
+
+### Symbolic dimensions
+
+Variables with unknown concrete size get symbolic names like `n`, `m`, `k`. These propagate through operations: `1:n` gives a `1 x n` vector, `[A B]` computes `n x (k+m)`, `zeros(n+1, 2*m)` tracks the arithmetic. Symbolic dimensions are represented as canonical polynomials with rational coefficients, so `n+m` and `m+n` are recognized as equal, and `n+n` simplifies to `2*n`. When a function `f(k)` is called with a symbolic argument `n`, the dimension name `n` propagates into the function body.
 
 ## Language Coverage
 
-The analyzer supports MATLAB code with the following features:
+The analyzer parses and tracks shapes through:
 
-- Assignments and expressions
-- Function calls (20 recognized builtins with full shape rule coverage)
-- User-defined functions (single/multi-return/procedure forms with interprocedural analysis)
-- Anonymous functions (lambda body analysis at call sites with closure capture)
-- Function handles (named handles dispatch to their targets)
-- Control flow (if/elseif/else, for, while, switch/case, try/catch, break, continue, return)
-- Symbolic dimensions
-- Indexing and transpose
-- String literals (char array literals with MATLAB-faithful arithmetic)
-- Structs (field access and assignment with chained dot notation)
-- Cell arrays (literals, curly indexing, `cell()` builtin)
-
-Loops are analyzed using a single pass by default, or with principled widening via `--fixpoint` for guaranteed convergence. The widening-based analysis accelerates convergence (≤2 iterations) by widening conflicting dimensions to unknown while preserving stable dimensions.
+| Category | Constructs |
+|----------|-----------|
+| Expressions | `+`, `-`, `*`, `.*`, `./`, `==`, `~=`, `<`, `>`, `<=`, `>=`, `&&`, `\|\|`, `~`, `'` |
+| Literals | `[1 2; 3 4]`, `{1, 2; 3, 4}`, `'string'`, `"string"`, `1:n` |
+| Indexing | `A(i,j)`, `A(:,j)`, `A(2:5,:)`, `C{i}`, `C{i} = x` |
+| Assignment | `x = expr`, `s.field = expr`, `C{i} = expr`, `[a, b] = f(x)` |
+| Functions | `function y = f(x)`, `@(x) expr`, `@funcName`, 20+ builtins |
+| Control flow | `if`/`elseif`/`else`, `for`, `while`, `switch`/`case`, `try`/`catch` |
+| Statements | `break`, `continue`, `return` |
+| Data types | scalars, matrices, strings, structs, cell arrays, function handles |
 
 ## Shape System
 
-Each expression is assigned a shape from an abstract domain:
+Every expression gets a shape from the abstract domain. There are 7 kinds:
 
-- `scalar`
-- `matrix[r x c]` where `r` and `c` may be:
-  - concrete integers
-  - symbolic names (`n`, `m`, `k`)
-  - unknown (`None`)
-- `string` (char array literals)
-- `struct{fields}` (struct values with named fields)
-- `function_handle` (anonymous functions and named handles)
-- `cell[r x c]` (cell array with given dimensions)
-- `unknown` (error or indeterminate shape)
+| Shape | Example | Notes |
+|-------|---------|-------|
+| `scalar` | `5`, `x` | Single numeric value |
+| `matrix[r x c]` | `matrix[3 x 4]`, `matrix[n x m]` | Dimensions can be concrete, symbolic, or unknown |
+| `string` | `'hello'` | Char array |
+| `struct{...}` | `struct{x: scalar, y: matrix[3 x 1]}` | Tracks fields and their shapes |
+| `function_handle` | `@(x) x'`, `@sin` | Tracks lambda ID for join precision |
+| `cell[r x c]` | `cell[3 x 1]` | Cell array; element types not yet tracked |
+| `unknown` | | Error or indeterminate; the lattice top |
 
-The analysis supports:
-- Symbolic dimension canonicalization (commutativity, associativity, like-term collection)
-- Symbolic dimension equality with canonical polynomial representation
-- Symbolic dimension joins across control flow
-- Symbolic dimension addition for matrix concatenation (e.g. `n x (k+m)`)
-- Symbolic dimension multiplication for replication (e.g. `(n*k)`)
-- Symbolic dimension arithmetic in builtin arguments (e.g. `zeros(n+1, m)`)
-- Widening for loop convergence (stable dims preserved, conflicting dims → None)
-- Dimension aliasing across function boundaries (caller's symbolic names propagate to callee)
-- Lambda body analysis at call sites (polymorphic caching per argument shapes)
-- Closure capture for anonymous functions (by-value environment capture at definition)
+Dimensions in `matrix[r x c]` can be:
+- Concrete integers: `3`, `100`
+- Symbolic names: `n`, `m`, `k`
+- Symbolic expressions: `n+m`, `2*k`, `n+1`
+- Unknown: `None` (no information available)
+
+Symbolic dimensions use a frozen polynomial representation (`SymDim`) with rational coefficients. Canonicalization handles commutativity (`n+m` = `m+n`), like-term collection (`n+n` = `2*n`), and constant-offset conflict detection. When control flow branches assign conflicting dimensions to the same variable, the analyzer joins them to `None` (unknown). In loops with `--fixpoint`, conflicting dimensions get widened to `None` while stable dimensions are preserved.
 
 ## Project Structure
 
@@ -108,7 +111,7 @@ tools/       Debugging utilities (AST printer)
 
 ## Test Suite
 
-The analyzer is validated by **137 self-checking test programs** organized into 11 categories. Each test embeds its expected behavior as inline assertions:
+The analyzer is validated by 137 self-checking test programs organized into 11 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -151,7 +154,7 @@ Tests symbolic dimension tracking, arithmetic, and canonical polynomial represen
 | `like_terms.m` | Like-term collection: `(n+n)` canonicalizes to `(2*n)` | 0 |
 | `rational_dimensions.m` | Rational coefficients in symbolic dimensions (e.g., `n/2`) | 0 |
 
-**Key feature**: Symbolic dimensions are represented as frozen polynomial dataclasses (`SymDim`) with canonical equality and rational coefficients, enabling precise tracking of parametric shapes across function boundaries.
+>Symbolic dimensions are represented as frozen polynomial dataclasses (`SymDim`) with canonical equality and rational coefficients, enabling precise tracking of parametric shapes across function boundaries.
 
 </details>
 
@@ -195,7 +198,7 @@ Control-flow join semantics for if/elseif/else, switch/case, try/catch, break, a
 | `try_catch_no_error.m` | Catch block unused when no error in try block | 0 |
 | `try_nested.m` | Nested try/catch blocks work correctly | 0 |
 
-**Key feature**: Conservative join semantics. When branches disagree on a variable's shape, the analyzer joins to the least upper bound (often `unknown`).
+>Conservative join semantics. When branches disagree on a variable's shape, the analyzer joins to the least upper bound (often `unknown`).
 
 </details>
 
@@ -233,7 +236,7 @@ Shape rules for 20 recognized MATLAB builtins, call/index disambiguation, and di
 | `remaining_builtins.m` | `det`, `diag`, `inv`, `linspace`, `norm` shape rules | 0 |
 | `type_queries.m` | Type query functions: `iscell()`, `isscalar()` return scalar | 0 |
 
-**Key feature**: Dimension arithmetic uses canonical polynomial representation to track expressions like `zeros(n+m+1, 2*k)`.
+>Dimension arithmetic uses canonical polynomial representation to track expressions like `zeros(n+m+1, 2*k)`.
 
 </details>
 
@@ -267,7 +270,7 @@ Loop analysis with single-pass and fixed-point widening modes (via `--fixpoint`)
 | `widen_unknown_false_positive.m` | Unknown function doesn't spuriously widen unrelated vars | 1 |
 | `widen_unknown_in_body.m` | Unknown function result overwrites variable | 1 |
 
-**Key feature**: Principled widening-based loop analysis (v0.9.2) uses a 3-phase algorithm (discover, stabilize, post-loop join) that guarantees convergence in ≤2 iterations by widening conflicting dimensions to `None` while preserving stable dimensions.
+>Principled widening-based loop analysis (v0.9.2) uses a 3-phase algorithm (discover, stabilize, post-loop join) that guarantees convergence in ≤2 iterations by widening conflicting dimensions to `None` while preserving stable dimensions.
 
 </details>
 
@@ -276,7 +279,7 @@ Loop analysis with single-pass and fixed-point widening modes (via `--fixpoint`)
 
 Interprocedural analysis for user-defined functions and anonymous functions (lambdas).
 
-**Named Functions (21 tests)**
+Named Functions (21 tests)
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -303,7 +306,7 @@ Interprocedural analysis for user-defined functions and anonymous functions (lam
 | `procedure_with_return.m` | Procedure with explicit return statement | 1 |
 | `arg_count_mismatch_cached.m` | Argument count mismatch detected | 1 |
 
-**Anonymous Functions / Lambdas (18 tests)**
+Anonymous Functions / Lambdas (18 tests)
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -325,12 +328,12 @@ Interprocedural analysis for user-defined functions and anonymous functions (lam
 | `handle_dispatch_builtin.m` | Function handle `@sin` dispatches to builtin | 0 |
 | `handle_dispatch_user_func.m` | Function handle dispatches to user-defined function | 0 |
 
-**Key features**:
-- **Interprocedural analysis**: Functions analyzed at each call site with caller's argument shapes
-- **Polymorphic caching**: Results cached per `(func_name, arg_shapes)` to avoid redundant re-analysis
-- **Dimension aliasing**: Symbolic dimension names propagate across boundaries (e.g., `f(n)` where `f = @(k) zeros(k,k)` infers `matrix[n x n]`)
-- **Lambda closure capture**: By-value environment capture at definition time (MATLAB semantics)
-- **Control flow precision**: When branches assign different lambdas, both bodies analyzed and results joined at call site
+Key features:
+- Interprocedural analysis: functions analyzed at each call site with the caller's argument shapes
+- Polymorphic caching: results cached per `(func_name, arg_shapes)` to avoid redundant re-analysis
+- Dimension aliasing: symbolic dimension names propagate across boundaries (e.g., `f(n)` where `f = @(k) zeros(k,k)` infers `matrix[n x n]`)
+- Lambda closure capture: by-value environment capture at definition time (MATLAB semantics)
+- Control flow precision: when branches assign different lambdas, both bodies are analyzed and results joined at call site
 
 </details>
 
@@ -347,7 +350,7 @@ Struct creation, field access, and control-flow joins.
 | `struct_field_reassign.m` | Field reassignment with different shape updates field map | 0 |
 | `struct_in_control_flow.m` | Struct shape join takes union of fields from both branches | 0 |
 
-**Key feature**: Struct join uses union-with-bottom semantics. Fields present in only one branch get `bottom` in the other, then join to `unknown`.
+>Struct join uses union-with-bottom semantics. Fields present in only one branch get `bottom` in the other, then join to `unknown`.
 
 </details>
 
@@ -373,7 +376,7 @@ Cell array literals, curly-brace indexing, and element assignment (v0.12.2-0.12.
 | `cell_range_indexing.m` | Range indexing `C{1:3}` on cell arrays | 0 |
 | `curly_indexing_non_cell.m` | Curly indexing on non-cell value is an error | 1 |
 
-**Key feature**: Cell arrays use abstract shape `cell[r x c]`. Per-element tracking is deferred; all indexing returns `unknown` for now.
+>Cell arrays use abstract shape `cell[r x c]`. Per-element tracking is deferred; all indexing returns `unknown` for now.
 
 </details>
 
@@ -391,7 +394,7 @@ Parser error recovery and unsupported construct handling (graceful degradation).
 | `dot_elementwise.m` | Dot-elementwise edge cases handled | 0 |
 | `end_in_parens.m` | `end` keyword inside parentheses unsupported | 1 |
 
-**Key feature**: Best-effort analysis. When the parser encounters unsupported syntax, it emits a `W_UNSUPPORTED_*` warning, treats the result as `unknown`, and keeps going.
+>Best-effort analysis. When the parser encounters unsupported syntax, it emits a `W_UNSUPPORTED_*` warning, treats the result as `unknown`, and keeps going.
 
 </details>
 
@@ -411,7 +414,7 @@ python3 conformal.py --fixpoint --tests
 python3 conformal.py --strict --tests
 ```
 
-**Test counts by category:**
+Test counts by category:
 - Basics: 7
 - Symbolic: 6
 - Indexing: 7
@@ -424,7 +427,7 @@ python3 conformal.py --strict --tests
 - Cells: 14
 - Recovery: 6
 
-**Total: 137 tests**
+Total: 137 tests
 
 ## Getting Started
 
