@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-# Convenience wrapper — run from anywhere, resolves to project root.
-cd "$(dirname "$0")/.." || exit 1
-exec python3 tools/ai_local.py "$@"

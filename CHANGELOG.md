@@ -192,19 +192,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Updated test28.m expectation for `randn(3,4)` → `matrix[3 x 4]`
-- Ambiguified test counts in documentation (CLAUDE.md, AGENTS.md, README.md)
-- quality-assurance agent for code quality and project hygiene
-- documentation-maintainer agent for documentation synchronization
-- release-coordinator agent for release orchestration
-- structural-ci-gatekeeper agent (renamed from test-runner1)
-- semantic-differential-auditor agent (renamed from test-runner2)
-- Comprehensive agent workflow documentation in AGENTS.md
-- Agent design analysis document
-
-### Changed
-- Renamed test-runner1 to structural-ci-gatekeeper for clarity
-- Renamed test-runner2 to semantic-differential-auditor for clarity
-- Enhanced validation pipeline with quality, structural, and semantic checks
 
 ## [0.8.3] - 2026-02-13
 ### Changed
@@ -265,7 +252,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.6] - 2025-12-01
 ### Added
 - Comprehensive docstrings for all public functions
-- CLAUDE.md project documentation for AI-assisted development
 - Type hints throughout codebase
 - Detailed function documentation in all modules
 

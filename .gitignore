@@ -40,3 +40,15 @@ Thumbs.db
 *.zip
 *.log
 .cache/
+
+# Development tooling (local only)
+.claude/
+CLAUDE.md
+AGENTS.md
+TASK.md
+FINDINGS-*.md
+tools/ai_local.py
+tools/ask
+tools/chat
+ask
+chat
