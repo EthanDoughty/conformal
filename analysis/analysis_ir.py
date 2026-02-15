@@ -55,7 +55,9 @@ class AnalysisContext:
     analyzing_functions: Set[str] = field(default_factory=set)
     analysis_cache: Dict[tuple, tuple] = field(default_factory=dict)
     fixpoint: bool = False
-    _lambda_closures: Dict[int, Env] = field(default_factory=dict)
+    _lambda_metadata: Dict[int, tuple] = field(default_factory=dict)  # lambda_id -> (params, body, closure_env)
+    _handle_registry: Dict[int, str] = field(default_factory=dict)  # handle_id -> function_name
+    analyzing_lambdas: Set[int] = field(default_factory=set)
     _next_lambda_id: int = 0
 
 
@@ -894,18 +896,21 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str], ctx: AnalysisContext
         # Increment lambda ID counter
         lambda_id = ctx._next_lambda_id
         ctx._next_lambda_id += 1
-        # Store snapshot of current environment as closure
-        ctx._lambda_closures[lambda_id] = env
-        return Shape.function_handle()
+        # Store snapshot of current environment as closure (FIX: env.copy())
+        ctx._lambda_metadata[lambda_id] = (expr.params, expr.body, env.copy())
+        return Shape.function_handle(lambda_ids=frozenset({lambda_id}))
 
     if isinstance(expr, FuncHandle):
         # Named function handle: check if function exists
+        handle_id = ctx._next_lambda_id
+        ctx._next_lambda_id += 1
         if expr.name in ctx.function_registry or expr.name in KNOWN_BUILTINS:
-            return Shape.function_handle()
+            ctx._handle_registry[handle_id] = expr.name
+            return Shape.function_handle(lambda_ids=frozenset({handle_id}))
         else:
             # Unknown function
             warnings.append(diag.warn_unknown_function(expr.line, expr.name))
-            return Shape.function_handle()  # Still return function_handle shape
+            return Shape.function_handle()  # Opaque (no IDs)
 
     if isinstance(expr, BinOp):
         op = expr.op

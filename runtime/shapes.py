@@ -27,6 +27,7 @@ class Shape:
     rows: Optional[Dim] = None
     cols: Optional[Dim] = None
     _fields: tuple = ()  # For struct shapes: tuple of (field_name, Shape) pairs (sorted)
+    _lambda_ids: Optional[frozenset] = None  # For function_handle shapes: set of lambda/handle IDs
 
     # Constructors
 
@@ -68,9 +69,13 @@ class Shape:
         return Shape(kind="struct", _fields=tuple(sorted(fields.items())))
 
     @staticmethod
-    def function_handle() -> "Shape":
-        """Create a function handle shape (anonymous or named)."""
-        return Shape(kind="function_handle")
+    def function_handle(lambda_ids=None) -> "Shape":
+        """Create a function handle shape (anonymous or named).
+
+        Args:
+            lambda_ids: Optional frozenset of lambda/handle IDs for precise analysis
+        """
+        return Shape(kind="function_handle", _lambda_ids=lambda_ids)
 
     @property
     def fields_dict(self) -> dict:
@@ -285,7 +290,14 @@ def widen_shape(old: Shape, new: Shape) -> Shape:
         return Shape.string()
 
     if old.is_function_handle() and new.is_function_handle():
-        return Shape.function_handle()
+        # Union lambda_ids; None (opaque) is absorbing
+        ids1 = old._lambda_ids
+        ids2 = new._lambda_ids
+        if ids1 is None or ids2 is None:
+            merged_ids = None
+        else:
+            merged_ids = ids1 | ids2
+        return Shape.function_handle(lambda_ids=merged_ids)
 
     if old.is_struct() and new.is_struct():
         # Union-with-bottom widen: union of all field names, missing fields get bottom
@@ -342,7 +354,14 @@ def join_shape(s1: Shape, s2: Shape) -> Shape:
         return Shape.string()
 
     if s1.is_function_handle() and s2.is_function_handle():
-        return Shape.function_handle()
+        # Union lambda_ids; None (opaque) is absorbing
+        ids1 = s1._lambda_ids
+        ids2 = s2._lambda_ids
+        if ids1 is None or ids2 is None:
+            merged_ids = None
+        else:
+            merged_ids = ids1 | ids2
+        return Shape.function_handle(lambda_ids=merged_ids)
 
     if s1.is_struct() and s2.is_struct():
         # Union-with-bottom join: union of all field names, missing fields get bottom
