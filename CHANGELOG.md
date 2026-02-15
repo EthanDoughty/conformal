@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.3] - 2026-02-14
+### Added
+- Cell element assignment: `c{i} = expr` and `c{i,j} = expr` syntax
+- `CellAssign` IR node (mirrors StructAssign pattern)
+- W_CELL_ASSIGN_NON_CELL warning for curly assignment on non-cell values
+- Bottom-to-cell promotion: unbound `x{i} = expr` creates `cell[None x None]`
+- 4 new test files in tests/cells/ (131 total, was 127)
+
 ## [0.12.2] - 2026-02-14
 ### Added
 - Cell array support: 8th shape kind `cell[r x c]` tracking container dimensions
