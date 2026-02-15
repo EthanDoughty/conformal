@@ -70,7 +70,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Lexer: added `}` to transpose context set (`c{1}'` now correctly lexed as transpose)
 - `starts_expr` updated to include `{` (cell literals in implicit column separation)
 - `join_shape` and `widen_shape` handle cell kind (pointwise on dimensions)
-- README refreshed: removed "Mini-MATLAB" framing, added Warns column to test table, updated to 127 tests
+- README refreshed: removed "MATLAB" framing, added Warns column to test table, updated to 127 tests
 
 ## [0.12.1] - 2026-02-14
 ### Added
@@ -351,7 +351,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.5] - 2025-11-15
 ### Added
 - IR AST pipeline (dataclass-based)
-- Consolidated CLI interface (mmshape.py)
+- Consolidated CLI interface (conformal.py)
 - Frontend lowering from syntax AST to IR AST
 
 ### Changed
@@ -381,7 +381,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1] - 2025-09-15
 ### Added
-- Initial parser for Mini-MATLAB subset
+- Initial parser for MATLAB subset
 - Basic shape inference for scalar and matrix types
 - Simple arithmetic operations (+, -, *)
 - Test suite infrastructure

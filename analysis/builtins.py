@@ -1,6 +1,6 @@
 # Ethan Doughty
 # builtins.py
-"""Builtin function catalog for Mini-MATLAB analyzer.
+"""Builtin function catalog for MATLAB analyzer.
 
 This module defines the set of recognized builtin functions and specifies
 which builtins have explicit shape rules in the analyzer.

@@ -1,6 +1,6 @@
 # Ethan Doughty
 # shapes.py
-"""Shape abstract domain for Mini-MATLAB static analysis.
+"""Shape abstract domain for MATLAB static analysis.
 
 Defines the Shape type and dimension operations used throughout the analyzer.
 """

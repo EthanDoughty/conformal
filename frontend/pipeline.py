@@ -1,5 +1,5 @@
 # frontend/pipeline.py
-"""Convenience functions for the Mini-MATLAB analysis pipeline."""
+"""Convenience functions for the MATLAB analysis pipeline."""
 
 from __future__ import annotations
 from typing import Any
@@ -10,7 +10,7 @@ from ir import Program as IRProgram
 
 
 def parse_syntax(src: str) -> Any:
-    """Parse Mini-MATLAB source code to syntax AST.
+    """Parse MATLAB source code to syntax AST.
 
     Args:
         src: Source code string

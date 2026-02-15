@@ -1,8 +1,8 @@
 # Ethan Doughty
 # ir.py
-"""Intermediate Representation (IR) for Mini-MATLAB.
+"""Intermediate Representation (IR) for MATLAB.
 
-This module defines a typed, dataclass-based AST for Mini-MATLAB programs.
+This module defines a typed, dataclass-based AST for MATLAB programs.
 It provides a cleaner representation than the list-based syntax AST.
 """
 

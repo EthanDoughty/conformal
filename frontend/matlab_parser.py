@@ -43,7 +43,7 @@ MASTER_RE = re.compile("|".join(
 ))
 
 def lex(src: str) -> List[Token]:
-    """Turn a Mini-MATLAB source string into a list of Tokens.
+    """Turn a MATLAB source string into a list of Tokens.
 
     Context-sensitive lexing for single quotes:
     - After ID/)/]/NUMBER/TRANSPOSE → ' is TRANSPOSE

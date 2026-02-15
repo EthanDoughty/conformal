@@ -8,7 +8,7 @@ from frontend.matlab_parser import parse_matlab
 
 
 def parse_file(path: str):
-    """Read a Mini-MATLAB file and return its AST."""
+    """Read a MATLAB file and return its AST."""
     with open(path, "r") as f:
         src = f.read()
     return parse_matlab(src)

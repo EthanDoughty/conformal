@@ -1,6 +1,6 @@
 # Ethan Doughty
 # analysis_ir.py
-"""IR-based static shape analyzer for Mini-MATLAB.
+"""IR-based static shape analyzer for MATLAB.
 
 This module performs shape inference on the typed IR AST, tracking matrix
 dimensions and detecting dimension mismatches at compile time.
@@ -62,7 +62,7 @@ class AnalysisContext:
 
 
 def analyze_program_ir(program: Program, fixpoint: bool = False, ctx: AnalysisContext = None) -> Tuple[Env, List[str]]:
-    """Analyze a complete Mini-MATLAB program for shape consistency.
+    """Analyze a complete MATLAB program for shape consistency.
 
     Two-pass analysis:
     1. Register all function definitions

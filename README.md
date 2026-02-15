@@ -1,9 +1,21 @@
-# MATLAB Static Shape & Dimension Analysis
-**Ethan Doughty**
+<div align="center">
 
-This project implements a static shape and dimension analysis for MATLAB code.
+# Conformal
 
-The goal of the analysis is to detect common matrix-related errors before runtime, using a custom parser and static analyzer designed specifically for MATLAB-style matrix semantics. The tool reasons about matrix shapes, symbolic dimensions, and control flow without relying on the MATLAB runtime.
+### Static Shape & Dimension Analysis for MATLAB
+
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![Tests](https://img.shields.io/badge/tests-137%20passing-brightgreen.svg)](#test-suite)
+[![No Dependencies](https://img.shields.io/badge/dependencies-none-green.svg)](#requirements)
+[![License](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
+
+*Matrices must be **conformable** before they can perform. Conformal makes sure they are.*
+
+</div>
+
+---
+
+Conformal is a static analyzer that detects matrix dimension errors in MATLAB code before runtime. It uses a custom parser and abstract interpreter designed specifically for MATLAB-style matrix semantics — reasoning about shapes, symbolic dimensions, and control flow without executing code or requiring a MATLAB installation.
 
 ## Requirements
 
@@ -389,13 +401,13 @@ Parser error recovery and unsupported construct handling (graceful degradation).
 ```bash
 # Run all 137 tests
 make test
-python3 mmshape.py --tests
+python3 conformal.py --tests
 
 # Run with fixed-point loop analysis
-python3 mmshape.py --fixpoint --tests
+python3 conformal.py --fixpoint --tests
 
 # Run strict mode (fail on unsupported constructs)
-python3 mmshape.py --strict --tests
+python3 conformal.py --strict --tests
 ```
 
 **Test counts by category:**
@@ -417,8 +429,8 @@ python3 mmshape.py --strict --tests
 
 Clone and Verify:
 ```bash
-git clone <repo-url>
-cd matlab-static-dimension-analysis
+git clone https://github.com/EthanDoughty/conformal.git
+cd conformal
 make test
 ```
 
@@ -439,7 +451,7 @@ Final environment:
 
 ## CLI Options
 
-`mmshape.py file.m` – analyze a file (IR-based)
+`conformal.py file.m` – analyze a file (IR-based)
 
 `--tests` – run full test suite
 

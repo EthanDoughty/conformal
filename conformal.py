@@ -1,6 +1,6 @@
 # Ethan Doughty
-# mmshape.py
-"""Command-line interface for Mini-MATLAB shape analyzer."""
+# conformal.py
+"""Command-line interface for Conformal — MATLAB shape analyzer."""
 
 import argparse
 from pathlib import Path
@@ -12,7 +12,7 @@ from analysis.diagnostics import has_unsupported
 
 
 def run_file(file_path: str, strict: bool = False, fixpoint: bool = False) -> int:
-    """Analyze a single Mini-MATLAB file.
+    """Analyze a single MATLAB file.
 
     Args:
         file_path: Path to .m file to analyze
@@ -74,14 +74,14 @@ def run_tests(strict: bool = False, fixpoint: bool = False) -> int:
 
 
 def main() -> int:
-    """Main entry point for the mmshape CLI tool.
+    """Main entry point for the conformal CLI tool.
 
     Returns:
         Exit code (0 for success, 1 for error)
     """
     parser = argparse.ArgumentParser(
-        prog="mmshape",
-        description="Mini-MATLAB shape/dimension analyzer"
+        prog="conformal",
+        description="Conformal — static shape/dimension analyzer for MATLAB"
     )
     parser.add_argument("file", nargs="?", help="MATLAB .m file to analyze")
     parser.add_argument(

@@ -7,7 +7,7 @@ test:
 
 run:
 	@if [ -z "$(FILE)" ]; then echo "Usage: make run FILE=tests/basics/valid_add.m"; exit 1; fi
-	$(PY) mmshape.py "$(FILE)"
+	$(PY) conformal.py "$(FILE)"
 
 clean:
 	find . -type d -name "__pycache__" -prune -exec rm -rf {} \;
