@@ -95,163 +95,323 @@ tools/       Debugging utilities (AST printer)
 
 ## Test Suite
 
-The project includes a self-checking test suite of MATLAB programs.
+The analyzer is validated by **137 self-checking test programs** organized into 11 categories. Each test embeds its expected behavior as inline assertions:
 
-Each test file:
-- Documents its intent using MATLAB comments
-- Declares expected warnings and final shapes using inline assertions:
-  ```matlab
-  % EXPECT: warnings = 1
-  % EXPECT: A = matrix[n x (k+m)]
-  ```
+```matlab
+% EXPECT: warnings = 1
+% EXPECT: A = matrix[n x (k+m)]
+% EXPECT_FIXPOINT: A = matrix[None x None]   % Override for --fixpoint mode
+```
 
-| Test | Description | Warns |
-|------|-------------|-------|
-| **Basics** (7) | | |
-| basics/valid_add.m | Valid matrix addition | 0 |
-| basics/invalid_add.m | Invalid addition (dimension mismatch) | 1 |
-| basics/matrix_multiply.m | Valid matrix multiplication | 0 |
-| basics/inner_dim_mismatch.m | Inner dimension mismatch | 1 |
-| basics/scalar_matrix_ops.m | Scalar-matrix operations | 0 |
-| basics/elementwise_ops.m | Elementwise operation mismatch | 1 |
-| basics/reassignment.m | Incompatible reassignment | 1 |
-| **Symbolic** (5) | | |
-| symbolic/dimension_tracking.m | Colon vectors and symbolic dimensions | 0 |
-| symbolic/dimension_arithmetic.m | Symbolic dimension arithmetic | 0 |
-| symbolic/canonicalization.m | Symbolic dimension canonicalization | 0 |
-| symbolic/commutativity_join.m | Commutative dimensions join correctly | 0 |
-| symbolic/like_terms.m | Like terms collected in symbolic dimensions | 0 |
-| **Indexing** (7) | | |
-| indexing/scalar_index.m | Scalar indexing | 0 |
-| indexing/slice_index.m | Slice indexing | 0 |
-| indexing/range_index.m | Range indexing | 0 |
-| indexing/linear_index.m | Linear indexing (scalar base error) | 1 |
-| indexing/invalid_row_index.m | Constant range row indexing | 0 |
-| indexing/invalid_col_index.m | Constant range column indexing | 0 |
-| indexing/invalid_linear_index.m | Non-scalar index argument | 1 |
-| **Control Flow** (15) | | |
-| control_flow/if_branch_mismatch.m | Control-flow joins with mismatches | 1 |
-| control_flow/if_else_error_branch.m | If-else with error in branch | 1 |
-| control_flow/suspicious_comparison.m | Matrix-scalar comparisons | 1 |
-| control_flow/elseif_chain.m | If-elseif-else chain | 0 |
-| control_flow/elseif_no_else.m | Elseif without else | 0 |
-| control_flow/elseif_mismatch.m | Elseif branch mismatches | 0 |
-| control_flow/break_simple.m | Break in for loop | 0 |
-| control_flow/continue_simple.m | Continue in while loop | 0 |
-| control_flow/break_nested_loop.m | Break in nested loops | 0 |
-| control_flow/switch_basic.m | Switch/case with otherwise | 0 |
-| control_flow/switch_no_otherwise.m | Switch without otherwise | 0 |
-| control_flow/switch_mismatch.m | Switch case shape conflicts | 0 |
-| control_flow/try_catch_basic.m | Try/catch exception handling | 1 |
-| control_flow/try_catch_no_error.m | Try/catch with no error | 0 |
-| control_flow/try_nested.m | Nested try/catch | 0 |
-| **Literals** (7) | | |
-| literals/matrix_literal.m | Basic matrix literals | 0 |
-| literals/horzcat_vertcat.m | Horizontal and vertical concatenation | 1 |
-| literals/symbolic_concat.m | Symbolic concatenation | 0 |
-| literals/string_literal.m | String literals (both quote styles) | 0 |
-| literals/string_horzcat.m | String concatenation via horzcat | 0 |
-| literals/string_matrix_error.m | String-matrix arithmetic warning | 1 |
-| literals/string_in_control_flow.m | String/scalar join across branches | 0 |
-| **Builtins** (8) | | |
-| builtins/unknown_function.m | Unknown function warning | 1 |
-| builtins/shape_preserving.m | size() and isscalar() builtins | 0 |
-| builtins/call_vs_index.m | Apply node disambiguation | 1 |
-| builtins/apply_disambiguation.m | Environment-based disambiguation | 0 |
-| builtins/constructors.m | Matrix constructors and element-wise builtins | 0 |
-| builtins/dim_arithmetic.m | Dimension arithmetic in builtin args | 0 |
-| builtins/reshape_repmat.m | reshape and repmat shape rules | 0 |
-| builtins/remaining_builtins.m | det/diag/inv/linspace/norm | 0 |
-| **Loops** (22) | | |
-| loops/for_loop_var.m | Loop variable bound to scalar | 0 |
-| loops/for_range_symbolic.m | For loop with symbolic range | 0 |
-| loops/nested_loop.m | Nested for loops | 0 |
-| loops/while_basic.m | While loop with condition | 0 |
-| loops/simple_accumulation.m | Single-pass misses feedback | 1 |
-| loops/matrix_growth.m | Matrix growth with symbolic iteration | 1 |
-| loops/loop_exit_join.m | Variables outside loop unaffected | 0 |
-| loops/loop_may_not_execute.m | Post-loop join preserves pre-loop state | 1 |
-| loops/warning_dedup.m | Warning deduplication in loops | 1 |
-| loops/fixpoint_convergence.m | Fixed-point convergence | 1 |
-| loops/widen_col_grows.m | Column dimension grows, row stable | 1 |
-| loops/widen_multiple_vars.m | Multiple variables with mixed stability | 1 |
-| loops/widen_self_reference.m | Self-referencing doubling | 1 |
-| loops/widen_while_growth.m | While loop with matrix growth | 1 |
-| loops/widen_concat_unknown.m | Concat with unknown in loop | 1 |
-| loops/widen_error_in_branch.m | Unknown function in loop branch | 2 |
-| loops/widen_first_assign_in_body.m | Variable first assigned in loop | 0 |
-| loops/widen_if_in_loop.m | Conditional growth in loop | 1 |
-| loops/widen_interdependent_vars.m | Interdependent variables in loop | 2 |
-| loops/widen_stable_overwrite.m | Stable overwrite in loop | 1 |
-| loops/widen_unknown_false_positive.m | Unknown function false positive | 1 |
-| loops/widen_unknown_in_body.m | Unknown function overwrites in loop | 1 |
-| **Functions** (39) | | |
-| functions/simple_function.m | Basic single-return function | 0 |
-| functions/multiple_returns.m | Multi-return with destructuring | 0 |
-| functions/matrix_constructor.m | Function with dimension arguments | 0 |
-| functions/procedure.m | Procedure (no return values) | 1 |
-| functions/unknown_in_function.m | Unknown shapes propagate to caller | 1 |
-| functions/function_then_script.m | Function definitions then script | 0 |
-| functions/call_with_mismatch.m | Call with incompatible arg shape | 1 |
-| functions/recursion.m | Recursive function (guard) | 1 |
-| functions/cache_hit.m | Polymorphic cache hit | 0 |
-| functions/cache_miss.m | Polymorphic cache miss | 1 |
-| functions/cache_hit_with_warning.m | Warning replay on cache hit | 2 |
-| functions/cache_symbolic_args.m | Cache with symbolic dimensions | 0 |
-| functions/cache_warning_replay.m | Warning replay with line numbers | 2 |
-| functions/return_statement.m | Return statement (early exit) | 0 |
-| functions/return_in_script.m | Return in script context | 1 |
-| functions/return_in_if.m | Return inside if-branch | 0 |
-| functions/return_in_loop.m | Return inside loop body | 0 |
-| functions/early_return_multi_output.m | Early return in multi-output function | 0 |
-| functions/function_in_loop.m | Function call inside loop | 0 |
-| functions/nested_function_calls.m | Nested function calls | 0 |
-| functions/procedure_with_return.m | Procedure with explicit return | 1 |
-| functions/arg_count_mismatch_cached.m | Arg count mismatch | 1 |
-| functions/lambda_basic.m | Anonymous function definition | 0 |
-| functions/lambda_zero_args.m | Zero-argument lambda definition | 0 |
-| functions/lambda_call_approximate.m | Lambda call with body analysis | 0 |
-| functions/function_handle_from_name.m | Named function handle (`@myFunc`) | 0 |
-| functions/function_handle_join.m | Function handle join in control flow | 0 |
-| functions/lambda_store_retrieve.m | Lambda storage with distinct IDs | 0 |
-| functions/lambda_closure_capture.m | Closure captures environment by-value | 0 |
-| functions/lambda_call_basic.m | Lambda body analysis with shape inference | 0 |
-| functions/lambda_call_closure.m | Lambda uses closure variable | 0 |
-| functions/lambda_polymorphic_cache.m | Same lambda, different arg shapes | 0 |
-| functions/lambda_recursive.m | Self-referencing lambda (recursion guard) | 1 |
-| functions/lambda_arg_count_mismatch.m | Lambda argument count mismatch | 1 |
-| functions/lambda_dim_aliasing.m | Dimension aliasing through lambda | 0 |
-| functions/lambda_zero_args_call.m | Zero-argument lambda call | 0 |
-| functions/lambda_control_flow_join.m | Lambda in if/else, joined call | 0 |
-| functions/handle_dispatch_builtin.m | Handle dispatches to builtin | 0 |
-| functions/handle_dispatch_user_func.m | Handle dispatches to user function | 0 |
-| **Structs** (5) | | |
-| structs/struct_create_assign.m | Struct creation via field assignment | 0 |
-| structs/struct_field_access.m | Struct field access | 0 |
-| structs/struct_field_not_found.m | Missing field warning | 1 |
-| structs/struct_field_reassign.m | Field reassignment with different shape | 0 |
-| structs/struct_in_control_flow.m | Struct join across branches | 0 |
-| **Cells** (13) | | |
-| cells/cell_literal.m | Cell array literal syntax | 0 |
-| cells/cell_indexing.m | Curly-brace cell indexing | 0 |
-| cells/cell_assignment.m | Cell element assignment | 0 |
-| cells/cell_assign_basic.m | Basic cell element assignment | 0 |
-| cells/cell_assign_2d.m | 2D cell element assignment | 0 |
-| cells/cell_assign_after_literal.m | Cell assignment after literal | 0 |
-| cells/cell_assign_non_cell.m | Cell assignment on non-cell (warning) | 1 |
-| cells/cell_builtin.m | cell() constructor builtin | 0 |
-| cells/cell_in_control_flow.m | Cell array join across branches | 0 |
-| cells/cell_mixed_types.m | Cells with mixed element types | 0 |
-| cells/cell_symbolic_dims.m | Cells with symbolic dimensions | 0 |
-| cells/cell_transpose.m | Cell array transpose | 0 |
-| cells/curly_indexing_non_cell.m | Curly indexing on non-cell (error) | 1 |
-| **Recovery** (6) | | |
-| recovery/struct_field.m | Field access on non-struct | 1 |
-| recovery/cell_array.m | Curly indexing on non-cell value | 1 |
-| recovery/multiple_assignment.m | Unsupported multiple assignment | 1 |
-| recovery/multiline_braces.m | Unsupported multiline cell indexing | 1 |
-| recovery/dot_elementwise.m | Dot-elementwise edge cases | 0 |
-| recovery/end_in_parens.m | End inside parentheses | 1 |
+The test runner validates that the analyzer's output matches these expectations, ensuring correctness across all supported language features.
+
+---
+
+<details open>
+<summary><h3>Basics (7 tests)</h3></summary>
+
+Foundation tests for core matrix operations and dimension compatibility.
+
+| Test | What It Validates | Warnings |
+|------|-------------------|----------|
+| `valid_add.m` | Conformable matrix addition succeeds | 0 |
+| `invalid_add.m` | Dimension mismatch in addition detected | 1 |
+| `matrix_multiply.m` | Valid matrix multiplication (inner dims match) | 0 |
+| `inner_dim_mismatch.m` | Catch incompatible inner dimensions in `A * B` | 1 |
+| `scalar_matrix_ops.m` | Scalar-matrix broadcasting works correctly | 0 |
+| `elementwise_ops.m` | Shape mismatch in element-wise operations flagged | 1 |
+| `reassignment.m` | Incompatible variable reassignment detected | 1 |
+
+</details>
+
+<details open>
+<summary><h3>Symbolic Dimensions (6 tests)</h3></summary>
+
+Tests symbolic dimension tracking, arithmetic, and canonical polynomial representation introduced in v0.13.
+
+| Test | What It Validates | Warnings |
+|------|-------------------|----------|
+| `dimension_tracking.m` | Colon vectors preserve symbolic dimensions (`1:n`) | 0 |
+| `dimension_arithmetic.m` | Addition/multiplication of symbolic dimensions (e.g., `n+m`, `2*k`) | 0 |
+| `canonicalization.m` | SymDim polynomial canonicalization ensures `zeros(n,m)` joins with `zeros(n,m)` | 0 |
+| `commutativity_join.m` | Commutative equality: `(n+m)` joins with `(m+n)` | 0 |
+| `like_terms.m` | Like-term collection: `(n+n)` canonicalizes to `(2*n)` | 0 |
+| `rational_dimensions.m` | Rational coefficients in symbolic dimensions (e.g., `n/2`) | 0 |
+
+**Key feature**: Symbolic dimensions are represented as frozen polynomial dataclasses (`SymDim`) with canonical equality and rational coefficients, enabling precise tracking of parametric shapes across function boundaries.
+
+</details>
+
+<details open>
+<summary><h3>Indexing (7 tests)</h3></summary>
+
+MATLAB-style indexing including scalar, slice, range, and linear indexing.
+
+| Test | What It Validates | Warnings |
+|------|-------------------|----------|
+| `scalar_index.m` | Scalar indexing `A(i,j)` returns scalar | 0 |
+| `slice_index.m` | Slice indexing `A(:,j)` and `A(i,:)` shape rules | 0 |
+| `range_index.m` | Range indexing `A(2:5, :)` preserves symbolic dimensions | 0 |
+| `linear_index.m` | Linear indexing on scalar base is an error | 1 |
+| `invalid_row_index.m` | Constant-range row indexing edge cases | 0 |
+| `invalid_col_index.m` | Constant-range column indexing edge cases | 0 |
+| `invalid_linear_index.m` | Non-scalar index argument flagged | 1 |
+
+</details>
+
+<details open>
+<summary><h3>Control Flow (15 tests)</h3></summary>
+
+Control-flow join semantics for if/elseif/else, switch/case, try/catch, break, and continue.
+
+| Test | What It Validates | Warnings |
+|------|-------------------|----------|
+| `if_branch_mismatch.m` | Conservative join when branches assign conflicting shapes | 1 |
+| `if_else_error_branch.m` | Error in one branch propagates as `unknown` | 1 |
+| `suspicious_comparison.m` | Matrix-scalar comparisons flagged (likely bug) | 1 |
+| `elseif_chain.m` | If-elseif-else chain joins all branch environments | 0 |
+| `elseif_no_else.m` | Elseif without else joins with pre-condition environment | 0 |
+| `elseif_mismatch.m` | Shape conflicts across elseif branches handled conservatively | 0 |
+| `break_simple.m` | Break statement exits for loop correctly | 0 |
+| `continue_simple.m` | Continue skips to next while loop iteration | 0 |
+| `break_nested_loop.m` | Break only exits innermost loop | 0 |
+| `switch_basic.m` | Switch/case with otherwise joins all branches | 0 |
+| `switch_no_otherwise.m` | Switch without otherwise joins cases with pre-switch env | 0 |
+| `switch_mismatch.m` | Conflicting shapes across cases joined conservatively | 0 |
+| `try_catch_basic.m` | Try/catch joins try-branch with catch-branch | 1 |
+| `try_catch_no_error.m` | Catch block unused when no error in try block | 0 |
+| `try_nested.m` | Nested try/catch blocks work correctly | 0 |
+
+**Key feature**: Conservative join semantics ensure soundness — when branches disagree on a variable's shape, the analyzer joins to the least upper bound (often `unknown`).
+
+</details>
+
+<details>
+<summary><h3>Literals (7 tests)</h3></summary>
+
+Matrix literals, string literals, and concatenation constraints.
+
+| Test | What It Validates | Warnings |
+|------|-------------------|----------|
+| `matrix_literal.m` | Basic matrix literals `[1 2; 3 4]` parsed and shaped correctly | 0 |
+| `horzcat_vertcat.m` | Horizontal/vertical concatenation dimension constraints | 1 |
+| `symbolic_concat.m` | Symbolic dimension addition in concatenation (e.g., `[A B]` → `n x (k+m)`) | 0 |
+| `string_literal.m` | String literals with both quote styles (`'foo'`, `"bar"`) | 0 |
+| `string_horzcat.m` | String concatenation via horizontal concatenation | 0 |
+| `string_matrix_error.m` | String-matrix arithmetic operations flagged | 1 |
+| `string_in_control_flow.m` | String/scalar shape joins across branches | 0 |
+
+</details>
+
+<details>
+<summary><h3>Builtins (9 tests)</h3></summary>
+
+Shape rules for 20 recognized MATLAB builtins, call/index disambiguation, and dimension arithmetic.
+
+| Test | What It Validates | Warnings |
+|------|-------------------|----------|
+| `unknown_function.m` | Unknown function calls emit warning | 1 |
+| `shape_preserving.m` | `size()` and `isscalar()` return scalar | 0 |
+| `call_vs_index.m` | Apply node disambiguation (function call vs indexing) | 1 |
+| `apply_disambiguation.m` | Environment-based disambiguation prefers bound variables | 0 |
+| `constructors.m` | Matrix constructors (`zeros`, `ones`, `eye`, `rand`) and element-wise ops | 0 |
+| `dim_arithmetic.m` | Dimension arithmetic in builtin args: `zeros(n+1, 2*m)` | 0 |
+| `reshape_repmat.m` | `reshape` and `repmat` shape transformations | 0 |
+| `remaining_builtins.m` | `det`, `diag`, `inv`, `linspace`, `norm` shape rules | 0 |
+| `type_queries.m` | Type query functions: `iscell()`, `isscalar()` return scalar | 0 |
+
+**Key feature**: Dimension arithmetic uses canonical polynomial representation to track expressions like `zeros(n+m+1, 2*k)`.
+
+</details>
+
+<details>
+<summary><h3>Loops (22 tests)</h3></summary>
+
+Loop analysis with single-pass and fixed-point widening modes (via `--fixpoint`).
+
+| Test | What It Validates | Warnings |
+|------|-------------------|----------|
+| `for_loop_var.m` | Loop variable bound to scalar | 0 |
+| `for_range_symbolic.m` | For loop iterates over symbolic range | 0 |
+| `nested_loop.m` | Nested for loops handled correctly | 0 |
+| `while_basic.m` | While loop with condition | 0 |
+| `simple_accumulation.m` | Single-pass mode misses feedback (expected limitation) | 1 |
+| `matrix_growth.m` | Matrix growth with symbolic dimensions | 1 |
+| `loop_exit_join.m` | Variables unmodified in loop preserve pre-loop state | 0 |
+| `loop_may_not_execute.m` | Post-loop join accounts for zero-iteration case | 1 |
+| `warning_dedup.m` | Warnings deduplicated inside loops | 1 |
+| `fixpoint_convergence.m` | Fixed-point iteration converges in ≤2 iterations | 1 |
+| `widen_col_grows.m` | Column grows, row stable → row preserved, column widened | 1 |
+| `widen_multiple_vars.m` | Multiple variables with independent stability patterns | 1 |
+| `widen_self_reference.m` | Self-referencing updates (`A = A + A`) trigger widening | 1 |
+| `widen_while_growth.m` | While loop with matrix growth | 1 |
+| `widen_concat_unknown.m` | Concatenation with unknown dimensions in loop | 1 |
+| `widen_error_in_branch.m` | Unknown function in conditional branch inside loop | 2 |
+| `widen_first_assign_in_body.m` | Variable first assigned inside loop body | 0 |
+| `widen_if_in_loop.m` | Conditional growth inside loop converges | 1 |
+| `widen_interdependent_vars.m` | Interdependent variables (`A=B`, `B=A+A`) widen correctly | 2 |
+| `widen_stable_overwrite.m` | Stable dimension overwrite in loop | 1 |
+| `widen_unknown_false_positive.m` | Unknown function doesn't spuriously widen unrelated vars | 1 |
+| `widen_unknown_in_body.m` | Unknown function result overwrites variable | 1 |
+
+**Key feature**: Principled widening-based loop analysis (v0.9.2) uses a 3-phase algorithm (discover, stabilize, post-loop join) that guarantees convergence in ≤2 iterations by widening conflicting dimensions to `None` while preserving stable dimensions.
+
+</details>
+
+<details>
+<summary><h3>Functions (39 tests)</h3></summary>
+
+Interprocedural analysis for user-defined functions and anonymous functions (lambdas).
+
+**Named Functions (21 tests)**
+
+| Test | What It Validates | Warnings |
+|------|-------------------|----------|
+| `simple_function.m` | Basic single-return function analysis | 0 |
+| `multiple_returns.m` | Multi-return destructuring assignment | 0 |
+| `matrix_constructor.m` | Function with dimension arguments | 0 |
+| `procedure.m` | Procedure (no return values) | 1 |
+| `unknown_in_function.m` | Unknown shapes propagate from callee to caller | 1 |
+| `function_then_script.m` | Function definitions before script statements | 0 |
+| `call_with_mismatch.m` | Call with incompatible argument shape | 1 |
+| `recursion.m` | Recursive function detected (guard prevents infinite loop) | 1 |
+| `cache_hit.m` | Polymorphic cache hit (same args → reuse result) | 0 |
+| `cache_miss.m` | Polymorphic cache miss (different args → re-analyze) | 1 |
+| `cache_hit_with_warning.m` | Warnings replayed on cache hit | 2 |
+| `cache_symbolic_args.m` | Polymorphic caching with symbolic dimension arguments | 0 |
+| `cache_warning_replay.m` | Warning replay preserves both call-site and body line numbers | 2 |
+| `return_statement.m` | Return statement exits function early | 0 |
+| `return_in_script.m` | Return in script context is an error | 1 |
+| `return_in_if.m` | Return inside if-branch (non-returned branch used for join) | 0 |
+| `return_in_loop.m` | Return inside loop exits function immediately | 0 |
+| `early_return_multi_output.m` | Early return with multiple output variables | 0 |
+| `function_in_loop.m` | Function call inside loop body | 0 |
+| `nested_function_calls.m` | Nested function calls (`f(g(x))`) | 0 |
+| `procedure_with_return.m` | Procedure with explicit return statement | 1 |
+| `arg_count_mismatch_cached.m` | Argument count mismatch detected | 1 |
+
+**Anonymous Functions / Lambdas (18 tests)**
+
+| Test | What It Validates | Warnings |
+|------|-------------------|----------|
+| `lambda_basic.m` | Anonymous function definition `@(x) expr` | 0 |
+| `lambda_zero_args.m` | Zero-argument lambda definition | 0 |
+| `lambda_call_approximate.m` | Lambda body analyzed at call site | 0 |
+| `function_handle_from_name.m` | Named function handle `@myFunc` dispatch | 0 |
+| `function_handle_join.m` | Function handles join in control flow | 0 |
+| `lambda_store_retrieve.m` | Lambda storage with distinct IDs | 0 |
+| `lambda_closure_capture.m` | Closure captures environment by-value (MATLAB semantics) | 0 |
+| `lambda_call_basic.m` | Lambda body analysis infers result shape from arguments | 0 |
+| `lambda_call_closure.m` | Lambda uses closure variable for computation | 0 |
+| `lambda_polymorphic_cache.m` | Same lambda called with different arg shapes re-analyzed | 0 |
+| `lambda_recursive.m` | Self-referencing lambda caught by recursion guard | 1 |
+| `lambda_arg_count_mismatch.m` | Lambda argument count mismatch flagged | 1 |
+| `lambda_dim_aliasing.m` | Dimension aliasing through lambda boundaries | 0 |
+| `lambda_zero_args_call.m` | Zero-argument lambda call | 0 |
+| `lambda_control_flow_join.m` | Different lambdas in if/else both analyzed, results joined | 0 |
+| `handle_dispatch_builtin.m` | Function handle `@sin` dispatches to builtin | 0 |
+| `handle_dispatch_user_func.m` | Function handle dispatches to user-defined function | 0 |
+
+**Key features**:
+- **Interprocedural analysis**: Functions analyzed at each call site with caller's argument shapes
+- **Polymorphic caching**: Results cached per `(func_name, arg_shapes)` to avoid redundant re-analysis
+- **Dimension aliasing**: Symbolic dimension names propagate across boundaries (e.g., `f(n)` where `f = @(k) zeros(k,k)` infers `matrix[n x n]`)
+- **Lambda closure capture**: By-value environment capture at definition time (MATLAB semantics)
+- **Control flow precision**: When branches assign different lambdas, both bodies analyzed and results joined at call site
+
+</details>
+
+<details>
+<summary><h3>Structs (5 tests)</h3></summary>
+
+Struct creation, field access, and control-flow joins.
+
+| Test | What It Validates | Warnings |
+|------|-------------------|----------|
+| `struct_create_assign.m` | Struct creation via field assignment (`s.x = 1`) | 0 |
+| `struct_field_access.m` | Field access returns field's shape | 0 |
+| `struct_field_not_found.m` | Missing field access emits warning | 1 |
+| `struct_field_reassign.m` | Field reassignment with different shape updates field map | 0 |
+| `struct_in_control_flow.m` | Struct shape join takes union of fields from both branches | 0 |
+
+**Key feature**: Struct join uses union-with-bottom semantics — fields present in only one branch get `bottom` in the other, then join to `unknown` (sound approximation).
+
+</details>
+
+<details>
+<summary><h3>Cells (14 tests)</h3></summary>
+
+Cell array literals, curly-brace indexing, and element assignment (v0.12.2-0.12.3).
+
+| Test | What It Validates | Warnings |
+|------|-------------------|----------|
+| `cell_literal.m` | Cell array literal syntax `{1, 2; 3, 4}` | 0 |
+| `cell_indexing.m` | Curly-brace indexing `C{i,j}` returns `unknown` | 0 |
+| `cell_assignment.m` | Cell element assignment `C{i} = expr` | 0 |
+| `cell_assign_basic.m` | Basic cell element assignment updates cell shape | 0 |
+| `cell_assign_2d.m` | 2D cell element assignment | 0 |
+| `cell_assign_after_literal.m` | Cell assignment after literal creation | 0 |
+| `cell_assign_non_cell.m` | Cell assignment on non-cell variable emits warning | 1 |
+| `cell_builtin.m` | `cell(n)` and `cell(m,n)` constructors | 0 |
+| `cell_in_control_flow.m` | Cell arrays join across branches | 0 |
+| `cell_mixed_types.m` | Cells can hold mixed element types (all indexed to `unknown`) | 0 |
+| `cell_symbolic_dims.m` | Cell arrays with symbolic dimensions | 0 |
+| `cell_transpose.m` | Cell array transpose `C'` | 0 |
+| `cell_range_indexing.m` | Range indexing `C{1:3}` on cell arrays | 0 |
+| `curly_indexing_non_cell.m` | Curly indexing on non-cell value is an error | 1 |
+
+**Key feature**: Cell arrays use abstract shape `cell[r x c]` with per-element content tracking deferred (all indexing returns `unknown` — sound over-approximation).
+
+</details>
+
+<details>
+<summary><h3>Recovery (6 tests)</h3></summary>
+
+Parser error recovery and unsupported construct handling (graceful degradation).
+
+| Test | What It Validates | Warnings |
+|------|-------------------|----------|
+| `struct_field.m` | Field access on non-struct value flagged, analysis continues | 1 |
+| `cell_array.m` | Curly indexing on non-cell value flagged, analysis continues | 1 |
+| `multiple_assignment.m` | Unsupported multiple assignment syntax flagged | 1 |
+| `multiline_braces.m` | Multiline cell indexing triggers unsupported construct warning | 1 |
+| `dot_elementwise.m` | Dot-elementwise edge cases handled | 0 |
+| `end_in_parens.m` | `end` keyword inside parentheses unsupported | 1 |
+
+**Key feature**: Best-effort analysis — when the parser encounters unsupported syntax, it emits `W_UNSUPPORTED_*` warning, treats the expression as `unknown`, and continues analysis to provide maximum information.
+
+</details>
+
+---
+
+### Running the Tests
+
+```bash
+# Run all 137 tests
+make test
+python3 mmshape.py --tests
+
+# Run with fixed-point loop analysis
+python3 mmshape.py --fixpoint --tests
+
+# Run strict mode (fail on unsupported constructs)
+python3 mmshape.py --strict --tests
+```
+
+**Test counts by category:**
+- Basics: 7
+- Symbolic: 6
+- Indexing: 7
+- Control Flow: 15
+- Literals: 7
+- Builtins: 9
+- Loops: 22
+- Functions: 39 (21 named + 18 lambdas)
+- Structs: 5
+- Cells: 14
+- Recovery: 6
+
+**Total: 137 tests**
 
 ## Getting Started
 
