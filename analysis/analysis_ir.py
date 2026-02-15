@@ -223,8 +223,8 @@ def analyze_function_call(
         for param_name, arg, arg_shape in zip(sig.params, args, arg_shapes):
             func_env.set(param_name, arg_shape)
 
-            # Dimension aliasing: if arg is a Var, extract its dimension
-            if isinstance(arg, IndexExpr) and isinstance(arg.expr, Var):
+            # Dimension aliasing: extract dimension from arg expression (Const, Var, etc.)
+            if isinstance(arg, IndexExpr):
                 caller_dim = expr_to_dim_ir(arg.expr, env)
                 if caller_dim is not None:
                     func_env.dim_aliases[param_name] = caller_dim
@@ -728,9 +728,32 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str], ctx: AnalysisContext
                             ctx.analyzing_lambdas.discard(callable_id)
 
                     elif callable_id in ctx._handle_registry:
-                        # Function handle dispatch (Phase 3 — deferred)
-                        # For now, treat as unknown
-                        results.append(Shape.unknown())
+                        # Function handle dispatch (Phase 3)
+                        func_name = ctx._handle_registry[callable_id]
+                        if func_name in ctx.function_registry:
+                            # Dispatch to user-defined function
+                            output_shapes = analyze_function_call(func_name, expr.args, line, env, warnings, ctx)
+                            # Use first output (or unknown if none)
+                            if len(output_shapes) >= 1:
+                                results.append(output_shapes[0])
+                            else:
+                                results.append(Shape.unknown())
+                        elif func_name in KNOWN_BUILTINS:
+                            # Dispatch to builtin: create synthetic Apply and recursively evaluate
+                            # Build a synthetic Var with the builtin name (not the handle variable name)
+                            # to avoid infinite recursion
+                            synthetic_apply = Apply(
+                                base=Var(name=func_name, line=line),
+                                args=expr.args,
+                                line=line
+                            )
+                            # Recursively evaluate — will dispatch to builtin logic
+                            # Safe because the synthetic Var is not bound as a function_handle
+                            builtin_result = eval_expr_ir(synthetic_apply, env, warnings, ctx)
+                            results.append(builtin_result)
+                        else:
+                            # Function not found (should not happen — validated at FuncHandle eval)
+                            results.append(Shape.unknown())
 
                 # Join all results
                 if not results:
