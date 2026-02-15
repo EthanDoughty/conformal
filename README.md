@@ -27,6 +27,7 @@ The analyzer statically detects dimension and shape issues in the following cons
 - **Colon-generated vectors** (`1:n`)
 - **MATLAB-style indexing and slices** (`A(i,j)`, `A(i,:)`, `A(:,j)`, `A(:,:)`)
 - **Curly-brace indexing** (`C{i,j}`)
+- **Cell element assignment** (`C{i} = expr`)
 - **Range indexing** (`A(2:5,:)`, `A(:,2:5)`)
 - **Matrix–scalar comparisons** (`A == 0`)
 - **Logical operators on non-scalars** (`&&`, `||`)
@@ -70,7 +71,8 @@ Each expression is assigned a shape from an abstract domain:
 - `unknown` (error or indeterminate shape)
 
 The analysis supports:
-- Symbolic dimension equality
+- Symbolic dimension canonicalization (commutativity, associativity, like-term collection)
+- Symbolic dimension equality with canonical polynomial representation
 - Symbolic dimension joins across control flow
 - Symbolic dimension addition for matrix concatenation (e.g. `n x (k+m)`)
 - Symbolic dimension multiplication for replication (e.g. `(n*k)`)
@@ -113,9 +115,12 @@ Each test file:
 | basics/scalar_matrix_ops.m | Scalar-matrix operations | 0 |
 | basics/elementwise_ops.m | Elementwise operation mismatch | 1 |
 | basics/reassignment.m | Incompatible reassignment | 1 |
-| **Symbolic** (2) | | |
+| **Symbolic** (5) | | |
 | symbolic/dimension_tracking.m | Colon vectors and symbolic dimensions | 0 |
 | symbolic/dimension_arithmetic.m | Symbolic dimension arithmetic | 0 |
+| symbolic/canonicalization.m | Symbolic dimension canonicalization | 0 |
+| symbolic/commutativity_join.m | Commutative dimensions join correctly | 0 |
+| symbolic/like_terms.m | Like terms collected in symbolic dimensions | 0 |
 | **Indexing** (7) | | |
 | indexing/scalar_index.m | Scalar indexing | 0 |
 | indexing/slice_index.m | Slice indexing | 0 |
@@ -226,10 +231,14 @@ Each test file:
 | structs/struct_field_not_found.m | Missing field warning | 1 |
 | structs/struct_field_reassign.m | Field reassignment with different shape | 0 |
 | structs/struct_in_control_flow.m | Struct join across branches | 0 |
-| **Cells** (9) | | |
+| **Cells** (13) | | |
 | cells/cell_literal.m | Cell array literal syntax | 0 |
 | cells/cell_indexing.m | Curly-brace cell indexing | 0 |
 | cells/cell_assignment.m | Cell element assignment | 0 |
+| cells/cell_assign_basic.m | Basic cell element assignment | 0 |
+| cells/cell_assign_2d.m | 2D cell element assignment | 0 |
+| cells/cell_assign_after_literal.m | Cell assignment after literal | 0 |
+| cells/cell_assign_non_cell.m | Cell assignment on non-cell (warning) | 1 |
 | cells/cell_builtin.m | cell() constructor builtin | 0 |
 | cells/cell_in_control_flow.m | Cell array join across branches | 0 |
 | cells/cell_mixed_types.m | Cells with mixed element types | 0 |
