@@ -230,3 +230,11 @@ def warn_continue_outside_loop(line: int) -> str:
 def warn_lambda_call_approximate(line: int, var_name: str) -> str:
     """Warning for calling function handle variable (v0.12.0 limitation)."""
     return f"W_LAMBDA_CALL_APPROXIMATE line {line}: Calling function handle '{var_name}' returns unknown (body analysis deferred to v0.12.1)"
+
+def warn_lambda_arg_count_mismatch(line: int, expected: int, got: int) -> str:
+    """Warning for lambda called with wrong number of arguments."""
+    return f"W_LAMBDA_ARG_COUNT_MISMATCH line {line}: lambda expects {expected} arguments, got {got}"
+
+def warn_recursive_lambda(line: int) -> str:
+    """Warning for recursive lambda call (not supported, returns unknown)."""
+    return f"W_RECURSIVE_LAMBDA line {line}: recursive lambda call not supported (returns unknown)"

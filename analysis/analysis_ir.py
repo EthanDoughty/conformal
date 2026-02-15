@@ -23,7 +23,7 @@ from ir import (
 
 import analysis.diagnostics as diag
 from runtime.env import Env, join_env, widen_env
-from runtime.shapes import Shape, Dim, shape_of_zeros, shape_of_ones, join_dim, mul_dim, add_dim
+from runtime.shapes import Shape, Dim, shape_of_zeros, shape_of_ones, join_dim, mul_dim, add_dim, join_shape
 from analysis.analysis_core import shapes_definitely_incompatible
 from analysis.matrix_literals import infer_matrix_literal_shape, as_matrix_shape, dims_definitely_conflict
 
@@ -659,9 +659,89 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str], ctx: AnalysisContext
             base_var_name = expr.base.name
             base_var_shape = env.get(base_var_name)
             if base_var_shape.is_function_handle():
-                # Function handle call: v0.12.0 limitation - return unknown
-                warnings.append(diag.warn_lambda_call_approximate(line, base_var_name))
-                return Shape.unknown()
+                # Function handle call: analyze lambda/handle bodies
+                if base_var_shape._lambda_ids is None:
+                    # Opaque handle (no IDs) → fallback to approximate
+                    warnings.append(diag.warn_lambda_call_approximate(line, base_var_name))
+                    return Shape.unknown()
+
+                # Evaluate all argument shapes
+                arg_shapes = []
+                for arg in expr.args:
+                    if isinstance(arg, (Colon, Range)):
+                        # Colon/Range in function call args is invalid
+                        arg_shapes.append(Shape.unknown())
+                    elif isinstance(arg, IndexExpr):
+                        arg_shape = eval_expr_ir(arg.expr, env, warnings, ctx)
+                        arg_shapes.append(arg_shape)
+                    else:
+                        # Should not happen (Apply.args are IndexArg)
+                        arg_shapes.append(Shape.unknown())
+
+                # Analyze all possible callables (lambdas + handles)
+                results = []
+                for callable_id in sorted(base_var_shape._lambda_ids):  # sorted for determinism
+                    if callable_id in ctx._lambda_metadata:
+                        # Lambda body analysis
+                        params, body_expr, closure_env = ctx._lambda_metadata[callable_id]
+                        cache_key = ("lambda", callable_id, tuple(arg_shapes))
+
+                        # Cache check
+                        if cache_key in ctx.analysis_cache:
+                            cached_shape, cached_warnings = ctx.analysis_cache[cache_key]
+                            warnings.extend(cached_warnings)
+                            results.append(cached_shape)
+                            continue
+
+                        # Recursion guard
+                        if callable_id in ctx.analyzing_lambdas:
+                            warnings.append(diag.warn_recursive_lambda(line))
+                            results.append(Shape.unknown())
+                            continue
+
+                        # Check arg count
+                        if len(arg_shapes) != len(params):
+                            warnings.append(diag.warn_lambda_arg_count_mismatch(line, len(params), len(arg_shapes)))
+                            results.append(Shape.unknown())
+                            continue
+
+                        # Analyze lambda body
+                        ctx.analyzing_lambdas.add(callable_id)
+                        try:
+                            # Create env from closure snapshot + bind params
+                            call_env = closure_env.copy()
+                            # Allow self-reference for recursion detection
+                            # (enables f = @(x) f(x-1) to trigger recursion guard)
+                            call_env.set(base_var_name, Shape.function_handle(lambda_ids=frozenset({callable_id})))
+                            for param, arg_shape in zip(params, arg_shapes):
+                                call_env.set(param, arg_shape)
+
+                            # Analyze body expression
+                            lambda_warnings = []
+                            result = eval_expr_ir(body_expr, call_env, lambda_warnings, ctx)
+
+                            # Cache result
+                            ctx.analysis_cache[cache_key] = (result, lambda_warnings)
+                            warnings.extend(lambda_warnings)
+                            results.append(result)
+                        finally:
+                            ctx.analyzing_lambdas.discard(callable_id)
+
+                    elif callable_id in ctx._handle_registry:
+                        # Function handle dispatch (Phase 3 — deferred)
+                        # For now, treat as unknown
+                        results.append(Shape.unknown())
+
+                # Join all results
+                if not results:
+                    # No lambda metadata or handle registry (should not happen)
+                    warnings.append(diag.warn_lambda_call_approximate(line, base_var_name))
+                    return Shape.unknown()
+
+                joined = results[0]
+                for r in results[1:]:
+                    joined = join_shape(joined, r)
+                return joined
 
         # Check if base is a known builtin function
         if isinstance(expr.base, Var):
