@@ -713,8 +713,14 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str], ctx: AnalysisContext
                             # Allow self-reference for recursion detection
                             # (enables f = @(x) f(x-1) to trigger recursion guard)
                             call_env.set(base_var_name, Shape.function_handle(lambda_ids=frozenset({callable_id})))
-                            for param, arg_shape in zip(params, arg_shapes):
+                            for i, (param, arg_shape) in enumerate(zip(params, arg_shapes)):
                                 call_env.set(param, arg_shape)
+                                # Dimension aliasing: extract dimension from arg expression
+                                arg = expr.args[i]
+                                if isinstance(arg, IndexExpr):
+                                    caller_dim = expr_to_dim_ir(arg.expr, env)
+                                    if caller_dim is not None:
+                                        call_env.dim_aliases[param] = caller_dim
 
                             # Analyze body expression
                             lambda_warnings = []
