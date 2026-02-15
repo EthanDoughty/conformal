@@ -892,6 +892,13 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str], ctx: AnalysisContext
                     except ValueError:
                         # Colon in arg: treat as indexing
                         pass
+                if fname == "iscell" and len(expr.args) == 1:
+                    try:
+                        eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
+                        return Shape.scalar()
+                    except ValueError:
+                        # Colon in arg: treat as indexing
+                        pass
                 # Cell constructor: cell(n) / cell(m, n)
                 if fname == "cell" and len(expr.args) == 1:
                     # cell(n) -> cell[n x n]

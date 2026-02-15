@@ -8,6 +8,7 @@ Defines the Shape type and dimension operations used throughout the analyzer.
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Union
+from fractions import Fraction
 
 # A monomial: sorted tuple of (variable_name, exponent) pairs.
 # Empty tuple = constant monomial (1).
@@ -21,19 +22,19 @@ class SymDim:
     Sorted tuple of (monomial, coefficient) pairs.
     Canonical by construction: sorted, collected, no zero coefficients.
     """
-    _terms: tuple  # tuple[tuple[Monomial, int], ...]
+    _terms: tuple  # tuple[tuple[Monomial, Fraction], ...]
 
     @staticmethod
     def const(value: int) -> "SymDim":
         """Create a constant symbolic dimension."""
         if value == 0:
             return SymDim(_terms=())
-        return SymDim(_terms=(((), value),))
+        return SymDim(_terms=(((), Fraction(value)),))
 
     @staticmethod
     def var(name: str) -> "SymDim":
         """Create a variable symbolic dimension."""
-        return SymDim(_terms=(((((name, 1),), 1)),))
+        return SymDim(_terms=(((((name, 1),), Fraction(1))),))
 
     @staticmethod
     def zero() -> "SymDim":
@@ -61,6 +62,23 @@ class SymDim:
     def __sub__(self, other: "SymDim") -> "SymDim":
         """Subtract two symbolic dimensions."""
         return self + (-other)
+
+    def __truediv__(self, other: "SymDim") -> "SymDim":
+        """Divide two symbolic dimensions (returns rational coefficients).
+
+        Only supports division by constants.
+        """
+        # Get constant divisor
+        divisor = other.const_value()
+        if divisor is None:
+            raise ValueError("Division only supported for constant divisors")
+        if divisor == 0:
+            raise ValueError("Division by zero")
+
+        # Scale all coefficients by 1/divisor
+        frac_divisor = Fraction(divisor)
+        new_terms = tuple((mono, coeff / frac_divisor) for mono, coeff in self._terms)
+        return SymDim(_terms=new_terms)
 
     def __mul__(self, other: "SymDim") -> "SymDim":
         """Multiply two symbolic dimensions."""
@@ -93,7 +111,10 @@ class SymDim:
         if len(self._terms) == 0:
             return 0
         if len(self._terms) == 1 and self._terms[0][0] == ():
-            return self._terms[0][1]
+            coeff = self._terms[0][1]
+            # Only return int if denominator is 1
+            if isinstance(coeff, Fraction) and coeff.denominator == 1:
+                return int(coeff)
         return None
 
     @staticmethod
@@ -109,9 +130,22 @@ class SymDim:
 
         parts = []
         for mono, coeff in self._terms:
+            # Format coefficient (handle Fraction display)
+            if isinstance(coeff, Fraction):
+                if coeff.denominator == 1:
+                    coeff_str = str(int(coeff))
+                    coeff_int = int(coeff)
+                else:
+                    # Rational coefficient
+                    coeff_str = f"({coeff.numerator}/{coeff.denominator})"
+                    coeff_int = None
+            else:
+                coeff_str = str(coeff)
+                coeff_int = coeff
+
             if mono == ():
                 # Constant term
-                parts.append(str(coeff))
+                parts.append(coeff_str)
             else:
                 # Variable term
                 var_parts = []
@@ -122,12 +156,17 @@ class SymDim:
                         var_parts.append(f"{var}^{exp}")
                 var_str = "*".join(var_parts)
 
-                if coeff == 1:
+                # Special case for single-var single-coeff rational: n/2 instead of (1/2)*n
+                if (isinstance(coeff, Fraction) and coeff.denominator != 1 and
+                    len(mono) == 1 and mono[0][1] == 1 and coeff.numerator == 1):
+                    # Format as "n/d" instead of "(1/d)*n"
+                    parts.append(f"{var_str}/{coeff.denominator}")
+                elif coeff_int == 1:
                     parts.append(var_str)
-                elif coeff == -1:
+                elif coeff_int == -1:
                     parts.append(f"-{var_str}")
                 else:
-                    parts.append(f"{coeff}*{var_str}")
+                    parts.append(f"{coeff_str}*{var_str}")
 
         # Join with + or - (handle negative coefficients)
         result = parts[0]

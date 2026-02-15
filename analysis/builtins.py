@@ -9,7 +9,7 @@ which builtins have explicit shape rules in the analyzer.
 # Builtins recognized as function calls (not array indexing).
 # Sorted alphabetically for maintainability.
 KNOWN_BUILTINS = {
-    "abs", "cell", "det", "diag", "eye", "inv", "isscalar",
+    "abs", "cell", "det", "diag", "eye", "inv", "iscell", "isscalar",
     "length", "linspace", "norm", "numel", "ones",
     "rand", "randn", "repmat", "reshape", "size",
     "sqrt", "transpose", "zeros",
@@ -24,7 +24,7 @@ BUILTINS_WITH_SHAPE_RULES = {
     "abs", "sqrt",        # element-wise (pass through shape)
     "transpose",          # transpose (swap rows/cols)
     "length", "numel",    # query functions (return scalar)
-    "size", "isscalar",   # other builtins with shape rules
+    "size", "iscell", "isscalar",   # other builtins with shape rules
     "reshape", "repmat",  # matrix manipulation
     "det", "norm",        # scalar-returning operations
     "diag",               # shape-dependent (vector↔diagonal matrix)
