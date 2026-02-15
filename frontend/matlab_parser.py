@@ -95,7 +95,7 @@ def lex(src: str) -> List[Token]:
             pos = m.end()
         elif kind == "QUOTE":
             # Context-sensitive: is this transpose or string start?
-            if prev_kind in {"ID", ")", "]", "NUMBER", "TRANSPOSE"}:
+            if prev_kind in {"ID", ")", "]", "}", "NUMBER", "TRANSPOSE"}:
                 tokens.append(Token("TRANSPOSE", value, start_pos, line))
                 prev_kind = "TRANSPOSE"
                 pos = m.end()
@@ -169,7 +169,7 @@ class MatlabParser:
     def starts_expr(self, tok: Token) -> bool:
         return (
             tok.kind in {"NUMBER", "ID"}
-            or tok.value in {"(", "-", "["}
+            or tok.value in {"(", "-", "[", "{"}
             )
 
     def recover_to_stmt_boundary(self, start_line: int) -> Any:
@@ -576,6 +576,8 @@ class MatlabParser:
             self.eat(")")
         elif tok.value == "[":
             left = self.parse_matrix_literal()
+        elif tok.value == "{":
+            left = self.parse_cell_literal()
         elif tok.value == "@":
             # Anonymous function or named function handle
             at_tok = self.eat("@")
@@ -637,6 +639,13 @@ class MatlabParser:
                 # Emit unified apply node. Disambiguation happens in analyzer.
                 left = ["apply", lparen_tok.line, left, args]
 
+            elif tok.value == "{":
+                # Curly indexing c{i} or c{i,j}
+                lcurly_tok = self.eat("{")
+                args = self.parse_paren_args()
+                self.eat("}")
+                left = ["curly_apply", lcurly_tok.line, left, args]
+
             elif tok.kind == "TRANSPOSE":
                 t_tok = self.eat("TRANSPOSE")
                 left = ["transpose", t_tok.line, left]
@@ -672,21 +681,20 @@ class MatlabParser:
             left = [op, op_tok.line, left, right]
         return left
     
-    def parse_matrix_literal(self) -> Any:
+    def _parse_delimited_rows(self, end_token: str) -> Tuple[int, List[List[Any]]]:
         """
-        Parse MATLAB-style matrix literal: [ a b, c ; d e ]
-        Internal form: ['matrix', line, rows]
-        where rows is List[List[expr]]
+        Parse delimited rows for matrix or cell literals.
+        Shared logic for [ ] and { } literals.
+        Returns (line, rows) tuple.
         """
-        lbrack = self.eat("[")
-        line = lbrack.line
+        # Get the opening token (already consumed by caller, use current line)
+        line = self.current().line
 
         rows: List[List[Any]] = []
 
-        # Empty literal: []
-        if self.current().value == "]":
-            self.eat("]")
-            return ["matrix", line, rows]
+        # Empty literal
+        if self.current().value == end_token:
+            return (line, rows)
 
         while True:
             # parse one row: elem (sep elem)*
@@ -705,7 +713,7 @@ class MatlabParser:
                     continue
 
                 # row / end delimiters
-                if tok.value in {";", "]"} or tok.kind == "NEWLINE" or tok.kind == "EOF":
+                if tok.value in {";", end_token} or tok.kind == "NEWLINE" or tok.kind == "EOF":
                     break
 
                 # implicit column separator (whitespace in source, skipped by lexer)
@@ -719,35 +727,56 @@ class MatlabParser:
             rows.append(row)
 
             # end?
-            if self.current().value == "]":
-                self.eat("]")
+            if self.current().value == end_token:
                 break
 
             # row separator: semicolon
             if self.current().value == ";":
                 self.eat(";")
-                # allow trailing ; before ]
-                if self.current().value == "]":
-                    self.eat("]")
+                # allow trailing ; before end
+                if self.current().value == end_token:
                     break
                 continue
 
-            # row separator: newline (MATLAB-style multiline matrix literal)
+            # row separator: newline (MATLAB-style multiline literal)
             if self.current().kind == "NEWLINE":
                 self.eat("NEWLINE")
-                # allow trailing newline before ]
-                if self.current().value == "]":
-                    self.eat("]")
+                # allow trailing newline before end
+                if self.current().value == end_token:
                     break
                 continue
 
-            # If we got here without ; or ] or NEWLINE, it's a syntax error in literal
+            # If we got here without ; or end or NEWLINE, it's a syntax error in literal
             tok = self.current()
             raise ParseError(
-                f"Unexpected token {tok.kind} {tok.value!r} in matrix literal at {tok.pos}"
+                f"Unexpected token {tok.kind} {tok.value!r} in literal at {tok.pos}"
             )
 
+        return (line, rows)
+
+    def parse_matrix_literal(self) -> Any:
+        """
+        Parse MATLAB-style matrix literal: [ a b, c ; d e ]
+        Internal form: ['matrix', line, rows]
+        where rows is List[List[expr]]
+        """
+        lbrack = self.eat("[")
+        line = lbrack.line
+        line, rows = self._parse_delimited_rows("]")
+        self.eat("]")
         return ["matrix", line, rows]
+
+    def parse_cell_literal(self) -> Any:
+        """
+        Parse MATLAB-style cell literal: { a b, c ; d e }
+        Internal form: ['cell', line, rows]
+        where rows is List[List[expr]]
+        """
+        lcurly = self.eat("{")
+        line = lcurly.line
+        line, rows = self._parse_delimited_rows("}")
+        self.eat("}")
+        return ["cell", line, rows]
     
     def parse_index_arg(self) -> Any:
         """Parse a single argument inside () for indexing/calls

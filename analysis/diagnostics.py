@@ -29,8 +29,14 @@ def pretty_expr_ir(expr: Expr) -> str:
         base = pretty_expr_ir(expr.base) if isinstance(expr.base, Var) else "<expr>"
         args_s = ", ".join(pretty_index_arg_ir(a) for a in expr.args)
         return f"{base}({args_s})"
+    if isinstance(expr, CurlyApply):
+        base = pretty_expr_ir(expr.base) if isinstance(expr.base, Var) else "<expr>"
+        args_s = ", ".join(pretty_index_arg_ir(a) for a in expr.args)
+        return f"{base}{{{args_s}}}"
     if isinstance(expr, MatrixLit):
         return "[matrix]"
+    if isinstance(expr, CellLit):
+        return "{cell}"
     if isinstance(expr, BinOp):
         if expr.op == ":":
             return f"{pretty_expr_ir(expr.left)}:{pretty_expr_ir(expr.right)}"
@@ -214,6 +220,10 @@ def warn_struct_field_not_found(line: int, field: str, struct_shape: Shape) -> s
 def warn_field_access_non_struct(line: int, base_shape: Shape) -> str:
     """Warning for field access on non-struct value."""
     return f"W_FIELD_ACCESS_NON_STRUCT line {line}: Field access on non-struct value ({base_shape})"
+
+def warn_curly_indexing_non_cell(line: int, base_shape: Shape) -> str:
+    """Warning for curly indexing on non-cell value."""
+    return f"W_CURLY_INDEXING_NON_CELL line {line}: Curly indexing on non-cell value ({base_shape})"
 
 def warn_return_outside_function(line: int) -> str:
     """Warning for return statement outside function body."""

@@ -17,7 +17,7 @@ from ir import (
     Program, Stmt,
     Assign, StructAssign, ExprStmt, While, For, If, IfChain, Switch, Try, Break, Continue,
     OpaqueStmt, FunctionDef, AssignMulti, Return,
-    Expr, Var, Const, StringLit, FieldAccess, Lambda, FuncHandle, MatrixLit, Apply, Transpose, Neg, BinOp,
+    Expr, Var, Const, StringLit, FieldAccess, Lambda, FuncHandle, MatrixLit, CellLit, Apply, CurlyApply, Transpose, Neg, BinOp,
     IndexArg, Colon, Range, IndexExpr,
 )
 
@@ -648,6 +648,44 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str], ctx: AnalysisContext
         ]
         return infer_matrix_literal_shape(raw_shape_rows, expr.line, warnings)
 
+    if isinstance(expr, CellLit):
+        # Cell literal: infer dimensions from structure (ignore element shapes)
+        if not expr.rows:
+            return Shape.cell(0, 0)
+
+        # Evaluate elements for side effects only (don't track element shapes)
+        for row in expr.rows:
+            for elem in row:
+                _ = eval_expr_ir(elem, env, warnings, ctx)
+
+        num_rows = len(expr.rows)
+        num_cols = len(expr.rows[0]) if expr.rows else 0
+
+        # Validate rectangular structure (all rows same length)
+        for row in expr.rows:
+            if len(row) != num_cols:
+                # Ragged cell array: return unknown dimensions
+                return Shape.cell(None, None)
+
+        return Shape.cell(num_rows, num_cols)
+
+    if isinstance(expr, CurlyApply):
+        # Curly indexing: c{i} or c{i,j}
+        base_shape = eval_expr_ir(expr.base, env, warnings, ctx)
+
+        # Evaluate args for side effects
+        for arg in expr.args:
+            _ = _eval_index_arg_to_shape(arg, env, warnings, ctx)
+
+        # Check base is cell
+        if not base_shape.is_cell():
+            warnings.append(diag.warn_curly_indexing_non_cell(expr.line, base_shape))
+            return Shape.unknown()
+
+        # Content indexing: return unknown (element type approximation)
+        # Future: track per-element shapes in v0.13.0+
+        return Shape.unknown()
+
     if isinstance(expr, Apply):
         line = expr.line
 
@@ -816,6 +854,24 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str], ctx: AnalysisContext
                         return Shape.scalar()
                     except ValueError:
                         # Colon in arg: treat as indexing
+                        pass
+                # Cell constructor: cell(n) / cell(m, n)
+                if fname == "cell" and len(expr.args) == 1:
+                    # cell(n) -> cell[n x n]
+                    try:
+                        d = expr_to_dim_ir(unwrap_arg(expr.args[0]), env)
+                        return Shape.cell(d, d)
+                    except ValueError:
+                        # Colon/Range in arg: treat as indexing
+                        pass
+                if fname == "cell" and len(expr.args) == 2:
+                    # cell(m, n) -> cell[m x n]
+                    try:
+                        r_dim = expr_to_dim_ir(unwrap_arg(expr.args[0]), env)
+                        c_dim = expr_to_dim_ir(unwrap_arg(expr.args[1]), env)
+                        return Shape.cell(r_dim, c_dim)
+                    except ValueError:
+                        # Colon/Range in args: treat as indexing
                         pass
                 # Matrix constructors: eye, rand, randn
                 if fname in {"eye", "rand", "randn"} and len(expr.args) <= 2:

@@ -262,8 +262,14 @@ def lower_expr(expr: Any) -> Expr:
     if tag == "apply":
         return Apply(line=expr[1], base=lower_expr(expr[2]), args=[lower_index_arg(arg) for arg in expr[3]])
 
+    if tag == "curly_apply":
+        return CurlyApply(line=expr[1], base=lower_expr(expr[2]), args=[lower_index_arg(arg) for arg in expr[3]])
+
     if tag == "matrix":
         return MatrixLit(line=expr[1], rows=[[lower_expr(elem) for elem in row] for row in expr[2]])
+
+    if tag == "cell":
+        return CellLit(line=expr[1], rows=[[lower_expr(elem) for elem in row] for row in expr[2]])
 
     if tag in {"+", "-", "*", "/", ".*", "./", "==", "~=", "<", "<=", ">", ">=", "&&", "||", ":"}:
         return BinOp(line=expr[1], op=tag, left=lower_expr(expr[2]), right=lower_expr(expr[3]))

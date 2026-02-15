@@ -69,6 +69,11 @@ class Shape:
         return Shape(kind="struct", _fields=tuple(sorted(fields.items())))
 
     @staticmethod
+    def cell(rows: Dim, cols: Dim) -> "Shape":
+        """Create a cell array shape with given dimensions."""
+        return Shape(kind="cell", rows=rows, cols=cols)
+
+    @staticmethod
     def function_handle(lambda_ids=None) -> "Shape":
         """Create a function handle shape (anonymous or named).
 
@@ -112,6 +117,10 @@ class Shape:
         """Check if this is a struct shape."""
         return self.kind == "struct"
 
+    def is_cell(self) -> bool:
+        """Check if this is a cell array shape."""
+        return self.kind == "cell"
+
     def is_function_handle(self) -> bool:
         """Check if this is a function handle shape."""
         return self.kind == "function_handle"
@@ -130,6 +139,8 @@ class Shape:
             # Filter out bottom fields (internal-only, shouldn't appear in user output)
             field_strs = [f"{name}: {shape}" for name, shape in self._fields if not shape.is_bottom()]
             return "struct{" + ", ".join(field_strs) + "}"
+        if self.kind == "cell":
+            return f"cell[{self.rows} x {self.cols}]"
         if self.kind == "function_handle":
             return "function_handle"
         if self.kind == "bottom":
@@ -309,6 +320,12 @@ def widen_shape(old: Shape, new: Shape) -> Shape:
             widened_fields[field_name] = widen_shape(f_old, f_new)
         return Shape.struct(widened_fields)
 
+    if old.is_cell() and new.is_cell():
+        return Shape.cell(
+            widen_dim(old.rows, new.rows),
+            widen_dim(old.cols, new.cols),
+        )
+
     # Different kinds → unknown
     return Shape.unknown()
 
@@ -372,6 +389,11 @@ def join_shape(s1: Shape, s2: Shape) -> Shape:
             f2 = s2.fields_dict.get(field_name, Shape.bottom())
             joined_fields[field_name] = join_shape(f1, f2)
         return Shape.struct(joined_fields)
+
+    if s1.is_cell() and s2.is_cell():
+        r = join_dim(s1.rows, s2.rows)
+        c = join_dim(s1.cols, s2.cols)
+        return Shape.cell(r, c)
 
     # Different kinds → unknown
     return Shape.unknown()

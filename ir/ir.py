@@ -107,6 +107,21 @@ class MatrixLit(Expr):
     """Matrix literal ([1 2; 3 4])."""
     rows: List[List[Expr]]
 
+@dataclass(frozen=True)
+class CellLit(Expr):
+    """Cell array literal ({1, 2; 3, 4})."""
+    rows: List[List[Expr]]
+
+@dataclass(frozen=True)
+class CurlyApply(Expr):
+    """Curly-brace content indexing (c{i} or c{i,j}).
+
+    Content indexing: c{i} extracts element (returns element shape, unknown for now).
+    Distinct from Apply (parens) which for cells does container indexing.
+    """
+    base: Expr
+    args: List[IndexArg]
+
 # ---- Statements / Program ----
 
 @dataclass(frozen=True)

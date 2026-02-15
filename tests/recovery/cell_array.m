@@ -1,6 +1,5 @@
-% Test 23: Parse recovery - cell array access (unsupported)
-% Recovery should not consume 'end' inside block
-% Tests that recovery stops before 'end' at depth 0
+% Test 23: Parse recovery - cell array access
+% Curly indexing on a non-cell value emits W_CURLY_INDEXING_NON_CELL
 
 % EXPECT: warnings = 1
 % EXPECT: A = matrix[2 x 2]
