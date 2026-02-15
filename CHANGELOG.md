@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-02-14
+### Added
+- `SymDim` frozen dataclass: canonical polynomial representation for symbolic dimensions
+- Multivariate polynomial algebra: addition, multiplication, negation, subtraction with automatic normalization
+- Like-term collection: `n+n` canonicalizes to `2*n`
+- Commutativity: `n+m` and `m+n` are now structurally equal
+- Associativity: `(n+m)+k` flattens to `k+m+n` (degree-descending, alphabetical)
+- Constant-offset conflict detection: `dims_definitely_conflict(n+1, n)` returns `True`
+- 3 new test files in tests/symbolic/ (134 total, was 131)
+
+### Changed
+- `Dim` type from `Union[int, str, None]` to `Union[int, SymDim, None]`
+- `add_dim`/`mul_dim` produce `SymDim` for symbolic cases (with automatic constant folding to `int`)
+- `dims_definitely_conflict` checks if difference is a nonzero constant (more precise)
+- `expr_to_dim_ir` returns `SymDim.var(name)` for symbolic variables
+- Subtraction simplified: `add_dim(left, mul_dim(-1, right))` replaces string manipulation
+- Display: degree-descending, alphabetical within degree, constant last (e.g., `m*n+2*n+3`)
+- `dim_aliases` type widened from `Dict[str, str]` to `Dict[str, Any]`
+- 4 test expectations updated for canonical display forms
+
 ## [0.12.3] - 2026-02-14
 ### Added
 - Cell element assignment: `c{i} = expr` and `c{i,j} = expr` syntax
