@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-02-14
+### Added
+- Lambda body analysis at call sites with polymorphic caching (replaces W_LAMBDA_CALL_APPROXIMATE approximation)
+- Function handle dispatch: `@myFunc` resolves to user-defined functions, `@builtin` resolves to builtins
+- Closure metadata storage in AnalysisContext with lambda ID tracking via frozenset
+- Control flow join precision: if/else branches with different lambdas both analyzed, results joined
+- Dimension aliasing through lambda calls (symbolic dimensions propagate from caller to lambda body)
+- Recursion guard for self-referencing lambdas
+- W_LAMBDA_ARG_COUNT_MISMATCH warning for lambda arity mismatches
+- W_RECURSIVE_LAMBDA warning for recursive lambda calls
+- 12 new test files in tests/functions/ (118 total, was 106)
+
+### Changed
+- Shape dataclass: added `_lambda_ids` field (Optional[frozenset]) for tracking lambda identity
+- `join_shape` and `widen_shape` now union lambda_ids for function_handle shapes
+- AnalysisContext: replaced `_lambda_closures` with `_lambda_metadata`, added `_handle_registry` and `analyzing_lambdas`
+- Dimension aliasing in `analyze_function_call` generalized to any IndexExpr (not just Var)
+- W_LAMBDA_CALL_APPROXIMATE no longer emitted for lambdas with known bodies
+- README test table reorganized by category with complete 118-test inventory
+
 ## [0.12.0] - 2026-02-14
 ### Added
 - **Phase 1: String literals** with context-sensitive lexer for `'` disambiguation (string start vs transpose)
