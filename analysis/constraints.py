@@ -49,7 +49,6 @@ def record_constraint(ctx, env: Env, dim1: Dim, dim2: Dim, line: int) -> None:
         dim2: Second dimension
         line: Source line number (for provenance)
     """
-    from analysis.context import AnalysisContext
 
     # Skip None dims
     if dim1 is None or dim2 is None:

@@ -4,9 +4,9 @@
 
 ### Static Shape & Dimension Analysis for MATLAB
 
-[![Version](https://img.shields.io/badge/version-0.14.1-orange.svg)](#motivation-and-future-directions)
+[![Version](https://img.shields.io/badge/version-0.15.0-orange.svg)](#motivation-and-future-directions)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-149%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-162%20passing-brightgreen.svg)](#test-suite)
 [![No Dependencies](https://img.shields.io/badge/dependencies-none-green.svg)](#requirements)
 [![License](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
 
@@ -123,15 +123,15 @@ Symbolic dimensions use a frozen polynomial representation (`SymDim`) with ratio
 ```
 frontend/    Parsing (lexer.py, matlab_parser.py) and IR lowering
 ir/          Typed IR dataclass definitions
-analysis/    9 focused submodules: expression eval, statements, functions, builtins, binops, diagnostics
+analysis/    13 focused submodules: expression eval, statements, functions, builtins, binops, constraints, diagnostics
 runtime/     Shape domain (shapes.py), symbolic dimensions (symdim.py), and environments
-tests/       Self-checking MATLAB programs (149 tests, 11 categories)
+tests/       Self-checking MATLAB programs (162 tests, 12 categories)
 tools/       Debugging utilities (AST printer)
 ```
 
 ## Test Suite
 
-The analyzer is validated by 149 self-checking test programs organized into 11 categories. Each test embeds its expected behavior as inline assertions:
+The analyzer is validated by 162 self-checking test programs organized into 12 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -327,7 +327,7 @@ Named Functions (21 tests)
 | `procedure_with_return.m` | Procedure with explicit return statement | 1 |
 | `arg_count_mismatch_cached.m` | Argument count mismatch detected | 1 |
 
-Anonymous Functions / Lambdas (18 tests)
+Anonymous Functions / Lambdas (17 tests)
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -430,12 +430,37 @@ Parser error recovery and unsupported construct handling (graceful degradation).
 
 </details>
 
+<details>
+<summary><h3>Constraints (13 tests)</h3></summary>
+
+Dimension constraint solving: equality constraints recorded during operations, validated on concrete bindings, and joined path-sensitively across control flow (v0.15.0).
+
+| Test | What It Validates | Warnings |
+|------|-------------------|----------|
+| `no_conflict.m` | Compatible symbolic dimensions, no constraint violation | 0 |
+| `concrete_no_constraint.m` | Concrete dimensions skip constraint recording (already handled) | 0 |
+| `matmul_conflict.m` | Inner dimension constraint conflict detected via `W_CONSTRAINT_CONFLICT` | 1 |
+| `elementwise_conflict.m` | Elementwise op constraint conflict detected | 1 |
+| `horizontal_concat_conflict.m` | Horizontal concatenation row-count constraint conflict | 1 |
+| `vertical_concat_conflict.m` | Vertical concatenation column-count constraint conflict | 1 |
+| `symbolic_concrete_constraint.m` | Symbolic dimension constrained by concrete binding | 1 |
+| `multi_constraint.m` | Multiple constraints accumulate; first conflict reported | 1 |
+| `path_sensitive_join.m` | Constraint added in all branches is kept after join | 0 |
+| `path_sensitive_discard.m` | Constraint added in only one branch is discarded after join | 0 |
+| `elseif_path_sensitive.m` | Path-sensitive join across elseif chains | 0 |
+| `prebound_dim_name.m` | Pre-bound variable names are excluded from constraint recording | 0 |
+| `function_scope_isolation.m` | Constraints are scoped to functions and don't leak to callers | 0 |
+
+>Constraint solving operates on `SymDim` polynomial dimensions. When a concrete value is bound to a variable, recorded equality constraints are checked for conflicts and `W_CONSTRAINT_CONFLICT` is emitted. Path-sensitive joins keep only constraints that hold in all branches.
+
+</details>
+
 ---
 
 ### Running the Tests
 
 ```bash
-# Run all 149 tests
+# Run all 162 tests
 make test
 python3 conformal.py --tests
 
@@ -509,10 +534,9 @@ I felt that it was very rewarding to use MATLAB as the source language for a sta
 ### Roadmap
 
 **Near-term**
-- Symbolic constraint solving (builds on the `SymDim` polynomial domain)
 - Nested function support
-- Per-element cell array tracking
 - Expanded builtin coverage (toolbox functions)
+- Constraint propagation across function boundaries
 
 **IDE / LSP Integration (1.0)**
 
