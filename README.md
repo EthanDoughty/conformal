@@ -4,9 +4,9 @@
 
 ### Static Shape & Dimension Analysis for MATLAB
 
-[![Version](https://img.shields.io/badge/version-0.14.0-orange.svg)](#motivation-and-future-directions)
+[![Version](https://img.shields.io/badge/version-0.14.1-orange.svg)](#motivation-and-future-directions)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-147%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-149%20passing-brightgreen.svg)](#test-suite)
 [![No Dependencies](https://img.shields.io/badge/dependencies-none-green.svg)](#requirements)
 [![License](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
 
@@ -59,7 +59,7 @@ Matrix literals `[1 2; 3 4]`, cell array literals `{1, 2; 3, 4}`, and string lit
 
 ### Indexing
 
-Parenthesized indexing `A(i,j)`, slice indexing `A(:,j)` and `A(i,:)`, range indexing `A(2:5,:)`, linear indexing, and full-matrix `A(:,:)`. Curly-brace indexing `C{i,j}` for cell arrays with per-element shape tracking (literal index extracts precise element shape). Cell element assignment `C{i} = expr`. The `end` keyword works in indexing contexts (`C{end}`, `A(1:end, 2)`).
+Parenthesized indexing `A(i,j)`, slice indexing `A(:,j)` and `A(i,:)`, range indexing `A(2:5,:)`, linear indexing, and full-matrix `A(:,:)`. Curly-brace indexing `C{i,j}` for cell arrays with per-element shape tracking (literal index extracts precise element shape). Cell element assignment `C{i} = expr`. The `end` keyword works in indexing contexts with arithmetic support (`C{end}`, `C{end-1}`, `A(1:end, 2)`, `A(end-2:end, :)`).
 
 ### Functions
 
@@ -131,7 +131,7 @@ tools/       Debugging utilities (AST printer)
 
 ## Test Suite
 
-The analyzer is validated by 147 self-checking test programs organized into 12 categories. Each test embeds its expected behavior as inline assertions:
+The analyzer is validated by 149 self-checking test programs organized into 11 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -179,9 +179,9 @@ Tests symbolic dimension tracking, arithmetic, and canonical polynomial represen
 </details>
 
 <details open>
-<summary><h3>Indexing (7 tests)</h3></summary>
+<summary><h3>Indexing (8 tests)</h3></summary>
 
-MATLAB-style indexing including scalar, slice, range, and linear indexing.
+MATLAB-style indexing including scalar, slice, range, linear indexing, and `end` keyword arithmetic.
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -192,6 +192,7 @@ MATLAB-style indexing including scalar, slice, range, and linear indexing.
 | `invalid_row_index.m` | Constant-range row indexing edge cases | 0 |
 | `invalid_col_index.m` | Constant-range column indexing edge cases | 0 |
 | `invalid_linear_index.m` | Non-scalar index argument flagged | 1 |
+| `end_arithmetic_matrix.m` | `end` keyword arithmetic in array indexing (`end-1`, `end-2:end`) | 0 |
 
 </details>
 
@@ -375,9 +376,9 @@ Struct creation, field access, and control-flow joins.
 </details>
 
 <details>
-<summary><h3>Cells (24 tests)</h3></summary>
+<summary><h3>Cells (25 tests)</h3></summary>
 
-Cell array literals, curly-brace indexing, element assignment, and per-element shape tracking (v0.12.2-0.14.0).
+Cell array literals, curly-brace indexing, element assignment, and per-element shape tracking (v0.12.2-0.14.1).
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -403,10 +404,11 @@ Cell array literals, curly-brace indexing, element assignment, and per-element s
 | `cell_end_keyword.m` | `end` keyword in cell indexing `C{end}` | 0 |
 | `cell_end_2d.m` | `end` keyword in 2D cell indexing `C{end, end}` | 0 |
 | `cell_end_range.m` | `end` as range endpoint `C{1:end}` | 0 |
+| `end_arithmetic.m` | `end` keyword arithmetic in cell indexing (`end-1`, `end-2`) | 0 |
 | `end_outside_indexing.m` | `end` keyword outside indexing emits warning | 1 |
 | `curly_indexing_non_cell.m` | Curly indexing on non-cell value is an error | 1 |
 
->Cell arrays use abstract shape `cell[r x c]` with optional per-element tracking. Literal indexing `C{i}` extracts precise element shapes when available. Dynamic indexing joins all elements conservatively. The `end` keyword resolves to the last element index.
+>Cell arrays use abstract shape `cell[r x c]` with optional per-element tracking. Literal indexing `C{i}` extracts precise element shapes when available. Dynamic indexing joins all elements conservatively. The `end` keyword resolves to the last element index and supports arithmetic (`end-1`, `end/2`).
 
 </details>
 
@@ -433,7 +435,7 @@ Parser error recovery and unsupported construct handling (graceful degradation).
 ### Running the Tests
 
 ```bash
-# Run all 147 tests
+# Run all 149 tests
 make test
 python3 conformal.py --tests
 
@@ -492,7 +494,7 @@ Conformal analyzes a subset of MATLAB. Here's what it doesn't cover:
 | Functions | No nested functions. No `varargin`/`varargout`. No `eval`, `feval`, or `str2func`. |
 | Builtins | 21 builtins recognized. Toolbox functions (`fft`, `eig`, `svd`, `conv`, `filter`, ...) are not modeled and produce an unknown-function warning. |
 | Cell arrays | Per-element tracking available for literal-indexed cells. Dynamic indexing conservatively joins all elements. |
-| Indexing | `end` keyword supported in simple contexts (`C{end}`, `A(1:end)`). Arithmetic with `end` (e.g., `end-1`) not yet supported. |
+| Indexing | `end` keyword supported with arithmetic (`C{end}`, `C{end-1}`, `A(1:end)`, `A(end-2:end, :)`). Variable operands in `end` arithmetic fall through to conservative join. |
 | Data types | No classes, no maps, no tables, no N-D arrays (only 2-D matrices). No complex number tracking. |
 | Syntax | No command-style calls (`save file.mat`), no `global`/`persistent`, no `parfor`, no `classdef`. |
 | I/O and graphics | No `load`, `save`, `fprintf`, `plot`, or any side-effecting functions. |

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-02-15
+### Added
+- `end` keyword arithmetic in indexing contexts (`c{end-1}`, `A(end/2, :)`, `c{end-k}`)
+- Helper functions `_binop_contains_end` and `_eval_end_arithmetic` for resolving End in BinOp trees
+- Range endpoint resolution with `end` arithmetic (`A(:, end-1:end)`)
+- 2 new test files (149 total, was 147)
+
+### Changed
+- Parser `parse_index_arg` lets `end` flow through `parse_expr` for arithmetic (temporarily hides `:` from precedence table)
+- BinOp handler propagates `container_shape` to operands for End resolution
+- Removed dead code (unreachable return statement in parser)
+
 ## [0.14.0] - 2026-02-15
 ### Added
 - Per-element cell tracking: `_elements` field on Shape tracks individual element shapes with sparse column-major indexing
