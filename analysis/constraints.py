@@ -98,8 +98,8 @@ def record_constraint(ctx, env: Env, dim1: Dim, dim2: Dim, line: int) -> None:
     # Add to constraints set
     ctx.constraints.add(canonical)
 
-    # Store provenance (overwrite if already exists)
-    ctx.constraint_provenance[canonical] = line
+    # Store provenance (first-seen: keep original line, not last writer)
+    ctx.constraint_provenance.setdefault(canonical, line)
 
 
 def snapshot_constraints(ctx) -> frozenset:
@@ -138,3 +138,88 @@ def join_constraints(baseline: frozenset, branch_sets: list) -> set:
 
     # Return baseline + common new
     return set(baseline) | common_new
+
+
+def try_extract_const_value(expr) -> Optional[int]:
+    """Extract integer value from a Const expression if possible.
+
+    Args:
+        expr: Expression node from IR
+
+    Returns:
+        Integer value if expr is Const with integer value, else None
+    """
+    from ir import Const
+
+    if not isinstance(expr, Const):
+        return None
+
+    # Check if value is an integer (or float with .0)
+    value = expr.value
+    if isinstance(value, (int, float)):
+        if float(value).is_integer():
+            return int(value)
+
+    return None
+
+
+def validate_binding(ctx, env, var_name: str, value: int, warnings: list, line: int) -> None:
+    """Check if binding var_name=value conflicts with recorded constraints.
+
+    Args:
+        ctx: AnalysisContext with constraints and constraint_provenance
+        env: Current environment (to look up other variables)
+        var_name: Variable name being bound to concrete value
+        value: Concrete integer value being assigned
+        warnings: List to append warnings to
+        line: Source line number of binding
+    """
+    from analysis.context import AnalysisContext
+    import analysis.diagnostics as diag
+
+    # Create target dimension for this variable
+    target_dim = SymDim.var(var_name)
+
+    # Search all constraints for ones involving this variable
+    for dim1, dim2 in ctx.constraints:
+        # Check if this constraint involves our target variable
+        other_dim = None
+        if dim1 == target_dim:
+            other_dim = dim2
+        elif dim2 == target_dim:
+            other_dim = dim1
+
+        if other_dim is None:
+            continue
+
+        # Found a constraint involving var_name
+        # Check if other_dim conflicts with value
+        conflict_value = None
+
+        if isinstance(other_dim, int):
+            # Other side is concrete int
+            if other_dim != value:
+                conflict_value = other_dim
+        elif isinstance(other_dim, SymDim):
+            # Other side is symbolic — check if it's a known constant
+            const_val = other_dim.const_value()
+            if const_val is not None and const_val != value:
+                conflict_value = other_dim
+            else:
+                # other_dim is a symbolic variable — check if it's been bound to a scalar
+                # Extract variable name from SymDim if it's a simple variable
+                other_vars = other_dim.variables()
+                if len(other_vars) == 1:
+                    # Simple variable — check if bound in ctx.scalar_bindings
+                    other_var_name = list(other_vars)[0]
+                    if other_var_name in ctx.scalar_bindings:
+                        other_value = ctx.scalar_bindings[other_var_name]
+                        if other_value != value:
+                            conflict_value = other_value
+
+        if conflict_value is not None:
+            # Emit conflict warning
+            source_line = ctx.constraint_provenance.get((dim1, dim2), 0)
+            warnings.append(diag.warn_constraint_conflict(
+                line, var_name, value, conflict_value, source_line
+            ))

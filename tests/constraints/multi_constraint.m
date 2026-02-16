@@ -1,0 +1,9 @@
+% EXPECT: warnings = 1
+A = rand(n, m);
+B = rand(m, k);
+C = A * B;
+D = rand(p, q);
+E = [A; D];
+F = D * B;
+m = 10;
+q = 5;

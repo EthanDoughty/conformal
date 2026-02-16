@@ -124,6 +124,18 @@ class SymDim:
         degree = sum(exp for var, exp in mono)
         return (-degree, mono)
 
+    def variables(self) -> set:
+        """Return set of variable names in this symbolic dimension.
+
+        Returns:
+            Set of variable name strings appearing in any term.
+        """
+        var_set = set()
+        for mono, _ in self._terms:
+            for var_name, _ in mono:
+                var_set.add(var_name)
+        return var_set
+
     def __str__(self) -> str:
         """Format polynomial with degree-descending, alphabetical display."""
         if len(self._terms) == 0:

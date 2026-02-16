@@ -10,7 +10,7 @@ from analysis.context import EarlyReturn, EarlyBreak, EarlyContinue, AnalysisCon
 from analysis.dim_extract import _update_struct_field
 from analysis.eval_expr import eval_expr_ir, _eval_index_arg_to_shape
 from analysis.func_analysis import analyze_function_call, _analyze_loop_body
-from analysis.constraints import snapshot_constraints, join_constraints
+from analysis.constraints import snapshot_constraints, join_constraints, validate_binding, try_extract_const_value
 
 from ir import (
     Stmt,
@@ -38,13 +38,24 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str], ctx: AnalysisCont
         Updated environment
     """
     if isinstance(stmt, Assign):
-        new_shape = eval_expr_ir(stmt.expr, env, warnings, ctx)
         old_shape = env.get(stmt.name)
+        new_shape = eval_expr_ir(stmt.expr, env, warnings, ctx)
 
         if stmt.name in env.bindings and shapes_definitely_incompatible(old_shape, new_shape):
             warnings.append(diag.warn_reassign_incompatible(stmt.line, stmt.name, new_shape, old_shape))
 
         env.set(stmt.name, new_shape)
+
+        # Phase 2: Constraint validation trigger
+        # Check if this is first binding (was bottom) of a scalar to a concrete value
+        if old_shape.is_bottom() and new_shape.is_scalar():
+            concrete_value = try_extract_const_value(stmt.expr)
+            if concrete_value is not None:
+                # Record scalar binding for future constraint checks
+                ctx.scalar_bindings[stmt.name] = concrete_value
+                # Validate against existing constraints
+                validate_binding(ctx, env, stmt.name, concrete_value, warnings, stmt.line)
+
         return env
 
     if isinstance(stmt, StructAssign):
@@ -134,6 +145,9 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str], ctx: AnalysisCont
     if isinstance(stmt, If):
         _ = eval_expr_ir(stmt.cond, env, warnings, ctx)
 
+        # Snapshot constraints before branching
+        baseline_constraints = snapshot_constraints(ctx)
+
         then_env = env.copy()
         else_env = env.copy()
 
@@ -145,26 +159,45 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str], ctx: AnalysisCont
                 analyze_stmt_ir(s, then_env, warnings, ctx)
         except EarlyReturn:
             then_returned = True
+        then_constraints = frozenset(ctx.constraints)
+
+        # Reset constraints to baseline for else branch
+        ctx.constraints = set(baseline_constraints)
 
         try:
             for s in stmt.else_body:
                 analyze_stmt_ir(s, else_env, warnings, ctx)
         except EarlyReturn:
             else_returned = True
+        else_constraints = frozenset(ctx.constraints)
 
         if then_returned and else_returned:
             # Both branches return — propagate
             raise EarlyReturn()
         elif then_returned:
-            # Only then returns — use else env
+            # Only then returns — use else env and constraints
             env.bindings = else_env.bindings
+            ctx.constraints = set(else_constraints)
         elif else_returned:
-            # Only else returns — use then env
+            # Only else returns — use then env and constraints
             env.bindings = then_env.bindings
+            ctx.constraints = set(then_constraints)
         else:
             # Neither returns — normal join
             merged = join_env(then_env, else_env)
             env.bindings = merged.bindings
+
+            # Join constraints
+            joined_constraints = join_constraints(baseline_constraints, [then_constraints, else_constraints])
+            ctx.constraints = joined_constraints
+
+            # Update provenance
+            new_provenance = {}
+            for constraint in joined_constraints:
+                if constraint in ctx.constraint_provenance:
+                    new_provenance[constraint] = ctx.constraint_provenance[constraint]
+            ctx.constraint_provenance = new_provenance
+
         return env
 
     if isinstance(stmt, OpaqueStmt):
@@ -203,6 +236,7 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str], ctx: AnalysisCont
         deferred_exception = None  # EarlyBreak or EarlyContinue to re-raise
 
         for body in all_bodies:
+            ctx.constraints = set(baseline_constraints)  # Reset to baseline (prevent cross-branch contamination)
             branch_env = env.copy()
             returned = False
             try:
@@ -263,6 +297,7 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str], ctx: AnalysisCont
         deferred_exception = None
 
         for body in all_bodies:
+            ctx.constraints = set(baseline_constraints)  # Reset to baseline (prevent cross-branch contamination)
             branch_env = env.copy()
             returned = False
             try:
