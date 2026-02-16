@@ -1,4 +1,5 @@
 """Hover provider for showing inferred shapes."""
+from __future__ import annotations
 
 import re
 from typing import Optional
@@ -41,7 +42,7 @@ def get_hover(env: Env, source: str, line: int, character: int) -> Optional[type
 
     # Look up in environment
     shape = env.get(word)
-    if shape is None or shape.kind == 'bottom':
+    if shape is None or shape.is_bottom():
         return None
 
     # Format as Markdown

@@ -1,4 +1,5 @@
 """Convert Conformal Diagnostic objects to LSP Diagnostic objects."""
+from __future__ import annotations
 
 from lsprotocol import types
 from analysis.diagnostics import Diagnostic as ConformalDiagnostic

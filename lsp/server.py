@@ -1,4 +1,5 @@
 """LSP server for Conformal MATLAB shape analyzer."""
+from __future__ import annotations
 
 import asyncio
 import hashlib
