@@ -7,6 +7,7 @@ import {
 
 let client: LanguageClient;
 let statusBarItem: vscode.StatusBarItem;
+let outputChannel: vscode.OutputChannel;
 
 function getConformalSettings(): { fixpoint: boolean; strict: boolean; analyzeOnChange: boolean } {
     const config = vscode.workspace.getConfiguration('conformal');
@@ -55,9 +56,16 @@ function updateStatusBar(): void {
 }
 
 export function activate(context: vscode.ExtensionContext) {
+    outputChannel = vscode.window.createOutputChannel('Conformal');
+    context.subscriptions.push(outputChannel);
+    outputChannel.appendLine('Conformal extension activating...');
+
     const config = vscode.workspace.getConfiguration('conformal');
     const pythonPath = config.get<string>('pythonPath', 'python3');
     const serverPath = config.get<string>('serverPath', '');
+
+    outputChannel.appendLine(`Python: ${pythonPath}`);
+    outputChannel.appendLine(`Server path: ${serverPath || '(workspace root)'}`);
 
     const serverOptions: ServerOptions = {
         command: pythonPath,
@@ -68,6 +76,7 @@ export function activate(context: vscode.ExtensionContext) {
     const clientOptions: LanguageClientOptions = {
         documentSelector: [{ scheme: 'file', language: 'matlab' }],
         initializationOptions: getConformalSettings(),
+        outputChannel: outputChannel,
     };
 
     client = new LanguageClient('conformal', 'Conformal', serverOptions, clientOptions);
@@ -109,6 +118,7 @@ export function activate(context: vscode.ExtensionContext) {
 
         vscode.commands.registerCommand('conformal.restartServer', async () => {
             if (client) {
+                outputChannel.appendLine('Restarting server...');
                 await client.stop();
                 await client.start();
                 vscode.window.showInformationMessage('Conformal: Server restarted');
@@ -134,12 +144,18 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.workspace.onDidOpenTextDocument(reclassifyIfMatlab),
     );
 
-    // Start client, then push initial config
+    // Start client
+    outputChannel.appendLine('Starting language server...');
     client.start().then(() => {
+        outputChannel.appendLine('Language server started successfully.');
         client.sendNotification('workspace/didChangeConfiguration', {
             settings: { conformal: getConformalSettings() },
         });
         updateStatusBar();
+    }).catch((err: Error) => {
+        const msg = `Failed to start Conformal server: ${err.message}`;
+        outputChannel.appendLine(msg);
+        vscode.window.showErrorMessage(msg);
     });
 }
 
