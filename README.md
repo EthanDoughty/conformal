@@ -4,7 +4,7 @@
 
 ### Static Shape & Dimension Analysis for MATLAB
 
-[![Version](https://img.shields.io/badge/version-0.15.0-orange.svg)](#motivation-and-future-directions)
+[![Version](https://img.shields.io/badge/version-1.0.0-orange.svg)](#motivation-and-future-directions)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![Tests](https://img.shields.io/badge/tests-162%20passing-brightgreen.svg)](#test-suite)
 [![No Dependencies](https://img.shields.io/badge/dependencies-none-green.svg)](#requirements)
@@ -41,7 +41,8 @@ Final environment:
 ## Requirements
 
 - Python 3.10+
-- No third-party dependencies
+- No third-party dependencies for CLI analysis
+- LSP server requires `pygls >= 2.0, < 3.0` (for IDE integration)
 - Tested on Linux
 - No MATLAB installation required
 
@@ -121,12 +122,14 @@ Symbolic dimensions use a frozen polynomial representation (`SymDim`) with ratio
 ## Project Structure
 
 ```
-frontend/    Parsing (lexer.py, matlab_parser.py) and IR lowering
-ir/          Typed IR dataclass definitions
-analysis/    13 focused submodules: expression eval, statements, functions, builtins, binops, constraints, diagnostics
-runtime/     Shape domain (shapes.py), symbolic dimensions (symdim.py), and environments
-tests/       Self-checking MATLAB programs (162 tests, 12 categories)
-tools/       Debugging utilities (AST printer)
+frontend/           Parsing (lexer.py, matlab_parser.py) and IR lowering
+ir/                 Typed IR dataclass definitions
+analysis/           13 focused submodules: expression eval, statements, functions, builtins, binops, constraints, diagnostics
+runtime/            Shape domain (shapes.py), symbolic dimensions (symdim.py), and environments
+lsp/                Language Server Protocol implementation (server.py, diagnostics.py, hover.py)
+vscode-conformal/   VS Code extension (TypeScript thin client)
+tests/              Self-checking MATLAB programs (162 tests, 12 categories)
+tools/              Debugging utilities (AST printer)
 ```
 
 ## Test Suite
@@ -485,6 +488,49 @@ Analyze a file:
 make run FILE=tests/basics/inner_dim_mismatch.m
 ```
 
+## IDE Integration
+
+Conformal ships with a Language Server Protocol (LSP) implementation that integrates with editors. The reference implementation is a VS Code extension.
+
+### VS Code Extension
+
+**Installation** (Development):
+1. Install Python dependencies: `pip install 'pygls>=2.0'`
+2. Clone the repository and navigate to `vscode-conformal/`
+3. Run `npm install` and `npm run compile`
+4. Copy or symlink the extension directory to `~/.vscode/extensions/`
+5. Reload VS Code
+
+**Features**:
+- Real-time dimension mismatch detection (squiggly underlines)
+- Hover tooltips showing inferred shapes (e.g., `matrix[3 x n]`)
+- Analysis on save (or on change with debounce, configurable)
+- Error recovery (parse errors shown as diagnostics)
+
+**Configuration Settings**:
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `conformal.pythonPath` | `python3` | Path to Python interpreter (must have pygls installed) |
+| `conformal.serverPath` | _(workspace root)_ | Path to Conformal repository root containing `lsp/` directory |
+| `conformal.fixpoint` | `false` | Enable fixed-point loop analysis (iterative convergence) |
+| `conformal.strict` | `false` | Fail on unsupported constructs (W_UNSUPPORTED_* warnings) |
+| `conformal.analyzeOnChange` | `false` | Analyze on file changes with 500ms debounce (if false, only on save) |
+
+**How it works**:
+- The extension spawns `python3 -m lsp` as a subprocess over stdio
+- The LSP server runs the Conformal analyzer on document open/save/change
+- Diagnostics (warnings/errors) are published to the editor
+- Hover requests query the last successful analysis environment
+
+**Manual LSP Server Usage**:
+```bash
+# Start LSP server (stdio mode for editor integration)
+python3 -m lsp
+
+# The server expects LSP JSON-RPC messages on stdin
+# and writes responses to stdout
+```
+
 ## CLI Options
 
 `conformal.py file.m` – analyze a file (IR-based)
@@ -538,16 +584,9 @@ I felt that it was very rewarding to use MATLAB as the source language for a sta
 - Expanded builtin coverage (toolbox functions)
 - Constraint propagation across function boundaries
 
-**IDE / LSP Integration (1.0)**
+**Marketplace Distribution**
 
-The 1.0 goal is getting Conformal into editors. The plan is a hybrid: a Python LSP server ([pygls](https://github.com/openlawlibrary/pygls)) that runs the analyzer as a long-lived process, wrapped in a TypeScript VS Code extension that handles the editor side.
-
-What that looks like in practice:
-- Squiggly underlines on dimension mismatches as you type
-- Hover tooltips showing inferred shapes (`matrix[3 x n]`)
-- The extension bundles everything, so users install one thing from the VS Code marketplace. No Python setup, no pip.
-
-This is the same split architecture that Pylance, ruff, and jedi-language-server use. The Python analysis engine stays as-is; the TypeScript layer is just a thin LSP client.
+The VS Code extension is currently in development mode. Future work includes packaging for the VS Code Marketplace with bundled dependencies for zero-setup installation.
 
 **Long-term**
 - Additional editors (Neovim, MATLAB Online)

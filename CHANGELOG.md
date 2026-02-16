@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-02-16
+### Added
+- **Phase 1: Structured Diagnostics** — `Diagnostic` dataclass in `analysis/diagnostics.py`
+- All 13 previously unnamed warnings assigned stable `W_*` codes (total ~40 warning codes)
+- Severity mapping for LSP: Error (definite mismatches), Warning (most), Hint (unsupported constructs)
+- `has_unsupported()` helper for strict-mode validation
+- **Phase 2+3: LSP Server** — `lsp/` package with pygls-based Language Server Protocol implementation
+- LSP server entry point: `python3 -m lsp` (stdio mode for editor integration)
+- Document handlers: didOpen (immediate analysis), didSave (immediate), didChange (500ms debounce)
+- Hover provider: shows inferred shape for variable at cursor (format: `(conformal) varname: shape`)
+- Error recovery: parse errors shown as single diagnostic at line 1, last-good analysis cached
+- LSP diagnostic conversion with severity mapping and source-line context
+- **Phase 4: VS Code Extension** — `vscode-conformal/` TypeScript thin client
+- Spawns Python LSP server over stdio, handles all editor-side LSP protocol
+- 5 configuration settings: pythonPath, serverPath, fixpoint, strict, analyzeOnChange
+- Activates on `.m` files, piggybacks on MathWorks extension for syntax highlighting
+- Development installation via symlink to `~/.vscode/extensions/`
+
+### Changed
+- All `warn_*` functions in `analysis/diagnostics.py` now return `Diagnostic` instead of `str`
+- Test infrastructure unchanged (162 tests still pass, no test changes)
+
+### Dependencies
+- New: `pygls >= 2.0, < 3.0` (and `lsprotocol`) for LSP server functionality
+
 ## [0.15.0] - 2026-02-16
 ### Added
 - Constraint solving for symbolic dimensions: records and validates equality constraints between symbolic dimensions
