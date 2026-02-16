@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-02-15
+### Added
+- Per-element cell tracking: `_elements` field on Shape tracks individual element shapes with sparse column-major indexing
+- Literal cell indexing `c{i}` extracts precise element shape (was always unknown)
+- 2D literal indexing `c{i,j}` with column-major linearization for multi-row cells
+- Dynamic cell indexing joins all element shapes conservatively
+- Cell assignment `c{i} = expr` updates per-element tracking; dynamic index drops tracking
+- `end` keyword in indexing contexts (`c{end}`, `c{1:end}`, `A(end, :)`)
+- `End` IR expression node for the `end` keyword
+- `container_shape` parameter on `eval_expr_ir` for end-keyword resolution
+- W_END_OUTSIDE_INDEXING warning for `end` used outside indexing
+- 10 new test files in tests/cells/ (147 total, was 137)
+
+### Changed
+- `join_shape` and `widen_shape` merge cell elements pointwise; `_elements = None` is absorbing
+- CurlyApply handler dispatches on literal vs dynamic index for precision
+- CellAssign handler updates element tracking for literal index, drops for dynamic
+- Parser recognizes `END` token in `parse_index_arg` and range endpoints (context-sensitive)
+- 6 existing cell test expectations updated to reflect improved precision
+
 ## [0.13.1] - 2026-02-15
 ### Added
 - `iscell()` builtin function for type queries (returns scalar)

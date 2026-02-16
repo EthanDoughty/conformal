@@ -4,9 +4,9 @@
 
 ### Static Shape & Dimension Analysis for MATLAB
 
-[![Version](https://img.shields.io/badge/version-0.13.1-orange.svg)](#motivation-and-future-directions)
+[![Version](https://img.shields.io/badge/version-0.14.0-orange.svg)](#motivation-and-future-directions)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-137%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-147%20passing-brightgreen.svg)](#test-suite)
 [![No Dependencies](https://img.shields.io/badge/dependencies-none-green.svg)](#requirements)
 [![License](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
 
@@ -59,7 +59,7 @@ Matrix literals `[1 2; 3 4]`, cell array literals `{1, 2; 3, 4}`, and string lit
 
 ### Indexing
 
-Parenthesized indexing `A(i,j)`, slice indexing `A(:,j)` and `A(i,:)`, range indexing `A(2:5,:)`, linear indexing, and full-matrix `A(:,:)`. Curly-brace indexing `C{i,j}` for cell arrays. Cell element assignment `C{i} = expr`.
+Parenthesized indexing `A(i,j)`, slice indexing `A(:,j)` and `A(i,:)`, range indexing `A(2:5,:)`, linear indexing, and full-matrix `A(:,:)`. Curly-brace indexing `C{i,j}` for cell arrays with per-element shape tracking (literal index extracts precise element shape). Cell element assignment `C{i} = expr`. The `end` keyword works in indexing contexts (`C{end}`, `A(1:end, 2)`).
 
 ### Functions
 
@@ -71,7 +71,7 @@ User-defined functions are analyzed at each call site with the caller's argument
 
 Structs with field assignment (`s.x = A`), field access, and chained dot notation (`s.x.y`). Missing field access emits a warning. Struct shapes join across branches by taking the union of fields.
 
-Cell arrays with `cell(n)` and `cell(m,n)` constructors, curly-brace indexing, and element assignment. Curly-brace indexing on a non-cell emits a warning.
+Cell arrays with `cell(n)` and `cell(m,n)` constructors, curly-brace indexing, and element assignment. Literal indexing `C{i}` extracts the precise shape of element `i` when available. Dynamic indexing joins all element shapes conservatively. Curly-brace indexing on a non-cell emits a warning.
 
 ### Control flow
 
@@ -107,7 +107,7 @@ Every expression gets a shape from the abstract domain. There are 7 kinds:
 | `string` | `'hello'` | Char array |
 | `struct{...}` | `struct{x: scalar, y: matrix[3 x 1]}` | Tracks fields and their shapes |
 | `function_handle` | `@(x) x'`, `@sin` | Tracks lambda ID for join precision |
-| `cell[r x c]` | `cell[3 x 1]` | Cell array; element types not yet tracked |
+| `cell[r x c]` | `cell[3 x 1]` | Cell array with optional per-element shape tracking |
 | `unknown` | | Error or indeterminate; the lattice top |
 
 Dimensions in `matrix[r x c]` can be:
@@ -131,7 +131,7 @@ tools/       Debugging utilities (AST printer)
 
 ## Test Suite
 
-The analyzer is validated by 137 self-checking test programs organized into 11 categories. Each test embeds its expected behavior as inline assertions:
+The analyzer is validated by 147 self-checking test programs organized into 12 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -375,28 +375,38 @@ Struct creation, field access, and control-flow joins.
 </details>
 
 <details>
-<summary><h3>Cells (14 tests)</h3></summary>
+<summary><h3>Cells (24 tests)</h3></summary>
 
-Cell array literals, curly-brace indexing, and element assignment (v0.12.2-0.12.3).
+Cell array literals, curly-brace indexing, element assignment, and per-element shape tracking (v0.12.2-0.14.0).
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
 | `cell_literal.m` | Cell array literal syntax `{1, 2; 3, 4}` | 0 |
-| `cell_indexing.m` | Curly-brace indexing `C{i,j}` returns `unknown` | 0 |
+| `cell_indexing.m` | Curly-brace indexing `C{i,j}` | 0 |
 | `cell_assignment.m` | Cell element assignment `C{i} = expr` | 0 |
 | `cell_assign_basic.m` | Basic cell element assignment updates cell shape | 0 |
 | `cell_assign_2d.m` | 2D cell element assignment | 0 |
 | `cell_assign_after_literal.m` | Cell assignment after literal creation | 0 |
 | `cell_assign_non_cell.m` | Cell assignment on non-cell variable emits warning | 1 |
+| `cell_assign_updates_element.m` | Cell assignment updates per-element tracking | 0 |
 | `cell_builtin.m` | `cell(n)` and `cell(m,n)` constructors | 0 |
+| `cell_control_flow_element_join.m` | Per-element tracking joins across control flow branches | 0 |
 | `cell_in_control_flow.m` | Cell arrays join across branches | 0 |
-| `cell_mixed_types.m` | Cells can hold mixed element types (all indexed to `unknown`) | 0 |
+| `cell_mixed_types.m` | Cells can hold mixed element types | 0 |
 | `cell_symbolic_dims.m` | Cell arrays with symbolic dimensions | 0 |
 | `cell_transpose.m` | Cell array transpose `C'` | 0 |
 | `cell_range_indexing.m` | Range indexing `C{1:3}` on cell arrays | 0 |
+| `cell_element_tracking.m` | Per-element shape tracking with literal indexing | 0 |
+| `cell_element_2d_indexing.m` | 2D literal indexing `C{i,j}` extracts precise element shape | 0 |
+| `cell_dynamic_indexing.m` | Dynamic indexing joins all element shapes | 0 |
+| `cell_2d_linear_indexing.m` | Linear indexing on multi-row cells (column-major) | 0 |
+| `cell_end_keyword.m` | `end` keyword in cell indexing `C{end}` | 0 |
+| `cell_end_2d.m` | `end` keyword in 2D cell indexing `C{end, end}` | 0 |
+| `cell_end_range.m` | `end` as range endpoint `C{1:end}` | 0 |
+| `end_outside_indexing.m` | `end` keyword outside indexing emits warning | 1 |
 | `curly_indexing_non_cell.m` | Curly indexing on non-cell value is an error | 1 |
 
->Cell arrays use abstract shape `cell[r x c]`. Per-element tracking is deferred; all indexing returns `unknown` for now.
+>Cell arrays use abstract shape `cell[r x c]` with optional per-element tracking. Literal indexing `C{i}` extracts precise element shapes when available. Dynamic indexing joins all elements conservatively. The `end` keyword resolves to the last element index.
 
 </details>
 
@@ -423,7 +433,7 @@ Parser error recovery and unsupported construct handling (graceful degradation).
 ### Running the Tests
 
 ```bash
-# Run all 137 tests
+# Run all 147 tests
 make test
 python3 conformal.py --tests
 
@@ -481,7 +491,8 @@ Conformal analyzes a subset of MATLAB. Here's what it doesn't cover:
 | Scope | Single-file analysis only. No cross-file function resolution or `addpath` handling. |
 | Functions | No nested functions. No `varargin`/`varargout`. No `eval`, `feval`, or `str2func`. |
 | Builtins | 21 builtins recognized. Toolbox functions (`fft`, `eig`, `svd`, `conv`, `filter`, ...) are not modeled and produce an unknown-function warning. |
-| Cell arrays | Dimensions are tracked but element types are not. `C{i}` always returns `unknown`. |
+| Cell arrays | Per-element tracking available for literal-indexed cells. Dynamic indexing conservatively joins all elements. |
+| Indexing | `end` keyword supported in simple contexts (`C{end}`, `A(1:end)`). Arithmetic with `end` (e.g., `end-1`) not yet supported. |
 | Data types | No classes, no maps, no tables, no N-D arrays (only 2-D matrices). No complex number tracking. |
 | Syntax | No command-style calls (`save file.mat`), no `global`/`persistent`, no `parfor`, no `classdef`. |
 | I/O and graphics | No `load`, `save`, `fprintf`, `plot`, or any side-effecting functions. |
