@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- **Major refactor**: Split monolithic files into focused submodules for maintainability
+  - `analysis/analysis_ir.py` (1750 lines) split into 9 submodules: `__init__.py` (entry point), `context.py`, `end_helpers.py`, `dim_extract.py`, `eval_binop.py`, `eval_builtins.py`, `eval_expr.py` (~627 lines), `stmt_analysis.py` (~352 lines), `func_analysis.py`
+  - `frontend/matlab_parser.py`: Extracted `lexer.py` (Token, lex, KEYWORDS)
+  - `runtime/shapes.py`: Extracted `symdim.py` (SymDim polynomial type)
+- No functional changes; all 149 tests passing
 
 ## [0.14.1] - 2026-02-15
 ### Added

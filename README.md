@@ -121,11 +121,11 @@ Symbolic dimensions use a frozen polynomial representation (`SymDim`) with ratio
 ## Project Structure
 
 ```
-frontend/    Parsing and IR lowering
+frontend/    Parsing (lexer.py, matlab_parser.py) and IR lowering
 ir/          Typed IR dataclass definitions
-analysis/    Shape analysis, diagnostics, and core semantics
-runtime/     Shape domain and environments
-tests/       Self-checking MATLAB programs
+analysis/    9 focused submodules: expression eval, statements, functions, builtins, binops, diagnostics
+runtime/     Shape domain (shapes.py), symbolic dimensions (symdim.py), and environments
+tests/       Self-checking MATLAB programs (149 tests, 11 categories)
 tools/       Debugging utilities (AST printer)
 ```
 
