@@ -805,6 +805,7 @@ class MatlabParser:
         : -> ['colon', line]
         a:b -> ['range', line, a, b]
         end -> ['end', line]
+        end-1 -> ['binop', '-', ['end', line], 1]
         end:end -> ['range', line, ['end', line], ['end', line]]
         """
         tok = self.current()
@@ -814,37 +815,28 @@ class MatlabParser:
             c_tok = self.eat(":")
             return ["colon", c_tok.line]
 
-        # Check for 'end' keyword
-        if tok.kind == "END":
-            end_tok = self.eat("END")
-            end_node = ["end", end_tok.line]
-            # Check if followed by ':' for range
+        # Temporarily hide : from precedence table to prevent it being consumed
+        # Save original precedence
+        orig_colon_prec = self.PRECEDENCE.get(":")
+        if ":" in self.PRECEDENCE:
+            del self.PRECEDENCE[":"]
+
+        try:
+            # Parse start expression (: won't be consumed as infix operator)
+            start = self.parse_expr()
+
+            # Check if followed by ':'
             if self.current().value == ":":
                 colon_tok = self.eat(":")
-                # Parse endpoint (could also be 'end')
-                if self.current().kind == "END":
-                    end_end_tok = self.eat("END")
-                    range_end = ["end", end_end_tok.line]
-                else:
-                    range_end = self.parse_expr()
-                return ["range", colon_tok.line, end_node, range_end]
-            return end_node
-
-        # Parse a normal expression first
-        start = self.parse_expr()
-
-        # If immediately followed by ':' inside indexing args, treat it as a range
-        if self.current().value == ":":
-            colon_tok = self.eat(":")
-            # Check if endpoint is 'end'
-            if self.current().kind == "END":
-                end_tok = self.eat("END")
-                range_end = ["end", end_tok.line]
-            else:
+                # Parse range endpoint (still with : hidden)
                 range_end = self.parse_expr()
-            return ["range", colon_tok.line, start, range_end]
+                return ["range", colon_tok.line, start, range_end]
 
-        return start
+            return start
+        finally:
+            # Restore colon precedence
+            if orig_colon_prec is not None:
+                self.PRECEDENCE[":"] = orig_colon_prec
 
 
     def parse_paren_args(self) -> List[Any]:

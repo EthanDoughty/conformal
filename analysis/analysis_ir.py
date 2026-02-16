@@ -61,6 +61,42 @@ class AnalysisContext:
     _next_lambda_id: int = 0
 
 
+def _binop_contains_end(expr: Expr) -> bool:
+    """Recursively check if End appears in a BinOp tree."""
+    if isinstance(expr, End):
+        return True
+    if isinstance(expr, BinOp):
+        return _binop_contains_end(expr.left) or _binop_contains_end(expr.right)
+    return False
+
+
+def _eval_end_arithmetic(expr: Expr, end_value: int) -> Optional[int]:
+    """Evaluate a BinOp tree with End resolved to end_value.
+
+    Returns None if can't resolve (e.g., contains variables).
+    """
+    if isinstance(expr, End):
+        return end_value
+    if isinstance(expr, Const):
+        return int(expr.value)
+    if isinstance(expr, BinOp):
+        left = _eval_end_arithmetic(expr.left, end_value)
+        right = _eval_end_arithmetic(expr.right, end_value)
+        if left is None or right is None:
+            return None
+        if expr.op == '+':
+            return left + right
+        if expr.op == '-':
+            return left - right
+        if expr.op == '*':
+            return left * right
+        if expr.op == '/':
+            return left // right if right != 0 else None
+        # Unsupported operator
+        return None
+    return None  # Can't resolve (e.g., Var in expression)
+
+
 def analyze_program_ir(program: Program, fixpoint: bool = False, ctx: AnalysisContext = None) -> Tuple[Env, List[str]]:
     """Analyze a complete MATLAB program for shape consistency.
 
@@ -791,6 +827,32 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str], ctx: AnalysisContext
                     for elem_shape in elem_dict.values():
                         result = join_shape(result, elem_shape)
                     return result
+            elif isinstance(arg, IndexExpr) and isinstance(arg.expr, BinOp) and _binop_contains_end(arg.expr):
+                # c{end-1}, c{end/2}, etc. — resolve end arithmetic
+                if isinstance(base_shape.rows, int) and isinstance(base_shape.cols, int):
+                    # Concrete dimensions: compute total elements
+                    total_elems = base_shape.rows * base_shape.cols
+                    idx_value = _eval_end_arithmetic(arg.expr, total_elems)
+                    if idx_value is not None and 1 <= idx_value <= total_elems:
+                        # Valid 1-based index, convert to 0-based
+                        return elem_dict.get(idx_value - 1, Shape.unknown())
+                    else:
+                        # Out of bounds or can't resolve (contains variables) → join all elements conservatively
+                        if not elem_dict:
+                            return Shape.unknown()
+                        result = Shape.bottom()
+                        for elem_shape in elem_dict.values():
+                            result = join_shape(result, elem_shape)
+                        return result
+                else:
+                    # Symbolic/unknown dimensions: can't resolve end statically
+                    # Join all elements conservatively
+                    if not elem_dict:
+                        return Shape.unknown()
+                    result = Shape.bottom()
+                    for elem_shape in elem_dict.values():
+                        result = join_shape(result, elem_shape)
+                    return result
             elif isinstance(arg, Colon):
                 # Colon indexing: c{:} → join all elements
                 if not elem_dict:
@@ -836,6 +898,13 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str], ctx: AnalysisContext
                     if isinstance(base_shape.rows, int):
                         row_idx = base_shape.rows - 1
                     # else: symbolic/unknown, leave as None
+                elif isinstance(arg_row.expr, BinOp) and _binop_contains_end(arg_row.expr):
+                    # end-1, end/2, etc. in row position
+                    if isinstance(base_shape.rows, int):
+                        idx_value = _eval_end_arithmetic(arg_row.expr, base_shape.rows)
+                        if idx_value is not None and 1 <= idx_value <= base_shape.rows:
+                            row_idx = idx_value - 1  # Convert to 0-based
+                        # else: out of bounds or can't resolve, leave as None
 
             if isinstance(arg_col, IndexExpr):
                 if isinstance(arg_col.expr, Const):
@@ -845,6 +914,13 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str], ctx: AnalysisContext
                     if isinstance(base_shape.cols, int):
                         col_idx = base_shape.cols - 1
                     # else: symbolic/unknown, leave as None
+                elif isinstance(arg_col.expr, BinOp) and _binop_contains_end(arg_col.expr):
+                    # end-1, end/2, etc. in col position
+                    if isinstance(base_shape.cols, int):
+                        idx_value = _eval_end_arithmetic(arg_col.expr, base_shape.cols)
+                        if idx_value is not None and 1 <= idx_value <= base_shape.cols:
+                            col_idx = idx_value - 1  # Convert to 0-based
+                        # else: out of bounds or can't resolve, leave as None
 
             if row_idx is not None and col_idx is not None and isinstance(base_shape.rows, int):
                 # Both indices resolved: compute linear index
@@ -1273,8 +1349,8 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str], ctx: AnalysisContext
     if isinstance(expr, BinOp):
         op = expr.op
         line = expr.line
-        left_shape = eval_expr_ir(expr.left, env, warnings, ctx)
-        right_shape = eval_expr_ir(expr.right, env, warnings, ctx)
+        left_shape = eval_expr_ir(expr.left, env, warnings, ctx, container_shape)
+        right_shape = eval_expr_ir(expr.right, env, warnings, ctx, container_shape)
         return eval_binop_ir(op, left_shape, right_shape, warnings, expr.left, expr.right, line)
 
     return Shape.unknown()
@@ -1365,8 +1441,35 @@ def index_arg_to_extent_ir(
             warnings.append(diag.warn_range_endpoints_must_be_scalar(line, arg, start_shape, end_shape))
             return None
 
+        # Try to extract concrete endpoints (with End resolution if present)
+        # For matrix indexing A(:, end-1:end), container_shape is the matrix shape
+        # We need the appropriate axis dimension (rows for first arg, cols for second arg)
+        # This is a limitation: we don't know which axis we're on here.
+        # For now, use expr_to_dim_ir for simple cases, and handle End specially
         a = expr_to_dim_ir(start_expr, env)
         b = expr_to_dim_ir(end_expr, env)
+
+        # Special handling for End in range endpoints
+        # If container_shape is a matrix, we need to determine which dimension to use
+        # This is contextual: first arg → rows, second arg → cols
+        # Since index_arg_to_extent_ir doesn't know which arg it's handling,
+        # we use a heuristic: if container has concrete dims, try both
+        if (a is None or b is None) and container_shape is not None:
+            if container_shape.is_matrix():
+                # Try using rows dimension first (common case: A(end-1:end, :))
+                # If that doesn't work, try cols (case: A(:, end-1:end))
+                # This is imperfect but works for common cases
+                container_dim = None
+                if isinstance(container_shape.rows, int):
+                    container_dim = container_shape.rows
+                elif isinstance(container_shape.cols, int):
+                    container_dim = container_shape.cols
+
+                if container_dim is not None:
+                    if a is None:
+                        a = expr_to_dim_ir_with_end(start_expr, env, container_dim)
+                    if b is None:
+                        b = expr_to_dim_ir_with_end(end_expr, env, container_dim)
 
         if isinstance(a, int) and isinstance(b, int):
             if b < a:
@@ -1384,6 +1487,40 @@ def index_arg_to_extent_ir(
         return 1
 
     return None
+
+def expr_to_dim_ir_with_end(expr: Expr, env: Env, container_dim: Optional[int]) -> Optional[int]:
+    """Convert an expression containing End to a concrete integer if possible.
+
+    This is used for range endpoints like end-1:end where we need to resolve
+    end to a concrete value.
+
+    Args:
+        expr: Expression to evaluate (may contain End)
+        env: Current environment
+        container_dim: Container dimension to use for End resolution (e.g., num_cols)
+
+    Returns:
+        Concrete integer if resolvable, None otherwise
+    """
+    if isinstance(expr, Const):
+        v = expr.value
+        if float(v).is_integer():
+            return int(v)
+        return None
+    if isinstance(expr, End):
+        # End keyword resolves to container dimension
+        return container_dim
+    if isinstance(expr, BinOp) and _binop_contains_end(expr):
+        # Arithmetic with End (e.g., end-1, end/2)
+        if container_dim is not None:
+            return _eval_end_arithmetic(expr, container_dim)
+        return None
+    # For other expressions (Var, etc.), fall back to expr_to_dim_ir
+    dim = expr_to_dim_ir(expr, env)
+    if isinstance(dim, int):
+        return dim
+    return None
+
 
 def expr_to_dim_ir(expr: Expr, env: Env) -> Dim:
     """Convert an expression to a dimension value if possible.
