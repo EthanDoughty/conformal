@@ -252,3 +252,7 @@ def warn_lambda_arg_count_mismatch(line: int, expected: int, got: int) -> str:
 def warn_recursive_lambda(line: int) -> str:
     """Warning for recursive lambda call (not supported, returns unknown)."""
     return f"W_RECURSIVE_LAMBDA line {line}: recursive lambda call not supported (returns unknown)"
+
+def warn_end_outside_indexing(line: int) -> str:
+    """Warning for 'end' keyword used outside indexing context."""
+    return f"W_END_OUTSIDE_INDEXING line {line}: 'end' keyword only valid inside indexing expressions"

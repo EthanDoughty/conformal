@@ -620,6 +620,10 @@ class MatlabParser:
                 raise ParseError(
                     f"Expected '(' or function name after '@' at {next_tok.pos}"
                 )
+        elif tok.kind == "END":
+            # 'end' keyword (will warn if not in indexing context during analysis)
+            end_tok = self.eat("END")
+            left = ["end", end_tok.line]
         else:
             raise ParseError(
                 f"Unexpected token {tok.kind} {tok.value!r} in expression at {tok.pos}"
@@ -800,6 +804,8 @@ class MatlabParser:
         """Parse a single argument inside () for indexing/calls
         : -> ['colon', line]
         a:b -> ['range', line, a, b]
+        end -> ['end', line]
+        end:end -> ['range', line, ['end', line], ['end', line]]
         """
         tok = self.current()
 
@@ -808,14 +814,35 @@ class MatlabParser:
             c_tok = self.eat(":")
             return ["colon", c_tok.line]
 
+        # Check for 'end' keyword
+        if tok.kind == "END":
+            end_tok = self.eat("END")
+            end_node = ["end", end_tok.line]
+            # Check if followed by ':' for range
+            if self.current().value == ":":
+                colon_tok = self.eat(":")
+                # Parse endpoint (could also be 'end')
+                if self.current().kind == "END":
+                    end_end_tok = self.eat("END")
+                    range_end = ["end", end_end_tok.line]
+                else:
+                    range_end = self.parse_expr()
+                return ["range", colon_tok.line, end_node, range_end]
+            return end_node
+
         # Parse a normal expression first
         start = self.parse_expr()
 
         # If immediately followed by ':' inside indexing args, treat it as a range
         if self.current().value == ":":
             colon_tok = self.eat(":")
-            end = self.parse_expr()
-            return ["range", colon_tok.line, start, end]
+            # Check if endpoint is 'end'
+            if self.current().kind == "END":
+                end_tok = self.eat("END")
+                range_end = ["end", end_tok.line]
+            else:
+                range_end = self.parse_expr()
+            return ["range", colon_tok.line, start, range_end]
 
         return start
 

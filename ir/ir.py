@@ -67,6 +67,14 @@ class FuncHandle(Expr):
     name: str
 
 @dataclass(frozen=True)
+class End(Expr):
+    """End keyword in indexing context (resolves to last valid index).
+
+    Examples: c{end}, A(end, :), c{end-1}
+    """
+    pass
+
+@dataclass(frozen=True)
 class Apply(Expr):
     """Unified apply node for runtime call-vs-index disambiguation.
 

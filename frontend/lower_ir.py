@@ -267,6 +267,10 @@ def lower_expr(expr: Any) -> Expr:
         # ['func_handle', line, name]
         return FuncHandle(line=expr[1], name=expr[2])
 
+    if tag == "end":
+        # ['end', line]
+        return End(line=expr[1])
+
     if tag == "apply":
         return Apply(line=expr[1], base=lower_expr(expr[2]), args=[lower_index_arg(arg) for arg in expr[3]])
 
