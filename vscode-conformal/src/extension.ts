@@ -17,6 +17,12 @@ function getConformalSettings(): { fixpoint: boolean; strict: boolean; analyzeOn
     };
 }
 
+function reclassifyIfMatlab(doc: vscode.TextDocument): void {
+    if (doc.fileName.endsWith('.m') && doc.languageId !== 'matlab') {
+        vscode.languages.setTextDocumentLanguage(doc, 'matlab');
+    }
+}
+
 function updateStatusBar(): void {
     const editor = vscode.window.activeTextEditor;
     if (!editor || editor.document.languageId !== 'matlab') {
@@ -120,6 +126,12 @@ export function activate(context: vscode.ExtensionContext) {
                 updateStatusBar();
             }
         }),
+    );
+
+    // Reclassify .m files that VS Code opened as Objective-C
+    vscode.workspace.textDocuments.forEach(reclassifyIfMatlab);
+    context.subscriptions.push(
+        vscode.workspace.onDidOpenTextDocument(reclassifyIfMatlab),
     );
 
     // Start client, then push initial config
