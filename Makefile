@@ -1,4 +1,4 @@
-.PHONY: test run clean install install-vscode uninstall
+.PHONY: test run clean install install-vscode publish-vscode uninstall
 
 PY=python3
 
@@ -20,6 +20,9 @@ install:
 install-vscode: install
 	cd vscode-conformal && npm install && npm run compile && npx @vscode/vsce package
 	@echo "Install .vsix: code --install-extension vscode-conformal/*.vsix"
+
+publish-vscode: install-vscode
+	cd vscode-conformal && npx @vscode/vsce publish
 
 uninstall:
 	pip uninstall -y conformal
