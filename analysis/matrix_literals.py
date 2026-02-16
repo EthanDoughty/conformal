@@ -2,10 +2,13 @@
 # matrix_literals.py
 
 from __future__ import annotations
-from typing import List
+from typing import List, TYPE_CHECKING
 
 from runtime.shapes import Shape, Dim, dims_definitely_conflict, join_dim, sum_dims
 from analysis.constraints import record_constraint
+
+if TYPE_CHECKING:
+    from analysis.diagnostics import Diagnostic
 
 
 def as_matrix_shape(s: Shape) -> Shape:
@@ -26,7 +29,7 @@ def as_matrix_shape(s: Shape) -> Shape:
 def infer_matrix_literal_shape(
     shape_rows: List[List[Shape]],
     line: int,
-    warnings: List[str],
+    warnings: List['Diagnostic'],
     ctx,
     env
 ) -> Shape:
@@ -67,8 +70,13 @@ def infer_matrix_literal_shape(
         # If somehow an empty row exists, treat as unknown (rare/unexpected).
         if len(row) == 0:
             had_definite_error = True
+            from analysis.diagnostics import Diagnostic
             warnings.append(
-                f"Line {line}: Empty row in matrix literal. Treating result as unknown."
+                Diagnostic(
+                    line=line,
+                    code="W_MATRIX_LIT_EMPTY_ROW",
+                    message="Empty row in matrix literal. Treating result as unknown."
+                )
             )
             row_heights.append(None)
             row_widths.append(None)
@@ -98,9 +106,16 @@ def infer_matrix_literal_shape(
 
             if dims_definitely_conflict(height, rr):
                 had_definite_error = True
+                from analysis.diagnostics import Diagnostic
                 warnings.append(
-                    f"Line {line}: Horizontal concatenation requires equal row counts in row {r+1}; "
-                    f"got {height} and {rr} in matrix literal."
+                    Diagnostic(
+                        line=line,
+                        code="W_HORZCAT_ROW_MISMATCH",
+                        message=(
+                            f"Horizontal concatenation requires equal row counts in row {r+1}; "
+                            f"got {height} and {rr} in matrix literal."
+                        )
+                    )
                 )
             height = join_dim(height, rr)
 
@@ -116,9 +131,16 @@ def infer_matrix_literal_shape(
 
         if dims_definitely_conflict(common_width, w):
             had_definite_error = True
+            from analysis.diagnostics import Diagnostic
             warnings.append(
-                f"Line {line}: Vertical concatenation requires equal column counts across rows; "
-                f"got {common_width} and {w} in matrix literal."
+                Diagnostic(
+                    line=line,
+                    code="W_VERTCAT_COL_MISMATCH",
+                    message=(
+                        f"Vertical concatenation requires equal column counts across rows; "
+                        f"got {common_width} and {w} in matrix literal."
+                    )
+                )
             )
         common_width = join_dim(common_width, w)
 

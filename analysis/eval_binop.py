@@ -3,7 +3,7 @@
 """Binary operation shape inference."""
 
 from __future__ import annotations
-from typing import List
+from typing import List, TYPE_CHECKING
 
 from ir import Expr
 
@@ -11,12 +11,15 @@ import analysis.diagnostics as diag
 from runtime.shapes import Shape, join_dim, dims_definitely_conflict
 from analysis.constraints import record_constraint
 
+if TYPE_CHECKING:
+    from analysis.diagnostics import Diagnostic
+
 
 def eval_binop_ir(
     op: str,
     left: Shape,
     right: Shape,
-    warnings: List[str],
+    warnings: List['Diagnostic'],
     left_expr: Expr,
     right_expr: Expr,
     line: int,

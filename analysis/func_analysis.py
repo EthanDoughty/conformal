@@ -3,7 +3,7 @@
 """Function call analysis, loop body analysis, and warning formatting."""
 
 from __future__ import annotations
-from typing import List
+from typing import List, TYPE_CHECKING
 
 from ir import IndexArg, IndexExpr
 
@@ -14,55 +14,35 @@ from analysis.constraints import snapshot_constraints
 from runtime.env import Env, widen_env
 from runtime.shapes import Shape
 
+if TYPE_CHECKING:
+    from analysis.diagnostics import Diagnostic
 
-def _format_dual_location_warning(func_warn: str, func_name: str, call_line: int) -> str:
-    """Reformat a function-internal warning with call-site context.
+
+def _format_dual_location_warning(func_warn: 'Diagnostic', func_name: str, call_line: int) -> 'Diagnostic':
+    """Reformat a function-internal diagnostic with call-site context.
 
     Args:
-        func_warn: Warning message from function body
+        func_warn: Diagnostic from function body
         func_name: Name of the called function
         call_line: Line number of the call site
 
     Returns:
-        Warning message with dual-location context
+        Diagnostic with dual-location context
     """
-    # Extract warning line from func_warn
-    # Formats: "W_... line N: ..." or "Line N: ..."
-    # Check for both " line " (lowercase) and "Line " (capitalized at start)
-    body_line = None
-    prefix = None
-    message = None
-
-    if " line " in func_warn:
-        # Format: "W_... line N: message"
-        parts = func_warn.split(" line ", 1)
-        prefix = parts[0]
-        rest = parts[1]
-        if ": " in rest:
-            body_line = rest.split(": ", 1)[0].split(" ")[0]
-            message = rest.split(": ", 1)[1]
-    elif func_warn.startswith("Line "):
-        # Format: "Line N: message"
-        rest = func_warn[5:]  # Skip "Line "
-        if ": " in rest:
-            body_line = rest.split(": ", 1)[0]
-            message = rest.split(": ", 1)[1]
-            prefix = "Line"
-
-    if body_line and message and prefix:
-        # Check if already has call context
-        if "(in " not in func_warn:
-            # Add call context
-            if prefix == "Line":
-                return f"Line {body_line} (in {func_name}, called from line {call_line}): {message}"
-            else:
-                return f"{prefix} line {body_line} (in {func_name}, called from line {call_line}): {message}"
-        else:
-            # Already has call context, return as-is
-            return func_warn
-    else:
-        # Could not parse, return as-is
+    # Check if already has call context
+    if "(in " in func_warn.message:
+        # Already has call context, return as-is
         return func_warn
+
+    # Create new diagnostic with augmented message
+    augmented_message = f"{func_warn.message} (in {func_name}, called from line {call_line})"
+
+    return diag.Diagnostic(
+        line=func_warn.line,
+        code=func_warn.code,
+        message=augmented_message,
+        related_line=call_line
+    )
 
 
 def analyze_function_call(
@@ -70,7 +50,7 @@ def analyze_function_call(
     args: List[IndexArg],
     line: int,
     env: Env,
-    warnings: List[str],
+    warnings: List['Diagnostic'],
     ctx: AnalysisContext
 ) -> List[Shape]:
     """Analyze user-defined function call and return output shapes.
@@ -137,7 +117,7 @@ def analyze_function_call(
     try:
         # Analyze function body with fresh workspace
         func_env = Env()
-        func_warnings: List[str] = []
+        func_warnings: List['Diagnostic'] = []
 
         # Bind parameters to argument shapes + set up dimension aliases
         for param_name, arg, arg_shape in zip(sig.params, args, arg_shapes):
@@ -188,7 +168,7 @@ def analyze_function_call(
         ctx.analyzing_functions.discard(func_name)
 
 
-def _analyze_loop_body(body: list, env: Env, warnings: List[str], ctx: AnalysisContext) -> None:
+def _analyze_loop_body(body: list, env: Env, warnings: List['Diagnostic'], ctx: AnalysisContext) -> None:
     """Analyze a loop body, optionally using widening-based fixed-point iteration.
 
     Modifies env in place. When ctx.fixpoint is True, uses a 3-phase widening algorithm:

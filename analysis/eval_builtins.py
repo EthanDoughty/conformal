@@ -3,13 +3,16 @@
 """Builtin function shape inference via dispatch table."""
 
 from __future__ import annotations
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 
 from ir import Apply, IndexArg
 from analysis.context import AnalysisContext
 from analysis.dim_extract import expr_to_dim_ir, unwrap_arg
 from runtime.env import Env
 from runtime.shapes import Shape, shape_of_zeros, shape_of_ones, mul_dim
+
+if TYPE_CHECKING:
+    from analysis.diagnostics import Diagnostic
 
 
 def _handle_zeros_ones(fname, expr, env, warnings, ctx):
@@ -240,7 +243,7 @@ BUILTIN_HANDLERS = {
 }
 
 
-def eval_builtin_call(fname: str, expr: Apply, env: Env, warnings: List[str], ctx: AnalysisContext) -> Shape:
+def eval_builtin_call(fname: str, expr: Apply, env: Env, warnings: List['Diagnostic'], ctx: AnalysisContext) -> Shape:
     """Dispatch builtin function call to appropriate handler.
 
     Args:

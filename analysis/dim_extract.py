@@ -3,7 +3,7 @@
 """Dimension extraction, struct field updates, and argument unwrapping."""
 
 from __future__ import annotations
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 
 from ir import Expr, Var, Const, End, BinOp, IndexArg, IndexExpr
 from analysis.end_helpers import _binop_contains_end, _eval_end_arithmetic
@@ -11,6 +11,9 @@ from analysis.end_helpers import _binop_contains_end, _eval_end_arithmetic
 import analysis.diagnostics as diag
 from runtime.env import Env
 from runtime.shapes import Shape, Dim, SymDim, add_dim, mul_dim
+
+if TYPE_CHECKING:
+    from analysis.diagnostics import Diagnostic
 
 
 def expr_to_dim_ir_with_end(expr: Expr, env: Env, container_dim: Optional[int]) -> Optional[int]:
@@ -118,7 +121,7 @@ def _update_struct_field(
     fields: List[str],
     value_shape: Shape,
     line: int,
-    warnings: List[str]
+    warnings: List['Diagnostic']
 ) -> Shape:
     """Update a nested struct field with a new value.
 

@@ -3,7 +3,7 @@
 """Analysis package — static shape inference for MATLAB."""
 
 from __future__ import annotations
-from typing import List, Tuple
+from typing import List, Tuple, TYPE_CHECKING
 
 from legacy.analysis_legacy import analyze_program as analyze_program_legacy
 
@@ -12,8 +12,11 @@ from analysis.stmt_analysis import analyze_stmt_ir
 from ir import Program, FunctionDef
 from runtime.env import Env
 
+if TYPE_CHECKING:
+    from analysis.diagnostics import Diagnostic
 
-def analyze_program_ir(program: Program, fixpoint: bool = False, ctx: AnalysisContext = None) -> Tuple[Env, List[str]]:
+
+def analyze_program_ir(program: Program, fixpoint: bool = False, ctx: AnalysisContext = None) -> Tuple[Env, List['Diagnostic']]:
     """Analyze a complete MATLAB program for shape consistency.
 
     Two-pass analysis:
@@ -32,7 +35,7 @@ def analyze_program_ir(program: Program, fixpoint: bool = False, ctx: AnalysisCo
         ctx = AnalysisContext(fixpoint=fixpoint)
 
     env = Env()
-    warnings: List[str] = []
+    warnings: List['Diagnostic'] = []
 
     # Pass 1: Register function definitions
     for item in program.body:

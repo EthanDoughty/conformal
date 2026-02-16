@@ -3,11 +3,14 @@
 """Constraint tracking and path-sensitive joins for dimension equality."""
 
 from __future__ import annotations
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from runtime.shapes import Dim, Shape
 from runtime.symdim import SymDim
 from runtime.env import Env
+
+if TYPE_CHECKING:
+    from analysis.diagnostics import Diagnostic
 
 
 def _dim_key(d: Dim) -> tuple:
@@ -162,7 +165,7 @@ def try_extract_const_value(expr) -> Optional[int]:
     return None
 
 
-def validate_binding(ctx, env, var_name: str, value: int, warnings: list, line: int) -> None:
+def validate_binding(ctx, env, var_name: str, value: int, warnings: list['Diagnostic'], line: int) -> None:
     """Check if binding var_name=value conflicts with recorded constraints.
 
     Args:

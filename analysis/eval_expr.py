@@ -3,7 +3,7 @@
 """Expression evaluation — shape inference for IR expressions."""
 
 from __future__ import annotations
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 
 from analysis.builtins import KNOWN_BUILTINS
 from analysis.context import AnalysisContext
@@ -24,8 +24,11 @@ from runtime.env import Env
 from runtime.shapes import Shape, Dim, join_shape
 from analysis.matrix_literals import infer_matrix_literal_shape
 
+if TYPE_CHECKING:
+    from analysis.diagnostics import Diagnostic
 
-def _eval_index_arg_to_shape(arg: IndexArg, env: Env, warnings: List[str], ctx: AnalysisContext, container_shape: Optional[Shape] = None) -> Shape:
+
+def _eval_index_arg_to_shape(arg: IndexArg, env: Env, warnings: List['Diagnostic'], ctx: AnalysisContext, container_shape: Optional[Shape] = None) -> Shape:
     """Evaluate an IndexArg to a Shape.
 
     Handles:
@@ -59,7 +62,7 @@ def _eval_index_arg_to_shape(arg: IndexArg, env: Env, warnings: List[str], ctx: 
     return Shape.unknown()
 
 
-def eval_expr_ir(expr: Expr, env: Env, warnings: List[str], ctx: AnalysisContext, container_shape: Optional[Shape] = None) -> Shape:
+def eval_expr_ir(expr: Expr, env: Env, warnings: List['Diagnostic'], ctx: AnalysisContext, container_shape: Optional[Shape] = None) -> Shape:
     """Evaluate an expression to infer its shape.
 
     Args:
@@ -514,7 +517,7 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str], ctx: AnalysisContext
 
     return Shape.unknown()
 
-def _eval_indexing(base_shape: Shape, args, line: int, expr, env: Env, warnings: List[str], ctx: AnalysisContext) -> Shape:
+def _eval_indexing(base_shape: Shape, args, line: int, expr, env: Env, warnings: List['Diagnostic'], ctx: AnalysisContext) -> Shape:
     """Indexing logic for Apply-as-indexing nodes.
 
     Args:
@@ -575,7 +578,7 @@ def _eval_indexing(base_shape: Shape, args, line: int, expr, env: Env, warnings:
 def index_arg_to_extent_ir(
     arg: IndexArg,
     env: Env,
-    warnings: List[str],
+    warnings: List['Diagnostic'],
     line: int,
     ctx: AnalysisContext,
     container_shape: Optional[Shape] = None

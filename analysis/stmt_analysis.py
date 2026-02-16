@@ -3,7 +3,7 @@
 """Statement analysis — dispatch and environment updates for IR statements."""
 
 from __future__ import annotations
-from typing import List
+from typing import List, TYPE_CHECKING
 
 from analysis.builtins import KNOWN_BUILTINS
 from analysis.context import EarlyReturn, EarlyBreak, EarlyContinue, AnalysisContext
@@ -24,8 +24,11 @@ from runtime.env import Env, join_env
 from runtime.shapes import Shape
 from analysis.analysis_core import shapes_definitely_incompatible
 
+if TYPE_CHECKING:
+    from analysis.diagnostics import Diagnostic
 
-def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str], ctx: AnalysisContext) -> Env:
+
+def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: AnalysisContext) -> Env:
     """Analyze a statement and update environment with inferred shapes.
 
     Args:
