@@ -1,0 +1,64 @@
+{
+  "name": "conformal",
+  "displayName": "Conformal - MATLAB Shape Analyzer",
+  "description": "Static shape and dimension analysis for MATLAB",
+  "version": "1.0.0",
+  "publisher": "conformal",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters"
+  ],
+  "activationEvents": [
+    "onLanguage:matlab"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "type": "object",
+      "title": "Conformal",
+      "properties": {
+        "conformal.pythonPath": {
+          "type": "string",
+          "default": "python3",
+          "description": "Path to Python interpreter (must have pygls installed)"
+        },
+        "conformal.serverPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to Conformal repository root (containing lsp/ directory). If empty, uses workspace root."
+        },
+        "conformal.fixpoint": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable fixed-point loop analysis (iterative convergence)"
+        },
+        "conformal.strict": {
+          "type": "boolean",
+          "default": false,
+          "description": "Fail on unsupported constructs (W_UNSUPPORTED_* warnings)"
+        },
+        "conformal.analyzeOnChange": {
+          "type": "boolean",
+          "default": false,
+          "description": "Analyze on file changes (with debounce). If false, only analyzes on save."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.80.0",
+    "@vscode/vsce": "^2.0.0",
+    "typescript": "^5.0.0"
+  }
+}
