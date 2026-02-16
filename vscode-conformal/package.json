@@ -5,6 +5,10 @@
   "version": "1.0.0",
   "publisher": "conformal",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/EthanDoughty/conformal.git"
+  },
   "engines": {
     "vscode": "^1.80.0"
   },
