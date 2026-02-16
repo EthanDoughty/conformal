@@ -7,11 +7,11 @@ dimensions and detecting dimension mismatches at compile time.
 """
 
 from __future__ import annotations
-from dataclasses import dataclass, field
-from typing import List, Tuple, Dict, Set, Optional
+from typing import List, Tuple, Optional
 
 from analysis.builtins import KNOWN_BUILTINS
-
+from analysis.context import FunctionSignature, EarlyReturn, EarlyBreak, EarlyContinue, AnalysisContext
+from analysis.end_helpers import _binop_contains_end, _eval_end_arithmetic
 
 from ir import (
     Program, Stmt,
@@ -26,75 +26,6 @@ from runtime.env import Env, join_env, widen_env
 from runtime.shapes import Shape, Dim, SymDim, shape_of_zeros, shape_of_ones, join_dim, mul_dim, add_dim, join_shape
 from analysis.analysis_core import shapes_definitely_incompatible
 from analysis.matrix_literals import infer_matrix_literal_shape, as_matrix_shape, dims_definitely_conflict
-
-
-@dataclass
-class FunctionSignature:
-    """Registered user-defined function signature."""
-    name: str
-    params: List[str]
-    output_vars: List[str]
-    body: List[Stmt]
-
-class EarlyReturn(Exception):
-    """Raised by return statement to exit function body analysis."""
-    pass
-
-class EarlyBreak(Exception):
-    """Raised by break statement to exit loop."""
-    pass
-
-class EarlyContinue(Exception):
-    """Raised by continue statement to skip to next iteration."""
-    pass
-
-@dataclass
-class AnalysisContext:
-    """Threaded analysis state (replaces loose parameters)."""
-    function_registry: Dict[str, FunctionSignature] = field(default_factory=dict)
-    analyzing_functions: Set[str] = field(default_factory=set)
-    analysis_cache: Dict[tuple, tuple] = field(default_factory=dict)
-    fixpoint: bool = False
-    _lambda_metadata: Dict[int, tuple] = field(default_factory=dict)  # lambda_id -> (params, body, closure_env)
-    _handle_registry: Dict[int, str] = field(default_factory=dict)  # handle_id -> function_name
-    analyzing_lambdas: Set[int] = field(default_factory=set)
-    _next_lambda_id: int = 0
-
-
-def _binop_contains_end(expr: Expr) -> bool:
-    """Recursively check if End appears in a BinOp tree."""
-    if isinstance(expr, End):
-        return True
-    if isinstance(expr, BinOp):
-        return _binop_contains_end(expr.left) or _binop_contains_end(expr.right)
-    return False
-
-
-def _eval_end_arithmetic(expr: Expr, end_value: int) -> Optional[int]:
-    """Evaluate a BinOp tree with End resolved to end_value.
-
-    Returns None if can't resolve (e.g., contains variables).
-    """
-    if isinstance(expr, End):
-        return end_value
-    if isinstance(expr, Const):
-        return int(expr.value)
-    if isinstance(expr, BinOp):
-        left = _eval_end_arithmetic(expr.left, end_value)
-        right = _eval_end_arithmetic(expr.right, end_value)
-        if left is None or right is None:
-            return None
-        if expr.op == '+':
-            return left + right
-        if expr.op == '-':
-            return left - right
-        if expr.op == '*':
-            return left * right
-        if expr.op == '/':
-            return left // right if right != 0 else None
-        # Unsupported operator
-        return None
-    return None  # Can't resolve (e.g., Var in expression)
 
 
 def analyze_program_ir(program: Program, fixpoint: bool = False, ctx: AnalysisContext = None) -> Tuple[Env, List[str]]:
