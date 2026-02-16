@@ -126,7 +126,7 @@ frontend/           Parsing (lexer.py, matlab_parser.py) and IR lowering
 ir/                 Typed IR dataclass definitions
 analysis/           13 focused submodules: expression eval, statements, functions, builtins, binops, constraints, diagnostics
 runtime/            Shape domain (shapes.py), symbolic dimensions (symdim.py), and environments
-lsp/                Language Server Protocol implementation (server.py, diagnostics.py, hover.py)
+lsp/                Language Server Protocol implementation (server.py, diagnostics.py, hover.py, code_actions.py)
 vscode-conformal/   VS Code extension (TypeScript thin client)
 tests/              Self-checking MATLAB programs (162 tests, 12 categories)
 tools/              Debugging utilities (AST printer)
@@ -494,15 +494,19 @@ Conformal ships with a Language Server Protocol (LSP) implementation that integr
 
 ### VS Code Extension
 
-**Installation**:
+**Installation** (from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)):
+Search for "Conformal" in the Extensions panel, or install from the command line:
 ```bash
-make install-vscode   # builds extension and produces .vsix
-code --install-extension vscode-conformal/*.vsix
+code --install-extension EthanDoughty.conformal
 ```
 
 **Features**:
 - Real-time dimension mismatch detection (squiggly underlines)
 - Hover tooltips showing inferred shapes (e.g., `matrix[3 x n]`)
+- Quick-fix code actions (e.g., `*` → `.*` for elementwise, `&&` → `&` for non-scalar)
+- Status bar showing warning/error counts and active modes (fixpoint, strict)
+- Commands: Analyze File, Toggle Fixpoint, Toggle Strict, Restart Server
+- Built-in MATLAB syntax highlighting (no MathWorks extension required)
 - Analysis on save (or on change with debounce, configurable)
 - Error recovery (parse errors shown as diagnostics)
 
@@ -582,10 +586,6 @@ I felt that it was very rewarding to use MATLAB as the source language for a sta
 - Nested function support
 - Expanded builtin coverage (toolbox functions)
 - Constraint propagation across function boundaries
-
-**Marketplace Distribution**
-
-The VS Code extension is currently in development mode. Future work includes packaging for the VS Code Marketplace with bundled dependencies for zero-setup installation.
 
 **Long-term**
 - Additional editors (Neovim, MATLAB Online)

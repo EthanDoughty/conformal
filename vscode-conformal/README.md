@@ -2,26 +2,35 @@
 
 Static shape and dimension analysis for MATLAB, right in your editor.
 
-Conformal catches matrix dimension errors before you run your code: inner dimension mismatches in `A * B`, incompatible concatenation in `[A; B]`, and more.
+Conformal catches matrix dimension errors before you run your code: inner dimension mismatches in `A * B`, incompatible concatenation in `[A; B]`, and more. No MATLAB installation required.
 
 ## Features
 
 - **Real-time diagnostics** — dimension mismatches appear as squiggly underlines on save
 - **Hover tooltips** — see inferred shapes for any variable (e.g. `matrix[3 x n]`)
+- **Quick fixes** — lightbulb actions to replace `*` with `.*` (elementwise) and `&&`/`||` with `&`/`|` (non-scalar)
+- **Status bar** — shows warning/error counts and active modes (fixpoint, strict)
+- **Syntax highlighting** — built-in MATLAB grammar (no MathWorks extension needed)
 - **Symbolic tracking** — dimensions like `n`, `m`, `n+m` are tracked through operations
 - **162 analysis rules** — builtins, control flow, functions, lambdas, cells, structs, constraints
 
 ## Install
 
+Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal) — search for "Conformal" in the Extensions panel.
+
+The LSP server requires Python 3.10+ with pygls:
 ```bash
 pip install -e '.[lsp]'            # from the conformal repo root
 ```
 
-Then install this extension (`.vsix`) via the Extensions panel or:
+## Commands
 
-```bash
-code --install-extension conformal-1.0.0.vsix
-```
+| Command | Description |
+|---------|-------------|
+| `Conformal: Analyze Current File` | Save and re-analyze the active `.m` file |
+| `Conformal: Toggle Fixpoint Mode` | Enable/disable fixed-point loop analysis |
+| `Conformal: Toggle Strict Mode` | Enable/disable strict mode (fail on unsupported constructs) |
+| `Conformal: Restart Server` | Restart the LSP server |
 
 ## Settings
 
@@ -35,9 +44,10 @@ code --install-extension conformal-1.0.0.vsix
 
 ## How It Works
 
-The extension spawns `python3 -m lsp` as a Language Server Protocol subprocess. The LSP server runs the Conformal analyzer on your MATLAB files and publishes diagnostics back to VS Code.
+The extension spawns `python3 -m lsp` as a Language Server Protocol subprocess. The LSP server runs the Conformal analyzer on your MATLAB files and publishes diagnostics back to VS Code. Hover requests show inferred shapes from the last successful analysis.
 
 ## More Information
 
+- [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 - [GitHub Repository](https://github.com/EthanDoughty/conformal)
 - [Full Documentation](https://github.com/EthanDoughty/conformal#readme)
