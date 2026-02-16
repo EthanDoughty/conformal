@@ -6,12 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.15.0] - 2026-02-16
+### Added
+- Constraint solving for symbolic dimensions: records and validates equality constraints between symbolic dimensions
+- Constraint recording during matrix operations (matmul inner dims, elementwise ops, concatenation shared dims)
+- W_CONSTRAINT_CONFLICT warning for provable dimension conflicts when variables bound to concrete values
+- Path-sensitive constraint joins: only constraints added in ALL branches survive if/elseif/switch joins
+- Function/lambda scope isolation for constraints (body constraints don't leak to caller)
+- Pre-bound variable filtering (skips constraint recording for already-bound variables)
+- First-seen provenance tracking for constraint diagnostic messages
+- `analysis/constraints.py` module with core constraint infrastructure (~225 lines)
+- 3 new fields on AnalysisContext: constraints, constraint_provenance, scalar_bindings
+- `variables()` method on SymDim for extracting symbolic variable names
+- 13 new test files in tests/constraints/ (162 total, was 149)
+- New test category: constraints (12 categories total, was 11)
+
+### Fixed
+- Cross-branch constraint contamination in IfChain (baseline not restored between branches)
+- 3 stale imports in constraints.py (caught by QA)
+
 ### Changed
 - **Major refactor**: Split monolithic files into focused submodules for maintainability
   - `analysis/analysis_ir.py` (1750 lines) split into 9 submodules: `__init__.py` (entry point), `context.py`, `end_helpers.py`, `dim_extract.py`, `eval_binop.py`, `eval_builtins.py`, `eval_expr.py` (~627 lines), `stmt_analysis.py` (~352 lines), `func_analysis.py`
   - `frontend/matlab_parser.py`: Extracted `lexer.py` (Token, lex, KEYWORDS)
   - `runtime/shapes.py`: Extracted `symdim.py` (SymDim polynomial type)
-- No functional changes; all 149 tests passing
 
 ## [0.14.1] - 2026-02-15
 ### Added
