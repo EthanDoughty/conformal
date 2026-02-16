@@ -2,7 +2,7 @@
   "name": "conformal",
   "displayName": "Conformal - MATLAB Shape Analyzer",
   "description": "Static shape and dimension analysis for MATLAB",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "publisher": "EthanDoughty",
   "license": "MIT",
   "icon": "icon.png",
