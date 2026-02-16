@@ -53,7 +53,7 @@ def _handle_matrix_constructor(fname, expr, env, warnings, ctx):
 
 def _handle_size(fname, expr, env, warnings, ctx):
     """size(x) -> 1x2, size(x, dim) -> scalar."""
-    from analysis.analysis_ir import eval_expr_ir
+    from analysis.eval_expr import eval_expr_ir
     if len(expr.args) == 1:
         try:
             eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
@@ -71,7 +71,7 @@ def _handle_size(fname, expr, env, warnings, ctx):
 
 def _handle_scalar_predicate(fname, expr, env, warnings, ctx):
     """isscalar(x), iscell(x) -> scalar."""
-    from analysis.analysis_ir import eval_expr_ir
+    from analysis.eval_expr import eval_expr_ir
     if len(expr.args) == 1:
         try:
             eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
@@ -101,7 +101,7 @@ def _handle_cell_constructor(fname, expr, env, warnings, ctx):
 
 def _handle_passthrough(fname, expr, env, warnings, ctx):
     """abs(x), sqrt(x) -> same shape as x."""
-    from analysis.analysis_ir import _eval_index_arg_to_shape
+    from analysis.eval_expr import _eval_index_arg_to_shape
     if len(expr.args) == 1:
         return _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
     return None
@@ -109,7 +109,7 @@ def _handle_passthrough(fname, expr, env, warnings, ctx):
 
 def _handle_transpose_fn(fname, expr, env, warnings, ctx):
     """transpose(x) -> swap rows/cols."""
-    from analysis.analysis_ir import _eval_index_arg_to_shape
+    from analysis.eval_expr import _eval_index_arg_to_shape
     if len(expr.args) == 1:
         arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
         if arg_shape.is_matrix():
@@ -120,7 +120,7 @@ def _handle_transpose_fn(fname, expr, env, warnings, ctx):
 
 def _handle_scalar_query(fname, expr, env, warnings, ctx):
     """length(x), numel(x), det(x), norm(x) -> scalar."""
-    from analysis.analysis_ir import _eval_index_arg_to_shape
+    from analysis.eval_expr import _eval_index_arg_to_shape
     if len(expr.args) == 1:
         _ = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
         return Shape.scalar()
@@ -129,7 +129,7 @@ def _handle_scalar_query(fname, expr, env, warnings, ctx):
 
 def _handle_reshape(fname, expr, env, warnings, ctx):
     """reshape(x, m, n) -> matrix[m x n]."""
-    from analysis.analysis_ir import eval_expr_ir
+    from analysis.eval_expr import eval_expr_ir
     if len(expr.args) == 3:
         try:
             _ = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
@@ -143,7 +143,7 @@ def _handle_reshape(fname, expr, env, warnings, ctx):
 
 def _handle_repmat(fname, expr, env, warnings, ctx):
     """repmat(A, m, n) -> matrix[A_rows*m x A_cols*n]."""
-    from analysis.analysis_ir import eval_expr_ir
+    from analysis.eval_expr import eval_expr_ir
     if len(expr.args) == 3:
         try:
             a_shape = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
@@ -163,7 +163,7 @@ def _handle_repmat(fname, expr, env, warnings, ctx):
 
 def _handle_diag(fname, expr, env, warnings, ctx):
     """diag(x): vector->matrix, matrix->vector."""
-    from analysis.analysis_ir import _eval_index_arg_to_shape
+    from analysis.eval_expr import _eval_index_arg_to_shape
     if len(expr.args) == 1:
         arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
         if arg_shape.is_scalar():
@@ -181,7 +181,7 @@ def _handle_diag(fname, expr, env, warnings, ctx):
 
 def _handle_inv(fname, expr, env, warnings, ctx):
     """inv(x): pass-through for square matrices."""
-    from analysis.analysis_ir import _eval_index_arg_to_shape
+    from analysis.eval_expr import _eval_index_arg_to_shape
     if len(expr.args) == 1:
         arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
         if arg_shape.is_matrix():
@@ -195,7 +195,7 @@ def _handle_inv(fname, expr, env, warnings, ctx):
 
 def _handle_linspace(fname, expr, env, warnings, ctx):
     """linspace(a,b) -> 1x100, linspace(a,b,n) -> 1xn."""
-    from analysis.analysis_ir import eval_expr_ir
+    from analysis.eval_expr import eval_expr_ir
     if len(expr.args) == 2:
         try:
             _ = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
