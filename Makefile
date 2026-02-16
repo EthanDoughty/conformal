@@ -1,4 +1,4 @@
-.PHONY: test run clean
+.PHONY: test run clean install install-vscode uninstall
 
 PY=python3
 
@@ -12,3 +12,14 @@ run:
 clean:
 	find . -type d -name "__pycache__" -prune -exec rm -rf {} \;
 	find . -type f -name "*.pyc" -delete
+
+install:
+	pip install -e '.[lsp]'
+	@echo "Conformal installed. Run 'conformal --tests' to verify."
+
+install-vscode: install
+	cd vscode-conformal && npm install && npm run compile && npx @vscode/vsce package
+	@echo "Install .vsix: code --install-extension vscode-conformal/*.vsix"
+
+uninstall:
+	pip uninstall -y conformal

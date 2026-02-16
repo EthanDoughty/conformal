@@ -11,12 +11,12 @@ export function activate(context: vscode.ExtensionContext) {
     // Build args: python3 -m lsp (from serverPath if set, else from workspace root)
     const args = ['-m', 'lsp'];
 
+    // When serverPath is set, use it as cwd (repo checkout mode).
+    // Otherwise, rely on pip-installed package being on PATH.
     const serverOptions: ServerOptions = {
         command: pythonPath,
         args: args,
-        options: {
-            cwd: serverPath || (vscode.workspace.workspaceFolders?.[0]?.uri.fsPath),
-        },
+        options: serverPath ? { cwd: serverPath } : {},
     };
 
     const clientOptions: LanguageClientOptions = {

@@ -39,6 +39,7 @@ Thumbs.db
 # Project specific
 *.zip
 *.log
+*.vsix
 .cache/
 
 # Development tooling (local only)

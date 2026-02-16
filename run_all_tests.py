@@ -5,6 +5,7 @@ import sys
 import os
 import re
 import glob
+from pathlib import Path
 from typing import Dict, List, Tuple
 
 from frontend.matlab_parser import parse_matlab
@@ -13,13 +14,15 @@ from analysis import analyze_program_ir
 from analysis.diagnostics import has_unsupported
 from runtime.shapes import Shape
 
+_REPO_ROOT = Path(__file__).resolve().parent
+
 
 def test_sort_key(path: str) -> str:
     """Sort test files alphabetically by full path."""
     return path
 
 
-TEST_FILES = sorted(glob.glob("tests/**/*.m", recursive=True), key=test_sort_key)
+TEST_FILES = sorted(glob.glob(str(_REPO_ROOT / "tests/**/*.m"), recursive=True), key=test_sort_key)
 
 EXPECT_RE = re.compile(r"%\s*EXPECT:\s*(.+)$")
 EXPECT_FIXPOINT_RE = re.compile(r"%\s*EXPECT_FIXPOINT:\s*(.+)$")

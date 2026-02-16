@@ -7,7 +7,7 @@
 [![Version](https://img.shields.io/badge/version-1.0.0-orange.svg)](#motivation-and-future-directions)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![Tests](https://img.shields.io/badge/tests-162%20passing-brightgreen.svg)](#test-suite)
-[![No Dependencies](https://img.shields.io/badge/dependencies-none-green.svg)](#requirements)
+[![pip installable](https://img.shields.io/badge/pip-installable-green.svg)](#getting-started)
 [![License](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
 
 *Matrices must be **conformable** before they can perform. Conformal makes sure they are.*
@@ -26,7 +26,7 @@ D = [A; B];
 ```
 
 ```
-$ python3 conformal.py example.m
+$ conformal example.m
 
 Warnings:
   - Line 3: Dimension mismatch in expression (A * B):
@@ -41,8 +41,7 @@ Final environment:
 ## Requirements
 
 - Python 3.10+
-- No third-party dependencies for CLI analysis
-- LSP server requires `pygls >= 2.0, < 3.0` (for IDE integration)
+- `pip install -e '.[lsp]'` installs everything (or `make install`)
 - Tested on Linux
 - No MATLAB installation required
 
@@ -476,16 +475,16 @@ python3 conformal.py --strict --tests
 
 ## Getting Started
 
-Clone and Verify:
 ```bash
 git clone https://github.com/EthanDoughty/conformal.git
 cd conformal
-make test
+make install          # pip install -e '.[lsp]' (editable + pygls)
+conformal --tests     # verify 162 tests pass
 ```
 
 Analyze a file:
 ```bash
-make run FILE=tests/basics/inner_dim_mismatch.m
+conformal tests/basics/inner_dim_mismatch.m
 ```
 
 ## IDE Integration
@@ -494,12 +493,11 @@ Conformal ships with a Language Server Protocol (LSP) implementation that integr
 
 ### VS Code Extension
 
-**Installation** (Development):
-1. Install Python dependencies: `pip install 'pygls>=2.0'`
-2. Clone the repository and navigate to `vscode-conformal/`
-3. Run `npm install` and `npm run compile`
-4. Copy or symlink the extension directory to `~/.vscode/extensions/`
-5. Reload VS Code
+**Installation**:
+```bash
+make install-vscode   # builds extension and produces .vsix
+code --install-extension vscode-conformal/*.vsix
+```
 
 **Features**:
 - Real-time dimension mismatch detection (squiggly underlines)
@@ -511,7 +509,7 @@ Conformal ships with a Language Server Protocol (LSP) implementation that integr
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `conformal.pythonPath` | `python3` | Path to Python interpreter (must have pygls installed) |
-| `conformal.serverPath` | _(workspace root)_ | Path to Conformal repository root containing `lsp/` directory |
+| `conformal.serverPath` | _(empty)_ | Path to Conformal repo root (only needed if not pip-installed) |
 | `conformal.fixpoint` | `false` | Enable fixed-point loop analysis (iterative convergence) |
 | `conformal.strict` | `false` | Fail on unsupported constructs (W_UNSUPPORTED_* warnings) |
 | `conformal.analyzeOnChange` | `false` | Analyze on file changes with 500ms debounce (if false, only on save) |
@@ -533,7 +531,7 @@ python3 -m lsp
 
 ## CLI Options
 
-`conformal.py file.m` – analyze a file (IR-based)
+`conformal file.m` – analyze a file (IR-based)
 
 `--tests` – run full test suite
 
