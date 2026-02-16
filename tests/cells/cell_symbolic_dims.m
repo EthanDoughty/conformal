@@ -2,7 +2,7 @@
 % EXPECT: warnings = 0
 % EXPECT: A = matrix[n x m]
 % EXPECT: c = cell[1 x 2]
-% EXPECT: x = unknown
+% EXPECT: x = matrix[n x m]
 
 n = 3;
 m = 4;

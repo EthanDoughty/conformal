@@ -198,6 +198,7 @@ class Shape:
     cols: Optional[Dim] = None
     _fields: tuple = ()  # For struct shapes: tuple of (field_name, Shape) pairs (sorted)
     _lambda_ids: Optional[frozenset] = None  # For function_handle shapes: set of lambda/handle IDs
+    _elements: Optional[tuple] = None  # For cell shapes: tuple of (linear_index, Shape) pairs (sorted)
 
     # Constructors
 
@@ -239,9 +240,22 @@ class Shape:
         return Shape(kind="struct", _fields=tuple(sorted(fields.items())))
 
     @staticmethod
-    def cell(rows: Dim, cols: Dim) -> "Shape":
-        """Create a cell array shape with given dimensions."""
-        return Shape(kind="cell", rows=rows, cols=cols)
+    def cell(rows: Dim, cols: Dim, elements: Optional[dict] = None) -> "Shape":
+        """Create a cell array shape with optional per-element shapes.
+
+        Args:
+            rows: Number of rows
+            cols: Number of columns
+            elements: Optional dict mapping linear indices to shapes
+
+        Returns:
+            Cell shape with _elements as sorted tuple of (idx, shape) pairs
+        """
+        if elements is None:
+            elem_tuple = None
+        else:
+            elem_tuple = tuple(sorted(elements.items()))
+        return Shape(kind="cell", rows=rows, cols=cols, _elements=elem_tuple)
 
     @staticmethod
     def function_handle(lambda_ids=None) -> "Shape":
@@ -538,10 +552,28 @@ def widen_shape(old: Shape, new: Shape) -> Shape:
         return Shape.struct(widened_fields)
 
     if old.is_cell() and new.is_cell():
-        return Shape.cell(
-            widen_dim(old.rows, new.rows),
-            widen_dim(old.cols, new.cols),
-        )
+        # Widen dimensions
+        widened_rows = widen_dim(old.rows, new.rows)
+        widened_cols = widen_dim(old.cols, new.cols)
+
+        # Widen elements: None is absorbing (if either side has no tracking, result has no tracking)
+        if old._elements is None or new._elements is None:
+            widened_elements = None
+        else:
+            # Merge element dicts pointwise (union keys, widen values)
+            old_dict = dict(old._elements)
+            new_dict = dict(new._elements)
+            all_indices = set(old_dict.keys()) | set(new_dict.keys())
+            widened_elem_dict = {}
+            for idx in all_indices:
+                e_old = old_dict.get(idx, Shape.bottom())
+                e_new = new_dict.get(idx, Shape.bottom())
+                widened_elem_dict[idx] = widen_shape(e_old, e_new)
+            # Remove bottom elements (internal-only, don't store)
+            widened_elem_dict = {idx: s for idx, s in widened_elem_dict.items() if not s.is_bottom()}
+            widened_elements = widened_elem_dict if widened_elem_dict else None
+
+        return Shape.cell(widened_rows, widened_cols, elements=widened_elements)
 
     # Different kinds → unknown
     return Shape.unknown()
@@ -608,9 +640,28 @@ def join_shape(s1: Shape, s2: Shape) -> Shape:
         return Shape.struct(joined_fields)
 
     if s1.is_cell() and s2.is_cell():
+        # Join dimensions
         r = join_dim(s1.rows, s2.rows)
         c = join_dim(s1.cols, s2.cols)
-        return Shape.cell(r, c)
+
+        # Join elements: None is absorbing (if either side has no tracking, result has no tracking)
+        if s1._elements is None or s2._elements is None:
+            joined_elements = None
+        else:
+            # Merge element dicts pointwise (union keys, join values)
+            dict1 = dict(s1._elements)
+            dict2 = dict(s2._elements)
+            all_indices = set(dict1.keys()) | set(dict2.keys())
+            joined_elem_dict = {}
+            for idx in all_indices:
+                e1 = dict1.get(idx, Shape.bottom())
+                e2 = dict2.get(idx, Shape.bottom())
+                joined_elem_dict[idx] = join_shape(e1, e2)
+            # Remove bottom elements (internal-only, don't store)
+            joined_elem_dict = {idx: s for idx, s in joined_elem_dict.items() if not s.is_bottom()}
+            joined_elements = joined_elem_dict if joined_elem_dict else None
+
+        return Shape.cell(r, c, elements=joined_elements)
 
     # Different kinds → unknown
     return Shape.unknown()

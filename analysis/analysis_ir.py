@@ -8,7 +8,7 @@ dimensions and detecting dimension mismatches at compile time.
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import List, Tuple, Dict, Set
+from typing import List, Tuple, Dict, Set, Optional
 
 from analysis.builtins import KNOWN_BUILTINS
 
@@ -17,7 +17,7 @@ from ir import (
     Program, Stmt,
     Assign, StructAssign, CellAssign, ExprStmt, While, For, If, IfChain, Switch, Try, Break, Continue,
     OpaqueStmt, FunctionDef, AssignMulti, Return,
-    Expr, Var, Const, StringLit, FieldAccess, Lambda, FuncHandle, MatrixLit, CellLit, Apply, CurlyApply, Transpose, Neg, BinOp,
+    Expr, Var, Const, StringLit, FieldAccess, Lambda, FuncHandle, End, MatrixLit, CellLit, Apply, CurlyApply, Transpose, Neg, BinOp,
     IndexArg, Colon, Range, IndexExpr,
 )
 
@@ -356,26 +356,52 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str], ctx: AnalysisCont
         # Evaluate RHS
         rhs_shape = eval_expr_ir(stmt.expr, env, warnings, ctx)
 
-        # Evaluate index args for side effects
-        for arg in stmt.args:
-            _ = _eval_index_arg_to_shape(arg, env, warnings, ctx)
-
         # Get current base variable shape
         base_shape = env.get(stmt.base_name)
 
         # Verify base is cell (or bottom for unbound variables)
         if base_shape.is_bottom():
-            # Unbound variable: create cell with unknown dimensions
-            env.set(stmt.base_name, Shape.cell(None, None))
+            # Unbound variable: create cell with unknown dimensions, no element tracking
+            env.set(stmt.base_name, Shape.cell(None, None, elements=None))
+            return env
         elif not base_shape.is_cell():
+            # Evaluate index args for side effects
+            for arg in stmt.args:
+                _ = _eval_index_arg_to_shape(arg, env, warnings, ctx, container_shape=base_shape)
             # Base is not a cell: warn and keep original shape
             warnings.append(diag.warn_cell_assign_non_cell(stmt.line, stmt.base_name, base_shape))
-            # Don't modify env (keep base_shape unchanged)
-        else:
-            # Base is cell: preserve shape (element assignment doesn't change container dims)
-            # env already has correct cell shape, no update needed
-            pass
+            return env
 
+        # Base is cell: try to update element tracking
+        # Check if we can extract literal index
+        if len(stmt.args) == 1:
+            arg = stmt.args[0]
+            if isinstance(arg, IndexExpr) and isinstance(arg.expr, Const):
+                # Literal 1D index: update element tracking
+                linear_idx = int(arg.expr.value) - 1  # Convert to 0-based
+
+                # Get current elements
+                if base_shape._elements is None:
+                    current_elems = {}
+                else:
+                    current_elems = dict(base_shape._elements)
+
+                # Update element at index
+                current_elems[linear_idx] = rhs_shape
+
+                # Create updated cell shape
+                updated_shape = Shape.cell(base_shape.rows, base_shape.cols, elements=current_elems)
+                env.set(stmt.base_name, updated_shape)
+                return env
+
+        # Dynamic index or 2D literal: drop element tracking (set _elements = None)
+        # Evaluate args for side effects
+        for arg in stmt.args:
+            _ = _eval_index_arg_to_shape(arg, env, warnings, ctx, container_shape=base_shape)
+
+        # Preserve container dimensions, drop element tracking
+        updated_shape = Shape.cell(base_shape.rows, base_shape.cols, elements=None)
+        env.set(stmt.base_name, updated_shape)
         return env
 
     if isinstance(stmt, ExprStmt):
@@ -617,7 +643,7 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str], ctx: AnalysisCont
     return env
 
 
-def _eval_index_arg_to_shape(arg: IndexArg, env: Env, warnings: List[str], ctx: AnalysisContext) -> Shape:
+def _eval_index_arg_to_shape(arg: IndexArg, env: Env, warnings: List[str], ctx: AnalysisContext, container_shape: Optional[Shape] = None) -> Shape:
     """Evaluate an IndexArg to a Shape.
 
     Handles:
@@ -630,14 +656,18 @@ def _eval_index_arg_to_shape(arg: IndexArg, env: Env, warnings: List[str], ctx: 
         env: Current environment
         warnings: List to append warnings to
         ctx: Analysis context
+        container_shape: Optional shape of container being indexed (for End resolution)
 
     Returns:
         Shape of the argument
     """
     if isinstance(arg, IndexExpr):
-        return eval_expr_ir(arg.expr, env, warnings, ctx)
+        return eval_expr_ir(arg.expr, env, warnings, ctx, container_shape)
     elif isinstance(arg, Range):
         # Range creates a row vector; shape depends on the bounds
+        # Evaluate start and end for side effects (e.g., End keyword resolution)
+        _ = eval_expr_ir(arg.start, env, warnings, ctx, container_shape)
+        _ = eval_expr_ir(arg.end, env, warnings, ctx, container_shape)
         # For simplicity, we assume ranges create 1 x N matrices
         # (The actual size depends on start/end evaluation)
         return Shape.matrix(1, None)  # 1 x unknown
@@ -647,7 +677,7 @@ def _eval_index_arg_to_shape(arg: IndexArg, env: Env, warnings: List[str], ctx: 
     return Shape.unknown()
 
 
-def eval_expr_ir(expr: Expr, env: Env, warnings: List[str], ctx: AnalysisContext) -> Shape:
+def eval_expr_ir(expr: Expr, env: Env, warnings: List[str], ctx: AnalysisContext, container_shape: Optional[Shape] = None) -> Shape:
     """Evaluate an expression to infer its shape.
 
     Args:
@@ -655,6 +685,7 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str], ctx: AnalysisContext
         env: Current environment with variable shapes
         warnings: List to append warnings to
         ctx: Analysis context
+        container_shape: Optional shape of container being indexed (for End keyword resolution)
 
     Returns:
         Inferred shape of the expression
@@ -672,6 +703,14 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str], ctx: AnalysisContext
     if isinstance(expr, StringLit):
         return Shape.string()
 
+    if isinstance(expr, End):
+        # End keyword in indexing context
+        if container_shape is None:
+            warnings.append(diag.warn_end_outside_indexing(expr.line))
+            return Shape.unknown()
+        # End resolves to a scalar index value (integer)
+        return Shape.scalar()
+
     if isinstance(expr, MatrixLit):
         # Evaluate element shapes first (before conversion)
         raw_shape_rows = [
@@ -681,14 +720,9 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str], ctx: AnalysisContext
         return infer_matrix_literal_shape(raw_shape_rows, expr.line, warnings)
 
     if isinstance(expr, CellLit):
-        # Cell literal: infer dimensions from structure (ignore element shapes)
+        # Cell literal: infer dimensions and track element shapes
         if not expr.rows:
-            return Shape.cell(0, 0)
-
-        # Evaluate elements for side effects only (don't track element shapes)
-        for row in expr.rows:
-            for elem in row:
-                _ = eval_expr_ir(elem, env, warnings, ctx)
+            return Shape.cell(0, 0, elements={})
 
         num_rows = len(expr.rows)
         num_cols = len(expr.rows[0]) if expr.rows else 0
@@ -696,27 +730,142 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str], ctx: AnalysisContext
         # Validate rectangular structure (all rows same length)
         for row in expr.rows:
             if len(row) != num_cols:
-                # Ragged cell array: return unknown dimensions
-                return Shape.cell(None, None)
+                # Ragged cell array: return unknown dimensions, no element tracking
+                return Shape.cell(None, None, elements=None)
 
-        return Shape.cell(num_rows, num_cols)
+        # Evaluate all elements and collect shapes (COLUMN-MAJOR indexing)
+        elem_shapes = {}
+        for row_idx, row_exprs in enumerate(expr.rows):
+            for col_idx, e in enumerate(row_exprs):
+                elem_shape = eval_expr_ir(e, env, warnings, ctx)
+                # Column-major: linear_idx = col * num_rows + row
+                linear_idx = col_idx * num_rows + row_idx
+                # Only store non-unknown shapes (sparse representation)
+                if not elem_shape.is_unknown():
+                    elem_shapes[linear_idx] = elem_shape
+
+        return Shape.cell(num_rows, num_cols, elements=elem_shapes)
 
     if isinstance(expr, CurlyApply):
         # Curly indexing: c{i} or c{i,j}
         base_shape = eval_expr_ir(expr.base, env, warnings, ctx)
 
-        # Evaluate args for side effects
-        for arg in expr.args:
-            _ = _eval_index_arg_to_shape(arg, env, warnings, ctx)
-
         # Check base is cell
         if not base_shape.is_cell():
+            # Evaluate args for side effects
+            for arg in expr.args:
+                _ = _eval_index_arg_to_shape(arg, env, warnings, ctx, container_shape=base_shape)
             warnings.append(diag.warn_curly_indexing_non_cell(expr.line, base_shape))
             return Shape.unknown()
 
-        # Content indexing: return unknown (element type approximation)
-        # Future: track per-element shapes in v0.13.0+
-        return Shape.unknown()
+        # If no element tracking, return unknown
+        if base_shape._elements is None:
+            # Evaluate args for side effects
+            for arg in expr.args:
+                _ = _eval_index_arg_to_shape(arg, env, warnings, ctx, container_shape=base_shape)
+            return Shape.unknown()
+
+        elem_dict = dict(base_shape._elements)
+
+        # Try to extract literal index
+        if len(expr.args) == 1:
+            # 1D indexing: c{i}
+            arg = expr.args[0]
+            if isinstance(arg, IndexExpr) and isinstance(arg.expr, Const):
+                # Literal 1D index
+                idx_value = int(arg.expr.value) - 1  # Convert MATLAB 1-based to 0-based
+                return elem_dict.get(idx_value, Shape.unknown())
+            elif isinstance(arg, IndexExpr) and isinstance(arg.expr, End):
+                # c{end} — resolve to last element (linear indexing)
+                if isinstance(base_shape.rows, int) and isinstance(base_shape.cols, int):
+                    # Concrete dimensions: compute total elements
+                    total_elems = base_shape.rows * base_shape.cols
+                    idx_value = total_elems - 1  # Convert to 0-based
+                    return elem_dict.get(idx_value, Shape.unknown())
+                else:
+                    # Symbolic/unknown dimensions: can't resolve end statically
+                    # Join all elements conservatively
+                    if not elem_dict:
+                        return Shape.unknown()
+                    result = Shape.bottom()
+                    for elem_shape in elem_dict.values():
+                        result = join_shape(result, elem_shape)
+                    return result
+            elif isinstance(arg, Colon):
+                # Colon indexing: c{:} → join all elements
+                if not elem_dict:
+                    return Shape.unknown()
+                result = Shape.bottom()
+                for elem_shape in elem_dict.values():
+                    result = join_shape(result, elem_shape)
+                return result
+            elif isinstance(arg, Range):
+                # Range indexing: c{start:end} → join subset
+                # For now, conservatively join all elements (precise range extraction deferred)
+                _ = _eval_index_arg_to_shape(arg, env, warnings, ctx, container_shape=base_shape)
+                if not elem_dict:
+                    return Shape.unknown()
+                result = Shape.bottom()
+                for elem_shape in elem_dict.values():
+                    result = join_shape(result, elem_shape)
+                return result
+            else:
+                # Dynamic index: join all elements
+                _ = _eval_index_arg_to_shape(arg, env, warnings, ctx, container_shape=base_shape)
+                if not elem_dict:
+                    return Shape.unknown()
+                result = Shape.bottom()
+                for elem_shape in elem_dict.values():
+                    result = join_shape(result, elem_shape)
+                return result
+
+        elif len(expr.args) == 2:
+            # 2D indexing: c{i, j}
+            arg_row = expr.args[0]
+            arg_col = expr.args[1]
+
+            # Try to extract concrete row and column indices (handle both Const and End)
+            row_idx = None
+            col_idx = None
+
+            if isinstance(arg_row, IndexExpr):
+                if isinstance(arg_row.expr, Const):
+                    row_idx = int(arg_row.expr.value) - 1  # Convert to 0-based
+                elif isinstance(arg_row.expr, End):
+                    # end in row position → last row
+                    if isinstance(base_shape.rows, int):
+                        row_idx = base_shape.rows - 1
+                    # else: symbolic/unknown, leave as None
+
+            if isinstance(arg_col, IndexExpr):
+                if isinstance(arg_col.expr, Const):
+                    col_idx = int(arg_col.expr.value) - 1  # Convert to 0-based
+                elif isinstance(arg_col.expr, End):
+                    # end in col position → last col
+                    if isinstance(base_shape.cols, int):
+                        col_idx = base_shape.cols - 1
+                    # else: symbolic/unknown, leave as None
+
+            if row_idx is not None and col_idx is not None and isinstance(base_shape.rows, int):
+                # Both indices resolved: compute linear index
+                linear_idx = col_idx * base_shape.rows + row_idx
+                return elem_dict.get(linear_idx, Shape.unknown())
+            else:
+                # Dynamic 2D index: evaluate args and join all elements
+                _ = _eval_index_arg_to_shape(arg_row, env, warnings, ctx, container_shape=base_shape)
+                _ = _eval_index_arg_to_shape(arg_col, env, warnings, ctx, container_shape=base_shape)
+                if not elem_dict:
+                    return Shape.unknown()
+                result = Shape.bottom()
+                for elem_shape in elem_dict.values():
+                    result = join_shape(result, elem_shape)
+                return result
+
+        else:
+            # Multi-dimensional indexing (>2D): evaluate args and return unknown
+            for arg in expr.args:
+                _ = _eval_index_arg_to_shape(arg, env, warnings, ctx, container_shape=base_shape)
+            return Shape.unknown()
 
     if isinstance(expr, Apply):
         line = expr.line
@@ -1162,8 +1311,8 @@ def _eval_indexing(base_shape: Shape, args, line: int, expr, env: Env, warnings:
         if len(args) == 2:
             a1, a2 = args
 
-            r_extent = index_arg_to_extent_ir(a1, env, warnings, line, ctx)
-            c_extent = index_arg_to_extent_ir(a2, env, warnings, line, ctx)
+            r_extent = index_arg_to_extent_ir(a1, env, warnings, line, ctx, container_shape=base_shape)
+            c_extent = index_arg_to_extent_ir(a2, env, warnings, line, ctx, container_shape=base_shape)
 
             def is_allowed_unknown(a: IndexArg) -> bool:
                 return isinstance(a, (Colon, Range))
@@ -1193,7 +1342,8 @@ def index_arg_to_extent_ir(
     env: Env,
     warnings: List[str],
     line: int,
-    ctx: AnalysisContext
+    ctx: AnalysisContext,
+    container_shape: Optional[Shape] = None
 ) -> Dim:
     """
     Return how many rows/cols this index selects:
@@ -1208,8 +1358,8 @@ def index_arg_to_extent_ir(
         start_expr = arg.start
         end_expr = arg.end
 
-        start_shape = eval_expr_ir(start_expr, env, warnings, ctx)
-        end_shape = eval_expr_ir(end_expr, env, warnings, ctx)
+        start_shape = eval_expr_ir(start_expr, env, warnings, ctx, container_shape)
+        end_shape = eval_expr_ir(end_expr, env, warnings, ctx, container_shape)
 
         if start_shape.is_matrix() or end_shape.is_matrix():
             warnings.append(diag.warn_range_endpoints_must_be_scalar(line, arg, start_shape, end_shape))
@@ -1227,7 +1377,7 @@ def index_arg_to_extent_ir(
         return None
 
     if isinstance(arg, IndexExpr):
-        s = eval_expr_ir(arg.expr, env, warnings, ctx)
+        s = eval_expr_ir(arg.expr, env, warnings, ctx, container_shape)
         if s.is_matrix():
             warnings.append(diag.warn_non_scalar_index_arg(line, arg, s))
             return None
@@ -1249,6 +1399,9 @@ def expr_to_dim_ir(expr: Expr, env: Env) -> Dim:
         v = expr.value
         if float(v).is_integer():
             return int(v)
+        return None
+    if isinstance(expr, End):
+        # End keyword: can't convert to dimension without container context
         return None
     if isinstance(expr, Var):
         # Check for dimension alias first (propagates caller's dim name)
