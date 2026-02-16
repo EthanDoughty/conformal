@@ -16,6 +16,7 @@ from runtime.env import Env
 from analysis.diagnostics import Diagnostic as ConformalDiagnostic
 from lsp.diagnostics import to_lsp_diagnostic
 from lsp.hover import get_hover
+from lsp.code_actions import code_actions_for_diagnostic
 
 
 @dataclass
@@ -32,6 +33,13 @@ analysis_cache: Dict[str, AnalysisCache] = {}
 
 # Debouncing: URI -> asyncio.Task
 debounce_tasks: Dict[str, asyncio.Task] = {}
+
+# Server settings (updated via workspace/didChangeConfiguration)
+server_settings: Dict[str, object] = {
+    "fixpoint": False,
+    "strict": False,
+    "analyze_on_change": False,
+}
 
 # Create server instance
 server = LanguageServer(
@@ -59,7 +67,22 @@ def _validate(ls: LanguageServer, uri: str, source: str) -> None:
         # Parse and analyze
         syntax_ast = parse_matlab(source)
         ir_prog = lower_program(syntax_ast)
-        env, warnings = analyze_program_ir(ir_prog)
+        env, warnings = analyze_program_ir(
+            ir_prog, fixpoint=bool(server_settings["fixpoint"])
+        )
+
+        # In strict mode, check for unsupported warnings
+        if server_settings["strict"]:
+            unsupported = [w for w in warnings if w.code.startswith("W_UNSUPPORTED_")]
+            if unsupported:
+                # Add a summary error diagnostic
+                warnings = list(warnings) + [
+                    ConformalDiagnostic(
+                        line=unsupported[0].line,
+                        code="W_STRICT_MODE",
+                        message=f"Strict mode: {len(unsupported)} unsupported construct(s) found",
+                    )
+                ]
 
         # Convert to LSP diagnostics
         lsp_diagnostics = [
@@ -94,14 +117,6 @@ def _validate(ls: LanguageServer, uri: str, source: str) -> None:
             types.PublishDiagnosticsParams(uri=uri, diagnostics=[error_diagnostic])
         )
 
-        # Try to republish last-good cached diagnostics if available
-        # (so warnings remain visible while user is mid-typing)
-        if uri in analysis_cache:
-            cached = analysis_cache[uri]
-            # Only use cache if source hasn't changed too much
-            # For now, always publish error, cache replay is optional enhancement
-            pass
-
 
 @server.feature(types.TEXT_DOCUMENT_DID_OPEN)
 async def did_open(ls: LanguageServer, params: types.DidOpenTextDocumentParams):
@@ -118,7 +133,10 @@ async def did_save(ls: LanguageServer, params: types.DidSaveTextDocumentParams):
 
 @server.feature(types.TEXT_DOCUMENT_DID_CHANGE)
 async def did_change(ls: LanguageServer, params: types.DidChangeTextDocumentParams):
-    """Handle document change: debounce analysis by 500ms."""
+    """Handle document change: debounce analysis by 500ms (if enabled)."""
+    if not server_settings["analyze_on_change"]:
+        return
+
     uri = params.text_document.uri
 
     # Cancel existing debounce task if any
@@ -154,3 +172,51 @@ def hover(ls: LanguageServer, params: types.HoverParams) -> Optional[types.Hover
 
     # Get hover information
     return get_hover(cached.env, doc.source, params.position.line, params.position.character)
+
+
+@server.feature(
+    types.TEXT_DOCUMENT_CODE_ACTION,
+    types.CodeActionOptions(code_action_kinds=[types.CodeActionKind.QuickFix]),
+)
+def code_action(
+    ls: LanguageServer, params: types.CodeActionParams
+) -> Optional[list[types.CodeAction]]:
+    """Handle code action request: return quick fixes for diagnostics."""
+    uri = params.text_document.uri
+    try:
+        doc = ls.workspace.get_text_document(uri)
+    except Exception:
+        return None
+
+    source_lines = doc.source.split("\n")
+    actions: list[types.CodeAction] = []
+
+    for diagnostic in params.context.diagnostics:
+        actions.extend(code_actions_for_diagnostic(diagnostic, uri, source_lines))
+
+    return actions if actions else None
+
+
+@server.feature(types.WORKSPACE_DID_CHANGE_CONFIGURATION)
+def did_change_configuration(
+    ls: LanguageServer, params: types.DidChangeConfigurationParams
+):
+    """Handle configuration changes from the client."""
+    settings = getattr(params, "settings", None)
+    if settings and isinstance(settings, dict):
+        conformal = settings.get("conformal", {})
+        if isinstance(conformal, dict):
+            if "fixpoint" in conformal:
+                server_settings["fixpoint"] = bool(conformal["fixpoint"])
+            if "strict" in conformal:
+                server_settings["strict"] = bool(conformal["strict"])
+            if "analyzeOnChange" in conformal:
+                server_settings["analyze_on_change"] = bool(conformal["analyzeOnChange"])
+
+    # Re-analyze all open documents with new settings
+    for uri in list(analysis_cache.keys()):
+        try:
+            doc = ls.workspace.get_text_document(uri)
+            _validate(ls, uri, doc.source)
+        except Exception:
+            pass

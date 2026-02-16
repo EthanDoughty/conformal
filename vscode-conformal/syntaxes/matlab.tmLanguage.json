@@ -1,0 +1,66 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "MATLAB",
+  "scopeName": "source.matlab.conformal",
+  "patterns": [
+    { "include": "#block-comment" },
+    { "include": "#line-comment" },
+    { "include": "#string-single" },
+    { "include": "#string-double" },
+    { "include": "#number" },
+    { "include": "#keyword" },
+    { "include": "#builtin" },
+    { "include": "#operator" },
+    { "include": "#function-def" }
+  ],
+  "repository": {
+    "block-comment": {
+      "name": "comment.block.matlab",
+      "begin": "%\\{",
+      "end": "%\\}"
+    },
+    "line-comment": {
+      "name": "comment.line.percentage.matlab",
+      "match": "%.*$"
+    },
+    "string-single": {
+      "name": "string.quoted.single.matlab",
+      "begin": "'",
+      "end": "'",
+      "patterns": [
+        { "name": "constant.character.escape.matlab", "match": "''" }
+      ]
+    },
+    "string-double": {
+      "name": "string.quoted.double.matlab",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        { "name": "constant.character.escape.matlab", "match": "\"\"" }
+      ]
+    },
+    "number": {
+      "name": "constant.numeric.matlab",
+      "match": "\\b\\d+(\\.\\d+)?([eE][+-]?\\d+)?\\b"
+    },
+    "keyword": {
+      "name": "keyword.control.matlab",
+      "match": "\\b(function|end|if|elseif|else|for|while|switch|case|otherwise|try|catch|return|break|continue)\\b"
+    },
+    "builtin": {
+      "name": "support.function.matlab",
+      "match": "\\b(zeros|ones|eye|size|length|diag|transpose|inv|reshape|repmat|linspace|rand|randn|horzcat|vertcat|blkdiag|numel|isscalar|isvector|isempty|iscell|cell|struct|fieldnames|true|false|fprintf|error|warning|class|isa|deal)\\b"
+    },
+    "operator": {
+      "name": "keyword.operator.matlab",
+      "match": "\\.\\'|\\.\\^|\\.\\*|\\./|\\+|-|\\*|/|\\\\|\\^|==|~=|<=|>=|<|>|&&|\\|\\||&|\\||~|="
+    },
+    "function-def": {
+      "match": "\\b(function)\\b\\s+(?:\\[?[\\w,\\s]*\\]?\\s*=\\s*)?(\\w+)",
+      "captures": {
+        "1": { "name": "keyword.control.matlab" },
+        "2": { "name": "entity.name.function.matlab" }
+      }
+    }
+  }
+}
