@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import List
 
 from runtime.shapes import Shape, Dim, dims_definitely_conflict, join_dim, sum_dims
+from analysis.constraints import record_constraint
 
 
 def as_matrix_shape(s: Shape) -> Shape:
@@ -26,6 +27,8 @@ def infer_matrix_literal_shape(
     shape_rows: List[List[Shape]],
     line: int,
     warnings: List[str],
+    ctx,
+    env
 ) -> Shape:
     """
     Shared matrix-literal concatenation checker/inferencer.
@@ -90,6 +93,9 @@ def infer_matrix_literal_shape(
         # Horizontal concat constraint inside this row
         height = elem_rows[0]
         for rr in elem_rows[1:]:
+            # Record constraint between consecutive element row dimensions
+            record_constraint(ctx, env, height, rr, line)
+
             if dims_definitely_conflict(height, rr):
                 had_definite_error = True
                 warnings.append(
@@ -105,6 +111,9 @@ def infer_matrix_literal_shape(
     # Vertical concat constraint across rows
     common_width = row_widths[0]
     for w in row_widths[1:]:
+        # Record constraint between consecutive row widths
+        record_constraint(ctx, env, common_width, w, line)
+
         if dims_definitely_conflict(common_width, w):
             had_definite_error = True
             warnings.append(

@@ -10,6 +10,7 @@ from analysis.context import EarlyReturn, EarlyBreak, EarlyContinue, AnalysisCon
 from analysis.dim_extract import _update_struct_field
 from analysis.eval_expr import eval_expr_ir, _eval_index_arg_to_shape
 from analysis.func_analysis import analyze_function_call, _analyze_loop_body
+from analysis.constraints import snapshot_constraints, join_constraints
 
 from ir import (
     Stmt,
@@ -191,9 +192,13 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str], ctx: AnalysisCont
         for cond in stmt.conditions:
             _ = eval_expr_ir(cond, env, warnings, ctx)
 
+        # Snapshot constraints before branching
+        baseline_constraints = snapshot_constraints(ctx)
+
         # Analyze all branches, tracking which ones returned/broke/continued
         all_bodies = list(stmt.bodies) + [stmt.else_body]
         branch_envs = []
+        branch_constraints = []
         returned_flags = []
         deferred_exception = None  # EarlyBreak or EarlyContinue to re-raise
 
@@ -210,6 +215,7 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str], ctx: AnalysisCont
                 returned = True  # Exclude from join (same as EarlyReturn)
                 deferred_exception = exc
             branch_envs.append(branch_env)
+            branch_constraints.append(frozenset(ctx.constraints))
             returned_flags.append(returned)
 
         # If ALL branches returned/broke, propagate
@@ -218,13 +224,28 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str], ctx: AnalysisCont
                 raise type(deferred_exception)()
             raise EarlyReturn()
 
-        # Join only non-returned branches
+        # Join only non-returned branches (environments and constraints)
         live_envs = [e for e, r in zip(branch_envs, returned_flags) if not r]
+        live_constraints = [c for c, r in zip(branch_constraints, returned_flags) if not r]
+
         if live_envs:
+            # Join environments
             result = live_envs[0]
             for other in live_envs[1:]:
                 result = join_env(result, other)
             env.bindings = result.bindings
+
+            # Join constraints
+            joined_constraints = join_constraints(baseline_constraints, live_constraints)
+            ctx.constraints = joined_constraints
+
+            # Update provenance: keep only provenance for constraints that survived
+            new_provenance = {}
+            for constraint in joined_constraints:
+                if constraint in ctx.constraint_provenance:
+                    new_provenance[constraint] = ctx.constraint_provenance[constraint]
+            ctx.constraint_provenance = new_provenance
+
         return env
 
     if isinstance(stmt, Switch):
@@ -232,8 +253,12 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str], ctx: AnalysisCont
         for case_val, _ in stmt.cases:
             _ = eval_expr_ir(case_val, env, warnings, ctx)
 
+        # Snapshot constraints before branching
+        baseline_constraints = snapshot_constraints(ctx)
+
         all_bodies = [body for _, body in stmt.cases] + [stmt.otherwise]
         branch_envs = []
+        branch_constraints = []
         returned_flags = []
         deferred_exception = None
 
@@ -249,6 +274,7 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str], ctx: AnalysisCont
                 returned = True
                 deferred_exception = exc
             branch_envs.append(branch_env)
+            branch_constraints.append(frozenset(ctx.constraints))
             returned_flags.append(returned)
 
         if all(returned_flags):
@@ -256,12 +282,28 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List[str], ctx: AnalysisCont
                 raise type(deferred_exception)()
             raise EarlyReturn()
 
+        # Join only non-returned branches (environments and constraints)
         live_envs = [e for e, r in zip(branch_envs, returned_flags) if not r]
+        live_constraints = [c for c, r in zip(branch_constraints, returned_flags) if not r]
+
         if live_envs:
+            # Join environments
             result = live_envs[0]
             for other in live_envs[1:]:
                 result = join_env(result, other)
             env.bindings = result.bindings
+
+            # Join constraints
+            joined_constraints = join_constraints(baseline_constraints, live_constraints)
+            ctx.constraints = joined_constraints
+
+            # Update provenance: keep only provenance for constraints that survived
+            new_provenance = {}
+            for constraint in joined_constraints:
+                if constraint in ctx.constraint_provenance:
+                    new_provenance[constraint] = ctx.constraint_provenance[constraint]
+            ctx.constraint_provenance = new_provenance
+
         return env
 
     if isinstance(stmt, Try):

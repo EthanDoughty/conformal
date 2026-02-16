@@ -256,3 +256,18 @@ def warn_recursive_lambda(line: int) -> str:
 def warn_end_outside_indexing(line: int) -> str:
     """Warning for 'end' keyword used outside indexing context."""
     return f"W_END_OUTSIDE_INDEXING line {line}: 'end' keyword only valid inside indexing expressions"
+
+def warn_constraint_conflict(line: int, var_name: str, value: int, other_dim, source_line: int) -> str:
+    """Warning for constraint conflict detected during validation.
+
+    Args:
+        line: Line where binding occurs
+        var_name: Variable name being bound
+        value: Concrete value being assigned
+        other_dim: The conflicting dimension from constraint
+        source_line: Line where constraint was created
+
+    Returns:
+        Warning message string with code W_CONSTRAINT_CONFLICT
+    """
+    return f"W_CONSTRAINT_CONFLICT line {line}: {var_name}={value} conflicts with {var_name}=={other_dim} (from line {source_line})"

@@ -99,7 +99,7 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str], ctx: AnalysisContext
             [eval_expr_ir(e, env, warnings, ctx) for e in row]
             for row in expr.rows
         ]
-        return infer_matrix_literal_shape(raw_shape_rows, expr.line, warnings)
+        return infer_matrix_literal_shape(raw_shape_rows, expr.line, warnings, ctx, env)
 
     if isinstance(expr, CellLit):
         # Cell literal: infer dimensions and track element shapes
@@ -353,6 +353,12 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str], ctx: AnalysisContext
 
                         # Analyze lambda body
                         ctx.analyzing_lambdas.add(callable_id)
+
+                        # Snapshot constraints before analyzing lambda body (for isolation)
+                        from analysis.constraints import snapshot_constraints
+                        baseline_constraints = snapshot_constraints(ctx)
+                        baseline_provenance = dict(ctx.constraint_provenance)
+
                         try:
                             # Create env from closure snapshot + bind params
                             call_env = closure_env.copy()
@@ -377,6 +383,10 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str], ctx: AnalysisContext
                             warnings.extend(lambda_warnings)
                             results.append(result)
                         finally:
+                            # Restore constraints (discard lambda-internal constraints)
+                            ctx.constraints = set(baseline_constraints)
+                            ctx.constraint_provenance = baseline_provenance
+
                             ctx.analyzing_lambdas.discard(callable_id)
 
                     elif callable_id in ctx._handle_registry:
@@ -500,7 +510,7 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List[str], ctx: AnalysisContext
         line = expr.line
         left_shape = eval_expr_ir(expr.left, env, warnings, ctx, container_shape)
         right_shape = eval_expr_ir(expr.right, env, warnings, ctx, container_shape)
-        return eval_binop_ir(op, left_shape, right_shape, warnings, expr.left, expr.right, line)
+        return eval_binop_ir(op, left_shape, right_shape, warnings, expr.left, expr.right, line, ctx, env)
 
     return Shape.unknown()
 

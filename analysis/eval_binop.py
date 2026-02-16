@@ -9,6 +9,7 @@ from ir import Expr
 
 import analysis.diagnostics as diag
 from runtime.shapes import Shape, join_dim, dims_definitely_conflict
+from analysis.constraints import record_constraint
 
 
 def eval_binop_ir(
@@ -18,7 +19,9 @@ def eval_binop_ir(
     warnings: List[str],
     left_expr: Expr,
     right_expr: Expr,
-    line: int
+    line: int,
+    ctx,
+    env
 ) -> Shape:
     """Evaluate a binary operation and infer result shape.
 
@@ -30,6 +33,8 @@ def eval_binop_ir(
         left_expr: Left expression (for error messages)
         right_expr: Right expression (for error messages)
         line: Source line number
+        ctx: Analysis context
+        env: Current environment
 
     Returns:
         Result shape of the operation
@@ -75,6 +80,10 @@ def eval_binop_ir(
             return Shape.scalar()
 
         if left.is_matrix() and right.is_matrix():
+            # Record elementwise constraints before checking conflicts
+            record_constraint(ctx, env, left.rows, right.rows, line)
+            record_constraint(ctx, env, left.cols, right.cols, line)
+
             r_conflict = dims_definitely_conflict(left.rows, right.rows)
             c_conflict = dims_definitely_conflict(left.cols, right.cols)
             if r_conflict or c_conflict:
@@ -98,6 +107,9 @@ def eval_binop_ir(
             return left
 
         if left.is_matrix() and right.is_matrix():
+            # Record matrix multiplication inner dimension constraint
+            record_constraint(ctx, env, left.cols, right.rows, line)
+
             if dims_definitely_conflict(left.cols, right.rows):
                 suggest = (
                     not dims_definitely_conflict(left.rows, right.rows)

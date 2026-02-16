@@ -10,6 +10,7 @@ from ir import IndexArg, IndexExpr
 import analysis.diagnostics as diag
 from analysis.context import FunctionSignature, EarlyReturn, EarlyBreak, EarlyContinue, AnalysisContext
 from analysis.dim_extract import expr_to_dim_ir
+from analysis.constraints import snapshot_constraints
 from runtime.env import Env, widen_env
 from runtime.shapes import Shape
 
@@ -129,6 +130,10 @@ def analyze_function_call(
     # Mark function as currently being analyzed
     ctx.analyzing_functions.add(func_name)
 
+    # Snapshot constraints before analyzing function body (for isolation)
+    baseline_constraints = snapshot_constraints(ctx)
+    baseline_provenance = dict(ctx.constraint_provenance)
+
     try:
         # Analyze function body with fresh workspace
         func_env = Env()
@@ -175,6 +180,10 @@ def analyze_function_call(
         return result
 
     finally:
+        # Restore constraints (discard function-internal constraints)
+        ctx.constraints = set(baseline_constraints)
+        ctx.constraint_provenance = baseline_provenance
+
         # Remove function from analyzing set
         ctx.analyzing_functions.discard(func_name)
 
