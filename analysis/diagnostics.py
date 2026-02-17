@@ -412,6 +412,15 @@ def warn_end_outside_indexing(line: int) -> Diagnostic:
         message="'end' keyword only valid inside indexing expressions"
     )
 
+def warn_external_parse_error(line: int, fname: str, source_path: str) -> Diagnostic:
+    """Warning when an external function file cannot be parsed."""
+    return Diagnostic(
+        line=line,
+        code="W_EXTERNAL_PARSE_ERROR",
+        message=f"Cannot analyze {fname} (parse error in {source_path}); treating result as unknown"
+    )
+
+
 def warn_constraint_conflict(line: int, var_name: str, value: int, other_dim, source_line: int) -> Diagnostic:
     """Warning for constraint conflict detected during validation.
 

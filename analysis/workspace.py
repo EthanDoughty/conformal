@@ -6,7 +6,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
+
+from analysis.context import FunctionSignature
+from ir import FunctionDef
 
 
 @dataclass(frozen=True)
@@ -113,3 +116,54 @@ def scan_workspace(directory: Path, exclude: str = None) -> Dict[str, ExternalSi
             continue
 
     return result
+
+
+# Cache of parsed external files (keyed by absolute source_path)
+_parsed_cache: Dict[str, object] = {}
+
+
+def clear_parse_cache() -> None:
+    """Clear the parsed external file cache. Useful for LSP cache invalidation."""
+    _parsed_cache.clear()
+
+
+def load_external_function(sig: ExternalSignature) -> Optional[Tuple[FunctionSignature, Dict[str, FunctionSignature]]]:
+    """Load and parse an external .m file, extracting its primary function and subfunctions.
+
+    Args:
+        sig: ExternalSignature from workspace scanning
+
+    Returns:
+        (primary_FunctionSignature, subfunctions_dict) or None on any error
+    """
+    from frontend.pipeline import parse_syntax, lower_to_ir
+
+    source_path = sig.source_path
+    if source_path in _parsed_cache:
+        ir_prog = _parsed_cache[source_path]
+    else:
+        try:
+            source = Path(source_path).read_text(encoding='utf-8')
+            syntax_ast = parse_syntax(source)
+            ir_prog = lower_to_ir(syntax_ast)
+            _parsed_cache[source_path] = ir_prog
+        except Exception:
+            return None
+
+    primary = None
+    subfunctions: Dict[str, FunctionSignature] = {}
+    for item in ir_prog.body:
+        if isinstance(item, FunctionDef):
+            func_sig = FunctionSignature(
+                name=item.name, params=item.params,
+                output_vars=item.output_vars, body=item.body
+            )
+            if primary is None:
+                primary = func_sig
+            else:
+                subfunctions[item.name] = func_sig
+
+    if primary is None:
+        return None
+
+    return (primary, subfunctions)

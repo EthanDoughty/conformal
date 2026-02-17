@@ -16,6 +16,7 @@ from runtime.shapes import Shape
 
 if TYPE_CHECKING:
     from analysis.diagnostics import Diagnostic
+    from analysis.workspace import ExternalSignature
 
 
 def _format_dual_location_warning(func_warn: 'Diagnostic', func_name: str, call_line: int) -> 'Diagnostic':
@@ -166,6 +167,115 @@ def analyze_function_call(
 
         # Remove function from analyzing set
         ctx.analyzing_functions.discard(func_name)
+
+
+def analyze_external_function_call(
+    fname: str,
+    ext_sig: 'ExternalSignature',
+    args: list,
+    line: int,
+    env: Env,
+    warnings: List['Diagnostic'],
+    ctx: AnalysisContext
+) -> List[Shape]:
+    """Analyze an external function call by parsing and analyzing the external file.
+
+    Uses polymorphic caching, cross-file recursion guard, and registry swap
+    for subfunction isolation. External body warnings are suppressed.
+
+    Args:
+        fname: Function name (filename stem)
+        ext_sig: External signature from workspace scanning
+        args: Argument list from Apply node
+        line: Call site line number
+        env: Caller's environment
+        warnings: Caller's warning list (only call-site warnings appended)
+        ctx: Analysis context
+
+    Returns:
+        List of output shapes
+    """
+    from analysis.eval_expr import _eval_index_arg_to_shape
+    from analysis.stmt_analysis import analyze_stmt_ir
+    from analysis.workspace import load_external_function
+
+    # Cross-file recursion guard
+    if fname in ctx.analyzing_external:
+        return [Shape.unknown()] * max(ext_sig.return_count, 1)
+
+    # Load and parse external file
+    loaded = load_external_function(ext_sig)
+    if loaded is None:
+        warnings.append(diag.warn_external_parse_error(line, fname, ext_sig.source_path))
+        return [Shape.unknown()] * max(ext_sig.return_count, 1)
+
+    primary_sig, subfunctions = loaded
+
+    # Arg count check (caller-visible)
+    if len(args) != len(primary_sig.params):
+        warnings.append(diag.warn_function_arg_count_mismatch(
+            line, fname, expected=len(primary_sig.params), got=len(args)
+        ))
+        return [Shape.unknown()] * max(len(primary_sig.output_vars), 1)
+
+    # Evaluate arg shapes for cache key
+    arg_shapes = tuple(_eval_index_arg_to_shape(arg, env, warnings, ctx) for arg in args)
+    arg_dim_aliases = tuple(
+        (param, expr_to_dim_ir(arg.expr, env)) if isinstance(arg, IndexExpr) else (param, None)
+        for param, arg in zip(primary_sig.params, args)
+    )
+    cache_key = ("external", fname, arg_shapes, arg_dim_aliases)
+
+    # Cache check (no warning replay — external warnings suppressed)
+    if cache_key in ctx.analysis_cache:
+        cached_shapes, _ = ctx.analysis_cache[cache_key]
+        return list(cached_shapes)
+
+    # Registry swap + recursion guard + constraint isolation
+    saved_registry = ctx.function_registry
+    ctx.function_registry = dict(subfunctions)
+    ctx.analyzing_external.add(fname)
+    ctx.analyzing_functions.add(fname)  # So return statements work correctly inside external bodies
+    baseline_constraints = snapshot_constraints(ctx)
+    baseline_provenance = dict(ctx.constraint_provenance)
+    baseline_scalar_bindings = dict(ctx.scalar_bindings)
+
+    try:
+        func_env = Env()
+        func_warnings: List['Diagnostic'] = []  # Suppressed — not propagated to caller
+
+        # Bind parameters with dimension aliasing
+        for param_name, arg, arg_shape in zip(primary_sig.params, args, arg_shapes):
+            func_env.set(param_name, arg_shape)
+            if isinstance(arg, IndexExpr):
+                caller_dim = expr_to_dim_ir(arg.expr, env)
+                if caller_dim is not None:
+                    func_env.dim_aliases[param_name] = caller_dim
+
+        # Analyze function body
+        try:
+            for stmt in primary_sig.body:
+                analyze_stmt_ir(stmt, func_env, func_warnings, ctx)
+        except EarlyReturn:
+            pass
+
+        # Extract return values
+        result_shapes = []
+        for out_var in primary_sig.output_vars:
+            shape = func_env.get(out_var)
+            result_shapes.append(Shape.unknown() if shape.is_bottom() else shape)
+
+        result = result_shapes if result_shapes else [Shape.unknown()]
+        ctx.analysis_cache[cache_key] = (result, [])
+        return result
+
+    finally:
+        ctx.function_registry = saved_registry
+        ctx.analyzing_external.discard(fname)
+        ctx.analyzing_functions.discard(fname)
+        ctx.constraints = set(baseline_constraints)
+        ctx.constraint_provenance = baseline_provenance
+        ctx.scalar_bindings = baseline_scalar_bindings
 
 
 def _analyze_loop_body(body: list, env: Env, warnings: List['Diagnostic'], ctx: AnalysisContext) -> None:

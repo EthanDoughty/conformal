@@ -4,10 +4,10 @@
 
 ### Static Shape & Dimension Analysis for MATLAB
 
-[![Version](https://img.shields.io/badge/version-1.2.0-orange.svg)](#motivation-and-future-directions)
+[![Version](https://img.shields.io/badge/version-1.3.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-173%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-183%20passing-brightgreen.svg)](#test-suite)
 [![pip installable](https://img.shields.io/badge/pip-installable-green.svg)](#getting-started)
 [![License](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
 
@@ -78,7 +78,7 @@ Dimension arithmetic works inside builtin arguments, so `zeros(n+1, 2*m)` is tra
 
 User-defined functions are analyzed at each call site with the caller's argument shapes. Three forms: single return (`function y = f(x)`), multi-return (`function [a, b] = f(x)`), and procedures (`function f(x)`). Anonymous functions `@(x) expr` are analyzed the same way, with by-value closure capture at definition time. Function handles `@funcName` dispatch to their targets. Results are cached per argument shape tuple so the same function called with the same shapes isn't re-analyzed.
 
-**Workspace awareness**: When analyzing a file, Conformal scans sibling `.m` files in the same directory for function signatures. Functions found in the workspace resolve silently (no unknown-function warning) and return `unknown` shape. This eliminates false positives when working with multi-file projects while maintaining single-file analysis semantics.
+**Workspace awareness**: When analyzing a file, Conformal scans sibling `.m` files in the same directory and fully analyzes their bodies (lex → parse → IR) to infer real return shapes. Dimension aliasing works across file boundaries, subfunctions in external files are supported, and cross-file cycles (A→B→A) are detected and handled gracefully. Unparseable external files emit `W_EXTERNAL_PARSE_ERROR`. This eliminates false positives when working with multi-file projects.
 
 ### Data structures
 
@@ -140,13 +140,13 @@ analysis/           13 focused submodules: expression eval, statements, function
 runtime/            Shape domain (shapes.py), symbolic dimensions (symdim.py), and environments
 lsp/                Language Server Protocol implementation (server.py, diagnostics.py, hover.py, code_actions.py)
 vscode-conformal/   VS Code extension (TypeScript thin client)
-tests/              Self-checking MATLAB programs (166 tests, 12 categories)
+tests/              Self-checking MATLAB programs (183 tests, 12 categories)
 tools/              Debugging utilities (AST printer)
 ```
 
 ## Test Suite
 
-The analyzer is validated by 173 self-checking test programs organized into 12 categories. Each test embeds its expected behavior as inline assertions:
+The analyzer is validated by 183 self-checking test programs organized into 12 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -315,7 +315,7 @@ Loop analysis with single-pass and fixed-point widening modes (via `--fixpoint`)
 </details>
 
 <details>
-<summary><h3>Functions (46 tests)</h3></summary>
+<summary><h3>Functions (56 tests)</h3></summary>
 
 Interprocedural analysis for user-defined functions, anonymous functions (lambdas), and workspace-aware external function resolution.
 
@@ -368,7 +368,7 @@ Anonymous Functions / Lambdas (17 tests)
 | `handle_dispatch_builtin.m` | Function handle `@sin` dispatches to builtin | 0 |
 | `handle_dispatch_user_func.m` | Function handle dispatches to user-defined function | 0 |
 
-Workspace Awareness (7 tests)
+Workspace Awareness (17 tests)
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -377,8 +377,18 @@ Workspace Awareness (7 tests)
 | `workspace_multi_return.m` | Multi-return external functions return unknown for all outputs | 0 |
 | `workspace_builtin_priority.m` | Builtins take priority over workspace functions | 0 |
 | `workspace_same_file_priority.m` | Same-file functions take priority over workspace functions | 0 |
+| `workspace_dim_aliasing.m` | Dimension aliasing across file boundaries (symbolic dims propagate) | 0 |
+| `workspace_return.m` | External function with return statement infers correct shape | 0 |
+| `workspace_subfunctions.m` | Subfunctions inside external file work correctly | 0 |
+| `workspace_cycle_test.m` | Cross-file cycle A→B→A detected; returns unknown gracefully | 0 |
+| `workspace_parse_error.m` | Unparseable external file handled gracefully (no caller-visible warning) | 0 |
 | `workspace_helper.m` | Helper file for workspace tests (single-return function) | — |
 | `workspace_multi_helper.m` | Helper file for workspace tests (multi-return function) | — |
+| `workspace_return_helper.m` | Helper file: function with return statement | — |
+| `workspace_subfunctions_helper.m` | Helper file: external file with subfunctions | — |
+| `workspace_cycle_a.m` | Helper file for cycle test (calls cycle_b) | — |
+| `workspace_cycle_b.m` | Helper file for cycle test (calls cycle_a) | — |
+| `workspace_parse_error_helper.m` | Helper file with recoverable parse error | — |
 
 Key features:
 - Interprocedural analysis: functions analyzed at each call site with the caller's argument shapes
@@ -386,7 +396,9 @@ Key features:
 - Dimension aliasing: symbolic dimension names propagate across boundaries (e.g., `f(n)` where `f = @(k) zeros(k,k)` infers `matrix[n x n]`)
 - Lambda closure capture: by-value environment capture at definition time (MATLAB semantics)
 - Control flow precision: when branches assign different lambdas, both bodies are analyzed and results joined at call site
-- Workspace awareness: functions in sibling `.m` files resolve silently with `unknown` shape (Phase 1: no cross-file body analysis yet)
+- Cross-file shape inference: external `.m` files are fully parsed and analyzed; real return shapes propagate to caller (Phase 2)
+- Cross-file cycle detection: A→B→A cycles return unknown gracefully without infinite recursion
+- Subfunction support: local functions defined inside external files are accessible during cross-file analysis
 
 </details>
 
@@ -492,7 +504,7 @@ Dimension constraint solving: equality constraints recorded during operations, v
 ### Running the Tests
 
 ```bash
-# Run all 173 tests
+# Run all 183 tests
 make test
 python3 conformal.py --tests
 
@@ -509,7 +521,7 @@ python3 conformal.py --strict --tests
 git clone https://github.com/EthanDoughty/conformal.git
 cd conformal
 make install          # pip install -e '.[lsp]' (editable + pygls)
-conformal --tests     # verify 173 tests pass
+conformal --tests     # verify 183 tests pass
 ```
 
 Analyze a file:
@@ -593,7 +605,7 @@ Conformal analyzes a subset of MATLAB. Here's what it doesn't cover:
 
 | Category | What's missing |
 |----------|---------------|
-| Scope | Single-file analysis with workspace awareness (Phase 1). External functions from sibling `.m` files resolve silently with `unknown` shape. No cross-file body analysis or `addpath` handling yet. |
+| Scope | Multi-file workspace analysis (Phase 2): sibling `.m` files are parsed and analyzed to infer real return shapes. No `addpath` handling or cross-directory analysis yet. |
 | Functions | No nested functions. No `varargin`/`varargout`. No `eval`, `feval`, or `str2func`. |
 | Builtins | 55 builtins recognized. Toolbox functions (`fft`, `eig`, `svd`, `conv`, `filter`, ...) are not modeled and produce an unknown-function warning. |
 | Cell arrays | Per-element tracking available for literal-indexed cells. Dynamic indexing conservatively joins all elements. |
@@ -618,5 +630,5 @@ I felt that it was very rewarding to use MATLAB as the source language for a sta
 
 **Long-term**
 - Additional editors (Neovim, MATLAB Online)
-- Workspace-level analysis across multiple files
+- Cross-directory workspace analysis and `addpath` handling
 - Integration with MATLAB's built-in Code Analyzer

@@ -1,4 +1,4 @@
-A = zeros(3, 3);
+A = zeros(n, m);
 B = workspace_helper(A);
-% EXPECT: B = matrix[3 x 3]
+% EXPECT: B = matrix[n x m]
 % EXPECT: warnings = 0

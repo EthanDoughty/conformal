@@ -417,8 +417,11 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List['Diagnostic'], ctx: Analys
                             builtin_result = eval_expr_ir(synthetic_apply, env, warnings, ctx)
                             results.append(builtin_result)
                         elif func_name in ctx.external_functions:
-                            # External function from workspace
-                            results.append(Shape.unknown())
+                            # External function from workspace — cross-file analysis
+                            from analysis.func_analysis import analyze_external_function_call
+                            ext_shapes = analyze_external_function_call(
+                                func_name, ctx.external_functions[func_name], expr.args, line, env, warnings, ctx)
+                            results.append(ext_shapes[0] if ext_shapes else Shape.unknown())
                         else:
                             # Function not found (should not happen — validated at FuncHandle eval)
                             results.append(Shape.unknown())
@@ -457,10 +460,12 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List['Diagnostic'], ctx: Analys
                         # Multiple returns in expression context, use first return value
                         return output_shapes[0]
 
-                # Check external functions (workspace scanning)
+                # Check external functions (workspace scanning — cross-file analysis)
                 if fname in ctx.external_functions:
-                    # External function found; return unknown (no cross-file analysis)
-                    return Shape.unknown()
+                    from analysis.func_analysis import analyze_external_function_call
+                    output_shapes = analyze_external_function_call(
+                        fname, ctx.external_functions[fname], expr.args, line, env, warnings, ctx)
+                    return output_shapes[0]
 
                 # Truly unknown function
                 warnings.append(diag.warn_unknown_function(line, fname))

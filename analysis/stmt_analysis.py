@@ -423,17 +423,20 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
                     env.set(target, shape)
             return env
 
-        # Check external functions (workspace scanning)
+        # Check external functions (workspace scanning — cross-file analysis)
         if fname in ctx.external_functions:
-            ext_sig = ctx.external_functions[fname]
-            # Validate return count if known
-            if ext_sig.return_count > 0 and ext_sig.return_count != len(stmt.targets):
+            from analysis.func_analysis import analyze_external_function_call
+            output_shapes = analyze_external_function_call(
+                fname, ctx.external_functions[fname], stmt.expr.args, stmt.line, env, warnings, ctx)
+            if len(stmt.targets) != len(output_shapes):
                 warnings.append(diag.warn_multi_assign_count_mismatch(
-                    stmt.line, fname, expected=ext_sig.return_count, got=len(stmt.targets)
+                    stmt.line, fname, expected=len(output_shapes), got=len(stmt.targets)
                 ))
-            # Set all targets to unknown (no cross-file analysis)
-            for target in stmt.targets:
-                env.set(target, Shape.unknown())
+                for target in stmt.targets:
+                    env.set(target, Shape.unknown())
+            else:
+                for target, shape in zip(stmt.targets, output_shapes):
+                    env.set(target, shape)
             return env
 
         # Not a known function
