@@ -1,5 +1,5 @@
 % Test: reshape and repmat builtin shape rules
-% EXPECT: warnings = 0
+% EXPECT: warnings = 2
 % EXPECT: reshape_concrete = matrix[3 x 2]
 % EXPECT: reshape_symbolic = matrix[n x m]
 % EXPECT: repmat_scalar = matrix[2 x 3]
@@ -32,8 +32,8 @@ k = 4;
 D = ones(n, m);
 repmat_symbolic = repmat(D, k, k);
 
-% Test 6: reshape from scalar (validates "trust dimensions" for scalars)
+% Test 6: reshape from scalar (W_RESHAPE_MISMATCH: 1 != 6, still returns matrix[3 x 2])
 reshape_from_scalar = reshape(5, 3, 2);
 
-% Test 7: reshape with non-matching element count (no warning expected, returns matrix[4 x 4])
+% Test 7: reshape with non-matching element count (W_RESHAPE_MISMATCH warning, still returns matrix[4 x 4])
 reshape_nonmatching = reshape(zeros(2, 3), 4, 4);

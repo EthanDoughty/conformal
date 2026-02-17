@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-02-16
+### Added
+- `reshape` conformability check: emits `W_RESHAPE_MISMATCH` when element count provably mismatches (e.g., `reshape(A[3x4], 2, 5)` → 12 vs 10)
+- `kron` builtin (Kronecker product): `kron(A[m×n], B[p×q])` → `matrix[(m*p) × (n*q)]`
+- `blkdiag` builtin (variadic block diagonal): `blkdiag(A[m×n], B[p×q])` → `matrix[(m+p) × (n+q)]`
+- Total builtins: 57 (was 55)
+- New warning code: `W_RESHAPE_MISMATCH` (severity: Error)
+- 2 new test files: `tests/builtins/reshape_conformability.m`, `tests/builtins/kron_blkdiag.m`
+- Total test count: 188 (was 186)
+
 ## [1.2.0] - 2026-02-16
 ### Added
 - Multi-file workspace awareness (Phase 1): sibling `.m` file scanning for function signature discovery

@@ -10,12 +10,14 @@ which builtins have explicit shape rules in the analyzer.
 # Sorted alphabetically for maintainability.
 KNOWN_BUILTINS = {
     "abs", "acos", "all", "any", "asin", "atan", "atan2",
+    "blkdiag",
     "ceil", "cell", "cos", "cumprod", "cumsum",
     "det", "diag", "diff",
     "exp", "eye",
     "false", "floor",
     "imag", "inf", "inv", "iscell", "ischar", "isempty", "isfinite", "isinf",
     "islogical", "isnan", "isnumeric", "isscalar", "issymmetric",
+    "kron",
     "length", "linspace", "log", "log10", "log2",
     "max", "mean", "min", "mod",
     "nan", "norm", "numel",
@@ -54,4 +56,6 @@ BUILTINS_WITH_SHAPE_RULES = {
     "min", "max",         # min/max (reduction or elementwise)
     "mod", "rem", "atan2",  # elementwise 2-arg
     "diff",               # differentiation (dimension subtraction)
+    "kron",               # Kronecker product
+    "blkdiag",            # block diagonal concatenation
 }

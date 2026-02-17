@@ -439,3 +439,22 @@ def warn_constraint_conflict(line: int, var_name: str, value: int, other_dim, so
         code="W_CONSTRAINT_CONFLICT",
         message=f"{var_name}={value} conflicts with {var_name}=={other_dim} (from line {source_line})"
     )
+
+
+def warn_reshape_mismatch(line: int, input_shape: Shape, m, n) -> Diagnostic:
+    """Warning for reshape element count mismatch.
+
+    Args:
+        line: Source line number
+        input_shape: Input array shape
+        m: Output row dimension
+        n: Output column dimension
+
+    Returns:
+        Diagnostic with code W_RESHAPE_MISMATCH
+    """
+    return Diagnostic(
+        line=line,
+        code="W_RESHAPE_MISMATCH",
+        message=f"reshape changes element count: {input_shape} has different element count than {m}x{n}"
+    )

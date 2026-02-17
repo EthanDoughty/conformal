@@ -9,7 +9,7 @@ from ir import Apply, IndexArg
 from analysis.context import AnalysisContext
 from analysis.dim_extract import expr_to_dim_ir, unwrap_arg
 from runtime.env import Env
-from runtime.shapes import Shape, shape_of_zeros, shape_of_ones, mul_dim, sub_dim, join_dim, dims_definitely_conflict
+from runtime.shapes import Shape, shape_of_zeros, shape_of_ones, add_dim, mul_dim, sub_dim, join_dim, dims_definitely_conflict
 
 if TYPE_CHECKING:
     from analysis.diagnostics import Diagnostic
@@ -131,13 +131,30 @@ def _handle_scalar_query(fname, expr, env, warnings, ctx):
 
 
 def _handle_reshape(fname, expr, env, warnings, ctx):
-    """reshape(x, m, n) -> matrix[m x n]."""
+    """reshape(x, m, n) -> matrix[m x n] with conformability check."""
     from analysis.eval_expr import eval_expr_ir
+    from analysis.diagnostics import warn_reshape_mismatch
     if len(expr.args) == 3:
         try:
-            _ = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
+            input_shape = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
             m = expr_to_dim_ir(unwrap_arg(expr.args[1]), env)
             n = expr_to_dim_ir(unwrap_arg(expr.args[2]), env)
+
+            # Conformability check: input element count must equal output element count
+            if not input_shape.is_unknown():
+                if input_shape.is_scalar():
+                    input_count = 1
+                elif input_shape.is_matrix():
+                    input_count = mul_dim(input_shape.rows, input_shape.cols)
+                else:
+                    input_count = None  # string/struct/cell/etc -- skip check
+
+                output_count = mul_dim(m, n)
+
+                if input_count is not None and output_count is not None:
+                    if dims_definitely_conflict(input_count, output_count):
+                        warnings.append(warn_reshape_mismatch(expr.line, input_shape, m, n))
+
             return Shape.matrix(m, n)
         except ValueError:
             pass
@@ -329,6 +346,54 @@ def _handle_diff(fname, expr, env, warnings, ctx):
     return Shape.unknown()
 
 
+def _handle_kron(fname, expr, env, warnings, ctx):
+    """kron(A, B) -> matrix[(m*p) x (n*q)] where A is m×n, B is p×q."""
+    from analysis.eval_expr import eval_expr_ir
+    if len(expr.args) != 2:
+        return None
+    try:
+        s1 = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
+        s2 = eval_expr_ir(unwrap_arg(expr.args[1]), env, warnings, ctx)
+    except ValueError:
+        return None
+
+    if s1.is_unknown() or s2.is_unknown():
+        return Shape.unknown()
+
+    r1, c1 = (1, 1) if s1.is_scalar() else (s1.rows, s1.cols) if s1.is_matrix() else (None, None)
+    r2, c2 = (1, 1) if s2.is_scalar() else (s2.rows, s2.cols) if s2.is_matrix() else (None, None)
+
+    if r1 is None or r2 is None:
+        return Shape.unknown()
+
+    return Shape.matrix(mul_dim(r1, r2), mul_dim(c1, c2))
+
+
+def _handle_blkdiag(fname, expr, env, warnings, ctx):
+    """blkdiag(A, B, ...) -> matrix[sum(rows) x sum(cols)]."""
+    from analysis.eval_expr import eval_expr_ir
+    if len(expr.args) == 0:
+        return None
+    total_rows = 0
+    total_cols = 0
+    for arg in expr.args:
+        try:
+            s = eval_expr_ir(unwrap_arg(arg), env, warnings, ctx)
+        except ValueError:
+            return None
+        if s.is_unknown():
+            return Shape.unknown()
+        if s.is_scalar():
+            r, c = 1, 1
+        elif s.is_matrix():
+            r, c = s.rows, s.cols
+        else:
+            return Shape.unknown()
+        total_rows = add_dim(total_rows, r)
+        total_cols = add_dim(total_cols, c)
+    return Shape.matrix(total_rows, total_cols)
+
+
 # Dispatch table: builtin name -> handler function
 BUILTIN_HANDLERS = {
     'zeros': _handle_zeros_ones,
@@ -393,6 +458,8 @@ BUILTIN_HANDLERS = {
     'rem': _handle_elementwise_2arg,
     'atan2': _handle_elementwise_2arg,
     'diff': _handle_diff,
+    'kron': _handle_kron,
+    'blkdiag': _handle_blkdiag,
 }
 
 
