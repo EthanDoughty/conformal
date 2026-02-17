@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-02-16
+### Added
+- Expanded builtin coverage: 35 new builtins with shape rules (20 → 55 total)
+- **Element-wise math (18 functions)**: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `exp`, `log`, `log2`, `log10`, `ceil`, `floor`, `round`, `sign`, `real`, `imag`, `cumsum`, `cumprod` (all pass-through shape)
+- **Reductions (7 functions)**: `sum`, `prod`, `mean`, `any`, `all` (with optional dim arg), `min`/`max` (1-arg reduction or 2-arg elementwise)
+- **Constructors (4 functions)**: `true`, `false`, `nan`, `inf` (same pattern as `zeros`/`ones`/`eye`)
+- **Type predicates (8 functions)**: `isempty`, `isnumeric`, `islogical`, `ischar`, `isnan`, `isinf`, `isfinite`, `issymmetric` (all return scalar)
+- **Elementwise 2-arg (3 functions)**: `mod`, `rem`, `atan2` (scalar broadcasting + dimension compatibility)
+- `diff(A, n, dim)` builtin with dimension subtraction (`diff(A)` on `m x n` → `(m-1) x n`)
+- `sub_dim(a, b)` helper in `runtime/shapes.py` for dimension subtraction with symbolic support
+- 4 new test files in `tests/builtins/`: `elementwise_math.m`, `reductions.m`, `constructors_logical.m`, `type_predicates_extended.m`
+- Total test count: 166 (was 162)
+
 ## [1.0.0] - 2026-02-16
 ### Added
 - **Phase 1: Structured Diagnostics** — `Diagnostic` dataclass in `analysis/diagnostics.py`

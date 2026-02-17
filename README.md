@@ -4,10 +4,10 @@
 
 ### Static Shape & Dimension Analysis for MATLAB
 
-[![Version](https://img.shields.io/badge/version-1.0.0-orange.svg)](#motivation-and-future-directions)
+[![Version](https://img.shields.io/badge/version-1.1.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-162%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-166%20passing-brightgreen.svg)](#test-suite)
 [![pip installable](https://img.shields.io/badge/pip-installable-green.svg)](#getting-started)
 [![License](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
 
@@ -64,7 +64,17 @@ Parenthesized indexing `A(i,j)`, slice indexing `A(:,j)` and `A(i,:)`, range ind
 
 ### Functions
 
-20+ builtins with shape rules: `zeros`, `ones`, `eye`, `rand`, `randn`, `reshape`, `repmat`, `diag`, `det`, `inv`, `linspace`, `norm`, `size`, `length`, `numel`, `transpose`, `horzcat`, `vertcat`, `iscell`, `isscalar`, and more. Dimension arithmetic works inside builtin arguments, so `zeros(n+1, 2*m)` is tracked symbolically.
+55 builtins with shape rules across 5 categories:
+- **Matrix constructors**: `zeros`, `ones`, `eye`, `rand`, `randn`, `true`, `false`, `nan`, `inf` (0-arg→scalar, 1-arg→n×n, 2-arg→m×n)
+- **Shape transformations**: `reshape`, `repmat`, `diag`, `transpose`, `horzcat`, `vertcat`
+- **Element-wise math**: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `exp`, `log`, `sqrt`, `abs`, `ceil`, `floor`, `round`, `sign`, `real`, `imag`, `cumsum`, `cumprod`, and more
+- **Reductions**: `sum`, `prod`, `mean`, `any`, `all`, `min`, `max`, `diff` (with optional dimension argument)
+- **Type predicates**: `isscalar`, `iscell`, `isempty`, `isnumeric`, `islogical`, `ischar`, `isnan`, `isinf`, `isfinite`, `issymmetric`
+- **Linear algebra**: `det`, `inv`, `norm`, `linspace`
+- **Queries**: `size`, `length`, `numel`
+- **Two-argument element-wise**: `mod`, `rem`, `atan2`
+
+Dimension arithmetic works inside builtin arguments, so `zeros(n+1, 2*m)` is tracked symbolically.
 
 User-defined functions are analyzed at each call site with the caller's argument shapes. Three forms: single return (`function y = f(x)`), multi-return (`function [a, b] = f(x)`), and procedures (`function f(x)`). Anonymous functions `@(x) expr` are analyzed the same way, with by-value closure capture at definition time. Function handles `@funcName` dispatch to their targets. Results are cached per argument shape tuple so the same function called with the same shapes isn't re-analyzed.
 
@@ -92,7 +102,7 @@ The analyzer parses and tracks shapes through:
 | Literals | `[1 2; 3 4]`, `{1, 2; 3, 4}`, `'string'`, `"string"`, `1:n` |
 | Indexing | `A(i,j)`, `A(:,j)`, `A(2:5,:)`, `C{i}`, `C{i} = x` |
 | Assignment | `x = expr`, `s.field = expr`, `C{i} = expr`, `[a, b] = f(x)` |
-| Functions | `function y = f(x)`, `@(x) expr`, `@funcName`, 20+ builtins |
+| Functions | `function y = f(x)`, `@(x) expr`, `@funcName`, 55 builtins |
 | Control flow | `if`/`elseif`/`else`, `for`, `while`, `switch`/`case`, `try`/`catch` |
 | Statements | `break`, `continue`, `return` |
 | Data types | scalars, matrices, strings, structs, cell arrays, function handles |
@@ -128,13 +138,13 @@ analysis/           13 focused submodules: expression eval, statements, function
 runtime/            Shape domain (shapes.py), symbolic dimensions (symdim.py), and environments
 lsp/                Language Server Protocol implementation (server.py, diagnostics.py, hover.py, code_actions.py)
 vscode-conformal/   VS Code extension (TypeScript thin client)
-tests/              Self-checking MATLAB programs (162 tests, 12 categories)
+tests/              Self-checking MATLAB programs (166 tests, 12 categories)
 tools/              Debugging utilities (AST printer)
 ```
 
 ## Test Suite
 
-The analyzer is validated by 162 self-checking test programs organized into 12 categories. Each test embeds its expected behavior as inline assertions:
+The analyzer is validated by 166 self-checking test programs organized into 12 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -244,9 +254,9 @@ Matrix literals, string literals, and concatenation constraints.
 </details>
 
 <details>
-<summary><h3>Builtins (9 tests)</h3></summary>
+<summary><h3>Builtins (13 tests)</h3></summary>
 
-Shape rules for 20 recognized MATLAB builtins, call/index disambiguation, and dimension arithmetic.
+Shape rules for 55 recognized MATLAB builtins, call/index disambiguation, and dimension arithmetic.
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -259,6 +269,10 @@ Shape rules for 20 recognized MATLAB builtins, call/index disambiguation, and di
 | `reshape_repmat.m` | `reshape` and `repmat` shape transformations | 0 |
 | `remaining_builtins.m` | `det`, `diag`, `inv`, `linspace`, `norm` shape rules | 0 |
 | `type_queries.m` | Type query functions: `iscell()`, `isscalar()` return scalar | 0 |
+| `elementwise_math.m` | Element-wise math functions (trig, exp/log, rounding): pass-through shape | 0 |
+| `reductions.m` | Reduction functions (`sum`, `prod`, `mean`, `min`, `max`, `diff`) with dimension args | 0 |
+| `constructors_logical.m` | Logical/special constructors (`true`, `false`, `nan`, `inf`) | 0 |
+| `type_predicates_extended.m` | Type predicates (`isempty`, `isnumeric`, `isnan`, `issymmetric`, etc.) | 0 |
 
 >Dimension arithmetic uses canonical polynomial representation to track expressions like `zeros(n+m+1, 2*k)`.
 
@@ -463,7 +477,7 @@ Dimension constraint solving: equality constraints recorded during operations, v
 ### Running the Tests
 
 ```bash
-# Run all 162 tests
+# Run all 166 tests
 make test
 python3 conformal.py --tests
 
@@ -480,7 +494,7 @@ python3 conformal.py --strict --tests
 git clone https://github.com/EthanDoughty/conformal.git
 cd conformal
 make install          # pip install -e '.[lsp]' (editable + pygls)
-conformal --tests     # verify 162 tests pass
+conformal --tests     # verify 166 tests pass
 ```
 
 Analyze a file:
@@ -566,13 +580,13 @@ Conformal analyzes a subset of MATLAB. Here's what it doesn't cover:
 |----------|---------------|
 | Scope | Single-file analysis only. No cross-file function resolution or `addpath` handling. |
 | Functions | No nested functions. No `varargin`/`varargout`. No `eval`, `feval`, or `str2func`. |
-| Builtins | 21 builtins recognized. Toolbox functions (`fft`, `eig`, `svd`, `conv`, `filter`, ...) are not modeled and produce an unknown-function warning. |
+| Builtins | 55 builtins recognized. Toolbox functions (`fft`, `eig`, `svd`, `conv`, `filter`, ...) are not modeled and produce an unknown-function warning. |
 | Cell arrays | Per-element tracking available for literal-indexed cells. Dynamic indexing conservatively joins all elements. |
 | Indexing | `end` keyword supported with arithmetic (`C{end}`, `C{end-1}`, `A(1:end)`, `A(end-2:end, :)`). Variable operands in `end` arithmetic fall through to conservative join. |
 | Data types | No classes, no maps, no tables, no N-D arrays (only 2-D matrices). No complex number tracking. |
 | Syntax | No command-style calls (`save file.mat`), no `global`/`persistent`, no `parfor`, no `classdef`. |
 | I/O and graphics | No `load`, `save`, `fprintf`, `plot`, or any side-effecting functions. |
-| Dynamic features | No `eval`, no dynamic field access (`s.(name)`), no runtime type introspection beyond `iscell`/`isscalar`. |
+| Dynamic features | No `eval`, no dynamic field access (`s.(name)`), no runtime type introspection beyond type predicates (`iscell`, `isscalar`, `isnumeric`, etc.). |
 
 These are deliberate scope boundaries, not bugs. The analyzer focuses on the matrix-heavy computational core of MATLAB where dimension errors are most common and most costly.
 
