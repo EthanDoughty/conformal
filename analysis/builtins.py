@@ -9,10 +9,22 @@ which builtins have explicit shape rules in the analyzer.
 # Builtins recognized as function calls (not array indexing).
 # Sorted alphabetically for maintainability.
 KNOWN_BUILTINS = {
-    "abs", "cell", "det", "diag", "eye", "inv", "iscell", "isscalar",
-    "length", "linspace", "norm", "numel", "ones",
-    "rand", "randn", "repmat", "reshape", "size",
-    "sqrt", "transpose", "zeros",
+    "abs", "acos", "all", "any", "asin", "atan", "atan2",
+    "ceil", "cell", "cos", "cumprod", "cumsum",
+    "det", "diag", "diff",
+    "exp", "eye",
+    "false", "floor",
+    "imag", "inf", "inv", "iscell", "ischar", "isempty", "isfinite", "isinf",
+    "islogical", "isnan", "isnumeric", "isscalar", "issymmetric",
+    "length", "linspace", "log", "log10", "log2",
+    "max", "mean", "min", "mod",
+    "nan", "norm", "numel",
+    "ones",
+    "prod",
+    "rand", "randn", "real", "rem", "repmat", "reshape", "round",
+    "sign", "sin", "size", "sqrt", "sum",
+    "tan", "transpose", "true",
+    "zeros",
 }
 
 # Builtins with explicit shape rules (handled in eval_expr_ir).
@@ -20,14 +32,26 @@ KNOWN_BUILTINS = {
 BUILTINS_WITH_SHAPE_RULES = {
     "zeros", "ones",      # matrix constructors (1/2-arg forms)
     "eye", "rand", "randn",  # matrix constructors (0/1/2-arg forms)
+    "true", "false", "nan", "inf",  # logical/special constructors (0/1/2-arg forms)
     "cell",               # cell array constructor (1/2-arg forms)
     "abs", "sqrt",        # element-wise (pass through shape)
+    "sin", "cos", "tan", "asin", "acos", "atan",  # trig (pass through)
+    "exp", "log", "log2", "log10",  # exponential/log (pass through)
+    "ceil", "floor", "round", "sign",  # rounding (pass through)
+    "real", "imag",       # complex (pass through)
+    "cumsum", "cumprod",  # cumulative (pass through)
     "transpose",          # transpose (swap rows/cols)
     "length", "numel",    # query functions (return scalar)
     "size", "iscell", "isscalar",   # other builtins with shape rules
+    "isempty", "isnumeric", "islogical", "ischar",  # type predicates (return scalar)
+    "isnan", "isinf", "isfinite", "issymmetric",  # value predicates (return scalar)
     "reshape", "repmat",  # matrix manipulation
     "det", "norm",        # scalar-returning operations
     "diag",               # shape-dependent (vector↔diagonal matrix)
     "inv",                # matrix inverse (pass-through for square)
     "linspace",           # row vector generator
+    "sum", "prod", "mean", "any", "all",  # reductions
+    "min", "max",         # min/max (reduction or elementwise)
+    "mod", "rem", "atan2",  # elementwise 2-arg
+    "diff",               # differentiation (dimension subtraction)
 }

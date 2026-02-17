@@ -288,6 +288,21 @@ def mul_dim(a: Dim, b: Dim) -> Dim:
     return cv if cv is not None else result
 
 
+def sub_dim(a: Dim, b: Dim) -> Dim:
+    """Subtract dimension b from a: a - b.
+
+    Args:
+        a: First dimension
+        b: Second dimension to subtract
+
+    Returns:
+        Difference of dimensions
+    """
+    if b is None:
+        return None
+    return add_dim(a, mul_dim(-1, b))
+
+
 def sum_dims(dimensions: list[Dim]) -> Dim:
     """Sum a list of dimensions.
 

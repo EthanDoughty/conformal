@@ -9,7 +9,7 @@ from ir import Apply, IndexArg
 from analysis.context import AnalysisContext
 from analysis.dim_extract import expr_to_dim_ir, unwrap_arg
 from runtime.env import Env
-from runtime.shapes import Shape, shape_of_zeros, shape_of_ones, mul_dim
+from runtime.shapes import Shape, shape_of_zeros, shape_of_ones, mul_dim, sub_dim, join_dim, dims_definitely_conflict
 
 if TYPE_CHECKING:
     from analysis.diagnostics import Diagnostic
@@ -217,6 +217,118 @@ def _handle_linspace(fname, expr, env, warnings, ctx):
     return None
 
 
+def _handle_reduction(fname, expr, env, warnings, ctx):
+    """sum, prod, mean, any, all: reduce along dimension (default dim 1).
+
+    1-arg: reduce along dim 1. scalar->scalar, matrix[m x n]->matrix[1 x n].
+    2-arg: reduce along specified dim (1 or 2). Non-concrete dim->unknown.
+    3+ args: return None (falls through to unknown).
+    """
+    from analysis.eval_expr import _eval_index_arg_to_shape
+    if len(expr.args) == 1:
+        arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
+        if arg_shape.is_scalar():
+            return Shape.scalar()
+        if arg_shape.is_matrix():
+            return Shape.matrix(1, arg_shape.cols)
+        return Shape.unknown()
+    elif len(expr.args) == 2:
+        arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
+        try:
+            dim_val = expr_to_dim_ir(unwrap_arg(expr.args[1]), env)
+            # Only handle concrete int dims 1 or 2
+            if dim_val == 1:
+                if arg_shape.is_matrix():
+                    return Shape.matrix(1, arg_shape.cols)
+                return Shape.unknown()
+            elif dim_val == 2:
+                if arg_shape.is_matrix():
+                    return Shape.matrix(arg_shape.rows, 1)
+                return Shape.unknown()
+            else:
+                return None  # Non-1/2 dim -> unknown
+        except ValueError:
+            pass
+    return None
+
+
+def _handle_minmax(fname, expr, env, warnings, ctx):
+    """min, max: dispatch by arg count.
+
+    1-arg: delegate to _handle_reduction.
+    2-arg: delegate to _handle_elementwise_2arg.
+    3+ args: return None (falls through to unknown).
+    """
+    if len(expr.args) == 1:
+        return _handle_reduction(fname, expr, env, warnings, ctx)
+    elif len(expr.args) == 2:
+        return _handle_elementwise_2arg(fname, expr, env, warnings, ctx)
+    return None
+
+
+def _handle_elementwise_2arg(fname, expr, env, warnings, ctx):
+    """mod, rem, atan2: elementwise binary operation.
+
+    Requires exactly 2 args.
+    Scalar broadcasting: scalar op matrix -> matrix.
+    Both matrix: join dims if compatible, unknown if dims definitely conflict.
+    """
+    from analysis.eval_expr import _eval_index_arg_to_shape
+    if len(expr.args) != 2:
+        return None
+
+    s1 = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
+    s2 = _eval_index_arg_to_shape(expr.args[1], env, warnings, ctx)
+
+    # Scalar broadcasting
+    if s1.is_scalar():
+        return s2
+    if s2.is_scalar():
+        return s1
+
+    # Both matrix: check compatibility
+    if s1.is_matrix() and s2.is_matrix():
+        r1, c1 = s1.rows, s1.cols
+        r2, c2 = s2.rows, s2.cols
+
+        # Check for definite conflicts
+        if dims_definitely_conflict(r1, r2) or dims_definitely_conflict(c1, c2):
+            return Shape.unknown()
+
+        # Join dimensions
+        return Shape.matrix(join_dim(r1, r2), join_dim(c1, c2))
+
+    return Shape.unknown()
+
+
+def _handle_diff(fname, expr, env, warnings, ctx):
+    """diff: differentiation along dimension.
+
+    1-arg only (multi-arg deferred, returns None).
+    scalar -> scalar (approximation; MATLAB returns []).
+    matrix[1 x n] -> matrix[1 x (n-1)] (row vector: diff along dim 2).
+    matrix[m x n] -> matrix[(m-1) x n] (general: diff along dim 1).
+    """
+    from analysis.eval_expr import _eval_index_arg_to_shape
+    if len(expr.args) != 1:
+        return None
+
+    arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
+
+    if arg_shape.is_scalar():
+        return Shape.scalar()
+
+    if arg_shape.is_matrix():
+        r, c = arg_shape.rows, arg_shape.cols
+        # Row vector: diff along dim 2
+        if r == 1:
+            return Shape.matrix(1, sub_dim(c, 1))
+        # General matrix: diff along dim 1
+        return Shape.matrix(sub_dim(r, 1), c)
+
+    return Shape.unknown()
+
+
 # Dispatch table: builtin name -> handler function
 BUILTIN_HANDLERS = {
     'zeros': _handle_zeros_ones,
@@ -224,12 +336,42 @@ BUILTIN_HANDLERS = {
     'eye': _handle_matrix_constructor,
     'rand': _handle_matrix_constructor,
     'randn': _handle_matrix_constructor,
+    'true': _handle_matrix_constructor,
+    'false': _handle_matrix_constructor,
+    'nan': _handle_matrix_constructor,
+    'inf': _handle_matrix_constructor,
     'size': _handle_size,
     'isscalar': _handle_scalar_predicate,
     'iscell': _handle_scalar_predicate,
+    'isempty': _handle_scalar_predicate,
+    'isnumeric': _handle_scalar_predicate,
+    'islogical': _handle_scalar_predicate,
+    'ischar': _handle_scalar_predicate,
+    'isnan': _handle_scalar_predicate,
+    'isinf': _handle_scalar_predicate,
+    'isfinite': _handle_scalar_predicate,
+    'issymmetric': _handle_scalar_predicate,
     'cell': _handle_cell_constructor,
     'abs': _handle_passthrough,
     'sqrt': _handle_passthrough,
+    'sin': _handle_passthrough,
+    'cos': _handle_passthrough,
+    'tan': _handle_passthrough,
+    'asin': _handle_passthrough,
+    'acos': _handle_passthrough,
+    'atan': _handle_passthrough,
+    'exp': _handle_passthrough,
+    'log': _handle_passthrough,
+    'log2': _handle_passthrough,
+    'log10': _handle_passthrough,
+    'ceil': _handle_passthrough,
+    'floor': _handle_passthrough,
+    'round': _handle_passthrough,
+    'sign': _handle_passthrough,
+    'real': _handle_passthrough,
+    'imag': _handle_passthrough,
+    'cumsum': _handle_passthrough,
+    'cumprod': _handle_passthrough,
     'transpose': _handle_transpose_fn,
     'length': _handle_scalar_query,
     'numel': _handle_scalar_query,
@@ -240,6 +382,17 @@ BUILTIN_HANDLERS = {
     'diag': _handle_diag,
     'inv': _handle_inv,
     'linspace': _handle_linspace,
+    'sum': _handle_reduction,
+    'prod': _handle_reduction,
+    'mean': _handle_reduction,
+    'any': _handle_reduction,
+    'all': _handle_reduction,
+    'min': _handle_minmax,
+    'max': _handle_minmax,
+    'mod': _handle_elementwise_2arg,
+    'rem': _handle_elementwise_2arg,
+    'atan2': _handle_elementwise_2arg,
+    'diff': _handle_diff,
 }
 
 
