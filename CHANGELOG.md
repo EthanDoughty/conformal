@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-02-16
+### Added
+- Multi-file workspace awareness (Phase 1): sibling `.m` file scanning for function signature discovery
+- External function resolution: functions found in workspace siblings resolve silently (no W_UNKNOWN_FUNCTION), return `unknown` shape
+- `analysis/workspace.py` module with `ExternalSignature` frozen dataclass and regex-based signature extraction
+- `scan_workspace(file_path)` function for directory-level function discovery
+- Workspace scanning integrated in CLI (`conformal.py run_file()`), LSP server (`lsp/server.py _validate()`), and test runner (`run_all_tests.py`)
+- Priority-based dispatch: function_handle > KNOWN_BUILTINS > function_registry > external_functions > bound variable > W_UNKNOWN_FUNCTION
+- Filename-keyed dispatch matching MATLAB semantics (function name must match filename)
+- 7 new test files in `tests/functions/`: workspace_basic.m, workspace_handle.m, workspace_multi_return.m, workspace_builtin_priority.m, workspace_same_file_priority.m, workspace_helper.m (helper), workspace_multi_helper.m (helper)
+- Total test count: 173 (was 166)
+
+### Changed
+- `AnalysisContext` dataclass: added `external_functions` field for workspace function registry
+- `eval_expr.py`: external function fallback at 3 Apply disambiguation points
+- `stmt_analysis.py`: external function fallback for AssignMulti statements
+- Function signature regex handles all 3 function forms (single return, multi-return, procedure)
+
 ## [1.1.0] - 2026-02-16
 ### Added
 - Expanded builtin coverage: 35 new builtins with shape rules (20 → 55 total)

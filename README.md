@@ -4,10 +4,10 @@
 
 ### Static Shape & Dimension Analysis for MATLAB
 
-[![Version](https://img.shields.io/badge/version-1.1.0-orange.svg)](#motivation-and-future-directions)
+[![Version](https://img.shields.io/badge/version-1.2.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-166%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-173%20passing-brightgreen.svg)](#test-suite)
 [![pip installable](https://img.shields.io/badge/pip-installable-green.svg)](#getting-started)
 [![License](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
 
@@ -78,6 +78,8 @@ Dimension arithmetic works inside builtin arguments, so `zeros(n+1, 2*m)` is tra
 
 User-defined functions are analyzed at each call site with the caller's argument shapes. Three forms: single return (`function y = f(x)`), multi-return (`function [a, b] = f(x)`), and procedures (`function f(x)`). Anonymous functions `@(x) expr` are analyzed the same way, with by-value closure capture at definition time. Function handles `@funcName` dispatch to their targets. Results are cached per argument shape tuple so the same function called with the same shapes isn't re-analyzed.
 
+**Workspace awareness**: When analyzing a file, Conformal scans sibling `.m` files in the same directory for function signatures. Functions found in the workspace resolve silently (no unknown-function warning) and return `unknown` shape. This eliminates false positives when working with multi-file projects while maintaining single-file analysis semantics.
+
 ### Data structures
 
 Structs with field assignment (`s.x = A`), field access, and chained dot notation (`s.x.y`). Missing field access emits a warning. Struct shapes join across branches by taking the union of fields.
@@ -144,7 +146,7 @@ tools/              Debugging utilities (AST printer)
 
 ## Test Suite
 
-The analyzer is validated by 166 self-checking test programs organized into 12 categories. Each test embeds its expected behavior as inline assertions:
+The analyzer is validated by 173 self-checking test programs organized into 12 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -313,9 +315,9 @@ Loop analysis with single-pass and fixed-point widening modes (via `--fixpoint`)
 </details>
 
 <details>
-<summary><h3>Functions (39 tests)</h3></summary>
+<summary><h3>Functions (46 tests)</h3></summary>
 
-Interprocedural analysis for user-defined functions and anonymous functions (lambdas).
+Interprocedural analysis for user-defined functions, anonymous functions (lambdas), and workspace-aware external function resolution.
 
 Named Functions (21 tests)
 
@@ -366,12 +368,25 @@ Anonymous Functions / Lambdas (17 tests)
 | `handle_dispatch_builtin.m` | Function handle `@sin` dispatches to builtin | 0 |
 | `handle_dispatch_user_func.m` | Function handle dispatches to user-defined function | 0 |
 
+Workspace Awareness (7 tests)
+
+| Test | What It Validates | Warnings |
+|------|-------------------|----------|
+| `workspace_basic.m` | External function in sibling file resolves silently (no W_UNKNOWN_FUNCTION) | 0 |
+| `workspace_handle.m` | Function handle to workspace function works correctly | 0 |
+| `workspace_multi_return.m` | Multi-return external functions return unknown for all outputs | 0 |
+| `workspace_builtin_priority.m` | Builtins take priority over workspace functions | 0 |
+| `workspace_same_file_priority.m` | Same-file functions take priority over workspace functions | 0 |
+| `workspace_helper.m` | Helper file for workspace tests (single-return function) | — |
+| `workspace_multi_helper.m` | Helper file for workspace tests (multi-return function) | — |
+
 Key features:
 - Interprocedural analysis: functions analyzed at each call site with the caller's argument shapes
 - Polymorphic caching: results cached per `(func_name, arg_shapes)` to avoid redundant re-analysis
 - Dimension aliasing: symbolic dimension names propagate across boundaries (e.g., `f(n)` where `f = @(k) zeros(k,k)` infers `matrix[n x n]`)
 - Lambda closure capture: by-value environment capture at definition time (MATLAB semantics)
 - Control flow precision: when branches assign different lambdas, both bodies are analyzed and results joined at call site
+- Workspace awareness: functions in sibling `.m` files resolve silently with `unknown` shape (Phase 1: no cross-file body analysis yet)
 
 </details>
 
@@ -477,7 +492,7 @@ Dimension constraint solving: equality constraints recorded during operations, v
 ### Running the Tests
 
 ```bash
-# Run all 166 tests
+# Run all 173 tests
 make test
 python3 conformal.py --tests
 
@@ -494,7 +509,7 @@ python3 conformal.py --strict --tests
 git clone https://github.com/EthanDoughty/conformal.git
 cd conformal
 make install          # pip install -e '.[lsp]' (editable + pygls)
-conformal --tests     # verify 166 tests pass
+conformal --tests     # verify 173 tests pass
 ```
 
 Analyze a file:
@@ -578,7 +593,7 @@ Conformal analyzes a subset of MATLAB. Here's what it doesn't cover:
 
 | Category | What's missing |
 |----------|---------------|
-| Scope | Single-file analysis only. No cross-file function resolution or `addpath` handling. |
+| Scope | Single-file analysis with workspace awareness (Phase 1). External functions from sibling `.m` files resolve silently with `unknown` shape. No cross-file body analysis or `addpath` handling yet. |
 | Functions | No nested functions. No `varargin`/`varargout`. No `eval`, `feval`, or `str2func`. |
 | Builtins | 55 builtins recognized. Toolbox functions (`fft`, `eig`, `svd`, `conv`, `filter`, ...) are not modeled and produce an unknown-function warning. |
 | Cell arrays | Per-element tracking available for literal-indexed cells. Dynamic indexing conservatively joins all elements. |
