@@ -423,6 +423,19 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
                     env.set(target, shape)
             return env
 
+        # Check external functions (workspace scanning)
+        if fname in ctx.external_functions:
+            ext_sig = ctx.external_functions[fname]
+            # Validate return count if known
+            if ext_sig.return_count > 0 and ext_sig.return_count != len(stmt.targets):
+                warnings.append(diag.warn_multi_assign_count_mismatch(
+                    stmt.line, fname, expected=ext_sig.return_count, got=len(stmt.targets)
+                ))
+            # Set all targets to unknown (no cross-file analysis)
+            for target in stmt.targets:
+                env.set(target, Shape.unknown())
+            return env
+
         # Not a known function
         warnings.append(diag.warn_unknown_function(stmt.line, fname))
         for target in stmt.targets:

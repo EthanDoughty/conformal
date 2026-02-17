@@ -4,7 +4,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, Optional
+from urllib.parse import urlparse, unquote
 
 from pygls.lsp.server import LanguageServer
 from lsprotocol import types
@@ -12,6 +14,8 @@ from lsprotocol import types
 from frontend.pipeline import parse_matlab
 from frontend.lower_ir import lower_program
 from analysis import analyze_program_ir
+from analysis.context import AnalysisContext
+from analysis.workspace import scan_workspace
 from runtime.env import Env
 from analysis.diagnostics import Diagnostic as ConformalDiagnostic
 from lsp.diagnostics import to_lsp_diagnostic
@@ -52,6 +56,21 @@ def _compute_hash(source: str) -> str:
     return hashlib.sha256(source.encode("utf-8")).hexdigest()
 
 
+def uri_to_path(uri: str) -> Path:
+    """Convert file:// URI to filesystem Path.
+
+    Args:
+        uri: File URI (e.g., file:///path/to/file.m)
+
+    Returns:
+        Path object for the file
+    """
+    parsed = urlparse(uri)
+    # Unquote percent-encoded characters
+    path_str = unquote(parsed.path)
+    return Path(path_str)
+
+
 def _validate(ls: LanguageServer, uri: str, source: str) -> None:
     """Analyze MATLAB source and publish diagnostics.
 
@@ -64,12 +83,18 @@ def _validate(ls: LanguageServer, uri: str, source: str) -> None:
     source_lines = source.split("\n")
 
     try:
+        # Scan workspace for external functions
+        file_path = uri_to_path(uri)
+        ext = scan_workspace(file_path.parent, exclude=file_path.name)
+        ctx = AnalysisContext(
+            fixpoint=bool(server_settings["fixpoint"]),
+            external_functions=ext
+        )
+
         # Parse and analyze
         syntax_ast = parse_matlab(source)
         ir_prog = lower_program(syntax_ast)
-        env, warnings = analyze_program_ir(
-            ir_prog, fixpoint=bool(server_settings["fixpoint"])
-        )
+        env, warnings = analyze_program_ir(ir_prog, fixpoint=ctx.fixpoint, ctx=ctx)
 
         # In strict mode, check for unsupported warnings
         if server_settings["strict"]:

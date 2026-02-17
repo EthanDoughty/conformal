@@ -416,6 +416,9 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List['Diagnostic'], ctx: Analys
                             # Safe because the synthetic Var is not bound as a function_handle
                             builtin_result = eval_expr_ir(synthetic_apply, env, warnings, ctx)
                             results.append(builtin_result)
+                        elif func_name in ctx.external_functions:
+                            # External function from workspace
+                            results.append(Shape.unknown())
                         else:
                             # Function not found (should not happen — validated at FuncHandle eval)
                             results.append(Shape.unknown())
@@ -453,6 +456,11 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List['Diagnostic'], ctx: Analys
                     else:
                         # Multiple returns in expression context, use first return value
                         return output_shapes[0]
+
+                # Check external functions (workspace scanning)
+                if fname in ctx.external_functions:
+                    # External function found; return unknown (no cross-file analysis)
+                    return Shape.unknown()
 
                 # Truly unknown function
                 warnings.append(diag.warn_unknown_function(line, fname))
@@ -500,7 +508,7 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List['Diagnostic'], ctx: Analys
         # Named function handle: check if function exists
         handle_id = ctx._next_lambda_id
         ctx._next_lambda_id += 1
-        if expr.name in ctx.function_registry or expr.name in KNOWN_BUILTINS:
+        if expr.name in ctx.function_registry or expr.name in KNOWN_BUILTINS or expr.name in ctx.external_functions:
             ctx._handle_registry[handle_id] = expr.name
             return Shape.function_handle(lambda_ids=frozenset({handle_id}))
         else:

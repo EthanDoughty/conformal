@@ -11,6 +11,8 @@ from typing import Dict, List, Tuple
 from frontend.matlab_parser import parse_matlab
 from frontend.lower_ir import lower_program
 from analysis import analyze_program_ir
+from analysis.context import AnalysisContext
+from analysis.workspace import scan_workspace
 from analysis.diagnostics import has_unsupported
 from runtime.shapes import Shape
 
@@ -112,8 +114,13 @@ def run_test(path: str, fixpoint: bool = False) -> tuple[bool, bool]:
 
     ir_prog = lower_program(syntax_ast)
 
+    # Scan workspace for external functions
+    test_path = Path(path)
+    ext = scan_workspace(test_path.parent, exclude=test_path.name)
+    ctx = AnalysisContext(fixpoint=fixpoint, external_functions=ext)
+
     # IR is the source of truth for expectations.
-    env, warnings = analyze_program_ir(ir_prog, fixpoint=fixpoint)
+    env, warnings = analyze_program_ir(ir_prog, fixpoint=fixpoint, ctx=ctx)
 
     # Check for unsupported statement warnings using shared helper
     has_unsupported_warnings = has_unsupported(warnings)

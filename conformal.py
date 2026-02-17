@@ -9,6 +9,8 @@ from frontend.matlab_parser import parse_matlab
 from frontend.lower_ir import lower_program
 from analysis import analyze_program_ir
 from analysis.diagnostics import has_unsupported
+from analysis.context import AnalysisContext
+from analysis.workspace import scan_workspace
 
 
 def run_file(file_path: str, strict: bool = False, fixpoint: bool = False) -> int:
@@ -36,8 +38,12 @@ def run_file(file_path: str, strict: bool = False, fixpoint: bool = False) -> in
 
     ir_prog = lower_program(syntax_ast)
 
+    # Scan workspace for external functions
+    ext = scan_workspace(path.parent, exclude=path.name)
+    ctx = AnalysisContext(fixpoint=fixpoint, external_functions=ext)
+
     # Run IR analysis
-    env, warnings = analyze_program_ir(ir_prog, fixpoint=fixpoint)
+    env, warnings = analyze_program_ir(ir_prog, fixpoint=fixpoint, ctx=ctx)
 
     print(f"=== Analysis for {file_path} ===")
     if not warnings:
