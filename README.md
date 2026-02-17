@@ -4,10 +4,10 @@
 
 ### Static Shape & Dimension Analysis for MATLAB
 
-[![Version](https://img.shields.io/badge/version-1.3.0-orange.svg)](#motivation-and-future-directions)
+[![Version](https://img.shields.io/badge/version-1.4.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-183%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-186%20passing-brightgreen.svg)](#test-suite)
 [![pip installable](https://img.shields.io/badge/pip-installable-green.svg)](#getting-started)
 [![License](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
 
@@ -140,13 +140,13 @@ analysis/           13 focused submodules: expression eval, statements, function
 runtime/            Shape domain (shapes.py), symbolic dimensions (symdim.py), and environments
 lsp/                Language Server Protocol implementation (server.py, diagnostics.py, hover.py, code_actions.py)
 vscode-conformal/   VS Code extension (TypeScript thin client)
-tests/              Self-checking MATLAB programs (183 tests, 12 categories)
+tests/              Self-checking MATLAB programs (186 tests, 12 categories)
 tools/              Debugging utilities (AST printer)
 ```
 
 ## Test Suite
 
-The analyzer is validated by 183 self-checking test programs organized into 12 categories. Each test embeds its expected behavior as inline assertions:
+The analyzer is validated by 186 self-checking test programs organized into 12 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -194,7 +194,7 @@ Tests symbolic dimension tracking, arithmetic, and canonical polynomial represen
 </details>
 
 <details open>
-<summary><h3>Indexing (8 tests)</h3></summary>
+<summary><h3>Indexing (11 tests)</h3></summary>
 
 MATLAB-style indexing including scalar, slice, range, linear indexing, and `end` keyword arithmetic.
 
@@ -208,6 +208,9 @@ MATLAB-style indexing including scalar, slice, range, linear indexing, and `end`
 | `invalid_col_index.m` | Constant-range column indexing edge cases | 0 |
 | `invalid_linear_index.m` | Non-scalar index argument flagged | 1 |
 | `end_arithmetic_matrix.m` | `end` keyword arithmetic in array indexing (`end-1`, `end-2:end`) | 0 |
+| `symbolic_range.m` | Symbolic range indexing: variable endpoint `A(1:k,:)` → `k x c` extent | 0 |
+| `end_position.m` | `end` resolves to column dimension in column position (non-square matrix) | 0 |
+| `symbolic_end_range.m` | `end` on symbolic matrices: `A(1:end,:)` → `n x m`, `A(1:end-1,:)` → `(n-1) x m` | 0 |
 
 </details>
 
@@ -504,7 +507,7 @@ Dimension constraint solving: equality constraints recorded during operations, v
 ### Running the Tests
 
 ```bash
-# Run all 183 tests
+# Run all 186 tests
 make test
 python3 conformal.py --tests
 
@@ -521,7 +524,7 @@ python3 conformal.py --strict --tests
 git clone https://github.com/EthanDoughty/conformal.git
 cd conformal
 make install          # pip install -e '.[lsp]' (editable + pygls)
-conformal --tests     # verify 183 tests pass
+conformal --tests     # verify 186 tests pass
 ```
 
 Analyze a file:

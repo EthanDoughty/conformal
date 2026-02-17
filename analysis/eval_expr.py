@@ -8,7 +8,7 @@ from typing import List, Optional, TYPE_CHECKING
 from analysis.builtins import KNOWN_BUILTINS
 from analysis.context import AnalysisContext
 from analysis.end_helpers import _binop_contains_end, _eval_end_arithmetic
-from analysis.dim_extract import expr_to_dim_ir, expr_to_dim_ir_with_end
+from analysis.dim_extract import expr_to_dim_ir, expr_to_dim_ir_with_end, expr_to_dim_with_end
 from analysis.eval_binop import eval_binop_ir
 from analysis.eval_builtins import eval_builtin_call
 from analysis.func_analysis import analyze_function_call
@@ -21,7 +21,7 @@ from ir import (
 
 import analysis.diagnostics as diag
 from runtime.env import Env
-from runtime.shapes import Shape, Dim, join_shape
+from runtime.shapes import Shape, Dim, join_shape, add_dim, sub_dim
 from analysis.matrix_literals import infer_matrix_literal_shape
 
 if TYPE_CHECKING:
@@ -562,8 +562,8 @@ def _eval_indexing(base_shape: Shape, args, line: int, expr, env: Env, warnings:
         if len(args) == 2:
             a1, a2 = args
 
-            r_extent = index_arg_to_extent_ir(a1, env, warnings, line, ctx, container_shape=base_shape)
-            c_extent = index_arg_to_extent_ir(a2, env, warnings, line, ctx, container_shape=base_shape)
+            r_extent = index_arg_to_extent_ir(a1, env, warnings, line, ctx, container_shape=base_shape, dim_size=m)
+            c_extent = index_arg_to_extent_ir(a2, env, warnings, line, ctx, container_shape=base_shape, dim_size=n)
 
             def is_allowed_unknown(a: IndexArg) -> bool:
                 return isinstance(a, (Colon, Range))
@@ -594,13 +594,23 @@ def index_arg_to_extent_ir(
     warnings: List['Diagnostic'],
     line: int,
     ctx: AnalysisContext,
-    container_shape: Optional[Shape] = None
+    container_shape: Optional[Shape] = None,
+    dim_size: Dim = None
 ) -> Dim:
     """
     Return how many rows/cols this index selects:
       Colon -> unknown extent (resolved later to m/n)
       IndexExpr -> 1 if scalar-shaped else warn + None
       Range -> extent if computable else None
+
+    Args:
+        arg: Index argument to evaluate
+        env: Current environment
+        warnings: List to append warnings to
+        line: Source line number
+        ctx: Analysis context
+        container_shape: Shape of the container being indexed (for diagnostics)
+        dim_size: Dimension of the container in this index position (for End resolution)
     """
     if isinstance(arg, Colon):
         return None
@@ -616,30 +626,26 @@ def index_arg_to_extent_ir(
             warnings.append(diag.warn_range_endpoints_must_be_scalar(line, arg, start_shape, end_shape))
             return None
 
-        # Try to extract concrete endpoints (with End resolution if present)
+        # Try to extract dimension values from endpoints
         a = expr_to_dim_ir(start_expr, env)
         b = expr_to_dim_ir(end_expr, env)
 
-        # Special handling for End in range endpoints
-        if (a is None or b is None) and container_shape is not None:
-            if container_shape.is_matrix():
-                container_dim = None
-                if isinstance(container_shape.rows, int):
-                    container_dim = container_shape.rows
-                elif isinstance(container_shape.cols, int):
-                    container_dim = container_shape.cols
+        # If either endpoint is None (possible End involvement), try with End substitution
+        if a is None:
+            a = expr_to_dim_with_end(start_expr, env, dim_size)
+        if b is None:
+            b = expr_to_dim_with_end(end_expr, env, dim_size)
 
-                if container_dim is not None:
-                    if a is None:
-                        a = expr_to_dim_ir_with_end(start_expr, env, container_dim)
-                    if b is None:
-                        b = expr_to_dim_ir_with_end(end_expr, env, container_dim)
-
-        if isinstance(a, int) and isinstance(b, int):
-            if b < a:
-                warnings.append(diag.warn_invalid_range_end_lt_start(line, arg))
-                return None
-            return (b - a) + 1
+        # Compute extent: (b - a) + 1
+        if a is not None and b is not None:
+            # Concrete fast path with validation
+            if isinstance(a, int) and isinstance(b, int):
+                if b < a:
+                    warnings.append(diag.warn_invalid_range_end_lt_start(line, arg))
+                    return None
+                return (b - a) + 1
+            # Symbolic extent: (b - a) + 1
+            return add_dim(sub_dim(b, a), 1)
 
         return None
 

@@ -10,10 +10,51 @@ from analysis.end_helpers import _binop_contains_end, _eval_end_arithmetic
 
 import analysis.diagnostics as diag
 from runtime.env import Env
-from runtime.shapes import Shape, Dim, SymDim, add_dim, mul_dim
+from runtime.shapes import Shape, Dim, SymDim, add_dim, mul_dim, sub_dim
 
 if TYPE_CHECKING:
     from analysis.diagnostics import Diagnostic
+
+
+def expr_to_dim_with_end(expr: Expr, env: Env, end_dim: Dim) -> Dim:
+    """Convert an expression containing End to a dimension value.
+
+    Like expr_to_dim_ir but substitutes End nodes with end_dim, enabling
+    symbolic extent computation for range indexing (e.g., 1:end, 1:end-1).
+
+    Args:
+        expr: Expression that may contain End nodes
+        env: Current environment (for variable dim aliases)
+        end_dim: Dimension value to substitute for End (int, SymDim, or None)
+
+    Returns:
+        Dimension value, or None if not determinable
+    """
+    if isinstance(expr, End):
+        return end_dim
+    if isinstance(expr, Const):
+        v = expr.value
+        return int(v) if float(v).is_integer() else None
+    if isinstance(expr, Var):
+        # Check for dimension alias first (propagates caller's dim name)
+        if expr.name in env.dim_aliases:
+            return env.dim_aliases[expr.name]
+        return SymDim.var(expr.name)
+    if isinstance(expr, BinOp):
+        # Recursively extract dimensions from left and right operands
+        left = expr_to_dim_with_end(expr.left, env, end_dim)
+        right = expr_to_dim_with_end(expr.right, env, end_dim)
+        if left is None or right is None:
+            return None
+        if expr.op == "+":
+            return add_dim(left, right)
+        if expr.op == "-":
+            return sub_dim(left, right)
+        if expr.op == "*":
+            return mul_dim(left, right)
+        return None  # unsupported operator (/, .*, etc.)
+    # Neg, other nodes: not expected in index expressions
+    return None
 
 
 def expr_to_dim_ir_with_end(expr: Expr, env: Env, container_dim: Optional[int]) -> Optional[int]:
