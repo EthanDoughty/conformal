@@ -8,6 +8,7 @@ from typing import List, Optional, TYPE_CHECKING
 from ir import Apply, IndexArg
 from analysis.context import AnalysisContext
 from analysis.dim_extract import expr_to_dim_ir, unwrap_arg
+from analysis.intervals import interval_definitely_negative
 from runtime.env import Env
 from runtime.shapes import Shape, shape_of_zeros, shape_of_ones, add_dim, mul_dim, sub_dim, join_dim, dims_definitely_conflict
 
@@ -17,16 +18,34 @@ if TYPE_CHECKING:
 
 def _handle_zeros_ones(fname, expr, env, warnings, ctx):
     """zeros(n), zeros(m,n), ones(n), ones(m,n)."""
+    # Import here to avoid circular dependency
+    from analysis.eval_expr import _get_expr_interval
+    import analysis.diagnostics as diag
+
     if len(expr.args) == 1:
+        arg = unwrap_arg(expr.args[0])
+        # Check for negative dimension
+        dim_interval = _get_expr_interval(arg, env, ctx)
+        if interval_definitely_negative(dim_interval):
+            warnings.append(diag.warn_possibly_negative_dim(expr.line, dim_interval))
         try:
-            d = expr_to_dim_ir(unwrap_arg(expr.args[0]), env)
+            d = expr_to_dim_ir(arg, env)
             return shape_of_zeros(d, d) if fname == "zeros" else shape_of_ones(d, d)
         except ValueError:
             pass
     if len(expr.args) == 2:
+        arg0 = unwrap_arg(expr.args[0])
+        arg1 = unwrap_arg(expr.args[1])
+        # Check for negative dimensions
+        dim0_interval = _get_expr_interval(arg0, env, ctx)
+        dim1_interval = _get_expr_interval(arg1, env, ctx)
+        if interval_definitely_negative(dim0_interval):
+            warnings.append(diag.warn_possibly_negative_dim(expr.line, dim0_interval))
+        if interval_definitely_negative(dim1_interval):
+            warnings.append(diag.warn_possibly_negative_dim(expr.line, dim1_interval))
         try:
-            r_dim = expr_to_dim_ir(unwrap_arg(expr.args[0]), env)
-            c_dim = expr_to_dim_ir(unwrap_arg(expr.args[1]), env)
+            r_dim = expr_to_dim_ir(arg0, env)
+            c_dim = expr_to_dim_ir(arg1, env)
             return shape_of_zeros(r_dim, c_dim) if fname == "zeros" else shape_of_ones(r_dim, c_dim)
         except ValueError:
             pass
@@ -35,19 +54,37 @@ def _handle_zeros_ones(fname, expr, env, warnings, ctx):
 
 def _handle_matrix_constructor(fname, expr, env, warnings, ctx):
     """eye, rand, randn: eye(n), eye(m,n), etc."""
+    # Import here to avoid circular dependency
+    from analysis.eval_expr import _get_expr_interval
+    import analysis.diagnostics as diag
+
     if len(expr.args) <= 2:
         if len(expr.args) == 0:
             return Shape.scalar()
         elif len(expr.args) == 1:
+            arg = unwrap_arg(expr.args[0])
+            # Check for negative dimension
+            dim_interval = _get_expr_interval(arg, env, ctx)
+            if interval_definitely_negative(dim_interval):
+                warnings.append(diag.warn_possibly_negative_dim(expr.line, dim_interval))
             try:
-                d = expr_to_dim_ir(unwrap_arg(expr.args[0]), env)
+                d = expr_to_dim_ir(arg, env)
                 return Shape.matrix(d, d)
             except ValueError:
                 pass
         elif len(expr.args) == 2:
+            arg0 = unwrap_arg(expr.args[0])
+            arg1 = unwrap_arg(expr.args[1])
+            # Check for negative dimensions
+            dim0_interval = _get_expr_interval(arg0, env, ctx)
+            dim1_interval = _get_expr_interval(arg1, env, ctx)
+            if interval_definitely_negative(dim0_interval):
+                warnings.append(diag.warn_possibly_negative_dim(expr.line, dim0_interval))
+            if interval_definitely_negative(dim1_interval):
+                warnings.append(diag.warn_possibly_negative_dim(expr.line, dim1_interval))
             try:
-                r = expr_to_dim_ir(unwrap_arg(expr.args[0]), env)
-                c = expr_to_dim_ir(unwrap_arg(expr.args[1]), env)
+                r = expr_to_dim_ir(arg0, env)
+                c = expr_to_dim_ir(arg1, env)
                 return Shape.matrix(r, c)
             except ValueError:
                 pass
@@ -86,16 +123,34 @@ def _handle_scalar_predicate(fname, expr, env, warnings, ctx):
 
 def _handle_cell_constructor(fname, expr, env, warnings, ctx):
     """cell(n) -> cell[n x n], cell(m,n) -> cell[m x n]."""
+    # Import here to avoid circular dependency
+    from analysis.eval_expr import _get_expr_interval
+    import analysis.diagnostics as diag
+
     if len(expr.args) == 1:
+        arg = unwrap_arg(expr.args[0])
+        # Check for negative dimension
+        dim_interval = _get_expr_interval(arg, env, ctx)
+        if interval_definitely_negative(dim_interval):
+            warnings.append(diag.warn_possibly_negative_dim(expr.line, dim_interval))
         try:
-            d = expr_to_dim_ir(unwrap_arg(expr.args[0]), env)
+            d = expr_to_dim_ir(arg, env)
             return Shape.cell(d, d)
         except ValueError:
             pass
     if len(expr.args) == 2:
+        arg0 = unwrap_arg(expr.args[0])
+        arg1 = unwrap_arg(expr.args[1])
+        # Check for negative dimensions
+        dim0_interval = _get_expr_interval(arg0, env, ctx)
+        dim1_interval = _get_expr_interval(arg1, env, ctx)
+        if interval_definitely_negative(dim0_interval):
+            warnings.append(diag.warn_possibly_negative_dim(expr.line, dim0_interval))
+        if interval_definitely_negative(dim1_interval):
+            warnings.append(diag.warn_possibly_negative_dim(expr.line, dim1_interval))
         try:
-            r_dim = expr_to_dim_ir(unwrap_arg(expr.args[0]), env)
-            c_dim = expr_to_dim_ir(unwrap_arg(expr.args[1]), env)
+            r_dim = expr_to_dim_ir(arg0, env)
+            c_dim = expr_to_dim_ir(arg1, env)
             return Shape.cell(r_dim, c_dim)
         except ValueError:
             pass

@@ -269,6 +269,20 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
                 # Validate against existing constraints
                 validate_binding(ctx, env, stmt.name, concrete_value, warnings, stmt.line)
 
+        # Interval tracking: update value_ranges for scalar assignments
+        if new_shape.is_scalar():
+            from analysis.eval_expr import _get_expr_interval
+            interval = _get_expr_interval(stmt.expr, env, ctx)
+            if interval is not None:
+                ctx.value_ranges[stmt.name] = interval
+            elif stmt.name in ctx.value_ranges:
+                # Remove stale interval if we can't compute a new one
+                del ctx.value_ranges[stmt.name]
+        else:
+            # Non-scalar: remove from value_ranges
+            if stmt.name in ctx.value_ranges:
+                del ctx.value_ranges[stmt.name]
+
         return env
 
     if isinstance(stmt, StructAssign):
@@ -353,6 +367,14 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         # Evaluate iterator expression for side effects
         _ = eval_expr_ir(stmt.it, env, warnings, ctx)
 
+        # Record loop variable interval if iterator is a:b range with concrete bounds
+        if isinstance(stmt.it, BinOp) and stmt.it.op == ':':
+            from analysis.intervals import Interval
+            lo_val = try_extract_const_value(stmt.it.left)
+            hi_val = try_extract_const_value(stmt.it.right)
+            if lo_val is not None and hi_val is not None:
+                ctx.value_ranges[stmt.var] = Interval(lo_val, hi_val)
+
         # Fixpoint-only: accumulation refinement
         if ctx.fixpoint:
             pre_loop_env = env.copy()
@@ -373,8 +395,9 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
     if isinstance(stmt, If):
         _ = eval_expr_ir(stmt.cond, env, warnings, ctx)
 
-        # Snapshot constraints before branching
+        # Snapshot constraints and value_ranges before branching
         baseline_constraints = snapshot_constraints(ctx)
+        baseline_ranges = dict(ctx.value_ranges)
 
         then_env = env.copy()
         else_env = env.copy()
@@ -388,9 +411,11 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         except EarlyReturn:
             then_returned = True
         then_constraints = frozenset(ctx.constraints)
+        then_ranges = dict(ctx.value_ranges)
 
-        # Reset constraints to baseline for else branch
+        # Reset constraints and value_ranges to baseline for else branch
         ctx.constraints = set(baseline_constraints)
+        ctx.value_ranges = dict(baseline_ranges)
 
         try:
             for s in stmt.else_body:
@@ -398,18 +423,21 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         except EarlyReturn:
             else_returned = True
         else_constraints = frozenset(ctx.constraints)
+        else_ranges = dict(ctx.value_ranges)
 
         if then_returned and else_returned:
             # Both branches return — propagate
             raise EarlyReturn()
         elif then_returned:
-            # Only then returns — use else env and constraints
+            # Only then returns — use else env, constraints, and value_ranges
             env.bindings = else_env.bindings
             ctx.constraints = set(else_constraints)
+            ctx.value_ranges = else_ranges
         elif else_returned:
-            # Only else returns — use then env and constraints
+            # Only else returns — use then env, constraints, and value_ranges
             env.bindings = then_env.bindings
             ctx.constraints = set(then_constraints)
+            ctx.value_ranges = then_ranges
         else:
             # Neither returns — normal join
             merged = join_env(then_env, else_env)
@@ -425,6 +453,10 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
                 if constraint in ctx.constraint_provenance:
                     new_provenance[constraint] = ctx.constraint_provenance[constraint]
             ctx.constraint_provenance = new_provenance
+
+            # Join value_ranges
+            from analysis.intervals import join_value_ranges
+            ctx.value_ranges = join_value_ranges(baseline_ranges, [then_ranges, else_ranges])
 
         return env
 
@@ -453,18 +485,21 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         for cond in stmt.conditions:
             _ = eval_expr_ir(cond, env, warnings, ctx)
 
-        # Snapshot constraints before branching
+        # Snapshot constraints and value_ranges before branching
         baseline_constraints = snapshot_constraints(ctx)
+        baseline_ranges = dict(ctx.value_ranges)
 
         # Analyze all branches, tracking which ones returned/broke/continued
         all_bodies = list(stmt.bodies) + [stmt.else_body]
         branch_envs = []
         branch_constraints = []
+        branch_ranges = []
         returned_flags = []
         deferred_exception = None  # EarlyBreak or EarlyContinue to re-raise
 
         for body in all_bodies:
             ctx.constraints = set(baseline_constraints)  # Reset to baseline (prevent cross-branch contamination)
+            ctx.value_ranges = dict(baseline_ranges)
             branch_env = env.copy()
             returned = False
             try:
@@ -478,6 +513,7 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
                 deferred_exception = exc
             branch_envs.append(branch_env)
             branch_constraints.append(frozenset(ctx.constraints))
+            branch_ranges.append(dict(ctx.value_ranges))
             returned_flags.append(returned)
 
         # If ALL branches returned/broke, propagate
@@ -486,9 +522,10 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
                 raise type(deferred_exception)()
             raise EarlyReturn()
 
-        # Join only non-returned branches (environments and constraints)
+        # Join only non-returned branches (environments, constraints, and value_ranges)
         live_envs = [e for e, r in zip(branch_envs, returned_flags) if not r]
         live_constraints = [c for c, r in zip(branch_constraints, returned_flags) if not r]
+        live_ranges = [vr for vr, r in zip(branch_ranges, returned_flags) if not r]
 
         if live_envs:
             # Join environments
@@ -508,6 +545,10 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
                     new_provenance[constraint] = ctx.constraint_provenance[constraint]
             ctx.constraint_provenance = new_provenance
 
+            # Join value_ranges
+            from analysis.intervals import join_value_ranges
+            ctx.value_ranges = join_value_ranges(baseline_ranges, live_ranges)
+
         return env
 
     if isinstance(stmt, Switch):
@@ -515,17 +556,20 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         for case_val, _ in stmt.cases:
             _ = eval_expr_ir(case_val, env, warnings, ctx)
 
-        # Snapshot constraints before branching
+        # Snapshot constraints and value_ranges before branching
         baseline_constraints = snapshot_constraints(ctx)
+        baseline_ranges = dict(ctx.value_ranges)
 
         all_bodies = [body for _, body in stmt.cases] + [stmt.otherwise]
         branch_envs = []
         branch_constraints = []
+        branch_ranges = []
         returned_flags = []
         deferred_exception = None
 
         for body in all_bodies:
             ctx.constraints = set(baseline_constraints)  # Reset to baseline (prevent cross-branch contamination)
+            ctx.value_ranges = dict(baseline_ranges)
             branch_env = env.copy()
             returned = False
             try:
@@ -538,6 +582,7 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
                 deferred_exception = exc
             branch_envs.append(branch_env)
             branch_constraints.append(frozenset(ctx.constraints))
+            branch_ranges.append(dict(ctx.value_ranges))
             returned_flags.append(returned)
 
         if all(returned_flags):
@@ -545,9 +590,10 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
                 raise type(deferred_exception)()
             raise EarlyReturn()
 
-        # Join only non-returned branches (environments and constraints)
+        # Join only non-returned branches (environments, constraints, and value_ranges)
         live_envs = [e for e, r in zip(branch_envs, returned_flags) if not r]
         live_constraints = [c for c, r in zip(branch_constraints, returned_flags) if not r]
+        live_ranges = [vr for vr, r in zip(branch_ranges, returned_flags) if not r]
 
         if live_envs:
             # Join environments
@@ -567,9 +613,16 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
                     new_provenance[constraint] = ctx.constraint_provenance[constraint]
             ctx.constraint_provenance = new_provenance
 
+            # Join value_ranges
+            from analysis.intervals import join_value_ranges
+            ctx.value_ranges = join_value_ranges(baseline_ranges, live_ranges)
+
         return env
 
     if isinstance(stmt, Try):
+        # Snapshot constraints and value_ranges before branching
+        baseline_constraints = snapshot_constraints(ctx)
+        baseline_ranges = dict(ctx.value_ranges)
         pre_try_env = env.copy()
 
         # Analyze try block
@@ -584,6 +637,12 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         except (EarlyBreak, EarlyContinue) as exc:
             try_returned = True
             deferred_exception = exc
+        try_constraints = frozenset(ctx.constraints)
+        try_ranges = dict(ctx.value_ranges)
+
+        # Reset to baseline for catch block
+        ctx.constraints = set(baseline_constraints)
+        ctx.value_ranges = dict(baseline_ranges)
 
         # Analyze catch block (starts from pre-try state)
         catch_env = pre_try_env.copy()
@@ -597,6 +656,8 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
             catch_returned = True
             if not deferred_exception:
                 deferred_exception = exc
+        catch_constraints = frozenset(ctx.constraints)
+        catch_ranges = dict(ctx.value_ranges)
 
         # Propagation logic (same as If handler)
         if try_returned and catch_returned:
@@ -605,11 +666,31 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
             raise EarlyReturn()
         elif try_returned:
             env.bindings = catch_env.bindings
+            ctx.constraints = set(catch_constraints)
+            ctx.value_ranges = catch_ranges
         elif catch_returned:
             env.bindings = try_env.bindings
+            ctx.constraints = set(try_constraints)
+            ctx.value_ranges = try_ranges
         else:
             result = join_env(try_env, catch_env)
             env.bindings = result.bindings
+
+            # Join constraints
+            joined_constraints = join_constraints(baseline_constraints, [try_constraints, catch_constraints])
+            ctx.constraints = joined_constraints
+
+            # Update provenance
+            new_provenance = {}
+            for constraint in joined_constraints:
+                if constraint in ctx.constraint_provenance:
+                    new_provenance[constraint] = ctx.constraint_provenance[constraint]
+            ctx.constraint_provenance = new_provenance
+
+            # Join value_ranges
+            from analysis.intervals import join_value_ranges
+            ctx.value_ranges = join_value_ranges(baseline_ranges, [try_ranges, catch_ranges])
+
         return env
 
     if isinstance(stmt, FunctionDef):

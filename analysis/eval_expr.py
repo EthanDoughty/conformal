@@ -12,6 +12,7 @@ from analysis.dim_extract import expr_to_dim_ir, expr_to_dim_ir_with_end, expr_t
 from analysis.eval_binop import eval_binop_ir
 from analysis.eval_builtins import eval_builtin_call
 from analysis.func_analysis import analyze_function_call
+from analysis.intervals import Interval, interval_add, interval_sub, interval_mul, interval_neg
 
 from ir import (
     Expr, Var, Const, StringLit, FieldAccess, Lambda, FuncHandle, End,
@@ -357,10 +358,12 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List['Diagnostic'], ctx: Analys
                         # Analyze lambda body
                         ctx.analyzing_lambdas.add(callable_id)
 
-                        # Snapshot constraints before analyzing lambda body (for isolation)
+                        # Snapshot constraints, scalar_bindings, and value_ranges before analyzing lambda body (for isolation)
                         from analysis.constraints import snapshot_constraints
                         baseline_constraints = snapshot_constraints(ctx)
                         baseline_provenance = dict(ctx.constraint_provenance)
+                        baseline_scalar_bindings = dict(ctx.scalar_bindings)
+                        baseline_value_ranges = dict(ctx.value_ranges)
 
                         try:
                             # Create env from closure snapshot + bind params
@@ -386,9 +389,11 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List['Diagnostic'], ctx: Analys
                             warnings.extend(lambda_warnings)
                             results.append(result)
                         finally:
-                            # Restore constraints (discard lambda-internal constraints)
+                            # Restore constraints, scalar_bindings, and value_ranges (discard lambda-internal state)
                             ctx.constraints = set(baseline_constraints)
                             ctx.constraint_provenance = baseline_provenance
+                            ctx.scalar_bindings = baseline_scalar_bindings
+                            ctx.value_ranges = baseline_value_ranges
 
                             ctx.analyzing_lambdas.discard(callable_id)
 
@@ -562,6 +567,32 @@ def _eval_indexing(base_shape: Shape, args, line: int, expr, env: Env, warnings:
         if len(args) == 2:
             a1, a2 = args
 
+            # Check index bounds for IndexExpr arguments (not Colon or Range)
+            m_size = _get_concrete_dim_size(m, ctx)
+            n_size = _get_concrete_dim_size(n, ctx)
+
+            if isinstance(a1, IndexExpr) and m_size is not None:
+                idx_interval = _get_expr_interval(a1.expr, env, ctx)
+                if idx_interval is not None:
+                    fmt = f"[{idx_interval.lo}, {idx_interval.hi}]"
+                    if (idx_interval.lo is not None and idx_interval.lo > m_size) or (idx_interval.hi is not None and idx_interval.hi < 1):
+                        warnings.append(diag.warn_index_out_of_bounds(line, fmt, m_size))
+                    elif idx_interval.hi is not None and idx_interval.hi > m_size:
+                        warnings.append(diag.warn_index_out_of_bounds(line, fmt, m_size, definite=False))
+                    elif idx_interval.lo is not None and idx_interval.lo < 1:
+                        warnings.append(diag.warn_index_out_of_bounds(line, fmt, m_size, definite=False))
+
+            if isinstance(a2, IndexExpr) and n_size is not None:
+                idx_interval = _get_expr_interval(a2.expr, env, ctx)
+                if idx_interval is not None:
+                    fmt = f"[{idx_interval.lo}, {idx_interval.hi}]"
+                    if (idx_interval.lo is not None and idx_interval.lo > n_size) or (idx_interval.hi is not None and idx_interval.hi < 1):
+                        warnings.append(diag.warn_index_out_of_bounds(line, fmt, n_size))
+                    elif idx_interval.hi is not None and idx_interval.hi > n_size:
+                        warnings.append(diag.warn_index_out_of_bounds(line, fmt, n_size, definite=False))
+                    elif idx_interval.lo is not None and idx_interval.lo < 1:
+                        warnings.append(diag.warn_index_out_of_bounds(line, fmt, n_size, definite=False))
+
             r_extent = index_arg_to_extent_ir(a1, env, warnings, line, ctx, container_shape=base_shape, dim_size=m)
             c_extent = index_arg_to_extent_ir(a2, env, warnings, line, ctx, container_shape=base_shape, dim_size=n)
 
@@ -656,4 +687,88 @@ def index_arg_to_extent_ir(
             return None
         return 1
 
+    return None
+
+
+def _get_concrete_dim_size(dim, ctx: AnalysisContext) -> Optional[int]:
+    """Get concrete dimension size from int or SymDim via interval lookup.
+
+    For int dimensions, returns the value directly. For simple symbolic
+    dimensions (single variable like 'n'), looks up the variable's interval
+    in ctx.value_ranges and returns the value if exactly known.
+
+    Returns None if the dimension is symbolic, unknown, or not exactly resolved.
+    """
+    from runtime.symdim import SymDim
+    from fractions import Fraction
+    if isinstance(dim, int):
+        return dim
+    if isinstance(dim, SymDim):
+        # Only extract from simple single-variable SymDims (e.g., 'n' but not '2*n' or 'n+1')
+        vars = dim.variables()
+        if len(vars) == 1:
+            var_name = list(vars)[0]
+            if len(dim._terms) == 1:
+                mono, coeff = dim._terms[0]
+                if len(mono) == 1 and mono[0] == (var_name, 1) and coeff == Fraction(1):
+                    interval = ctx.value_ranges.get(var_name)
+                    if interval is not None and interval.lo == interval.hi:
+                        return interval.lo
+    return None
+
+
+def _get_expr_interval(expr: Expr, env: Env, ctx: AnalysisContext) -> Optional[Interval]:
+    """Compute integer interval for an expression (lightweight parallel evaluator).
+
+    Pattern-matches Const, Var, Neg, BinOp to compute intervals without
+    duplicating shape logic. Returns None for anything it can't handle.
+
+    Args:
+        expr: Expression to evaluate
+        env: Current environment
+        ctx: Analysis context
+
+    Returns:
+        Interval if computable, None otherwise (top)
+    """
+    if isinstance(expr, Const):
+        # Check if value is an integer (or float with integer value like 10.0)
+        if isinstance(expr.value, (int, float)):
+            # Convert to int if it's a whole number
+            if isinstance(expr.value, float) and expr.value.is_integer():
+                int_val = int(expr.value)
+                return Interval(int_val, int_val)
+            elif isinstance(expr.value, int):
+                return Interval(expr.value, expr.value)
+        # Non-integer floats return None (top)
+        return None
+
+    if isinstance(expr, Var):
+        # Lookup in ctx.value_ranges
+        return ctx.value_ranges.get(expr.name)
+
+    if isinstance(expr, Neg):
+        # Negate the operand's interval
+        operand_iv = _get_expr_interval(expr.operand, env, ctx)
+        return interval_neg(operand_iv)
+
+    if isinstance(expr, BinOp):
+        # Apply transfer function based on operator
+        left_iv = _get_expr_interval(expr.left, env, ctx)
+        right_iv = _get_expr_interval(expr.right, env, ctx)
+
+        if expr.op == '+':
+            return interval_add(left_iv, right_iv)
+        elif expr.op == '-':
+            return interval_sub(left_iv, right_iv)
+        elif expr.op == '*':
+            return interval_mul(left_iv, right_iv)
+        elif expr.op == '/':
+            # Division interval not implemented (complex, needs ZeroDivisionError handling)
+            return None
+        else:
+            # Other operators not supported
+            return None
+
+    # Everything else returns None (top)
     return None

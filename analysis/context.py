@@ -10,6 +10,7 @@ from ir import Stmt
 
 if TYPE_CHECKING:
     from analysis.workspace import ExternalSignature
+    from analysis.intervals import Interval
 
 
 @dataclass
@@ -46,5 +47,6 @@ class AnalysisContext:
     constraints: set = field(default_factory=set)  # Set of (dim1, dim2) tuples (canonicalized)
     constraint_provenance: dict = field(default_factory=dict)  # (dim1, dim2) -> source_line
     scalar_bindings: Dict[str, int] = field(default_factory=dict)  # var_name -> concrete_value (for constraint validation)
+    value_ranges: Dict[str, 'Interval'] = field(default_factory=dict)  # var_name -> integer interval (for bounds checking)
     external_functions: Dict[str, 'ExternalSignature'] = field(default_factory=dict)  # fname -> signature from sibling .m files
     analyzing_external: Set[str] = field(default_factory=set)  # Cross-file recursion guard (filename stems)

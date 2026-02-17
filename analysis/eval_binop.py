@@ -80,6 +80,15 @@ def eval_binop_ir(
             return Shape.unknown()
 
         if left.is_scalar() and right.is_scalar():
+            # Division-by-zero check
+            if op in {"/", "./"}:
+                from analysis.eval_expr import _get_expr_interval
+                from analysis.intervals import interval_is_exactly_zero
+
+                divisor_iv = _get_expr_interval(right_expr, env, ctx)
+                if interval_is_exactly_zero(divisor_iv):
+                    warnings.append(diag.warn_division_by_zero(line, left_expr, right_expr))
+
             return Shape.scalar()
 
         if left.is_matrix() and right.is_matrix():

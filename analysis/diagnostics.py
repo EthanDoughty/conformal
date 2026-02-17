@@ -458,3 +458,58 @@ def warn_reshape_mismatch(line: int, input_shape: Shape, m, n) -> Diagnostic:
         code="W_RESHAPE_MISMATCH",
         message=f"reshape changes element count: {input_shape} has different element count than {m}x{n}"
     )
+
+
+def warn_division_by_zero(line: int, left_expr, right_expr) -> Diagnostic:
+    """Warning for definite division by zero.
+
+    Args:
+        line: Source line number
+        left_expr: Left operand expression
+        right_expr: Right operand expression (divisor)
+
+    Returns:
+        Diagnostic with code W_DIVISION_BY_ZERO
+    """
+    return Diagnostic(
+        line=line,
+        code="W_DIVISION_BY_ZERO",
+        message=f"division by zero: divisor is definitely zero"
+    )
+
+
+def warn_index_out_of_bounds(line: int, index_val, dim_size, definite: bool = True) -> Diagnostic:
+    """Warning for index provably out of bounds.
+
+    Args:
+        line: Source line number
+        index_val: Index interval or value
+        dim_size: Dimension size
+        definite: True if entire interval is OOB, False if only partially OOB
+
+    Returns:
+        Diagnostic with code W_INDEX_OUT_OF_BOUNDS
+    """
+    verb = "exceeds" if definite else "may exceed"
+    return Diagnostic(
+        line=line,
+        code="W_INDEX_OUT_OF_BOUNDS",
+        message=f"index out of bounds: index range {index_val} {verb} dimension {dim_size}"
+    )
+
+
+def warn_possibly_negative_dim(line: int, dim_val) -> Diagnostic:
+    """Warning for non-positive dimension.
+
+    Args:
+        line: Source line number
+        dim_val: Dimension interval or value
+
+    Returns:
+        Diagnostic with code W_POSSIBLY_NEGATIVE_DIM
+    """
+    return Diagnostic(
+        line=line,
+        code="W_POSSIBLY_NEGATIVE_DIM",
+        message=f"non-positive dimension: {dim_val}"
+    )

@@ -111,9 +111,11 @@ def analyze_function_call(
     # Mark function as currently being analyzed
     ctx.analyzing_functions.add(func_name)
 
-    # Snapshot constraints before analyzing function body (for isolation)
+    # Snapshot constraints, scalar_bindings, and value_ranges before analyzing function body (for isolation)
     baseline_constraints = snapshot_constraints(ctx)
     baseline_provenance = dict(ctx.constraint_provenance)
+    baseline_scalar_bindings = dict(ctx.scalar_bindings)
+    baseline_value_ranges = dict(ctx.value_ranges)
 
     try:
         # Analyze function body with fresh workspace
@@ -161,9 +163,11 @@ def analyze_function_call(
         return result
 
     finally:
-        # Restore constraints (discard function-internal constraints)
+        # Restore constraints, scalar_bindings, and value_ranges (discard function-internal state)
         ctx.constraints = set(baseline_constraints)
         ctx.constraint_provenance = baseline_provenance
+        ctx.scalar_bindings = baseline_scalar_bindings
+        ctx.value_ranges = baseline_value_ranges
 
         # Remove function from analyzing set
         ctx.analyzing_functions.discard(func_name)
@@ -239,6 +243,7 @@ def analyze_external_function_call(
     baseline_constraints = snapshot_constraints(ctx)
     baseline_provenance = dict(ctx.constraint_provenance)
     baseline_scalar_bindings = dict(ctx.scalar_bindings)
+    baseline_value_ranges = dict(ctx.value_ranges)
 
     try:
         func_env = Env()
@@ -276,6 +281,7 @@ def analyze_external_function_call(
         ctx.constraints = set(baseline_constraints)
         ctx.constraint_provenance = baseline_provenance
         ctx.scalar_bindings = baseline_scalar_bindings
+        ctx.value_ranges = baseline_value_ranges
 
 
 def _analyze_loop_body(body: list, env: Env, warnings: List['Diagnostic'], ctx: AnalysisContext) -> None:
