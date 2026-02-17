@@ -9,7 +9,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![Tests](https://img.shields.io/badge/tests-202%20passing-brightgreen.svg)](#test-suite)
 [![pip installable](https://img.shields.io/badge/pip-installable-green.svg)](#getting-started)
-[![License](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
 *Matrices must be **conformable** before they can perform. Conformal makes sure they are.*
 
