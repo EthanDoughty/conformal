@@ -4,7 +4,7 @@
 % EXPECT: A = matrix[4 x 2]
 % EXPECT: B = matrix[4 x 4]
 % EXPECT_FIXPOINT: warnings = 1
-% EXPECT_FIXPOINT: A = matrix[None x 2]
+% EXPECT_FIXPOINT: A = matrix[(n+3) x 2]
 % EXPECT_FIXPOINT: B = matrix[4 x 4]
 
 A = zeros(3, 2);

@@ -157,6 +157,35 @@ def unwrap_arg(arg: IndexArg) -> Expr:
     raise ValueError(f"Cannot unwrap {type(arg).__name__} to Expr")
 
 
+def extract_iteration_count(it_expr: Expr, env: Env) -> Dim:
+    """Extract iteration count from a for-loop iterator expression.
+
+    Handles BinOp(":", start, end) -> (end - start) + 1.
+    Returns None for stepped ranges, non-range iterators, or unresolvable.
+
+    Args:
+        it_expr: Iterator expression (e.g., 1:n, a:b)
+        env: Current environment
+
+    Returns:
+        Iteration count as Dim (int, SymDim, or None)
+    """
+    if not isinstance(it_expr, BinOp) or it_expr.op != ":":
+        return None
+    # Stepped range: BinOp(":", BinOp(":", start, step), end)
+    if isinstance(it_expr.left, BinOp) and it_expr.left.op == ":":
+        return None
+    a = expr_to_dim_ir(it_expr.left, env)
+    b = expr_to_dim_ir(it_expr.right, env)
+    if a is None or b is None:
+        return None
+    # Concrete range: compute max(0, (b - a) + 1)
+    if isinstance(a, int) and isinstance(b, int):
+        return max(0, (b - a) + 1)
+    # Symbolic range: (b - a) + 1
+    return add_dim(sub_dim(b, a), 1)
+
+
 def _update_struct_field(
     base_shape: Shape,
     fields: List[str],

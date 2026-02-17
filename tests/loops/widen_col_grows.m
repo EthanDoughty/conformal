@@ -4,7 +4,7 @@
 % EXPECT: warnings = 1
 % EXPECT: A = matrix[2 x 4]
 % EXPECT_FIXPOINT: warnings = 1
-% EXPECT_FIXPOINT: A = matrix[2 x None]
+% EXPECT_FIXPOINT: A = matrix[2 x (n+3)]
 
 A = zeros(2, 3);
 for i = 1:n

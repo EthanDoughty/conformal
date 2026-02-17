@@ -7,7 +7,7 @@
 [![Version](https://img.shields.io/badge/version-1.5.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-188%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-193%20passing-brightgreen.svg)](#test-suite)
 [![pip installable](https://img.shields.io/badge/pip-installable-green.svg)](#getting-started)
 [![License](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
 
@@ -88,7 +88,7 @@ Cell arrays with `cell(n)` and `cell(m,n)` constructors, curly-brace indexing, a
 
 ### Control flow
 
-`if`/`elseif`/`else`, `for`, `while`, `switch`/`case`/`otherwise`, `try`/`catch`, `break`, `continue`, `return`. When branches assign different shapes to the same variable, the analyzer joins them conservatively. Loops use a single pass by default, or widening-based fixed-point iteration via `--fixpoint` for guaranteed convergence (≤2 iterations).
+`if`/`elseif`/`else`, `for`, `while`, `switch`/`case`/`otherwise`, `try`/`catch`, `break`, `continue`, `return`. When branches assign different shapes to the same variable, the analyzer joins them conservatively. Loops use a single pass by default, or widening-based fixed-point iteration via `--fixpoint` for guaranteed convergence (≤2 iterations). In `--fixpoint` mode, for-loop accumulation patterns (`A = [A; delta]`, `A = [A, delta]`) are detected and refined algebraically: the iteration count is extracted from the range (`(b-a)+1`), and the widened `None` dimension is replaced with `init_dim + iter_count * delta_dim`.
 
 ### Symbolic dimensions
 
@@ -140,13 +140,13 @@ analysis/           13 focused submodules: expression eval, statements, function
 runtime/            Shape domain (shapes.py), symbolic dimensions (symdim.py), and environments
 lsp/                Language Server Protocol implementation (server.py, diagnostics.py, hover.py, code_actions.py)
 vscode-conformal/   VS Code extension (TypeScript thin client)
-tests/              Self-checking MATLAB programs (188 tests, 12 categories)
+tests/              Self-checking MATLAB programs (193 tests, 12 categories)
 tools/              Debugging utilities (AST printer)
 ```
 
 ## Test Suite
 
-The analyzer is validated by 188 self-checking test programs organized into 12 categories. Each test embeds its expected behavior as inline assertions:
+The analyzer is validated by 193 self-checking test programs organized into 12 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -286,7 +286,7 @@ Shape rules for 57 recognized MATLAB builtins, call/index disambiguation, and di
 </details>
 
 <details>
-<summary><h3>Loops (22 tests)</h3></summary>
+<summary><h3>Loops (27 tests)</h3></summary>
 
 Loop analysis with single-pass and fixed-point widening modes (via `--fixpoint`).
 
@@ -314,6 +314,11 @@ Loop analysis with single-pass and fixed-point widening modes (via `--fixpoint`)
 | `widen_stable_overwrite.m` | Stable dimension overwrite in loop | 1 |
 | `widen_unknown_false_positive.m` | Unknown function doesn't spuriously widen unrelated vars | 1 |
 | `widen_unknown_in_body.m` | Unknown function result overwrites variable | 1 |
+| `for_iter_count.m` | Iteration count extraction: concrete (`1:5`→5) and symbolic (`1:n`→n) ranges | 2 |
+| `for_accum_vertcat.m` | Vertcat accumulation refined: `A=[A;delta]` for 10 iters → concrete row count | 1 |
+| `for_accum_horzcat.m` | Horzcat accumulation refined: `D=[D,delta]` for symbolic `k` iters → `matrix[5 x (k+2)]` | 1 |
+| `for_accum_symbolic.m` | Symbolic range `a:b` accumulation: iteration count `(b-a+1)` used algebraically | 1 |
+| `for_accum_no_match.m` | Conservative bailout for self-referencing delta, stepped range, conditional accumulation | 0 |
 
 >Principled widening-based loop analysis (v0.9.2) uses a 3-phase algorithm (discover, stabilize, post-loop join) that guarantees convergence in ≤2 iterations by widening conflicting dimensions to `None` while preserving stable dimensions.
 
@@ -509,7 +514,7 @@ Dimension constraint solving: equality constraints recorded during operations, v
 ### Running the Tests
 
 ```bash
-# Run all 188 tests
+# Run all 193 tests
 make test
 python3 conformal.py --tests
 
@@ -526,7 +531,7 @@ python3 conformal.py --strict --tests
 git clone https://github.com/EthanDoughty/conformal.git
 cd conformal
 make install          # pip install -e '.[lsp]' (editable + pygls)
-conformal --tests     # verify 188 tests pass
+conformal --tests     # verify 193 tests pass
 ```
 
 Analyze a file:
