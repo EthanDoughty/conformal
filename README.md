@@ -4,10 +4,10 @@
 
 ### Static Shape & Dimension Analysis for MATLAB
 
-[![Version](https://img.shields.io/badge/version-1.5.0-orange.svg)](#motivation-and-future-directions)
+[![Version](https://img.shields.io/badge/version-1.8.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-202%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-211%20passing-brightgreen.svg)](#test-suite)
 [![pip installable](https://img.shields.io/badge/pip-installable-green.svg)](#getting-started)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
@@ -101,7 +101,9 @@ Scalar integer variables are tracked through an integer interval domain `[lo, hi
 - **Out-of-bounds indexing**: `A(i, j)` where `i` or `j` is provably outside the matrix dimensions emits `W_INDEX_OUT_OF_BOUNDS`
 - **Negative dimension**: a dimension expression that is provably non-positive emits `W_POSSIBLY_NEGATIVE_DIM`
 
-For-loop variables are automatically bound to their range interval (`for i = 1:n` binds `i` to `[1, n]`). Intervals join conservatively across control-flow branches.
+For-loop variables are automatically bound to their range interval (`for i = 1:n` binds `i` to `[1, n]`). Interval bounds accept symbolic values (`SymDim`), so `for i = 1:n` records `i ∈ [1, n]` with a symbolic upper bound; comparisons against symbolic bounds fall back soundly (no false warnings). Intervals join conservatively across control-flow branches.
+
+**Conditional interval refinement**: Branch conditions narrow variable intervals inside the branch body. `if x > 0` refines `x` to `[1, +inf]` for the true branch, eliminating false-positive OOB and negative-dim warnings when guards prove safety. Supports `>`, `>=`, `<`, `<=`, `==`, `~=` comparisons, compound `&&` conditions, and operator flipping (`5 >= x`).
 
 ## Language Coverage
 
@@ -145,17 +147,17 @@ Symbolic dimensions use a frozen polynomial representation (`SymDim`) with ratio
 ```
 frontend/           Parsing (lexer.py, matlab_parser.py) and IR lowering
 ir/                 Typed IR dataclass definitions
-analysis/           14 focused submodules: expression eval, statements, functions, builtins, binops, constraints, diagnostics, intervals
+analysis/           15 focused submodules: expression eval, statements, functions, builtins, binops, constraints, diagnostics, intervals
 runtime/            Shape domain (shapes.py), symbolic dimensions (symdim.py), and environments
 lsp/                Language Server Protocol implementation (server.py, diagnostics.py, hover.py, code_actions.py)
 vscode-conformal/   VS Code extension (TypeScript thin client)
-tests/              Self-checking MATLAB programs (202 tests, 13 categories)
+tests/              Self-checking MATLAB programs (211 tests, 13 categories)
 tools/              Debugging utilities (AST printer)
 ```
 
 ## Test Suite
 
-The analyzer is validated by 202 self-checking test programs organized into 13 categories. Each test embeds its expected behavior as inline assertions:
+The analyzer is validated by 211 self-checking test programs organized into 13 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -519,9 +521,9 @@ Dimension constraint solving: equality constraints recorded during operations, v
 </details>
 
 <details>
-<summary><h3>Intervals (9 tests)</h3></summary>
+<summary><h3>Intervals (18 tests)</h3></summary>
 
-Integer interval domain tracking scalar value ranges for division-by-zero, out-of-bounds indexing, and negative-dimension checks (v1.7.0).
+Integer interval domain tracking scalar value ranges for division-by-zero, out-of-bounds indexing, and negative-dimension checks (v1.7.0). Conditional interval refinement and symbolic interval bounds added in v1.8.0.
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -534,8 +536,17 @@ Integer interval domain tracking scalar value ranges for division-by-zero, out-o
 | `for_loop_index_bounds.m` | Loop variable used as index: bounds checked against dimension | 1 |
 | `negative_dim.m` | Provably non-positive dimension expression emits `W_POSSIBLY_NEGATIVE_DIM` | 1 |
 | `dim_from_binop.m` | Interval arithmetic in dimension expressions (e.g., `n-1`) | 0 |
+| `conditional_refine_basic.m` | `if x > 0` narrows `x` interval in true branch; no false OOB warning | 0 |
+| `conditional_refine_compound.m` | Compound `&&` conditions apply both refinements simultaneously | 0 |
+| `conditional_refine_eliminates_warning.m` | Guard condition proves index safety, eliminating false-positive OOB | 0 |
+| `conditional_refine_else.m` | Condition flipped for else branch (`if x > 3` → else refines `x` to `(-inf, 3]`) | 0 |
+| `conditional_refine_flipped.m` | Operator flipping: `5 >= x` refines `x` correctly | 0 |
+| `conditional_refine_neq.m` | `~=` comparison: no refinement (can't exclude a point from interval) | 0 |
+| `conditional_refine_symbolic.m` | Symbolic condition `if n > 0`: refinement with symbolic bounds | 0 |
+| `conditional_refine_while.m` | While loop condition refines interval in loop body | 0 |
+| `symbolic_interval_for_loop.m` | Symbolic upper bound `for i = 1:n` → `i ∈ [1, n]`; no false OOB on `A(i,:)` | 0 |
 
->Interval analysis runs in parallel with shape inference. `W_INDEX_OUT_OF_BOUNDS` and `W_DIVISION_BY_ZERO` have Error severity (definite runtime errors).
+>Interval analysis runs in parallel with shape inference. `W_INDEX_OUT_OF_BOUNDS` and `W_DIVISION_BY_ZERO` have Error severity (definite runtime errors). Conditional refinement eliminates false positives when branch guards prove safety; symbolic bounds fall back soundly.
 
 </details>
 
@@ -544,7 +555,7 @@ Integer interval domain tracking scalar value ranges for division-by-zero, out-o
 ### Running the Tests
 
 ```bash
-# Run all 202 tests
+# Run all 211 tests
 make test
 python3 conformal.py --tests
 
@@ -561,7 +572,7 @@ python3 conformal.py --strict --tests
 git clone https://github.com/EthanDoughty/conformal.git
 cd conformal
 make install          # pip install -e '.[lsp]' (editable + pygls)
-conformal --tests     # verify 202 tests pass
+conformal --tests     # verify 211 tests pass
 ```
 
 Analyze a file:

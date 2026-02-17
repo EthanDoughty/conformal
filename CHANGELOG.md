@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-02-17
+### Added
+- **Conditional interval refinement**: branch conditions narrow variable intervals inside the branch body; `if x > 0` refines `x` to `[1, +inf]` in the true branch (and the complement in the else branch); eliminates false-positive `W_INDEX_OUT_OF_BOUNDS` and `W_POSSIBLY_NEGATIVE_DIM` warnings when guards prove safety
+- Refinement hooked into If/IfChain handlers in `analysis/stmt_analysis.py`; While loop condition also refines the loop body interval
+- Supported operators: `>`, `>=`, `<`, `<=`, `==`, `~=`; compound `&&` conditions apply both refinements simultaneously; operator flipping (`5 >= x` treated as `x <= 5`)
+- **Symbolic interval bounds**: `Interval` bounds (`lo`, `hi`) now accept `Optional[Union[int, SymDim]]` (was `Optional[int]`); for-loop upper bound `for i = 1:n` records `i ∈ [1, n]` with symbolic `hi = SymDim('n')`; symbolic bounds that cannot be compared concretely produce no warnings (sound fallback)
+- OOB checking in `analysis/eval_expr.py` guarded for symbolic bounds (skips check when either bound is symbolic)
+- 9 new test files in `tests/intervals/`: `conditional_refine_basic.m`, `conditional_refine_compound.m`, `conditional_refine_eliminates_warning.m`, `conditional_refine_else.m`, `conditional_refine_flipped.m`, `conditional_refine_neq.m`, `conditional_refine_symbolic.m`, `conditional_refine_while.m`, `symbolic_interval_for_loop.m`
+- Total test count: 211 (was 202)
+
 ## [1.7.0] - 2026-02-17
 ### Added
 - `analysis/intervals.py`: integer interval domain (`Interval` frozen dataclass, lattice ops, arithmetic)

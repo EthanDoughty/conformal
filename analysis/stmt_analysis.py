@@ -357,8 +357,21 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         return env
 
     if isinstance(stmt, While):
+        # Evaluate condition for side effects
         _ = eval_expr_ir(stmt.cond, env, warnings, ctx)
+
+        # Apply conditional refinements inside loop body (condition is true inside loop)
+        from analysis.intervals import extract_condition_refinements, _apply_refinements
+        baseline_ranges = dict(ctx.value_ranges)
+        refinements = extract_condition_refinements(stmt.cond, env, ctx)
+        _apply_refinements(ctx, refinements, negate=False)
+
+        # Analyze loop body with refined intervals
         _analyze_loop_body(stmt.body, env, warnings, ctx)
+
+        # Reset value_ranges to baseline after loop (conservative)
+        ctx.value_ranges = baseline_ranges
+
         return env
 
     if isinstance(stmt, For):
@@ -367,13 +380,24 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         # Evaluate iterator expression for side effects
         _ = eval_expr_ir(stmt.it, env, warnings, ctx)
 
-        # Record loop variable interval if iterator is a:b range with concrete bounds
+        # Record loop variable interval if iterator is a:b range (concrete or symbolic bounds)
         if isinstance(stmt.it, BinOp) and stmt.it.op == ':':
             from analysis.intervals import Interval
+            from analysis.dim_extract import expr_to_dim_ir
+            # Try concrete bounds first
             lo_val = try_extract_const_value(stmt.it.left)
             hi_val = try_extract_const_value(stmt.it.right)
             if lo_val is not None and hi_val is not None:
                 ctx.value_ranges[stmt.var] = Interval(lo_val, hi_val)
+            else:
+                # Try symbolic bounds
+                lo_dim = expr_to_dim_ir(stmt.it.left, env)
+                hi_dim = expr_to_dim_ir(stmt.it.right, env)
+                # Use concrete if available, else symbolic
+                lo_bound = lo_val if lo_val is not None else lo_dim
+                hi_bound = hi_val if hi_val is not None else hi_dim
+                if lo_bound is not None or hi_bound is not None:
+                    ctx.value_ranges[stmt.var] = Interval(lo_bound, hi_bound)
 
         # Fixpoint-only: accumulation refinement
         if ctx.fixpoint:
@@ -393,7 +417,12 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         return env
 
     if isinstance(stmt, If):
+        # Evaluate condition for side effects
         _ = eval_expr_ir(stmt.cond, env, warnings, ctx)
+
+        # Extract conditional refinements
+        from analysis.intervals import extract_condition_refinements, _apply_refinements
+        refinements = extract_condition_refinements(stmt.cond, env, ctx)
 
         # Snapshot constraints and value_ranges before branching
         baseline_constraints = snapshot_constraints(ctx)
@@ -404,6 +433,9 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
 
         then_returned = False
         else_returned = False
+
+        # Apply then-branch refinements
+        _apply_refinements(ctx, refinements, negate=False)
 
         try:
             for s in stmt.then_body:
@@ -416,6 +448,9 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         # Reset constraints and value_ranges to baseline for else branch
         ctx.constraints = set(baseline_constraints)
         ctx.value_ranges = dict(baseline_ranges)
+
+        # Apply else-branch refinements (negated)
+        _apply_refinements(ctx, refinements, negate=True)
 
         try:
             for s in stmt.else_body:
@@ -485,6 +520,10 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         for cond in stmt.conditions:
             _ = eval_expr_ir(cond, env, warnings, ctx)
 
+        # Extract refinements for each condition (else-body gets no refinement)
+        from analysis.intervals import extract_condition_refinements, _apply_refinements
+        all_refinements = [extract_condition_refinements(cond, env, ctx) for cond in stmt.conditions]
+
         # Snapshot constraints and value_ranges before branching
         baseline_constraints = snapshot_constraints(ctx)
         baseline_ranges = dict(ctx.value_ranges)
@@ -497,9 +536,15 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         returned_flags = []
         deferred_exception = None  # EarlyBreak or EarlyContinue to re-raise
 
-        for body in all_bodies:
+        for idx, body in enumerate(all_bodies):
             ctx.constraints = set(baseline_constraints)  # Reset to baseline (prevent cross-branch contamination)
             ctx.value_ranges = dict(baseline_ranges)
+
+            # Apply refinements for this branch (if not else-body)
+            if idx < len(all_refinements):
+                _apply_refinements(ctx, all_refinements[idx], negate=False)
+            # else: else-body gets no refinement (per design decision)
+
             branch_env = env.copy()
             returned = False
             try:

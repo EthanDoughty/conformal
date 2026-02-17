@@ -575,22 +575,24 @@ def _eval_indexing(base_shape: Shape, args, line: int, expr, env: Env, warnings:
                 idx_interval = _get_expr_interval(a1.expr, env, ctx)
                 if idx_interval is not None:
                     fmt = f"[{idx_interval.lo}, {idx_interval.hi}]"
-                    if (idx_interval.lo is not None and idx_interval.lo > m_size) or (idx_interval.hi is not None and idx_interval.hi < 1):
+                    # B1: Guard all comparisons with isinstance(bound, int)
+                    if (isinstance(idx_interval.lo, int) and idx_interval.lo > m_size) or (isinstance(idx_interval.hi, int) and idx_interval.hi < 1):
                         warnings.append(diag.warn_index_out_of_bounds(line, fmt, m_size))
-                    elif idx_interval.hi is not None and idx_interval.hi > m_size:
+                    elif isinstance(idx_interval.hi, int) and idx_interval.hi > m_size:
                         warnings.append(diag.warn_index_out_of_bounds(line, fmt, m_size, definite=False))
-                    elif idx_interval.lo is not None and idx_interval.lo < 1:
+                    elif isinstance(idx_interval.lo, int) and idx_interval.lo < 1:
                         warnings.append(diag.warn_index_out_of_bounds(line, fmt, m_size, definite=False))
 
             if isinstance(a2, IndexExpr) and n_size is not None:
                 idx_interval = _get_expr_interval(a2.expr, env, ctx)
                 if idx_interval is not None:
                     fmt = f"[{idx_interval.lo}, {idx_interval.hi}]"
-                    if (idx_interval.lo is not None and idx_interval.lo > n_size) or (idx_interval.hi is not None and idx_interval.hi < 1):
+                    # B1: Guard all comparisons with isinstance(bound, int)
+                    if (isinstance(idx_interval.lo, int) and idx_interval.lo > n_size) or (isinstance(idx_interval.hi, int) and idx_interval.hi < 1):
                         warnings.append(diag.warn_index_out_of_bounds(line, fmt, n_size))
-                    elif idx_interval.hi is not None and idx_interval.hi > n_size:
+                    elif isinstance(idx_interval.hi, int) and idx_interval.hi > n_size:
                         warnings.append(diag.warn_index_out_of_bounds(line, fmt, n_size, definite=False))
-                    elif idx_interval.lo is not None and idx_interval.lo < 1:
+                    elif isinstance(idx_interval.lo, int) and idx_interval.lo < 1:
                         warnings.append(diag.warn_index_out_of_bounds(line, fmt, n_size, definite=False))
 
             r_extent = index_arg_to_extent_ir(a1, env, warnings, line, ctx, container_shape=base_shape, dim_size=m)
@@ -695,7 +697,7 @@ def _get_concrete_dim_size(dim, ctx: AnalysisContext) -> Optional[int]:
 
     For int dimensions, returns the value directly. For simple symbolic
     dimensions (single variable like 'n'), looks up the variable's interval
-    in ctx.value_ranges and returns the value if exactly known.
+    in ctx.value_ranges and returns the value if exactly known (both bounds concrete and equal).
 
     Returns None if the dimension is symbolic, unknown, or not exactly resolved.
     """
@@ -712,7 +714,8 @@ def _get_concrete_dim_size(dim, ctx: AnalysisContext) -> Optional[int]:
                 mono, coeff = dim._terms[0]
                 if len(mono) == 1 and mono[0] == (var_name, 1) and coeff == Fraction(1):
                     interval = ctx.value_ranges.get(var_name)
-                    if interval is not None and interval.lo == interval.hi:
+                    # Guard: only extract if both bounds are concrete ints and equal
+                    if interval is not None and isinstance(interval.lo, int) and isinstance(interval.hi, int) and interval.lo == interval.hi:
                         return interval.lo
     return None
 
