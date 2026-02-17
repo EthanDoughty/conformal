@@ -7,7 +7,7 @@
 [![Version](https://img.shields.io/badge/version-1.5.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-193%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-202%20passing-brightgreen.svg)](#test-suite)
 [![pip installable](https://img.shields.io/badge/pip-installable-green.svg)](#getting-started)
 [![License](https://img.shields.io/badge/license-MIT-purple.svg)](LICENSE)
 
@@ -94,6 +94,15 @@ Cell arrays with `cell(n)` and `cell(m,n)` constructors, curly-brace indexing, a
 
 Variables with unknown concrete size get symbolic names like `n`, `m`, `k`. These propagate through operations: `1:n` gives a `1 x n` vector, `[A B]` computes `n x (k+m)`, `zeros(n+1, 2*m)` tracks the arithmetic. Symbolic dimensions are represented as canonical polynomials with rational coefficients, so `n+m` and `m+n` are recognized as equal, and `n+n` simplifies to `2*n`. When a function `f(k)` is called with a symbolic argument `n`, the dimension name `n` propagates into the function body.
 
+### Interval analysis
+
+Scalar integer variables are tracked through an integer interval domain `[lo, hi]` in parallel with shape inference. This enables three additional checks:
+- **Division by zero**: `A / x` where `x` is known to be `[0, 0]` emits `W_DIVISION_BY_ZERO`
+- **Out-of-bounds indexing**: `A(i, j)` where `i` or `j` is provably outside the matrix dimensions emits `W_INDEX_OUT_OF_BOUNDS`
+- **Negative dimension**: a dimension expression that is provably non-positive emits `W_POSSIBLY_NEGATIVE_DIM`
+
+For-loop variables are automatically bound to their range interval (`for i = 1:n` binds `i` to `[1, n]`). Intervals join conservatively across control-flow branches.
+
 ## Language Coverage
 
 The analyzer parses and tracks shapes through:
@@ -136,17 +145,17 @@ Symbolic dimensions use a frozen polynomial representation (`SymDim`) with ratio
 ```
 frontend/           Parsing (lexer.py, matlab_parser.py) and IR lowering
 ir/                 Typed IR dataclass definitions
-analysis/           13 focused submodules: expression eval, statements, functions, builtins, binops, constraints, diagnostics
+analysis/           14 focused submodules: expression eval, statements, functions, builtins, binops, constraints, diagnostics, intervals
 runtime/            Shape domain (shapes.py), symbolic dimensions (symdim.py), and environments
 lsp/                Language Server Protocol implementation (server.py, diagnostics.py, hover.py, code_actions.py)
 vscode-conformal/   VS Code extension (TypeScript thin client)
-tests/              Self-checking MATLAB programs (193 tests, 12 categories)
+tests/              Self-checking MATLAB programs (202 tests, 13 categories)
 tools/              Debugging utilities (AST printer)
 ```
 
 ## Test Suite
 
-The analyzer is validated by 193 self-checking test programs organized into 12 categories. Each test embeds its expected behavior as inline assertions:
+The analyzer is validated by 202 self-checking test programs organized into 13 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -509,12 +518,33 @@ Dimension constraint solving: equality constraints recorded during operations, v
 
 </details>
 
+<details>
+<summary><h3>Intervals (9 tests)</h3></summary>
+
+Integer interval domain tracking scalar value ranges for division-by-zero, out-of-bounds indexing, and negative-dimension checks (v1.7.0).
+
+| Test | What It Validates | Warnings |
+|------|-------------------|----------|
+| `interval_basic.m` | Basic interval tracking for scalar integer variables | 0 |
+| `interval_branch_join.m` | Interval join across if/else branches (conservative widening) | 0 |
+| `division_by_zero.m` | Division by a scalar known to be zero emits `W_DIVISION_BY_ZERO` | 1 |
+| `index_out_of_bounds.m` | Index provably outside matrix dimension emits `W_INDEX_OUT_OF_BOUNDS` | 1 |
+| `index_in_bounds.m` | Index provably within bounds: no warning | 0 |
+| `for_loop_interval.m` | For-loop variable bound to range interval `[1, n]` | 0 |
+| `for_loop_index_bounds.m` | Loop variable used as index: bounds checked against dimension | 1 |
+| `negative_dim.m` | Provably non-positive dimension expression emits `W_POSSIBLY_NEGATIVE_DIM` | 1 |
+| `dim_from_binop.m` | Interval arithmetic in dimension expressions (e.g., `n-1`) | 0 |
+
+>Interval analysis runs in parallel with shape inference. `W_INDEX_OUT_OF_BOUNDS` and `W_DIVISION_BY_ZERO` have Error severity (definite runtime errors).
+
+</details>
+
 ---
 
 ### Running the Tests
 
 ```bash
-# Run all 193 tests
+# Run all 202 tests
 make test
 python3 conformal.py --tests
 
@@ -531,7 +561,7 @@ python3 conformal.py --strict --tests
 git clone https://github.com/EthanDoughty/conformal.git
 cd conformal
 make install          # pip install -e '.[lsp]' (editable + pygls)
-conformal --tests     # verify 193 tests pass
+conformal --tests     # verify 202 tests pass
 ```
 
 Analyze a file:

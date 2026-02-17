@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-02-17
+### Added
+- `analysis/intervals.py`: integer interval domain (`Interval` frozen dataclass, lattice ops, arithmetic)
+- `_get_expr_interval()` parallel evaluator runs alongside shape inference to track scalar value ranges `[lo, hi]`
+- `_get_concrete_dim_size()` helper extracts concrete size from a matrix dimension for bounds checking
+- `ctx.value_ranges` field on `AnalysisContext`: maps variable names to `Interval`
+- For-loop variable interval binding: `for i = a:b` binds `i` to interval `[a, b]`; symbolic upper bounds represented as `[lo, None]`
+- New warning code: `W_DIVISION_BY_ZERO` (severity: Error) — emitted when divisor interval is `[0, 0]`
+- New warning code: `W_INDEX_OUT_OF_BOUNDS` (severity: Error) — emitted when index interval is provably outside matrix dimension
+- New warning code: `W_POSSIBLY_NEGATIVE_DIM` (severity: Warning) — emitted when a dimension expression is provably non-positive
+- `W_INDEX_OUT_OF_BOUNDS` and `W_DIVISION_BY_ZERO` added to `ERROR_CODES` in `lsp/diagnostics.py`
+- New test category: `tests/intervals/` with 9 test files: `interval_basic.m`, `interval_branch_join.m`, `division_by_zero.m`, `index_out_of_bounds.m`, `index_in_bounds.m`, `for_loop_interval.m`, `for_loop_index_bounds.m`, `negative_dim.m`, `dim_from_binop.m`
+- Total test count: 202 (was 193)
+
 ## [1.5.0] - 2026-02-16
 ### Added
 - `reshape` conformability check: emits `W_RESHAPE_MISMATCH` when element count provably mismatches (e.g., `reshape(A[3x4], 2, 5)` → 12 vs 10)
