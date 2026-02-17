@@ -513,3 +513,75 @@ def warn_possibly_negative_dim(line: int, dim_val) -> Diagnostic:
         code="W_POSSIBLY_NEGATIVE_DIM",
         message=f"non-positive dimension: {dim_val}"
     )
+
+
+def warn_arithmetic_type_mismatch(line: int, op: str, left_expr: Expr, right_expr: Expr, left: Shape, right: Shape) -> Diagnostic:
+    """Warning for arithmetic on non-numeric types.
+
+    Args:
+        line: Source line number
+        op: Operator
+        left_expr: Left operand expression
+        right_expr: Right operand expression
+        left: Left operand shape
+        right: Right operand shape
+
+    Returns:
+        Diagnostic with code W_ARITHMETIC_TYPE_MISMATCH
+    """
+    return Diagnostic(
+        line=line,
+        code="W_ARITHMETIC_TYPE_MISMATCH",
+        message=f"Arithmetic operator {op} requires numeric operands, got {left} and {right}"
+    )
+
+
+def warn_transpose_type_mismatch(line: int, shape: Shape) -> Diagnostic:
+    """Warning for transpose of non-numeric type.
+
+    Args:
+        line: Source line number
+        shape: Operand shape
+
+    Returns:
+        Diagnostic with code W_TRANSPOSE_TYPE_MISMATCH
+    """
+    return Diagnostic(
+        line=line,
+        code="W_TRANSPOSE_TYPE_MISMATCH",
+        message=f"Transpose requires numeric operand, got {shape}"
+    )
+
+
+def warn_negate_type_mismatch(line: int, shape: Shape) -> Diagnostic:
+    """Warning for negation of non-numeric type.
+
+    Args:
+        line: Source line number
+        shape: Operand shape
+
+    Returns:
+        Diagnostic with code W_NEGATE_TYPE_MISMATCH
+    """
+    return Diagnostic(
+        line=line,
+        code="W_NEGATE_TYPE_MISMATCH",
+        message=f"Negation requires numeric operand, got {shape}"
+    )
+
+
+def warn_concat_type_mismatch(line: int, shape: Shape) -> Diagnostic:
+    """Warning for concatenation with non-numeric type.
+
+    Args:
+        line: Source line number
+        shape: Non-numeric element shape
+
+    Returns:
+        Diagnostic with code W_CONCAT_TYPE_MISMATCH
+    """
+    return Diagnostic(
+        line=line,
+        code="W_CONCAT_TYPE_MISMATCH",
+        message=f"Concatenation requires numeric elements, got {shape}"
+    )

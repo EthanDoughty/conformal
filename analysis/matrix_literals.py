@@ -66,6 +66,11 @@ def infer_matrix_literal_shape(
     row_heights: List[Dim] = []
     row_widths: List[Dim] = []
 
+    # Track first element kind across entire literal for same-kind concat allowance
+    literal_first_kind = None
+    if shape_rows and shape_rows[0] and len(shape_rows[0]) > 0:
+        literal_first_kind = shape_rows[0][0].kind
+
     for r, row in enumerate(shape_rows):
         # If somehow an empty row exists, treat as unknown (rare/unexpected).
         if len(row) == 0:
@@ -86,6 +91,19 @@ def infer_matrix_literal_shape(
         elem_cols: List[Dim] = []
 
         for s0 in row:
+            # Type check: warn on mixed kinds if either is non-numeric (but not unknown)
+            # Skip check if either element is unknown (can't prove type error)
+            # Note: scalar/string are treated as 1x1 matrices for concat, so they're compatible with matrix
+            if literal_first_kind is not None and literal_first_kind != "unknown" and s0.kind != literal_first_kind and not s0.is_unknown():
+                # Check if kinds are incompatible for concat (non-numeric mixing with anything)
+                first_is_numeric = literal_first_kind in ("scalar", "matrix", "string")
+                current_is_numeric = s0.is_numeric()
+                # Only warn if at least one is non-numeric
+                if not first_is_numeric or not current_is_numeric:
+                    had_definite_error = True
+                    import analysis.diagnostics as diag
+                    warnings.append(diag.warn_concat_type_mismatch(line, s0))
+
             s = as_matrix_shape(s0)
 
             if s.is_unknown():

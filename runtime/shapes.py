@@ -142,6 +142,13 @@ class Shape:
         """Check if this is a function handle shape."""
         return self.kind == "function_handle"
 
+    def is_numeric(self) -> bool:
+        """Check if this is a numeric type (scalar, matrix, or string).
+
+        Strings are numeric because MATLAB treats char arrays as numeric values.
+        """
+        return self.kind in ("scalar", "matrix", "string")
+
     # Pretty print / debug
 
     def __str__(self) -> str:

@@ -482,12 +482,19 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List['Diagnostic'], ctx: Analys
 
     if isinstance(expr, Transpose):
         inner = eval_expr_ir(expr.operand, env, warnings, ctx)
+        if not inner.is_numeric() and not inner.is_unknown():
+            warnings.append(diag.warn_transpose_type_mismatch(expr.line, inner))
+            return Shape.unknown()
         if inner.is_matrix():
             return Shape.matrix(inner.cols, inner.rows)
         return inner
 
     if isinstance(expr, Neg):
-        return eval_expr_ir(expr.operand, env, warnings, ctx)
+        operand_shape = eval_expr_ir(expr.operand, env, warnings, ctx)
+        if not operand_shape.is_numeric() and not operand_shape.is_unknown():
+            warnings.append(diag.warn_negate_type_mismatch(expr.line, operand_shape))
+            return Shape.unknown()
+        return operand_shape
 
     if isinstance(expr, FieldAccess):
         # Struct field access: s.field or s.a.b (nested)

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-02-17
+### Added
+- **Type error detection**: `is_numeric()` method on `Shape` in `runtime/shapes.py`; returns `False` for struct, cell, function_handle, and string shapes
+- New warning code: `W_ARITHMETIC_TYPE_MISMATCH` (severity: Error) — emitted when a non-numeric type (struct, cell, function_handle) is used in binary arithmetic (`+`, `-`, `*`, `.*`, etc.)
+- New warning code: `W_TRANSPOSE_TYPE_MISMATCH` (severity: Error) — emitted when transpose (`'`) is applied to a non-numeric, non-matrix type
+- New warning code: `W_NEGATE_TYPE_MISMATCH` (severity: Error) — emitted when negation (`-`) is applied to a non-numeric type
+- New warning code: `W_CONCAT_TYPE_MISMATCH` (severity: Error) — emitted when incompatible types are mixed in matrix literals (e.g., `[s, A]` where `s` is a struct)
+- All 4 new codes added to `ERROR_CODES` in `lsp/diagnostics.py` (Error severity in LSP)
+- Type guards added to `analysis/eval_binop.py` before scalar-broadcasting; fixes pre-existing bug where `struct + scalar` silently returned struct shape instead of emitting a warning
+- Type guards added to `analysis/eval_expr.py` Transpose and Neg handlers
+- Concat type check added to `analysis/matrix_literals.py` with same-kind allowance
+- 1 new test file: `tests/basics/type_errors.m`
+- 1 new test file: `tests/stress_test.m` — exhaustive 500-line stability test exercising all warning codes, builtins, shape kinds, control flow, and edge cases (40 warnings)
+- Total test count: 213 (was 211)
+
 ## [1.8.0] - 2026-02-17
 ### Added
 - **Conditional interval refinement**: branch conditions narrow variable intervals inside the branch body; `if x > 0` refines `x` to `[1, +inf]` in the true branch (and the complement in the else branch); eliminates false-positive `W_INDEX_OUT_OF_BOUNDS` and `W_POSSIBLY_NEGATIVE_DIM` warnings when guards prove safety

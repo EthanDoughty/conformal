@@ -70,6 +70,12 @@ def eval_binop_ir(
             warnings.append(diag.warn_string_arithmetic(line, op, left, right))
             return Shape.unknown()
 
+    # Type guard: non-numeric types cannot participate in arithmetic
+    if not (left.is_unknown() or right.is_unknown()):
+        if not left.is_numeric() or not right.is_numeric():
+            warnings.append(diag.warn_arithmetic_type_mismatch(line, op, left_expr, right_expr, left, right))
+            return Shape.unknown()
+
     if left.is_scalar() and not right.is_scalar():
         return right
     if right.is_scalar() and not left.is_scalar():

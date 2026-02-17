@@ -4,10 +4,10 @@
 
 ### Static Shape & Dimension Analysis for MATLAB
 
-[![Version](https://img.shields.io/badge/version-1.8.0-orange.svg)](#motivation-and-future-directions)
+[![Version](https://img.shields.io/badge/version-1.9.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-211%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-213%20passing-brightgreen.svg)](#test-suite)
 [![pip installable](https://img.shields.io/badge/pip-installable-green.svg)](#getting-started)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
@@ -105,6 +105,10 @@ For-loop variables are automatically bound to their range interval (`for i = 1:n
 
 **Conditional interval refinement**: Branch conditions narrow variable intervals inside the branch body. `if x > 0` refines `x` to `[1, +inf]` for the true branch, eliminating false-positive OOB and negative-dim warnings when guards prove safety. Supports `>`, `>=`, `<`, `<=`, `==`, `~=` comparisons, compound `&&` conditions, and operator flipping (`5 >= x`).
 
+### Type errors
+
+Non-numeric types (struct, cell, function_handle) used where numeric values are required emit type mismatch errors. Arithmetic operations (`+`, `-`, `*`, `.*`, etc.) on structs or cells emit `W_ARITHMETIC_TYPE_MISMATCH`. Transpose (`'`) on a non-numeric type emits `W_TRANSPOSE_TYPE_MISMATCH`. Negation (`-`) on a non-numeric type emits `W_NEGATE_TYPE_MISMATCH`. Mixing incompatible types in a matrix literal (e.g., `[s, A]` where `s` is a struct) emits `W_CONCAT_TYPE_MISMATCH`. All four codes map to Error severity. This also fixes a pre-existing bug where `struct + scalar` silently returned struct shape.
+
 ## Language Coverage
 
 The analyzer parses and tracks shapes through:
@@ -151,13 +155,13 @@ analysis/           15 focused submodules: expression eval, statements, function
 runtime/            Shape domain (shapes.py), symbolic dimensions (symdim.py), and environments
 lsp/                Language Server Protocol implementation (server.py, diagnostics.py, hover.py, code_actions.py)
 vscode-conformal/   VS Code extension (TypeScript thin client)
-tests/              Self-checking MATLAB programs (211 tests, 13 categories)
+tests/              Self-checking MATLAB programs (213 tests, 13 categories)
 tools/              Debugging utilities (AST printer)
 ```
 
 ## Test Suite
 
-The analyzer is validated by 211 self-checking test programs organized into 13 categories. Each test embeds its expected behavior as inline assertions:
+The analyzer is validated by 213 self-checking test programs organized into 13 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -170,7 +174,7 @@ The test runner validates that the analyzer's output matches these expectations,
 ---
 
 <details open>
-<summary><h3>Basics (7 tests)</h3></summary>
+<summary><h3>Basics (8 tests)</h3></summary>
 
 Foundation tests for core matrix operations and dimension compatibility.
 
@@ -183,6 +187,7 @@ Foundation tests for core matrix operations and dimension compatibility.
 | `scalar_matrix_ops.m` | Scalar-matrix broadcasting works correctly | 0 |
 | `elementwise_ops.m` | Shape mismatch in element-wise operations flagged | 1 |
 | `reassignment.m` | Incompatible variable reassignment detected | 1 |
+| `type_errors.m` | Type mismatch warnings for struct/cell/function_handle in arithmetic, transpose, negation, and concat | 4 |
 
 </details>
 
@@ -555,7 +560,7 @@ Integer interval domain tracking scalar value ranges for division-by-zero, out-o
 ### Running the Tests
 
 ```bash
-# Run all 211 tests
+# Run all 213 tests
 make test
 python3 conformal.py --tests
 
@@ -572,7 +577,7 @@ python3 conformal.py --strict --tests
 git clone https://github.com/EthanDoughty/conformal.git
 cd conformal
 make install          # pip install -e '.[lsp]' (editable + pygls)
-conformal --tests     # verify 211 tests pass
+conformal --tests     # verify 213 tests pass
 ```
 
 Analyze a file:
