@@ -15,7 +15,7 @@ from analysis.constraints import snapshot_constraints, join_constraints, validat
 
 from ir import (
     Stmt, Expr,
-    Assign, StructAssign, CellAssign, ExprStmt, While, For, If, IfChain, Switch, Try, Break, Continue,
+    Assign, StructAssign, CellAssign, IndexAssign, ExprStmt, While, For, If, IfChain, Switch, Try, Break, Continue,
     OpaqueStmt, FunctionDef, AssignMulti, Return,
     Apply, Var, Const, IndexExpr, MatrixLit, BinOp, Neg, Transpose, FieldAccess, Lambda, FuncHandle,
     End, CellLit, CurlyApply, StringLit,
@@ -350,6 +350,61 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         # Preserve container dimensions, drop element tracking
         updated_shape = Shape.cell(base_shape.rows, base_shape.cols, elements=None)
         env.set(stmt.base_name, updated_shape)
+        return env
+
+    if isinstance(stmt, IndexAssign):
+        # Indexed assignment: M(i,j) = expr
+        # Evaluate RHS for shape (triggers side effects, type checking)
+        rhs_shape = eval_expr_ir(stmt.expr, env, warnings, ctx)
+
+        # Get base variable shape
+        base_shape = env.get(stmt.base_name)
+
+        # If base is unbound (bottom), initialize as unknown
+        if base_shape.is_bottom():
+            env.set(stmt.base_name, Shape.unknown())
+            return env
+
+        # Validate base is indexable (matrix or unknown)
+        if not base_shape.is_matrix() and not base_shape.is_unknown():
+            warnings.append(diag.warn_index_assign_type_mismatch(
+                stmt.line, stmt.base_name, base_shape))
+            return env
+
+        # Bounds checking for 2-arg form on known-size matrices
+        if base_shape.is_matrix() and len(stmt.args) == 2:
+            from analysis.eval_expr import _get_expr_interval, _get_concrete_dim_size
+            m, n = base_shape.rows, base_shape.cols
+            a1, a2 = stmt.args
+
+            m_size = _get_concrete_dim_size(m, ctx)
+            n_size = _get_concrete_dim_size(n, ctx)
+
+            if isinstance(a1, IndexExpr) and m_size is not None:
+                idx_interval = _get_expr_interval(a1.expr, env, ctx)
+                if idx_interval is not None:
+                    fmt = f"[{idx_interval.lo}, {idx_interval.hi}]"
+                    if (isinstance(idx_interval.lo, int) and idx_interval.lo > m_size) or \
+                       (isinstance(idx_interval.hi, int) and idx_interval.hi < 1):
+                        warnings.append(diag.warn_index_out_of_bounds(
+                            stmt.line, fmt, m_size))
+                    elif isinstance(idx_interval.hi, int) and idx_interval.hi > m_size:
+                        warnings.append(diag.warn_index_out_of_bounds(
+                            stmt.line, fmt, m_size, definite=False))
+
+            if isinstance(a2, IndexExpr) and n_size is not None:
+                idx_interval = _get_expr_interval(a2.expr, env, ctx)
+                if idx_interval is not None:
+                    fmt = f"[{idx_interval.lo}, {idx_interval.hi}]"
+                    if (isinstance(idx_interval.lo, int) and idx_interval.lo > n_size) or \
+                       (isinstance(idx_interval.hi, int) and idx_interval.hi < 1):
+                        warnings.append(diag.warn_index_out_of_bounds(
+                            stmt.line, fmt, n_size))
+                    elif isinstance(idx_interval.hi, int) and idx_interval.hi > n_size:
+                        warnings.append(diag.warn_index_out_of_bounds(
+                            stmt.line, fmt, n_size, definite=False))
+
+        # Shape is preserved — indexed assignment does not change dimensions
         return env
 
     if isinstance(stmt, ExprStmt):

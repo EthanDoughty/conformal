@@ -307,6 +307,25 @@ class MatlabParser:
                     left = ["curly_apply", id_tok.line, base, args]
                     expr_tail = self.parse_expr_rest(left, 0)
                     return ["expr", expr_tail]
+            # Check for indexed assignment: ID(i,j) = expr
+            elif self.current().value == "(":
+                # Parse paren index args
+                self.eat("(")
+                args = self.parse_paren_args()
+                self.eat(")")
+
+                # Check for assignment
+                if self.current().value == "=":
+                    eq_tok = self.eat("=")
+                    expr = self.parse_expr()
+                    return ["index_assign", eq_tok.line, id_tok.value, args, expr]
+                else:
+                    # Not assignment, construct Apply expression and continue
+                    base = ["var", id_tok.line, id_tok.value]
+                    left = ["apply", id_tok.line, base, args]
+                    left = self.parse_postfix(left)  # Handle chained .field, {i}, (), '
+                    expr_tail = self.parse_expr_rest(left, 0)
+                    return ["expr", expr_tail]
             elif self.current().value == "=":
                 self.eat("=")
                 expr = self.parse_expr()

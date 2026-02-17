@@ -356,6 +356,14 @@ def warn_cell_assign_non_cell(line: int, base_name: str, base_shape: Shape) -> D
         message=f"Cell assignment to non-cell variable '{base_name}' ({base_shape})"
     )
 
+def warn_index_assign_type_mismatch(line: int, base_name: str, base_shape: Shape) -> Diagnostic:
+    """Warning for indexed assignment on non-indexable type."""
+    return Diagnostic(
+        line=line,
+        code="W_INDEX_ASSIGN_TYPE_MISMATCH",
+        message=f"Indexed assignment to non-indexable variable '{base_name}' ({base_shape})"
+    )
+
 def warn_return_outside_function(line: int) -> Diagnostic:
     """Warning for return statement outside function body."""
     return Diagnostic(

@@ -6,8 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [1.10.0] - 2026-02-17
 ### Added
-- Add adversarial workspace test suite (18 files) testing cross-file errors, struct/cell propagation, builtin shadowing, and domain-authentic patterns (263 tests)
+- **Indexed assignment**: Full pipeline support for `M(i,j) = expr`, `M(i) = expr`, `M(:,j) = expr` syntax (parser, IR, lowerer, analyzer)
+- New IR node: `IndexAssign(line, base_name, args, expr)` in `ir/ir.py`; lowered from syntax AST by `frontend/lower_ir.py`
+- New warning code: `W_INDEX_ASSIGN_TYPE_MISMATCH` (severity: Error) — emitted when indexed assignment targets a non-indexable variable (scalar, struct, cell, string, function_handle)
+- `W_INDEX_ASSIGN_TYPE_MISMATCH` added to `ERROR_CODES` in `lsp/diagnostics.py` (13 error codes total, was 12)
+- Bounds checking: 2-arg indexed assignments on known-size matrices emit `W_INDEX_OUT_OF_BOUNDS` for provable violations via interval analysis
+- Shape preservation: indexed assignment does not change matrix dimensions (conservative, sound)
+- Parser bugfix: `f(x)` expression statements (where `f` is a bound variable) now construct Apply correctly instead of hitting recovery
+- Cross-file support: functions using indexed assignment in body return correct inferred shapes
+- 5 new test files: `tests/indexing/index_assign.m`, `tests/indexing/index_assign_bounds.m`, `tests/indexing/index_assign_loop.m`, `tests/indexing/index_assign_in_function.m`, `tests/workspace_adv/ws_fill_diag.m`
+- `workspace_mega.m` Section 11: cross-file indexed assignment scenarios
+
+### Changed
+- Stress test: 4 `W_UNSUPPORTED_STMT` warnings eliminated (40 → 36); `build_matrix(n)` now returns `matrix[n x n]`
+- `tests/stress_test.m` reorganized into `tests/stress/` directory (6 stress test files)
+- Total test count: 268 (was 263)
 
 ## [1.9.0] - 2026-02-17
 ### Added

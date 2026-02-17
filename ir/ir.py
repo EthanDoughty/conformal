@@ -164,6 +164,17 @@ class CellAssign(Stmt):
     expr: Expr
 
 @dataclass(frozen=True)
+class IndexAssign(Stmt):
+    """Indexed assignment (M(i,j) = expr).
+
+    Assigns to a sub-region of a matrix variable. Does not change the
+    variable's overall shape (matrix dimensions preserved).
+    """
+    base_name: str
+    args: List[IndexArg]  # Parenthesized index arguments
+    expr: Expr
+
+@dataclass(frozen=True)
 class ExprStmt(Stmt):
     """Expression statement (evaluates but doesn't assign)."""
     expr: Expr

@@ -4,10 +4,10 @@
 
 ### Static Shape & Dimension Analysis for MATLAB
 
-[![Version](https://img.shields.io/badge/version-1.9.0-orange.svg)](#motivation-and-future-directions)
+[![Version](https://img.shields.io/badge/version-1.10.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-263%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-268%20passing-brightgreen.svg)](#test-suite)
 [![pip installable](https://img.shields.io/badge/pip-installable-green.svg)](#getting-started)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
@@ -118,7 +118,7 @@ The analyzer parses and tracks shapes through:
 | Expressions | `+`, `-`, `*`, `.*`, `./`, `==`, `~=`, `<`, `>`, `<=`, `>=`, `&&`, `\|\|`, `~`, `'` |
 | Literals | `[1 2; 3 4]`, `{1, 2; 3, 4}`, `'string'`, `"string"`, `1:n` |
 | Indexing | `A(i,j)`, `A(:,j)`, `A(2:5,:)`, `C{i}`, `C{i} = x` |
-| Assignment | `x = expr`, `s.field = expr`, `C{i} = expr`, `[a, b] = f(x)` |
+| Assignment | `x = expr`, `s.field = expr`, `C{i} = expr`, `M(i,j) = expr`, `[a, b] = f(x)` |
 | Functions | `function y = f(x)`, `@(x) expr`, `@funcName`, 57 builtins |
 | Control flow | `if`/`elseif`/`else`, `for`, `while`, `switch`/`case`, `try`/`catch` |
 | Statements | `break`, `continue`, `return` |
@@ -155,13 +155,13 @@ analysis/           15 focused submodules: expression eval, statements, function
 runtime/            Shape domain (shapes.py), symbolic dimensions (symdim.py), and environments
 lsp/                Language Server Protocol implementation (server.py, diagnostics.py, hover.py, code_actions.py)
 vscode-conformal/   VS Code extension (TypeScript thin client)
-tests/              Self-checking MATLAB programs (263 tests, 14 categories)
+tests/              Self-checking MATLAB programs (268 tests, 15 categories)
 tools/              Debugging utilities (AST printer)
 ```
 
 ## Test Suite
 
-The analyzer is validated by 263 self-checking test programs organized into 14 categories. Each test embeds its expected behavior as inline assertions:
+The analyzer is validated by 268 self-checking test programs organized into 15 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -210,7 +210,7 @@ Tests symbolic dimension tracking, arithmetic, and canonical polynomial represen
 </details>
 
 <details open>
-<summary><h3>Indexing (11 tests)</h3></summary>
+<summary><h3>Indexing (15 tests)</h3></summary>
 
 MATLAB-style indexing including scalar, slice, range, linear indexing, and `end` keyword arithmetic.
 
@@ -227,6 +227,10 @@ MATLAB-style indexing including scalar, slice, range, linear indexing, and `end`
 | `symbolic_range.m` | Symbolic range indexing: variable endpoint `A(1:k,:)` → `k x c` extent | 0 |
 | `end_position.m` | `end` resolves to column dimension in column position (non-square matrix) | 0 |
 | `symbolic_end_range.m` | `end` on symbolic matrices: `A(1:end,:)` → `n x m`, `A(1:end-1,:)` → `(n-1) x m` | 0 |
+| `index_assign.m` | Basic indexed assignment `M(i,j) = expr` preserves matrix dimensions | 0 |
+| `index_assign_bounds.m` | Indexed assignment with provably out-of-bounds index emits `W_INDEX_OUT_OF_BOUNDS` | 1 |
+| `index_assign_loop.m` | Indexed assignment inside for loop body | 0 |
+| `index_assign_in_function.m` | Indexed assignment in function body; caller sees correct return shape | 0 |
 
 </details>
 
@@ -579,6 +583,7 @@ Adversarial cross-file analysis scenarios: error propagation, struct/cell return
 | `ws_two_args.m` | Helper: two-argument function across file boundary | — |
 | `ws_with_loop.m` | Helper: function with loop body across file boundary | — |
 | `ws_with_subfunc.m` | Helper: function with subfunctions across file boundary | — |
+| `ws_fill_diag.m` | Helper: function using indexed assignment to fill diagonal; caller infers correct shape | — |
 | `sum.m` | Helper: builtin shadowing test (shadows built-in `sum`) | — |
 
 >Tests cover cross-file error scenarios, struct/cell propagation, builtin shadowing, procedure handling, conditional shape joins, subfunctions in external files, accumulation refinement, polymorphic caching stress, and domain-authentic patterns.
@@ -590,7 +595,7 @@ Adversarial cross-file analysis scenarios: error propagation, struct/cell return
 ### Running the Tests
 
 ```bash
-# Run all 263 tests
+# Run all 268 tests
 make test
 python3 conformal.py --tests
 
@@ -607,7 +612,7 @@ python3 conformal.py --strict --tests
 git clone https://github.com/EthanDoughty/conformal.git
 cd conformal
 make install          # pip install -e '.[lsp]' (editable + pygls)
-conformal --tests     # verify 263 tests pass
+conformal --tests     # verify 268 tests pass
 ```
 
 Analyze a file:

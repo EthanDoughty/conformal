@@ -218,3 +218,14 @@ unk_add = unk + zeros(3, 3);
 % Multiplication with unknown → unknown
 unk_mul = unk * zeros(3, 3);
 % EXPECT: unk_mul = unknown
+
+% ==========================================================================
+% SECTION 11: Cross-File Indexed Assignment (0 warnings)
+% ==========================================================================
+
+% ws_fill_diag uses indexed assignment internally
+diag5 = ws_fill_diag(5);
+% EXPECT: diag5 = matrix[5 x 5]
+
+diag_n = ws_fill_diag(n);
+% EXPECT: diag_n = matrix[n x n]
