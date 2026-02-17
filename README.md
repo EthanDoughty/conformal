@@ -7,7 +7,7 @@
 [![Version](https://img.shields.io/badge/version-1.9.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-213%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-263%20passing-brightgreen.svg)](#test-suite)
 [![pip installable](https://img.shields.io/badge/pip-installable-green.svg)](#getting-started)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
@@ -155,13 +155,13 @@ analysis/           15 focused submodules: expression eval, statements, function
 runtime/            Shape domain (shapes.py), symbolic dimensions (symdim.py), and environments
 lsp/                Language Server Protocol implementation (server.py, diagnostics.py, hover.py, code_actions.py)
 vscode-conformal/   VS Code extension (TypeScript thin client)
-tests/              Self-checking MATLAB programs (213 tests, 13 categories)
+tests/              Self-checking MATLAB programs (263 tests, 14 categories)
 tools/              Debugging utilities (AST printer)
 ```
 
 ## Test Suite
 
-The analyzer is validated by 213 self-checking test programs organized into 13 categories. Each test embeds its expected behavior as inline assertions:
+The analyzer is validated by 263 self-checking test programs organized into 14 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -555,12 +555,42 @@ Integer interval domain tracking scalar value ranges for division-by-zero, out-o
 
 </details>
 
+<details>
+<summary><h3>Workspace Adversarial (1 test, 17 helpers)</h3></summary>
+
+Adversarial cross-file analysis scenarios: error propagation, struct/cell returns, builtin shadowing, procedure handling, conditional shape joins, subfunctions, accumulation refinement, polymorphic caching stress, and domain-authentic patterns (Kalman, covariance, gradient descent).
+
+| Test | What It Validates | Warnings |
+|------|-------------------|----------|
+| `workspace_mega.m` | Comprehensive cross-file stress test exercising all workspace analysis features | — |
+| `ws_accumulate.m` | Helper: for-loop accumulation in external function | — |
+| `ws_builtin_chain.m` | Helper: chain of builtin operations across file boundary | — |
+| `ws_conditional_shape.m` | Helper: conditional shape join (if/else returning different shapes) | — |
+| `ws_covariance.m` | Helper: covariance matrix computation (domain-authentic pattern) | — |
+| `ws_gradient_step.m` | Helper: gradient descent step (domain-authentic pattern) | — |
+| `ws_kalman_predict.m` | Helper: Kalman filter prediction (domain-authentic pattern) | — |
+| `ws_make_cell_pair.m` | Helper: function returning cell array across file boundary | — |
+| `ws_make_result.m` | Helper: struct return across file boundary | — |
+| `ws_normalize_cols.m` | Helper: column normalization across file boundary | — |
+| `ws_procedure_only.m` | Helper: procedure (no return values) across file boundary | — |
+| `ws_residual.m` | Helper: residual computation across file boundary | — |
+| `ws_return_unknown.m` | Helper: function that returns unknown shape | — |
+| `ws_state_update.m` | Helper: state update function across file boundary | — |
+| `ws_two_args.m` | Helper: two-argument function across file boundary | — |
+| `ws_with_loop.m` | Helper: function with loop body across file boundary | — |
+| `ws_with_subfunc.m` | Helper: function with subfunctions across file boundary | — |
+| `sum.m` | Helper: builtin shadowing test (shadows built-in `sum`) | — |
+
+>Tests cover cross-file error scenarios, struct/cell propagation, builtin shadowing, procedure handling, conditional shape joins, subfunctions in external files, accumulation refinement, polymorphic caching stress, and domain-authentic patterns.
+
+</details>
+
 ---
 
 ### Running the Tests
 
 ```bash
-# Run all 213 tests
+# Run all 263 tests
 make test
 python3 conformal.py --tests
 
@@ -577,7 +607,7 @@ python3 conformal.py --strict --tests
 git clone https://github.com/EthanDoughty/conformal.git
 cd conformal
 make install          # pip install -e '.[lsp]' (editable + pygls)
-conformal --tests     # verify 213 tests pass
+conformal --tests     # verify 263 tests pass
 ```
 
 Analyze a file:

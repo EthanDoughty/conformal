@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Add adversarial workspace test suite (18 files) testing cross-file errors, struct/cell propagation, builtin shadowing, and domain-authentic patterns (263 tests)
 
 ## [1.9.0] - 2026-02-17
 ### Added
