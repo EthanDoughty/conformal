@@ -501,6 +501,7 @@ class MatlabParser:
             self.eat("(")
             left = self.parse_expr()
             self.eat(")")
+            left = self.parse_postfix(left)
         elif tok.value == "[":
             left = self.parse_matrix_literal()
         elif tok.value == "{":
@@ -580,6 +581,10 @@ class MatlabParser:
 
             elif tok.kind == "TRANSPOSE":
                 t_tok = self.eat("TRANSPOSE")
+                left = ["transpose", t_tok.line, left]
+
+            elif tok.kind == "DOTOP" and tok.value == ".'":
+                t_tok = self.eat("DOTOP")
                 left = ["transpose", t_tok.line, left]
 
             elif tok.kind == "DOT":
