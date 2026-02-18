@@ -203,13 +203,18 @@ class MatlabParser:
                 raise ParseError(f"Expected '=' or '(' after function name at {self.current().pos}")
         elif self.current().value == "[":
             # Multiple outputs: function [a, b] = name(args)
+            # Also handles void return: function [] = name(args)
             self.eat("[")
-            output_vars.append(self.eat("ID").value)
-            while self.current().value == "," or self.current().kind == "ID":
-                if self.current().value == ",":
-                    self.eat(",")
+            if self.current().value == "]":
+                # Void return: function [] = name(...)
+                self.eat("]")
+            else:
                 output_vars.append(self.eat("ID").value)
-            self.eat("]")
+                while self.current().value == "," or self.current().kind == "ID":
+                    if self.current().value == ",":
+                        self.eat(",")
+                    output_vars.append(self.eat("ID").value)
+                self.eat("]")
             self.eat("=")
             name = self.eat("ID").value
             if self.current().value == "(":
@@ -222,11 +227,16 @@ class MatlabParser:
         # Parse parameters
         params = []
         if has_parens:
+            def _eat_param():
+                if self.current().value == "~":
+                    self.eat("~")
+                    return "~"
+                return self.eat("ID").value
             if self.current().value != ")":
-                params.append(self.eat("ID").value)
+                params.append(_eat_param())
                 while self.current().value == ",":
                     self.eat(",")
-                    params.append(self.eat("ID").value)
+                    params.append(_eat_param())
             self.eat(")")
 
         # Skip newline/semicolon after closing ) if present

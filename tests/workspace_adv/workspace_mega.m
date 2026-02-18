@@ -229,3 +229,14 @@ diag5 = ws_fill_diag(5);
 
 diag_n = ws_fill_diag(n);
 % EXPECT: diag_n = matrix[n x n]
+
+% ==========================================================================
+% SECTION 12: Line continuation (0 warnings)
+% ==========================================================================
+
+cont_result = ws_continued(zeros(3, 3), ones(3, 3));
+% EXPECT: cont_result = matrix[3 x 3]
+
+% Tilde param in external function
+tilde_result = ws_tilde_param(999, zeros(3, 4));
+% EXPECT: tilde_result = matrix[3 x 3]
