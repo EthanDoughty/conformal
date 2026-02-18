@@ -7,7 +7,7 @@
 [![Version](https://img.shields.io/badge/version-1.13.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-270%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-290%20passing-brightgreen.svg)](#test-suite)
 [![pip installable](https://img.shields.io/badge/pip-installable-green.svg)](#getting-started)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
@@ -48,7 +48,7 @@ Final environment:
 
 ## Performance
 
-Single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and cross-file workspace analysis runs in about 70ms. The full 270-test suite finishes in under 500ms, with no MATLAB runtime involved.
+Single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and cross-file workspace analysis runs in about 70ms. The full 290-test suite finishes in under 500ms, with no MATLAB runtime involved.
 
 The VS Code extension can analyze on every keystroke by default, with a 500ms debounce.
 
@@ -58,11 +58,11 @@ All warnings include source line numbers. When the analyzer finds a definite err
 
 ### Operations
 
-Dimension mismatches in `+`, `-`, `*`, `.*`, `./`. Inner dimension checks for matrix multiplication. Scalar-matrix broadcasting (`s*A`, `s + A`) is handled correctly. When you use `*` where `.*` was probably intended, the analyzer suggests the fix.
+Dimension mismatches in `+`, `-`, `*`, `.*`, `./`, `^`, `.^`. Inner dimension checks for matrix multiplication. Scalar-matrix broadcasting (`s*A`, `s + A`) is handled correctly. Backslash `A\b` (mldivide) follows the same inner-dimension logic as multiplication. Element-wise logical `&` and `|` pass shapes through like any element-wise op. Logical NOT `~` and dot-transpose `.'` also carry shapes through. When you use `*` where `.*` was probably intended, the analyzer suggests the fix.
 
 ### Literals and concatenation
 
-Matrix literals `[1 2; 3 4]`, cell array literals `{1, 2; 3, 4}`, and string literals (`'hello'`, `"world"`). Horizontal concatenation `[A B]` checks that row counts match; vertical concatenation `[A; B]` checks columns. Symbolic dimensions compose through concatenation, so `[A B]` where A is `n x k` and B is `n x m` gives `n x (k+m)`.
+Matrix literals `[1 2; 3 4]`, cell array literals `{1, 2; 3, 4}`, and string literals (`'hello'`, `"world"`). Horizontal concatenation `[A B]` checks that row counts match; vertical concatenation `[A; B]` checks columns. Symbolic dimensions compose through concatenation, so `[A B]` where A is `n x k` and B is `n x m` gives `n x (k+m)`. Matrix literal spacing is handled correctly, so `[1 -2; 3 -4]` parses as four elements (not as subtraction).
 
 ### Indexing
 
@@ -82,7 +82,7 @@ Parenthesized indexing `A(i,j)`, slice indexing `A(:,j)` and `A(i,:)`, range ind
 
 Dimension arithmetic works inside builtin arguments, so `zeros(n+1, 2*m)` is tracked symbolically.
 
-User-defined functions are analyzed at each call site with the caller's argument shapes. Three forms: single return (`function y = f(x)`), multi-return (`function [a, b] = f(x)`), and procedures (`function f(x)`). Anonymous functions `@(x) expr` are analyzed the same way, with by-value closure capture at definition time. Function handles `@funcName` dispatch to their targets. Results are cached per argument shape tuple so the same function called with the same shapes isn't re-analyzed.
+User-defined functions are analyzed at each call site with the caller's argument shapes. Three forms: single return (`function y = f(x)`), multi-return (`function [a, b] = f(x)`), and procedures (including no-arg `function name` syntax). The parser also handles pre-2016 end-less function definitions (files where `end` is omitted), and space-separated multi-return syntax (`function [a b c] = f(...)` without commas). Anonymous functions `@(x) expr` are analyzed the same way, with by-value closure capture at definition time. Function handles `@funcName` dispatch to their targets. Results are cached per argument shape tuple so the same function called with the same shapes isn't re-analyzed.
 
 When analyzing a file, Conformal also scans sibling `.m` files in the same directory and fully analyzes their bodies (lex → parse → IR) to infer real return shapes. Dimension aliasing works across file boundaries, subfunctions in external files are supported, and cross-file cycles (A→B→A) are detected and handled gracefully. Unparseable external files emit `W_EXTERNAL_PARSE_ERROR`.
 
@@ -118,11 +118,11 @@ The analyzer parses and tracks shapes through:
 
 | Category | Constructs |
 |----------|-----------|
-| Expressions | `+`, `-`, `*`, `.*`, `./`, `==`, `~=`, `<`, `>`, `<=`, `>=`, `&&`, `\|\|`, `~`, `'` |
+| Expressions | `+`, `-`, `*`, `.*`, `./`, `^`, `.^`, `\`, `&`, `\|`, `==`, `~=`, `<`, `>`, `<=`, `>=`, `&&`, `\|\|`, `~`, `'`, `.'` |
 | Literals | `[1 2; 3 4]`, `{1, 2; 3, 4}`, `'string'`, `"string"`, `1:n` |
 | Indexing | `A(i,j)`, `A(:,j)`, `A(2:5,:)`, `C{i}`, `C{i} = x` |
-| Assignment | `x = expr`, `s.field = expr`, `C{i} = expr`, `M(i,j) = expr`, `[a, b] = f(x)` |
-| Functions | `function y = f(x)`, `@(x) expr`, `@funcName`, 128 builtins |
+| Assignment | `x = expr`, `s.field = expr`, `C{i} = expr`, `M(i,j) = expr`, `[a, b] = f(x)`, `[~, b] = f(x)` |
+| Functions | `function y = f(x)`, `function name` (no-arg), `@(x) expr`, `@funcName`, 128 builtins |
 | Control flow | `if`/`elseif`/`else`, `for`, `while`, `switch`/`case`, `try`/`catch` |
 | Statements | `break`, `continue`, `return` |
 | Data types | scalars, matrices, strings, structs, cell arrays, function handles |
@@ -158,13 +158,13 @@ analysis/           15 focused submodules: expression eval, statements, function
 runtime/            Shape domain (shapes.py), symbolic dimensions (symdim.py), and environments
 lsp/                Language Server Protocol implementation (server.py, diagnostics.py, hover.py, code_actions.py)
 vscode-conformal/   VS Code extension (TypeScript thin client)
-tests/              Self-checking MATLAB programs (270 tests, 15 categories)
+tests/              Self-checking MATLAB programs (290 tests, 16 categories)
 tools/              Debugging utilities (AST printer)
 ```
 
 ## Test Suite
 
-The analyzer is validated by 270 self-checking test programs organized into 15 categories. Each test embeds its expected behavior as inline assertions:
+The analyzer is validated by 290 self-checking test programs organized into 16 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -177,7 +177,7 @@ The test runner checks that the analyzer's output matches these expectations.
 ---
 
 <details open>
-<summary><h3>Basics (8 tests)</h3></summary>
+<summary><h3>Basics (15 tests)</h3></summary>
 
 Foundation tests for core matrix operations and dimension compatibility.
 
@@ -191,6 +191,13 @@ Foundation tests for core matrix operations and dimension compatibility.
 | `elementwise_ops.m` | Shape mismatch in element-wise operations flagged | 1 |
 | `reassignment.m` | Incompatible variable reassignment detected | 1 |
 | `type_errors.m` | Type mismatch warnings for struct/cell/function_handle in arithmetic, transpose, negation, and concat | 4 |
+| `power_ops.m` | Matrix power `^` and element-wise power `.^` shape rules | 1 |
+| `backslash.m` | Backslash (mldivide) `A\b` shape inference | 1 |
+| `dot_transpose.m` | Non-conjugate transpose `.'` returns transposed shape | 0 |
+| `elementwise_logical.m` | Element-wise logical `&` and `\|` return scalar or matrix shape | 0 |
+| `logical_not.m` | Logical NOT `~x` shape passthrough | 0 |
+| `tilde_unused.m` | Tilde `[~, x] = f()` as unused output placeholder | 0 |
+| `space_destructure.m` | Space-separated destructuring `[a b] = expr` without commas | 0 |
 
 </details>
 
@@ -265,7 +272,7 @@ Control-flow join semantics for if/elseif/else, switch/case, try/catch, break, a
 </details>
 
 <details>
-<summary><h3>Literals (7 tests)</h3></summary>
+<summary><h3>Literals (9 tests)</h3></summary>
 
 Matrix literals, string literals, and concatenation constraints.
 
@@ -278,11 +285,13 @@ Matrix literals, string literals, and concatenation constraints.
 | `string_horzcat.m` | String concatenation via horizontal concatenation | 0 |
 | `string_matrix_error.m` | String-matrix arithmetic operations flagged | 1 |
 | `string_in_control_flow.m` | String/scalar shape joins across branches | 0 |
+| `matrix_spacing.m` | Matrix literal spacing: `[1 -2]` is two elements (not subtraction) | 0 |
+| `cell_spacing.m` | Cell literal spacing disambiguation (`{1 -2}` is two elements) | 0 |
 
 </details>
 
 <details>
-<summary><h3>Builtins (15 tests)</h3></summary>
+<summary><h3>Builtins (17 tests)</h3></summary>
 
 Shape rules for 128 recognized MATLAB builtins (121 with single-return handlers, 11 with multi-return handlers, 4 I/O builtins recognized but no handler), call/index disambiguation, and dimension arithmetic.
 
@@ -303,6 +312,8 @@ Shape rules for 128 recognized MATLAB builtins (121 with single-return handlers,
 | `type_predicates_extended.m` | Type predicates (`isempty`, `isnumeric`, `isnan`, `issymmetric`, etc.) | 0 |
 | `reshape_conformability.m` | `reshape` conformability check: element count mismatch emits `W_RESHAPE_MISMATCH` | 1 |
 | `kron_blkdiag.m` | `kron` (Kronecker product) and `blkdiag` (variadic block diagonal) shape rules | 0 |
+| `expanded_builtins.m` | Coverage across all handler categories (hyperbolic trig, type casts, string returns, etc.) | 0 |
+| `multi_return_builtins.m` | Multi-return builtins like `eig`, `svd`, `sort`, `find` with `[a, b] = f(x)` syntax | 0 |
 
 >Dimension arithmetic uses canonical polynomial representation to track expressions like `zeros(n+m+1, 2*k)`.
 
@@ -348,11 +359,11 @@ Loop analysis with single-pass and fixed-point widening modes (via `--fixpoint`)
 </details>
 
 <details>
-<summary><h3>Functions (56 tests)</h3></summary>
+<summary><h3>Functions (66 tests)</h3></summary>
 
 Interprocedural analysis for user-defined functions, anonymous functions (lambdas), and workspace-aware external function resolution.
 
-Named Functions (21 tests)
+Named Functions (27 tests)
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -378,6 +389,11 @@ Named Functions (21 tests)
 | `nested_function_calls.m` | Nested function calls (`f(g(x))`) | 0 |
 | `procedure_with_return.m` | Procedure with explicit return statement | 1 |
 | `arg_count_mismatch_cached.m` | Argument count mismatch detected | 1 |
+| `endless_basic.m` | Pre-2016 end-less function definition (no `end` keyword) | 0 |
+| `endless_inner_blocks.m` | End-less function with nested if/for blocks | 0 |
+| `endless_multi.m` | Multiple end-less functions in a single file | 0 |
+| `noarg_basic.m` | No-arg procedure syntax `function name` with no parentheses | 0 |
+| `space_multi_return.m` | Space-separated multi-return `function [a b c] = f(...)` | 0 |
 
 Anonymous Functions / Lambdas (17 tests)
 
@@ -484,7 +500,7 @@ Cell array literals, curly-brace indexing, element assignment, and per-element s
 </details>
 
 <details>
-<summary><h3>Recovery (6 tests)</h3></summary>
+<summary><h3>Recovery (7 tests)</h3></summary>
 
 Parser error recovery and unsupported construct handling (graceful degradation).
 
@@ -496,6 +512,7 @@ Parser error recovery and unsupported construct handling (graceful degradation).
 | `multiline_braces.m` | Multiline cell indexing triggers unsupported construct warning | 1 |
 | `dot_elementwise.m` | Dot-elementwise edge cases handled | 0 |
 | `end_in_parens.m` | `end` keyword inside parentheses unsupported | 1 |
+| `power_recovery.m` | `^` in complex and nested expressions doesn't break recovery | 0 |
 
 >Best-effort analysis. When the parser encounters unsupported syntax, it emits a `W_UNSUPPORTED_*` warning, treats the result as `unknown`, and keeps going.
 
@@ -587,12 +604,51 @@ Adversarial cross-file analysis scenarios: error propagation, struct/cell return
 
 </details>
 
+<details>
+<summary><h3>Workspace (27 tests)</h3></summary>
+
+Cross-file workspace scaling tests: chains, diamond patterns, fan-out/fan-in, polymorphic caching, symbolic dimensions, multi-return, and cycle detection across 26 helper files.
+
+| Test | What It Validates | Warnings |
+|------|-------------------|----------|
+| `workspace_scaling.m` | Comprehensive cross-file stress test across all 26 helpers (chains, diamonds, fan-out, linear algebra patterns, cycle detection) | 0 |
+| `ws_add_matrices.m` | Helper: element-wise matrix addition across file boundary | — |
+| `ws_chain_add.m` | Helper: chained cross-file call (depth 2) | — |
+| `ws_compose.m` | Helper: function composition across file boundary | — |
+| `ws_deep_chain.m` | Helper: chain of depth 5 across files | — |
+| `ws_diamond_left.m` | Helper: left branch of diamond dependency pattern | — |
+| `ws_diamond_right.m` | Helper: right branch of diamond dependency pattern | — |
+| `ws_diamond_top.m` | Helper: top of diamond (calls left and right) | — |
+| `ws_fan_out.m` | Helper: fan-out to multiple sibling files | — |
+| `ws_gram.m` | Helper: Gram matrix computation (A'*A) | — |
+| `ws_kron_pair.m` | Helper: Kronecker product across file boundary | — |
+| `ws_make_rect.m` | Helper: construct rectangular matrix | — |
+| `ws_make_sym.m` | Helper: symmetrize a matrix | — |
+| `ws_mega_pipeline.m` | Helper: multi-stage pipeline across files | — |
+| `ws_normalize.m` | Helper: column normalization | — |
+| `ws_outer_product.m` | Helper: outer product computation | — |
+| `ws_pipeline.m` | Helper: two-stage pipeline | — |
+| `ws_project.m` | Helper: orthogonal projection | — |
+| `ws_recursive_a.m` | Helper: cross-file cycle participant (calls recursive_b) | — |
+| `ws_recursive_b.m` | Helper: cross-file cycle participant (calls recursive_a) | — |
+| `ws_reduce.m` | Helper: reduction to scalar | — |
+| `ws_reshape_safe.m` | Helper: safe reshape across file boundary | — |
+| `ws_scale.m` | Helper: scalar multiplication across file boundary | — |
+| `ws_solve.m` | Helper: linear solve via backslash | — |
+| `ws_stack_cols.m` | Helper: horizontal concatenation across file boundary | — |
+| `ws_stack_rows.m` | Helper: vertical concatenation across file boundary | — |
+| `ws_transform.m` | Helper: affine transformation | — |
+
+>These tests cover the scaling behavior of cross-file analysis, including chains up to depth 5, diamond dependency patterns, and cross-file cycle detection, all with symbolic dimension propagation.
+
+</details>
+
 ---
 
 ### Running the Tests
 
 ```bash
-# Run all 270 tests
+# Run all 290 tests
 make test
 python3 conformal.py --tests
 
@@ -609,7 +665,7 @@ python3 conformal.py --strict --tests
 git clone https://github.com/EthanDoughty/conformal.git
 cd conformal
 make install          # pip install -e '.[lsp]' (editable + pygls)
-conformal --tests     # verify 270 tests pass
+conformal --tests     # verify 290 tests pass
 ```
 
 Analyze a file:
@@ -678,6 +734,12 @@ The obvious downside is speed. For CLI use and files up to a few hundred lines, 
 
 For adoption, the distribution story matters more than the language. A VS Code extension that bundles everything and just works will get more users than a fast binary that requires manual setup.
 
+## Real-World Compatibility
+
+To check how the parser and analyzer hold up on real MATLAB code, a dogfood corpus of 36 `.m` files was drawn from 8 open-source repos on GitHub, covering robotics, signal processing, and scientific computing. 35 of 36 files parse and analyze cleanly, a 97% rate, with the one failure being a file that uses `...` line continuation (not yet supported).
+
+The repos in the corpus include petercorke/robotics-toolbox-matlab (1491 stars), rpng/kalibr_allan (648 stars), gpeyre/matlab-toolboxes (344 stars), and ImperialCollegeLondon/sap-voicebox (248 stars), among others. These files use a wide range of MATLAB idioms: pre-2016 end-less function definitions, space-separated multi-return syntax (`function [a b c] = f(...)`), Latin-1 encoded files from European authors, `\` for linear solves, and complex matrix literal spacing like `[1 -2; 3 -4]`. Parser robustness improvements came directly from failures on this corpus.
+
 ## Limitations
 
 Conformal analyzes a subset of MATLAB. Here's what it doesn't cover:
@@ -686,7 +748,7 @@ Conformal analyzes a subset of MATLAB. Here's what it doesn't cover:
 |----------|---------------|
 | Scope | Multi-file workspace analysis (Phase 2): sibling `.m` files are parsed and analyzed to infer real return shapes. No `addpath` handling or cross-directory analysis yet. |
 | Functions | No nested functions. No `varargin`/`varargout`. No `eval`, `feval`, or `str2func`. |
-| Builtins | 123 builtins recognized (119 with shape handlers). Toolbox functions (`fft`, `eig`, `svd`, `conv`, `filter`, ...) are not modeled and produce an unknown-function warning. |
+| Builtins | 128 builtins recognized (121 with single-return handlers, 11 with multi-return handlers). Toolbox functions and other unrecognized calls produce an unknown-function warning. |
 | Cell arrays | Per-element tracking available for literal-indexed cells. Dynamic indexing conservatively joins all elements. |
 | Indexing | `end` keyword supported with arithmetic (`C{end}`, `C{end-1}`, `A(1:end)`, `A(end-2:end, :)`). Variable operands in `end` arithmetic fall through to conservative join. |
 | Data types | No classes, no maps, no tables, no N-D arrays (only 2-D matrices). No complex number tracking. |

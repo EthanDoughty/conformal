@@ -6,7 +6,7 @@ Conformal finds matrix dimension errors before you run your code. If `A` is `3x4
 
 ## What it catches
 
-Most of what it catches comes down to dimension mismatches, whether that's in multiplication, concatenation, or element-wise operations. It can also flag type errors when you use structs or cells where numbers are expected, and it checks for index out of bounds, division by zero, and negative dimensions when it can prove them from the code. It follows shapes through user-defined functions, anonymous functions with closure capture, and cross-file calls to sibling `.m` files.
+Most of what it catches comes down to dimension mismatches, whether that's in multiplication, concatenation, element-wise operations, or backslash solves. It can also flag type errors when you use structs or cells where numbers are expected, and it checks for index out of bounds, division by zero, and negative dimensions when it can prove them from the code. It follows shapes through user-defined functions (including pre-2016 end-less definitions and no-arg procedures), anonymous functions with closure capture, and cross-file calls to sibling `.m` files.
 
 ## In the editor
 
@@ -30,7 +30,7 @@ Requires Python 3.10+.
 
 The extension runs `python3 -m lsp` as an LSP subprocess over stdio. The server analyzes your `.m` files and publishes diagnostics back to the editor. When you save a file, it re-analyzes siblings that might depend on it. If the server crashes, it can auto-recover up to 3 times.
 
-Under the hood, there are 128 builtin shape rules, symbolic dimension tracking, constraint solving, interval analysis, and fixed-point loop convergence, all validated by 270 tests across 15 categories.
+Under the hood, there are 128 builtin shape rules, symbolic dimension tracking, constraint solving, interval analysis, and fixed-point loop convergence, all validated by 290 tests across 16 categories. The parser has been tested against 36 `.m` files drawn from real open-source MATLAB repos, covering robotics, signal processing, and scientific computing, and passes 35 of 36 (97%).
 
 ## Commands
 
