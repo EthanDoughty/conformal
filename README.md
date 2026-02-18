@@ -46,6 +46,17 @@ Final environment:
 - Tested on Linux
 - No MATLAB installation required
 
+## Performance
+
+Conformal is fast enough for real-time analysis as you type:
+
+- **Single file**: <100ms (even 700-line files with 36 warnings)
+- **Cross-file workspace analysis**: <70ms
+- **Full 270-test suite**: <500ms
+- **No MATLAB runtime needed** — pure static analysis
+
+The VS Code extension enables analyze-on-change by default (500ms debounce) — see dimension errors as you type, not after you save.
+
 ## What the Analysis Detects
 
 All warnings include source line numbers. When the analyzer finds a definite error, it marks the result as `unknown` and keeps going so you get as many diagnostics as possible in a single pass.
@@ -155,13 +166,13 @@ analysis/           15 focused submodules: expression eval, statements, function
 runtime/            Shape domain (shapes.py), symbolic dimensions (symdim.py), and environments
 lsp/                Language Server Protocol implementation (server.py, diagnostics.py, hover.py, code_actions.py)
 vscode-conformal/   VS Code extension (TypeScript thin client)
-tests/              Self-checking MATLAB programs (269 tests, 15 categories)
+tests/              Self-checking MATLAB programs (270 tests, 15 categories)
 tools/              Debugging utilities (AST printer)
 ```
 
 ## Test Suite
 
-The analyzer is validated by 268 self-checking test programs organized into 15 categories. Each test embeds its expected behavior as inline assertions:
+The analyzer is validated by 270 self-checking test programs organized into 15 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -595,7 +606,7 @@ Adversarial cross-file analysis scenarios: error propagation, struct/cell return
 ### Running the Tests
 
 ```bash
-# Run all 269 tests
+# Run all 270 tests
 make test
 python3 conformal.py --tests
 
@@ -612,7 +623,7 @@ python3 conformal.py --strict --tests
 git clone https://github.com/EthanDoughty/conformal.git
 cd conformal
 make install          # pip install -e '.[lsp]' (editable + pygls)
-conformal --tests     # verify 269 tests pass
+conformal --tests     # verify 270 tests pass
 ```
 
 Analyze a file:
@@ -644,17 +655,17 @@ code --install-extension EthanDoughty.conformal
 - Diagnostic tags: `W_UNSUPPORTED_*` codes rendered as faded/greyed text (visually distinct from errors)
 - Related information: diagnostics with a conflict site include a secondary annotation linking to the original line
 - Built-in MATLAB syntax highlighting (no MathWorks extension required)
-- Analysis on save (or on change with debounce, configurable)
+- Analyze-as-you-type by default (500ms debounce, configurable)
 - Error recovery (parse errors shown as diagnostics)
 
 **Configuration Settings**:
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `conformal.pythonPath` | `python3` | Path to Python interpreter (must have pygls installed) |
-| `conformal.serverPath` | _(empty)_ | Path to Conformal repo root (only needed if not pip-installed) |
+| `conformal.pythonPath` | `python3` | Python interpreter (leave as default for auto-setup) |
+| `conformal.serverPath` | _(empty)_ | Analyzer source path (for development only) |
 | `conformal.fixpoint` | `false` | Enable fixed-point loop analysis (iterative convergence) |
 | `conformal.strict` | `false` | Fail on unsupported constructs (W_UNSUPPORTED_* warnings) |
-| `conformal.analyzeOnChange` | `false` | Analyze on file changes with 500ms debounce (if false, only on save) |
+| `conformal.analyzeOnChange` | `true` | Analyze as you type (500ms debounce) |
 
 **How it works**:
 - The extension spawns `python3 -m lsp` as a subprocess over stdio

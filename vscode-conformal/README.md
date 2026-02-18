@@ -34,14 +34,27 @@ Conformal catches matrix dimension errors before you run your code — inner dim
 - Fixed-point loop convergence with accumulation refinement
 - Polymorphic function caching (per argument shapes)
 
+## Performance
+
+Conformal is fast enough for real-time keystroke analysis (enabled by default):
+
+- **Single file**: <100ms (even 700-line files with 36 warnings)
+- **Cross-file workspace analysis**: <70ms
+- **Full 270-test suite**: <500ms
+- **No MATLAB runtime needed** — pure static analysis
+
+See dimension errors as you type, not after you save.
+
 ## Install
 
 Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal) — search "Conformal" in Extensions.
 
-The LSP server requires Python 3.10+ with pygls:
-```bash
-pip install 'pygls>=2.0'
-```
+**No manual setup required.** The extension automatically:
+- Creates a Python virtual environment on first use
+- Installs dependencies (pygls)
+- Bundles the analyzer (no separate download)
+
+**Requirements**: Python 3.10+ must be installed on your system.
 
 ## Commands
 
@@ -56,11 +69,11 @@ pip install 'pygls>=2.0'
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `conformal.pythonPath` | `python3` | Python interpreter (must have pygls) |
-| `conformal.serverPath` | _(empty)_ | Path to repo root (if not pip-installed) |
+| `conformal.pythonPath` | `python3` | Python interpreter (leave as default for auto-setup) |
+| `conformal.serverPath` | _(empty)_ | Analyzer source path (for development only) |
 | `conformal.fixpoint` | `false` | Fixed-point loop analysis |
 | `conformal.strict` | `false` | Fail on unsupported constructs |
-| `conformal.analyzeOnChange` | `false` | Analyze on keystrokes (500ms debounce) |
+| `conformal.analyzeOnChange` | `true` | Analyze as you type (500ms debounce) |
 
 ## How It Works
 
