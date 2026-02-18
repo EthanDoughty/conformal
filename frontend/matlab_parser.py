@@ -11,6 +11,51 @@ class MatlabParser:
     def __init__(self, tokens: List[Token]):
         self.tokens = tokens
         self.i = 0
+        self.endless_functions = self._detect_endless_functions()
+
+    def _detect_endless_functions(self) -> bool:
+        """Pre-scan to detect whether this file uses end-less function style.
+
+        Walks from the first FUNCTION token, tracking block depth and delimiter
+        depth. Returns True if functions are end-less (terminated by next FUNCTION
+        or EOF), False if functions end with explicit END.
+
+        Delimiter tracking is required to ignore 'end' used as last-index inside
+        (), [], {} (e.g. x(end,:)).
+        """
+        # Find first FUNCTION token index
+        start = None
+        for idx, tok in enumerate(self.tokens):
+            if tok.kind == "FUNCTION":
+                start = idx
+                break
+        if start is None:
+            return False
+
+        block_openers = {"IF", "FOR", "WHILE", "SWITCH", "TRY"}
+        block_depth = 0
+        delim_depth = 0
+
+        for tok in self.tokens[start + 1:]:
+            if tok.kind == "EOF":
+                return block_depth >= 0
+
+            if tok.value in ("(", "[", "{"):
+                delim_depth += 1
+            elif tok.value in (")", "]", "}"):
+                delim_depth = max(0, delim_depth - 1)
+
+            if delim_depth == 0:
+                if tok.kind in block_openers:
+                    block_depth += 1
+                elif tok.kind == "END":
+                    block_depth -= 1
+                    if block_depth < 0:
+                        return False  # END closes the function → ended mode
+                elif tok.kind == "FUNCTION":
+                    return True  # second FUNCTION at depth 0 → end-less mode
+
+        return True  # hit end of token list with block_depth >= 0 → end-less mode
 
     # token helpers
 
@@ -177,8 +222,12 @@ class MatlabParser:
                 self.eat(";")
 
         # Parse function body
-        body = self.parse_block(until_kinds=("END",))
-        self.eat("END")
+        if self.endless_functions:
+            body = self.parse_block(until_kinds=("FUNCTION",))
+            # No eat("END") -- body terminated by next FUNCTION or EOF
+        else:
+            body = self.parse_block(until_kinds=("END",))
+            self.eat("END")
 
         return ["function", line, output_vars, name, params, body]
 
