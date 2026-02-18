@@ -61,7 +61,7 @@ def lex(src: str) -> List[Token]:
     line = 1
     pos = 0
     prev_kind = None  # Track previous token for context-sensitive quote handling
-    bracket_depth = 0  # Track [] nesting for string-vs-transpose in matrix context
+    bracket_depth = 0  # Track []/{ } nesting for string-vs-transpose in matrix/cell context
     saw_space = False  # Whitespace since last token (for matrix context disambiguation)
 
     while pos < len(src):
@@ -105,6 +105,10 @@ def lex(src: str) -> List[Token]:
             saw_space = False
             pos = m.end()
         elif kind == "CURLYBRACE":
+            if value == "{":
+                bracket_depth += 1
+            elif value == "}":
+                bracket_depth = max(0, bracket_depth - 1)
             tokens.append(Token(value, value, start_pos, line))
             prev_kind = value
             saw_space = False
