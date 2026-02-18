@@ -18,11 +18,14 @@ from frontend.lower_ir import lower_program
 from analysis import analyze_program_ir
 from analysis.context import AnalysisContext
 from analysis.workspace import scan_workspace, clear_parse_cache
+from analysis.builtins import KNOWN_BUILTINS
 from runtime.env import Env
+from ir.ir import Program
 from analysis.diagnostics import Diagnostic as ConformalDiagnostic
 from lsp.diagnostics import to_lsp_diagnostic
 from lsp.hover import get_hover
 from lsp.code_actions import code_actions_for_diagnostic
+from lsp.symbols import get_document_symbols
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +38,9 @@ class AnalysisCache:
     diagnostics: list[ConformalDiagnostic]
     source_hash: str
     settings_hash: str  # Hash of settings used during analysis
+    ir_prog: Optional[Program] = None
+    function_registry: Optional[dict] = None
+    external_functions: Optional[dict] = None
 
 
 # Global cache: URI -> AnalysisCache
@@ -154,7 +160,10 @@ def _validate(ls: LanguageServer, uri: str, source: str, force: bool = False) ->
             env=env,
             diagnostics=warnings,
             source_hash=source_hash,
-            settings_hash=settings_hash
+            settings_hash=settings_hash,
+            ir_prog=ir_prog,
+            function_registry=ctx.function_registry,
+            external_functions=ctx.external_functions
         )
 
         elapsed = time.time() - start_time
@@ -229,6 +238,26 @@ async def did_save(ls: LanguageServer, params: types.DidSaveTextDocumentParams):
     doc = ls.workspace.get_text_document(params.text_document.uri)
     _validate(ls, params.text_document.uri, doc.source)
 
+    # Cross-file diagnostic invalidation: re-analyze sibling files
+    saved_path = uri_to_path(params.text_document.uri)
+    saved_dir = saved_path.parent
+
+    for cached_uri in list(analysis_cache.keys()):
+        # Skip the saved file itself
+        if cached_uri == params.text_document.uri:
+            continue
+
+        # Check if cached file is in the same directory
+        try:
+            cached_path = uri_to_path(cached_uri)
+            if cached_path.parent == saved_dir:
+                # Re-analyze with force=True (source unchanged, but external deps may have changed)
+                other_doc = ls.workspace.get_text_document(cached_uri)
+                _validate(ls, cached_uri, other_doc.source, force=True)
+        except Exception:
+            # Document may no longer be open; skip
+            pass
+
 
 @server.feature(types.TEXT_DOCUMENT_DID_CHANGE)
 async def did_change(ls: LanguageServer, params: types.DidChangeTextDocumentParams):
@@ -270,7 +299,15 @@ def hover(ls: LanguageServer, params: types.HoverParams) -> Optional[types.Hover
     cached = analysis_cache[uri]
 
     # Get hover information
-    return get_hover(cached.env, doc.source, params.position.line, params.position.character)
+    return get_hover(
+        cached.env,
+        doc.source,
+        params.position.line,
+        params.position.character,
+        function_registry=cached.function_registry,
+        builtins_set=KNOWN_BUILTINS,
+        external_functions=cached.external_functions
+    )
 
 
 @server.feature(
@@ -294,6 +331,28 @@ def code_action(
         actions.extend(code_actions_for_diagnostic(diagnostic, uri, source_lines))
 
     return actions if actions else None
+
+
+@server.feature(types.TEXT_DOCUMENT_DOCUMENT_SYMBOL)
+def document_symbol(
+    ls: LanguageServer, params: types.DocumentSymbolParams
+) -> Optional[list[types.DocumentSymbol]]:
+    """Handle document symbol request: return function definitions for outline view."""
+    uri = params.text_document.uri
+
+    # Check if we have IR cached
+    if uri not in analysis_cache or analysis_cache[uri].ir_prog is None:
+        return None
+
+    try:
+        doc = ls.workspace.get_text_document(uri)
+        source_lines = doc.source.split("\n")
+        cached = analysis_cache[uri]
+
+        symbols = get_document_symbols(cached.ir_prog, source_lines)
+        return symbols if symbols else None
+    except Exception:
+        return None
 
 
 @server.feature(types.WORKSPACE_DID_CHANGE_CONFIGURATION)
