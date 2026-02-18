@@ -39,7 +39,7 @@ class MatlabParser:
     def starts_expr(self, tok: Token) -> bool:
         return (
             tok.kind in {"NUMBER", "ID"}
-            or tok.value in {"(", "-", "~", "[", "{"}
+            or tok.value in {"(", "-", "+", "~", "[", "{"}
             )
 
     def recover_to_stmt_boundary(self, start_line: int) -> Any:
@@ -472,14 +472,23 @@ class MatlabParser:
         "^": 8, ".^": 8,
     }
 
-    def parse_expr(self, min_prec: int = 0) -> Any:
+    def parse_expr(self, min_prec: int = 0, matrix_context: bool = False) -> Any:
         """Expression grammar with precedence:
           prefix: NUMBER | STRING | ID | (expr) | -expr
-          infix:  left op right"""
+          infix:  left op right
+
+        matrix_context: when True, treat space-before-no-space-after +/- as
+        end-of-expression (MATLAB matrix literal implicit separator rule).
+        """
         tok = self.current()
 
         # prefix
-        if tok.value == "-":
+        if tok.value == "+":
+            # Unary plus: +expr is a no-op (identity), used in matrix literal context like [1 +2]
+            plus_tok = self.eat("+")
+            operand = self.parse_expr(self.PRECEDENCE["+"])
+            left = operand  # unary + is identity
+        elif tok.value == "-":
             minus_tok = self.eat("-")
             operand = self.parse_expr(self.PRECEDENCE["-"])
             left = ["neg", minus_tok.line, operand]
@@ -548,6 +557,19 @@ class MatlabParser:
             prec = self.PRECEDENCE[op]
             if prec < min_prec:
                 break
+            # Matrix literal spacing rule: space before +/- but no space after
+            # means this is a unary sign starting a new element, not binary op.
+            if matrix_context and op in ("+", "-") and self.i >= 1:
+                prev_tok = self.tokens[self.i - 1]
+                prev_end = prev_tok.pos + len(prev_tok.value)
+                op_start = tok.pos
+                space_before = op_start > prev_end
+                if space_before and self.i + 1 < len(self.tokens):
+                    next_tok = self.tokens[self.i + 1]
+                    op_end = op_start + len(tok.value)
+                    space_after = next_tok.pos > op_end
+                    if not space_after:
+                        break  # treat as start of next element
             op_tok = self.eat(op)
             # Right-associative: ^ and .^ use prec (not prec+1) for right operand
             right = self.parse_expr(prec if op in ("^", ".^") else prec + 1)
@@ -603,7 +625,7 @@ class MatlabParser:
 
         return left
 
-    def parse_expr_rest(self, left: Any, min_prec: int) -> Any:
+    def parse_expr_rest(self, left: Any, min_prec: int, matrix_context: bool = False) -> Any:
         """Helper when the left side has already been parsed (parse_simple_stmt)"""
         while True:
             tok = self.current()
@@ -613,6 +635,19 @@ class MatlabParser:
             prec = self.PRECEDENCE[op]
             if prec < min_prec:
                 break
+            # Matrix literal spacing rule: space before +/- but no space after
+            # means this is a unary sign starting a new element, not binary op.
+            if matrix_context and op in ("+", "-") and self.i >= 1:
+                prev_tok = self.tokens[self.i - 1]
+                prev_end = prev_tok.pos + len(prev_tok.value)
+                op_start = tok.pos
+                space_before = op_start > prev_end
+                if space_before and self.i + 1 < len(self.tokens):
+                    next_tok = self.tokens[self.i + 1]
+                    op_end = op_start + len(tok.value)
+                    space_after = next_tok.pos > op_end
+                    if not space_after:
+                        break  # treat as start of next element
             op_tok = self.eat(op)
             # Right-associative: ^ and .^ use prec (not prec+1) for right operand
             right = self.parse_expr(prec if op in ("^", ".^") else prec + 1)
@@ -639,7 +674,7 @@ class MatlabParser:
             row: List[Any] = []
 
             # At least one element per row
-            row.append(self.parse_expr())
+            row.append(self.parse_expr(matrix_context=True))
 
             while True:
                 tok = self.current()
@@ -647,7 +682,7 @@ class MatlabParser:
                 # explicit column separator
                 if tok.value == ",":
                     self.eat(",")
-                    row.append(self.parse_expr())
+                    row.append(self.parse_expr(matrix_context=True))
                     continue
 
                 # row / end delimiters
@@ -657,7 +692,7 @@ class MatlabParser:
                 # implicit column separator (whitespace in source, skipped by lexer)
                 # If the next token can start an expression, treat it as concat.
                 if self.starts_expr(tok):
-                    row.append(self.parse_expr())
+                    row.append(self.parse_expr(matrix_context=True))
                     continue
 
                 break
