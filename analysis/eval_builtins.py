@@ -5,7 +5,7 @@
 from __future__ import annotations
 from typing import List, Optional, TYPE_CHECKING
 
-from ir import Apply, IndexArg
+from ir import Apply
 from analysis.context import AnalysisContext
 from analysis.dim_extract import expr_to_dim_ir, unwrap_arg
 from analysis.intervals import interval_definitely_negative
@@ -449,6 +449,151 @@ def _handle_blkdiag(fname, expr, env, warnings, ctx):
     return Shape.matrix(total_rows, total_cols)
 
 
+def _handle_string_return(fname, expr, env, warnings, ctx):
+    """String conversion builtins: num2str, int2str, mat2str, char, string, sprintf.
+
+    Evaluate all args for warning propagation, return Shape.string().
+    """
+    from analysis.eval_expr import _eval_index_arg_to_shape
+    # Evaluate all args for side effects (warning propagation)
+    for arg in expr.args:
+        _ = _eval_index_arg_to_shape(arg, env, warnings, ctx)
+    return Shape.string()
+
+
+def _handle_type_cast(fname, expr, env, warnings, ctx):
+    """Type cast builtins: double, single, int8, int16, int32, int64, uint8, uint16, uint32, uint64, logical, complex.
+
+    Delegate to _handle_passthrough. Separate function for semantic clarity (future type tracking).
+    """
+    return _handle_passthrough(fname, expr, env, warnings, ctx)
+
+
+def _handle_find(fname, expr, env, warnings, ctx):
+    """find(x) -> matrix[1 x None] (row vector, unknown length)."""
+    from analysis.eval_expr import _eval_index_arg_to_shape
+    if len(expr.args) == 1:
+        _ = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
+        return Shape.matrix(1, None)
+    return None
+
+
+def _handle_cat(fname, expr, env, warnings, ctx):
+    """cat(dim, A, B, ...) -> concatenation along specified dimension.
+
+    cat(1, ...): rows add via add_dim, cols join via join_dim.
+    cat(2, ...): rows join, cols add.
+    Non-concrete dim or dim not in {1,2}: return None (falls through to unknown).
+    """
+    from analysis.eval_expr import eval_expr_ir
+    if len(expr.args) < 2:
+        return None
+
+    # First arg is the dimension
+    try:
+        dim_val = expr_to_dim_ir(unwrap_arg(expr.args[0]), env)
+    except ValueError:
+        return None
+
+    # Only handle concrete dims 1 or 2
+    if dim_val not in [1, 2]:
+        return None
+
+    # Evaluate all matrix args
+    shapes = []
+    for arg in expr.args[1:]:
+        try:
+            s = eval_expr_ir(unwrap_arg(arg), env, warnings, ctx)
+        except ValueError:
+            return None
+        if s.is_unknown():
+            return Shape.unknown()
+        shapes.append(s)
+
+    if not shapes:
+        return None
+
+    # Convert scalars to 1x1 matrices for uniform handling
+    def normalize_shape(s):
+        if s.is_scalar():
+            return (1, 1)
+        elif s.is_matrix():
+            return (s.rows, s.cols)
+        else:
+            return None
+
+    normalized = [normalize_shape(s) for s in shapes]
+    if any(n is None for n in normalized):
+        return Shape.unknown()
+
+    # Fold across all args
+    result_rows, result_cols = normalized[0]
+    for r, c in normalized[1:]:
+        if dim_val == 1:
+            # cat(1, ...): rows add, cols join
+            result_rows = add_dim(result_rows, r)
+            result_cols = join_dim(result_cols, c)
+        else:  # dim_val == 2
+            # cat(2, ...): rows join, cols add
+            result_rows = join_dim(result_rows, r)
+            result_cols = add_dim(result_cols, c)
+
+    return Shape.matrix(result_rows, result_cols)
+
+
+def _handle_randi(fname, expr, env, warnings, ctx):
+    """randi(imax), randi(imax, n), randi(imax, m, n).
+
+    Like _handle_matrix_constructor but first arg is imax (value range), not a dimension.
+    - randi(imax) -> scalar
+    - randi(imax, n) -> matrix[n x n]
+    - randi(imax, m, n) -> matrix[m x n]
+    """
+    from analysis.eval_expr import eval_expr_ir, _get_expr_interval
+    import analysis.diagnostics as diag
+
+    if len(expr.args) < 1:
+        return None
+
+    # Evaluate first arg (imax) for warning propagation, but don't use it for shape
+    try:
+        _ = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
+    except ValueError:
+        return None
+
+    # Remaining args are dimensions, like _handle_matrix_constructor
+    if len(expr.args) == 1:
+        return Shape.scalar()
+    elif len(expr.args) == 2:
+        arg = unwrap_arg(expr.args[1])
+        # Check for negative dimension
+        dim_interval = _get_expr_interval(arg, env, ctx)
+        if interval_definitely_negative(dim_interval):
+            warnings.append(diag.warn_possibly_negative_dim(expr.line, dim_interval))
+        try:
+            d = expr_to_dim_ir(arg, env)
+            return Shape.matrix(d, d)
+        except ValueError:
+            pass
+    elif len(expr.args) == 3:
+        arg0 = unwrap_arg(expr.args[1])
+        arg1 = unwrap_arg(expr.args[2])
+        # Check for negative dimensions
+        dim0_interval = _get_expr_interval(arg0, env, ctx)
+        dim1_interval = _get_expr_interval(arg1, env, ctx)
+        if interval_definitely_negative(dim0_interval):
+            warnings.append(diag.warn_possibly_negative_dim(expr.line, dim0_interval))
+        if interval_definitely_negative(dim1_interval):
+            warnings.append(diag.warn_possibly_negative_dim(expr.line, dim1_interval))
+        try:
+            r = expr_to_dim_ir(arg0, env)
+            c = expr_to_dim_ir(arg1, env)
+            return Shape.matrix(r, c)
+        except ValueError:
+            pass
+    return None
+
+
 # Dispatch table: builtin name -> handler function
 BUILTIN_HANDLERS = {
     'zeros': _handle_zeros_ones,
@@ -471,6 +616,14 @@ BUILTIN_HANDLERS = {
     'isinf': _handle_scalar_predicate,
     'isfinite': _handle_scalar_predicate,
     'issymmetric': _handle_scalar_predicate,
+    'isstruct': _handle_scalar_predicate,
+    'isreal': _handle_scalar_predicate,
+    'issparse': _handle_scalar_predicate,
+    'isvector': _handle_scalar_predicate,
+    'isinteger': _handle_scalar_predicate,
+    'isfloat': _handle_scalar_predicate,
+    'isstring': _handle_scalar_predicate,
+    'issorted': _handle_scalar_predicate,
     'cell': _handle_cell_constructor,
     'abs': _handle_passthrough,
     'sqrt': _handle_passthrough,
@@ -480,6 +633,20 @@ BUILTIN_HANDLERS = {
     'asin': _handle_passthrough,
     'acos': _handle_passthrough,
     'atan': _handle_passthrough,
+    'tanh': _handle_passthrough,
+    'cosh': _handle_passthrough,
+    'sinh': _handle_passthrough,
+    'atanh': _handle_passthrough,
+    'acosh': _handle_passthrough,
+    'asinh': _handle_passthrough,
+    'conj': _handle_passthrough,
+    'not': _handle_passthrough,
+    'flipud': _handle_passthrough,
+    'fliplr': _handle_passthrough,
+    'triu': _handle_passthrough,
+    'tril': _handle_passthrough,
+    'sort': _handle_passthrough,
+    'unique': _handle_passthrough,
     'exp': _handle_passthrough,
     'log': _handle_passthrough,
     'log2': _handle_passthrough,
@@ -497,6 +664,12 @@ BUILTIN_HANDLERS = {
     'numel': _handle_scalar_query,
     'det': _handle_scalar_query,
     'norm': _handle_scalar_query,
+    'trace': _handle_scalar_query,
+    'rank': _handle_scalar_query,
+    'cond': _handle_scalar_query,
+    'rcond': _handle_scalar_query,
+    'nnz': _handle_scalar_query,
+    'sprank': _handle_scalar_query,
     'reshape': _handle_reshape,
     'repmat': _handle_repmat,
     'diag': _handle_diag,
@@ -507,14 +680,41 @@ BUILTIN_HANDLERS = {
     'mean': _handle_reduction,
     'any': _handle_reduction,
     'all': _handle_reduction,
+    'median': _handle_reduction,
+    'var': _handle_reduction,
+    'std': _handle_reduction,
     'min': _handle_minmax,
     'max': _handle_minmax,
     'mod': _handle_elementwise_2arg,
     'rem': _handle_elementwise_2arg,
     'atan2': _handle_elementwise_2arg,
+    'power': _handle_elementwise_2arg,
+    'hypot': _handle_elementwise_2arg,
+    'xor': _handle_elementwise_2arg,
     'diff': _handle_diff,
     'kron': _handle_kron,
     'blkdiag': _handle_blkdiag,
+    'double': _handle_type_cast,
+    'single': _handle_type_cast,
+    'int8': _handle_type_cast,
+    'int16': _handle_type_cast,
+    'int32': _handle_type_cast,
+    'int64': _handle_type_cast,
+    'uint8': _handle_type_cast,
+    'uint16': _handle_type_cast,
+    'uint32': _handle_type_cast,
+    'uint64': _handle_type_cast,
+    'logical': _handle_type_cast,
+    'complex': _handle_type_cast,
+    'num2str': _handle_string_return,
+    'int2str': _handle_string_return,
+    'mat2str': _handle_string_return,
+    'char': _handle_string_return,
+    'string': _handle_string_return,
+    'sprintf': _handle_string_return,
+    'randi': _handle_randi,
+    'find': _handle_find,
+    'cat': _handle_cat,
 }
 
 

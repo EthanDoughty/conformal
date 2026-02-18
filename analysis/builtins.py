@@ -9,23 +9,29 @@ which builtins have explicit shape rules in the analyzer.
 # Builtins recognized as function calls (not array indexing).
 # Sorted alphabetically for maintainability.
 KNOWN_BUILTINS = {
-    "abs", "acos", "all", "any", "asin", "atan", "atan2",
+    "abs", "acos", "acosh", "all", "any", "asin", "asinh", "atan", "atan2", "atanh",
     "blkdiag",
-    "ceil", "cell", "cos", "cumprod", "cumsum",
-    "det", "diag", "diff",
-    "exp", "eye",
-    "false", "floor",
-    "imag", "inf", "inv", "iscell", "ischar", "isempty", "isfinite", "isinf",
-    "islogical", "isnan", "isnumeric", "isscalar", "issymmetric",
+    "cat", "ceil", "cell", "char", "complex", "cond", "conj", "cos", "cosh", "cumprod", "cumsum",
+    "det", "diag", "diff", "disp", "double",
+    "error", "exp", "eye",
+    "false", "find", "flipud", "fliplr", "floor", "fprintf",
+    "hypot",
+    "imag", "inf", "int16", "int2str", "int32", "int64", "int8", "inv", "iscell", "ischar",
+    "isempty", "isfinite", "isfloat", "isinf", "isinteger", "islogical", "isnan", "isnumeric",
+    "isreal", "isscalar", "issorted", "issparse", "isstring", "isstruct", "issymmetric", "isvector",
     "kron",
-    "length", "linspace", "log", "log10", "log2",
-    "max", "mean", "min", "mod",
-    "nan", "norm", "numel",
+    "length", "linspace", "log", "log10", "log2", "logical",
+    "mat2str", "max", "mean", "median", "min", "mod",
+    "nan", "nnz", "norm", "not", "num2str", "numel",
     "ones",
-    "prod",
-    "rand", "randn", "real", "rem", "repmat", "reshape", "round",
-    "sign", "sin", "size", "sqrt", "sum",
-    "tan", "transpose", "true",
+    "power", "prod",
+    "rand", "randi", "randn", "rank", "rcond", "real", "rem", "repmat", "reshape", "round",
+    "sign", "sin", "single", "sinh", "size", "sort", "sprank", "sprintf", "sqrt", "std", "string", "sum",
+    "tan", "tanh", "trace", "transpose", "tril", "triu", "true",
+    "uint16", "uint32", "uint64", "uint8", "unique",
+    "var",
+    "warning",
+    "xor",
     "zeros",
 }
 
@@ -33,11 +39,15 @@ KNOWN_BUILTINS = {
 # Everything else in KNOWN_BUILTINS returns unknown silently.
 BUILTINS_WITH_SHAPE_RULES = {
     "zeros", "ones",      # matrix constructors (1/2-arg forms)
-    "eye", "rand", "randn",  # matrix constructors (0/1/2-arg forms)
+    "eye", "rand", "randn", "randi",  # matrix constructors (0/1/2-arg forms)
     "true", "false", "nan", "inf",  # logical/special constructors (0/1/2-arg forms)
     "cell",               # cell array constructor (1/2-arg forms)
     "abs", "sqrt",        # element-wise (pass through shape)
     "sin", "cos", "tan", "asin", "acos", "atan",  # trig (pass through)
+    "tanh", "cosh", "sinh", "atanh", "acosh", "asinh",  # hyperbolic trig (pass through)
+    "conj", "not",        # complex / logical (pass through)
+    "flipud", "fliplr", "triu", "tril",  # flip/triangular (pass through)
+    "sort", "unique",     # sort/unique (pass through)
     "exp", "log", "log2", "log10",  # exponential/log (pass through)
     "ceil", "floor", "round", "sign",  # rounding (pass through)
     "real", "imag",       # complex (pass through)
@@ -47,15 +57,24 @@ BUILTINS_WITH_SHAPE_RULES = {
     "size", "iscell", "isscalar",   # other builtins with shape rules
     "isempty", "isnumeric", "islogical", "ischar",  # type predicates (return scalar)
     "isnan", "isinf", "isfinite", "issymmetric",  # value predicates (return scalar)
+    "isstruct", "isreal", "issparse", "isvector", "isinteger", "isfloat", "isstring", "issorted",  # more predicates
     "reshape", "repmat",  # matrix manipulation
     "det", "norm",        # scalar-returning operations
+    "trace", "rank", "cond", "rcond", "nnz", "sprank",  # more scalar queries
     "diag",               # shape-dependent (vector↔diagonal matrix)
     "inv",                # matrix inverse (pass-through for square)
     "linspace",           # row vector generator
     "sum", "prod", "mean", "any", "all",  # reductions
+    "median", "var", "std",  # more reductions
     "min", "max",         # min/max (reduction or elementwise)
     "mod", "rem", "atan2",  # elementwise 2-arg
+    "power", "hypot", "xor",  # more elementwise 2-arg
     "diff",               # differentiation (dimension subtraction)
     "kron",               # Kronecker product
     "blkdiag",            # block diagonal concatenation
+    "cat",                # concatenation along dimension
+    "find",               # find indices (row vector, unknown length)
+    "double", "single", "int8", "int16", "int32", "int64",  # type casts
+    "uint8", "uint16", "uint32", "uint64", "logical", "complex",  # more type casts
+    "num2str", "int2str", "mat2str", "char", "string", "sprintf",  # string returns
 }

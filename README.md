@@ -4,10 +4,10 @@
 
 ### Static Shape & Dimension Analysis for MATLAB
 
-[![Version](https://img.shields.io/badge/version-1.11.0-orange.svg)](#motivation-and-future-directions)
+[![Version](https://img.shields.io/badge/version-1.12.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-268%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-269%20passing-brightgreen.svg)](#test-suite)
 [![pip installable](https://img.shields.io/badge/pip-installable-green.svg)](#getting-started)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
@@ -64,7 +64,7 @@ Parenthesized indexing `A(i,j)`, slice indexing `A(:,j)` and `A(i,:)`, range ind
 
 ### Functions
 
-57 builtins with shape rules across 5 categories:
+123 builtins with shape rules across 10 categories:
 - **Matrix constructors**: `zeros`, `ones`, `eye`, `rand`, `randn`, `true`, `false`, `nan`, `inf` (0-arg→scalar, 1-arg→n×n, 2-arg→m×n)
 - **Shape transformations**: `reshape` (with conformability check), `repmat`, `diag`, `transpose`, `horzcat`, `vertcat`, `kron` (Kronecker product: `kron(A[m×n], B[p×q])` → `matrix[(m*p) × (n*q)]`), `blkdiag` (variadic block diagonal: `blkdiag(A[m×n], B[p×q])` → `matrix[(m+p) × (n+q)]`)
 - **Element-wise math**: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `exp`, `log`, `sqrt`, `abs`, `ceil`, `floor`, `round`, `sign`, `real`, `imag`, `cumsum`, `cumprod`, and more
@@ -119,7 +119,7 @@ The analyzer parses and tracks shapes through:
 | Literals | `[1 2; 3 4]`, `{1, 2; 3, 4}`, `'string'`, `"string"`, `1:n` |
 | Indexing | `A(i,j)`, `A(:,j)`, `A(2:5,:)`, `C{i}`, `C{i} = x` |
 | Assignment | `x = expr`, `s.field = expr`, `C{i} = expr`, `M(i,j) = expr`, `[a, b] = f(x)` |
-| Functions | `function y = f(x)`, `@(x) expr`, `@funcName`, 57 builtins |
+| Functions | `function y = f(x)`, `@(x) expr`, `@funcName`, 123 builtins |
 | Control flow | `if`/`elseif`/`else`, `for`, `while`, `switch`/`case`, `try`/`catch` |
 | Statements | `break`, `continue`, `return` |
 | Data types | scalars, matrices, strings, structs, cell arrays, function handles |
@@ -155,7 +155,7 @@ analysis/           15 focused submodules: expression eval, statements, function
 runtime/            Shape domain (shapes.py), symbolic dimensions (symdim.py), and environments
 lsp/                Language Server Protocol implementation (server.py, diagnostics.py, hover.py, code_actions.py)
 vscode-conformal/   VS Code extension (TypeScript thin client)
-tests/              Self-checking MATLAB programs (268 tests, 15 categories)
+tests/              Self-checking MATLAB programs (269 tests, 15 categories)
 tools/              Debugging utilities (AST printer)
 ```
 
@@ -281,7 +281,7 @@ Matrix literals, string literals, and concatenation constraints.
 <details>
 <summary><h3>Builtins (15 tests)</h3></summary>
 
-Shape rules for 57 recognized MATLAB builtins, call/index disambiguation, and dimension arithmetic.
+Shape rules for 123 recognized MATLAB builtins (119 with handlers, 4 I/O builtins recognized but no handler), call/index disambiguation, and dimension arithmetic.
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -595,7 +595,7 @@ Adversarial cross-file analysis scenarios: error propagation, struct/cell return
 ### Running the Tests
 
 ```bash
-# Run all 268 tests
+# Run all 269 tests
 make test
 python3 conformal.py --tests
 
@@ -612,7 +612,7 @@ python3 conformal.py --strict --tests
 git clone https://github.com/EthanDoughty/conformal.git
 cd conformal
 make install          # pip install -e '.[lsp]' (editable + pygls)
-conformal --tests     # verify 268 tests pass
+conformal --tests     # verify 269 tests pass
 ```
 
 Analyze a file:
@@ -703,7 +703,7 @@ Conformal analyzes a subset of MATLAB. Here's what it doesn't cover:
 |----------|---------------|
 | Scope | Multi-file workspace analysis (Phase 2): sibling `.m` files are parsed and analyzed to infer real return shapes. No `addpath` handling or cross-directory analysis yet. |
 | Functions | No nested functions. No `varargin`/`varargout`. No `eval`, `feval`, or `str2func`. |
-| Builtins | 57 builtins recognized. Toolbox functions (`fft`, `eig`, `svd`, `conv`, `filter`, ...) are not modeled and produce an unknown-function warning. |
+| Builtins | 123 builtins recognized (119 with shape handlers). Toolbox functions (`fft`, `eig`, `svd`, `conv`, `filter`, ...) are not modeled and produce an unknown-function warning. |
 | Cell arrays | Per-element tracking available for literal-indexed cells. Dynamic indexing conservatively joins all elements. |
 | Indexing | `end` keyword supported with arithmetic (`C{end}`, `C{end-1}`, `A(1:end)`, `A(end-2:end, :)`). Variable operands in `end` arithmetic fall through to conservative join. |
 | Data types | No classes, no maps, no tables, no N-D arrays (only 2-D matrices). No complex number tracking. |

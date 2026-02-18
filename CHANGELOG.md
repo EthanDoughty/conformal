@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-02-17
+### Added
+- **Expanded builtin coverage**: 59 new builtins (123 total, 119 with shape handlers, 4 I/O builtins recognized but no handler)
+- 5 new handler categories in `analysis/eval_builtins.py`: `_handle_string_return` (class, typecast return strings), `_handle_type_cast` (numeric type conversion, passthrough shape), `_handle_find` (find/nonzero returns 1-D vectors), `_handle_cat` (cat/horzcat/vertcat with explicit dim arg), `_handle_randi` (random integer constructors)
+- New test file: `tests/builtins/expanded_builtins.m`
+- Total test count: 269 (was 268)
+
 ## [1.11.0] - 2026-02-17
 ### Added (Analyzer — 1.11.0 / Extension — 1.2.0, LSP 2.0 milestone)
 - **Document symbol provider** (`lsp/symbols.py`, new file): `textDocument/documentSymbol` request returns function outline for the current file; function names appear in editor breadcrumbs and outline panel

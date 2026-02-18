@@ -26,8 +26,8 @@ Conformal catches matrix dimension errors before you run your code — inner dim
 
 ## Analysis Capabilities
 
-- 268 analysis tests across 15 categories
-- 64 built-in function shape rules (zeros, ones, reshape, kron, blkdiag, ...)
+- 269 analysis tests across 15 categories
+- 123 built-in function shape rules (zeros, ones, reshape, kron, blkdiag, ...)
 - Symbolic dimension tracking (`n`, `m`, `n+m`, `2*n`)
 - Constraint solving with conflict detection
 - Interval/value range analysis for bounds checking
