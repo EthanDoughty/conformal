@@ -176,6 +176,7 @@ class MatlabParser:
         output_vars = []
 
         # Check for procedure form: next token is ID followed by (
+        has_parens = True
         if self.current().kind == "ID":
             # Peek ahead: is it "ID(" (procedure) or "ID =" (single return)?
             lookahead_tok = self.tokens[self.i + 1] if self.i + 1 < len(self.tokens) else None
@@ -188,31 +189,45 @@ class MatlabParser:
                 output_vars.append(self.eat("ID").value)
                 self.eat("=")
                 name = self.eat("ID").value
-                self.eat("(")
+                if self.current().value == "(":
+                    self.eat("(")
+                else:
+                    has_parens = False
+            elif (lookahead_tok is None
+                  or lookahead_tok.kind in ("NEWLINE", "EOF", "FUNCTION")
+                  or lookahead_tok.value in (";",)):
+                # No-arg procedure: function name  (no parentheses)
+                name = self.eat("ID").value
+                has_parens = False
             else:
                 raise ParseError(f"Expected '=' or '(' after function name at {self.current().pos}")
         elif self.current().value == "[":
             # Multiple outputs: function [a, b] = name(args)
             self.eat("[")
             output_vars.append(self.eat("ID").value)
-            while self.current().value == ",":
-                self.eat(",")
+            while self.current().value == "," or self.current().kind == "ID":
+                if self.current().value == ",":
+                    self.eat(",")
                 output_vars.append(self.eat("ID").value)
             self.eat("]")
             self.eat("=")
             name = self.eat("ID").value
-            self.eat("(")
+            if self.current().value == "(":
+                self.eat("(")
+            else:
+                has_parens = False
         else:
             raise ParseError(f"Expected function output or name at {self.current().pos}")
 
         # Parse parameters
         params = []
-        if self.current().value != ")":
-            params.append(self.eat("ID").value)
-            while self.current().value == ",":
-                self.eat(",")
+        if has_parens:
+            if self.current().value != ")":
                 params.append(self.eat("ID").value)
-        self.eat(")")
+                while self.current().value == ",":
+                    self.eat(",")
+                    params.append(self.eat("ID").value)
+            self.eat(")")
 
         # Skip newline/semicolon after closing ) if present
         if self.current().kind == "NEWLINE" or self.current().value == ";":
@@ -301,8 +316,9 @@ class MatlabParser:
                         return "~"
                     return self.eat("ID").value
                 targets = [_eat_target()]
-                while self.current().value == ",":
-                    self.eat(",")
+                while self.current().value == "," or self.current().kind == "ID" or self.current().value == "~":
+                    if self.current().value == ",":
+                        self.eat(",")
                     targets.append(_eat_target())
                 self.eat("]")
 

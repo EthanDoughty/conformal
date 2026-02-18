@@ -103,7 +103,7 @@ def run_test(path: str, fixpoint: bool = False) -> tuple[bool, bool]:
         print("ERROR: file not found\n")
         return False, False
 
-    src = open(path, "r").read()
+    src = open(path, "r", errors='replace').read()
     expected_shapes, expected_warning_count = parse_expectations(src, fixpoint=fixpoint)
 
     try:

@@ -35,7 +35,7 @@ def run_file(file_path: str, strict: bool = False, fixpoint: bool = False,
     t_start = time.perf_counter()
 
     try:
-        src = path.read_text()
+        src = path.read_text(errors='replace')
         t_read = time.perf_counter()
         syntax_ast = parse_matlab(src)
     except Exception as e:

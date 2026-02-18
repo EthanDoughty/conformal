@@ -32,7 +32,7 @@ _FUNC_SIG_RE = re.compile(
         r'\[([^\]]*)\]\s*=\s*(\w+)'   # multi-return: [a, b] = name
         r'|(\w+)\s*=\s*(\w+)'          # single-return: result = name
         r'|(\w+)'                        # procedure: name
-    r')\s*\(([^)]*)\)',
+    r')\s*(?:\(([^)]*)\))?',
     re.MULTILINE
 )
 
@@ -57,7 +57,7 @@ def extract_function_signature(source: str) -> Optional[Tuple[str, int, int]]:
     if multi_rets is not None:
         # Multi-return form: [a, b] = name(...)
         func_name = multi_name
-        return_vars = [v.strip() for v in multi_rets.split(',') if v.strip()]
+        return_vars = [v.strip() for v in re.split(r'[,\s]+', multi_rets) if v.strip()]
         return_count = len(return_vars)
     elif single_ret is not None:
         # Single-return form: result = name(...)
@@ -68,9 +68,12 @@ def extract_function_signature(source: str) -> Optional[Tuple[str, int, int]]:
         func_name = proc_name
         return_count = 0
 
-    # Extract param count
-    param_list = [p.strip() for p in params.split(',') if p.strip()]
-    param_count = len(param_list)
+    # Extract param count (params is None when no parentheses present)
+    if params is None:
+        param_count = 0
+    else:
+        param_list = [p.strip() for p in params.split(',') if p.strip()]
+        param_count = len(param_list)
 
     return (func_name, param_count, return_count)
 
@@ -96,7 +99,7 @@ def scan_workspace(directory: Path, exclude: str = None) -> Dict[str, ExternalSi
             continue
 
         try:
-            source = file_path.read_text(encoding='utf-8')
+            source = file_path.read_text(encoding='utf-8', errors='replace')
             sig_tuple = extract_function_signature(source)
             if sig_tuple is None:
                 # Script file or no function found
@@ -143,7 +146,7 @@ def load_external_function(sig: ExternalSignature) -> Optional[Tuple[FunctionSig
         ir_prog = _parsed_cache[source_path]
     else:
         try:
-            source = Path(source_path).read_text(encoding='utf-8')
+            source = Path(source_path).read_text(encoding='utf-8', errors='replace')
             syntax_ast = parse_syntax(source)
             ir_prog = lower_to_ir(syntax_ast)
             _parsed_cache[source_path] = ir_prog
