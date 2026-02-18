@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional
@@ -15,12 +17,14 @@ from frontend.pipeline import parse_matlab
 from frontend.lower_ir import lower_program
 from analysis import analyze_program_ir
 from analysis.context import AnalysisContext
-from analysis.workspace import scan_workspace
+from analysis.workspace import scan_workspace, clear_parse_cache
 from runtime.env import Env
 from analysis.diagnostics import Diagnostic as ConformalDiagnostic
 from lsp.diagnostics import to_lsp_diagnostic
 from lsp.hover import get_hover
 from lsp.code_actions import code_actions_for_diagnostic
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -30,6 +34,7 @@ class AnalysisCache:
     env: Env
     diagnostics: list[ConformalDiagnostic]
     source_hash: str
+    settings_hash: str  # Hash of settings used during analysis
 
 
 # Global cache: URI -> AnalysisCache
@@ -38,7 +43,7 @@ analysis_cache: Dict[str, AnalysisCache] = {}
 # Debouncing: URI -> asyncio.Task
 debounce_tasks: Dict[str, asyncio.Task] = {}
 
-# Server settings (updated via workspace/didChangeConfiguration)
+# Server settings (updated via workspace/didChangeConfiguration or initializationOptions)
 server_settings: Dict[str, object] = {
     "fixpoint": False,
     "strict": False,
@@ -56,6 +61,12 @@ def _compute_hash(source: str) -> str:
     return hashlib.sha256(source.encode("utf-8")).hexdigest()
 
 
+def _compute_settings_hash() -> str:
+    """Compute hash of current server settings for cache validation."""
+    settings_str = f"{server_settings['fixpoint']}{server_settings['strict']}"
+    return hashlib.sha256(settings_str.encode("utf-8")).hexdigest()
+
+
 def uri_to_path(uri: str) -> Path:
     """Convert file:// URI to filesystem Path.
 
@@ -71,16 +82,35 @@ def uri_to_path(uri: str) -> Path:
     return Path(path_str)
 
 
-def _validate(ls: LanguageServer, uri: str, source: str) -> None:
+def _validate(ls: LanguageServer, uri: str, source: str, force: bool = False) -> None:
     """Analyze MATLAB source and publish diagnostics.
 
     Args:
         ls: Language server instance
         uri: Document URI
         source: Document source text
+        force: If True, bypass cache and force re-analysis
     """
+    start_time = time.time()
+    logger.info("Analyzing %s", uri)
+
     source_hash = _compute_hash(source)
+    settings_hash = _compute_settings_hash()
     source_lines = source.split("\n")
+
+    # Check cache: skip re-analysis if source and settings unchanged
+    if not force and uri in analysis_cache:
+        cached = analysis_cache[uri]
+        if cached.source_hash == source_hash and cached.settings_hash == settings_hash:
+            # Re-publish cached diagnostics
+            lsp_diagnostics = [
+                to_lsp_diagnostic(diag, source_lines, uri) for diag in cached.diagnostics
+            ]
+            ls.text_document_publish_diagnostics(
+                types.PublishDiagnosticsParams(uri=uri, diagnostics=lsp_diagnostics)
+            )
+            logger.info("Cache hit for %s (source unchanged)", uri)
+            return
 
     try:
         # Scan workspace for external functions
@@ -111,7 +141,7 @@ def _validate(ls: LanguageServer, uri: str, source: str) -> None:
 
         # Convert to LSP diagnostics
         lsp_diagnostics = [
-            to_lsp_diagnostic(diag, source_lines) for diag in warnings
+            to_lsp_diagnostic(diag, source_lines, uri) for diag in warnings
         ]
 
         # Publish diagnostics
@@ -121,12 +151,18 @@ def _validate(ls: LanguageServer, uri: str, source: str) -> None:
 
         # Update cache (successful analysis)
         analysis_cache[uri] = AnalysisCache(
-            env=env, diagnostics=warnings, source_hash=source_hash
+            env=env,
+            diagnostics=warnings,
+            source_hash=source_hash,
+            settings_hash=settings_hash
         )
 
-    except Exception as e:
-        # Parse or analysis error: show single diagnostic at line 1
-        error_message = f"Parse error: {str(e)}"
+        elapsed = time.time() - start_time
+        logger.info("Analysis complete: %s (%.3fs, %d diagnostics)", uri, elapsed, len(warnings))
+
+    except SyntaxError as e:
+        # Syntax error: user's mistake
+        error_message = f"Syntax error: {str(e)}"
         error_diagnostic = types.Diagnostic(
             range=types.Range(
                 start=types.Position(line=0, character=0),
@@ -141,6 +177,41 @@ def _validate(ls: LanguageServer, uri: str, source: str) -> None:
         ls.text_document_publish_diagnostics(
             types.PublishDiagnosticsParams(uri=uri, diagnostics=[error_diagnostic])
         )
+        logger.error("Analysis failed for %s: %s", uri, e, exc_info=True)
+
+    except Exception as e:
+        # Internal error: analyzer bug
+        error_message = f"Internal error: {str(e)}"
+        error_diagnostic = types.Diagnostic(
+            range=types.Range(
+                start=types.Position(line=0, character=0),
+                end=types.Position(line=0, character=0),
+            ),
+            severity=types.DiagnosticSeverity.Error,
+            source="conformal",
+            message=error_message,
+        )
+
+        # Publish error diagnostic
+        ls.text_document_publish_diagnostics(
+            types.PublishDiagnosticsParams(uri=uri, diagnostics=[error_diagnostic])
+        )
+        logger.error("Analysis failed for %s: %s", uri, e, exc_info=True)
+
+
+@server.feature(types.INITIALIZE)
+def initialize(ls: LanguageServer, params: types.InitializeParams):
+    """Handle initialize request: apply initialization options."""
+    logger.info("Server initialized")
+
+    # Read initialization options if provided
+    if params.initialization_options and isinstance(params.initialization_options, dict):
+        if "fixpoint" in params.initialization_options:
+            server_settings["fixpoint"] = bool(params.initialization_options["fixpoint"])
+        if "strict" in params.initialization_options:
+            server_settings["strict"] = bool(params.initialization_options["strict"])
+        if "analyzeOnChange" in params.initialization_options:
+            server_settings["analyze_on_change"] = bool(params.initialization_options["analyzeOnChange"])
 
 
 @server.feature(types.TEXT_DOCUMENT_DID_OPEN)
@@ -152,6 +223,9 @@ async def did_open(ls: LanguageServer, params: types.DidOpenTextDocumentParams):
 @server.feature(types.TEXT_DOCUMENT_DID_SAVE)
 async def did_save(ls: LanguageServer, params: types.DidSaveTextDocumentParams):
     """Handle document save: analyze immediately (no debounce)."""
+    # Clear parse cache to invalidate stale cross-file analysis
+    clear_parse_cache()
+
     doc = ls.workspace.get_text_document(params.text_document.uri)
     _validate(ls, params.text_document.uri, doc.source)
 
