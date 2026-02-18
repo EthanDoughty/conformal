@@ -51,6 +51,8 @@ def pretty_expr_ir(expr: Expr) -> str:
         return f"'{expr.value}'"
     if isinstance(expr, Neg):
         return f"(-{pretty_expr_ir(expr.operand)})"
+    if isinstance(expr, Not):
+        return f"(~{pretty_expr_ir(expr.operand)})"
     if isinstance(expr, Transpose):
         return pretty_expr_ir(expr.operand) + "'"
     if isinstance(expr, Lambda):
@@ -594,6 +596,23 @@ def warn_negate_type_mismatch(line: int, shape: Shape) -> Diagnostic:
         line=line,
         code="W_NEGATE_TYPE_MISMATCH",
         message=f"Negation requires numeric operand, got {shape}"
+    )
+
+
+def warn_not_type_mismatch(line: int, shape: Shape) -> Diagnostic:
+    """Warning for logical NOT of non-numeric type.
+
+    Args:
+        line: Source line number
+        shape: Operand shape
+
+    Returns:
+        Diagnostic with code W_NOT_TYPE_MISMATCH
+    """
+    return Diagnostic(
+        line=line,
+        code="W_NOT_TYPE_MISMATCH",
+        message=f"Logical NOT requires numeric operand, got {shape}"
     )
 
 

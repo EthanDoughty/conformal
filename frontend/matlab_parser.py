@@ -39,7 +39,7 @@ class MatlabParser:
     def starts_expr(self, tok: Token) -> bool:
         return (
             tok.kind in {"NUMBER", "ID"}
-            or tok.value in {"(", "-", "[", "{"}
+            or tok.value in {"(", "-", "~", "[", "{"}
             )
 
     def recover_to_stmt_boundary(self, start_line: int) -> Any:
@@ -241,11 +241,16 @@ class MatlabParser:
             saved_pos = self.i
             try:
                 self.eat("[")
-                # Parse ID list
-                targets = [self.eat("ID").value]
+                # Parse ID list (IDs or ~ placeholders)
+                def _eat_target() -> str:
+                    if self.current().value == "~":
+                        self.eat("~")
+                        return "~"
+                    return self.eat("ID").value
+                targets = [_eat_target()]
                 while self.current().value == ",":
                     self.eat(",")
-                    targets.append(self.eat("ID").value)
+                    targets.append(_eat_target())
                 self.eat("]")
 
                 # Check for =
@@ -470,6 +475,10 @@ class MatlabParser:
             minus_tok = self.eat("-")
             operand = self.parse_expr(self.PRECEDENCE["-"])
             left = ["neg", minus_tok.line, operand]
+        elif tok.value == "~":
+            not_tok = self.eat("~")
+            operand = self.parse_expr(self.PRECEDENCE["+"])  # same precedence as unary -
+            left = ["not", not_tok.line, operand]
         elif tok.kind == "NUMBER":
             num_tok = self.eat("NUMBER")
             left = ["const", num_tok.line, float(num_tok.value)]

@@ -260,6 +260,9 @@ def lower_expr(expr: Any) -> Expr:
     if tag == "neg":
         return Neg(line=expr[1], operand=lower_expr(expr[2]))
 
+    if tag == "not":
+        return Not(line=expr[1], operand=lower_expr(expr[2]))
+
     if tag == "transpose":
         return Transpose(line=expr[1], operand=lower_expr(expr[2]))
 

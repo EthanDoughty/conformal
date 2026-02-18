@@ -17,7 +17,7 @@ from ir import (
     Stmt, Expr,
     Assign, StructAssign, CellAssign, IndexAssign, ExprStmt, While, For, If, IfChain, Switch, Try, Break, Continue,
     OpaqueStmt, FunctionDef, AssignMulti, Return,
-    Apply, Var, Const, IndexExpr, MatrixLit, BinOp, Neg, Transpose, FieldAccess, Lambda, FuncHandle,
+    Apply, Var, Const, IndexExpr, MatrixLit, BinOp, Neg, Not, Transpose, FieldAccess, Lambda, FuncHandle,
     End, CellLit, CurlyApply, StringLit,
 )
 
@@ -799,10 +799,15 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
 
     if isinstance(stmt, AssignMulti):
         # Destructuring assignment: [a, b] = expr
+        # Helper: bind target=shape, skipping "~" placeholders
+        def _bind(target: str, shape: Shape) -> None:
+            if target != "~":
+                env.set(target, shape)
+
         if not isinstance(stmt.expr, Apply) or not isinstance(stmt.expr.base, Var):
             warnings.append(diag.warn_multi_assign_non_call(stmt.line))
             for target in stmt.targets:
-                env.set(target, Shape.unknown())
+                _bind(target, Shape.unknown())
             return env
 
         fname = stmt.expr.base.name
@@ -816,7 +821,7 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
             # Delegate to single-return path to avoid duplicating logic
             if num_targets == 1:
                 result_shape = eval_builtin_call(fname, stmt.expr, env, warnings, ctx)
-                env.set(stmt.targets[0], result_shape)
+                _bind(stmt.targets[0], result_shape)
                 return env
 
             multi_handler = BUILTIN_MULTI_HANDLERS.get(fname)
@@ -825,7 +830,7 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
                 if result is not None:
                     # Handler returned shapes -- bind them
                     for target, shape in zip(stmt.targets, result):
-                        env.set(target, shape)
+                        _bind(target, shape)
                     return env
                 else:
                     # Handler returned None -- target count not supported
@@ -833,12 +838,12 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
                     warnings.append(diag.warn_multi_return_count(
                         stmt.line, fname, supported, num_targets))
                     for target in stmt.targets:
-                        env.set(target, Shape.unknown())
+                        _bind(target, Shape.unknown())
                     return env
             # Builtin with no multi-return form at all
             warnings.append(diag.warn_multi_assign_builtin(stmt.line, fname))
             for target in stmt.targets:
-                env.set(target, Shape.unknown())
+                _bind(target, Shape.unknown())
             return env
 
         # Check function registry
@@ -850,10 +855,10 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
                     stmt.line, fname, expected=len(output_shapes), got=len(stmt.targets)
                 ))
                 for target in stmt.targets:
-                    env.set(target, Shape.unknown())
+                    _bind(target, Shape.unknown())
             else:
                 for target, shape in zip(stmt.targets, output_shapes):
-                    env.set(target, shape)
+                    _bind(target, shape)
             return env
 
         # Check external functions (workspace scanning — cross-file analysis)
@@ -866,16 +871,16 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
                     stmt.line, fname, expected=len(output_shapes), got=len(stmt.targets)
                 ))
                 for target in stmt.targets:
-                    env.set(target, Shape.unknown())
+                    _bind(target, Shape.unknown())
             else:
                 for target, shape in zip(stmt.targets, output_shapes):
-                    env.set(target, shape)
+                    _bind(target, shape)
             return env
 
         # Not a known function
         warnings.append(diag.warn_unknown_function(stmt.line, fname))
         for target in stmt.targets:
-            env.set(target, Shape.unknown())
+            _bind(target, Shape.unknown())
         return env
 
     return env

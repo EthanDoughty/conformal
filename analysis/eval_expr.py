@@ -16,7 +16,7 @@ from analysis.intervals import Interval, interval_add, interval_sub, interval_mu
 
 from ir import (
     Expr, Var, Const, StringLit, FieldAccess, Lambda, FuncHandle, End,
-    MatrixLit, CellLit, Apply, CurlyApply, Transpose, Neg, BinOp,
+    MatrixLit, CellLit, Apply, CurlyApply, Transpose, Neg, Not, BinOp,
     IndexArg, Colon, Range, IndexExpr,
 )
 
@@ -493,6 +493,13 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List['Diagnostic'], ctx: Analys
         operand_shape = eval_expr_ir(expr.operand, env, warnings, ctx)
         if not operand_shape.is_numeric() and not operand_shape.is_unknown():
             warnings.append(diag.warn_negate_type_mismatch(expr.line, operand_shape))
+            return Shape.unknown()
+        return operand_shape
+
+    if isinstance(expr, Not):
+        operand_shape = eval_expr_ir(expr.operand, env, warnings, ctx)
+        if not operand_shape.is_numeric() and not operand_shape.is_unknown():
+            warnings.append(diag.warn_not_type_mismatch(expr.line, operand_shape))
             return Shape.unknown()
         return operand_shape
 

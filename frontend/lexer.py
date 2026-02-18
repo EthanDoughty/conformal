@@ -35,7 +35,7 @@ TOKEN_SPEC = [
     ("NUMBER",   r"\d+(?:\.\d*)?"), # ints or floats
     ("ID",       r"[A-Za-z_]\w*"), # identifiers
     ("DOTOP",    r"\.\*|\./|\.\^"), # element-wise ops
-    ("OP",       r"==|~=|<=|>=|&&|\|\||[+\-*/<>()=,:\[\];@\\^&|]"),
+    ("OP",       r"==|~=|<=|>=|&&|\|\||[+\-*/<>()=,:\[\];@\\^&|~]"),
     ("DOT",      r"\."), # standalone dot (for recovery from struct/method access)
     ("NEWLINE",  r"\n"),  # only real newlines
     ("SKIP",     r"[ \t]+"), # spaces/tabs

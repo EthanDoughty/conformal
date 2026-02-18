@@ -38,6 +38,11 @@ class Neg(Expr):
     operand: Expr
 
 @dataclass(frozen=True)
+class Not(Expr):
+    """Logical NOT (~x)."""
+    operand: Expr
+
+@dataclass(frozen=True)
 class BinOp(Expr):
     """Binary operation (e.g., +, -, *, .*, ==)."""
     op: str
