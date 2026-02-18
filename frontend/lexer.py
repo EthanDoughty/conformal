@@ -34,8 +34,8 @@ TOKEN_SPEC = [
     ("DQSTRING", r'"[^"]*"'), # double-quoted strings (no ambiguity)
     ("NUMBER",   r"\d+(?:\.\d*)?"), # ints or floats
     ("ID",       r"[A-Za-z_]\w*"), # identifiers
-    ("DOTOP",    r"\.\*|\./"), # element-wise ops
-    ("OP",       r"==|~=|<=|>=|&&|\|\||[+\-*/<>()=,:\[\];@]"),
+    ("DOTOP",    r"\.\*|\./|\.\^"), # element-wise ops
+    ("OP",       r"==|~=|<=|>=|&&|\|\||[+\-*/<>()=,:\[\];@\\^&|]"),
     ("DOT",      r"\."), # standalone dot (for recovery from struct/method access)
     ("NEWLINE",  r"\n"),  # only real newlines
     ("SKIP",     r"[ \t]+"), # spaces/tabs

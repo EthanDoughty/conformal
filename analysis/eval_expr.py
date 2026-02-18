@@ -776,8 +776,24 @@ def _get_expr_interval(expr: Expr, env: Env, ctx: AnalysisContext) -> Optional[I
         elif expr.op == '/':
             # Division interval not implemented (complex, needs ZeroDivisionError handling)
             return None
+        elif expr.op in ('^', '.^'):
+            # Integer power: only when exponent is a non-negative integer constant
+            if (left_iv is not None and right_iv is not None
+                    and isinstance(right_iv.lo, int) and isinstance(right_iv.hi, int)
+                    and right_iv.lo == right_iv.hi and right_iv.lo >= 0
+                    and isinstance(left_iv.lo, int) and isinstance(left_iv.hi, int)):
+                exp = right_iv.lo
+                # Compute all corner values and take min/max (handles negative bases)
+                corners = [left_iv.lo ** exp, left_iv.hi ** exp]
+                if left_iv.lo < 0 < left_iv.hi and exp % 2 == 0:
+                    corners.append(0)
+                try:
+                    return Interval(min(corners), max(corners))
+                except (OverflowError, ValueError):
+                    return None
+            return None
         else:
-            # Other operators not supported
+            # Other operators (\, &, |) not supported for interval analysis
             return None
 
     # Everything else returns None (top)

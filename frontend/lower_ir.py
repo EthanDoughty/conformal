@@ -291,7 +291,7 @@ def lower_expr(expr: Any) -> Expr:
     if tag == "cell":
         return CellLit(line=expr[1], rows=[[lower_expr(elem) for elem in row] for row in expr[2]])
 
-    if tag in {"+", "-", "*", "/", ".*", "./", "==", "~=", "<", "<=", ">", ">=", "&&", "||", ":"}:
+    if tag in {"+", "-", "*", "/", ".*", "./", "==", "~=", "<", "<=", ">", ">=", "&&", "||", ":", "^", ".^", "\\", "&", "|"}:
         return BinOp(line=expr[1], op=tag, left=lower_expr(expr[2]), right=lower_expr(expr[3]))
 
     # Fallback for unexpected expression types

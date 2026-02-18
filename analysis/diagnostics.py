@@ -612,3 +612,48 @@ def warn_concat_type_mismatch(line: int, shape: Shape) -> Diagnostic:
         code="W_CONCAT_TYPE_MISMATCH",
         message=f"Concatenation requires numeric elements, got {shape}"
     )
+
+
+def warn_mldivide_dim_mismatch(line: int, left_expr: Expr, right_expr: Expr, left: Shape, right: Shape) -> Diagnostic:
+    """Warning for mldivide (backslash) row dimension mismatch.
+
+    Args:
+        line: Source line number
+        left_expr: Left operand expression (A in A\\b)
+        right_expr: Right operand expression (b in A\\b)
+        left: Left operand shape
+        right: Right operand shape
+
+    Returns:
+        Diagnostic with code W_MLDIVIDE_DIM_MISMATCH
+    """
+    return Diagnostic(
+        line=line,
+        code="W_MLDIVIDE_DIM_MISMATCH",
+        message=(
+            f"Dimension mismatch in mldivide "
+            f"({pretty_expr_ir(left_expr)} \\ {pretty_expr_ir(right_expr)}): "
+            f"A has {left.rows} rows but b has {right.rows} rows (shapes {left} and {right})"
+        )
+    )
+
+
+def warn_matrix_power_non_square(line: int, expr: Expr, shape: Shape) -> Diagnostic:
+    """Warning for matrix power (^) applied to non-square matrix.
+
+    Args:
+        line: Source line number
+        expr: Matrix expression
+        shape: Matrix shape (provably non-square)
+
+    Returns:
+        Diagnostic with code W_MATRIX_POWER_NON_SQUARE
+    """
+    return Diagnostic(
+        line=line,
+        code="W_MATRIX_POWER_NON_SQUARE",
+        message=(
+            f"Matrix power (^) requires square matrix; "
+            f"{pretty_expr_ir(expr)} has shape {shape} ({shape.rows} rows, {shape.cols} cols)"
+        )
+    )

@@ -65,7 +65,7 @@ def eval_binop_ir(
         return Shape.matrix(1, None)  # char + char = numeric row vector, length unknown
 
     # String + non-string: warning + unknown
-    if op in {"+", "-", "*", ".*", "/", "./"} and (left.is_string() or right.is_string()):
+    if op in {"+", "-", "*", ".*", "/", "./", ".^", "\\", "^"} and (left.is_string() or right.is_string()):
         if not (left.is_string() and right.is_string() and op == "+"):
             warnings.append(diag.warn_string_arithmetic(line, op, left, right))
             return Shape.unknown()
@@ -76,12 +76,50 @@ def eval_binop_ir(
             warnings.append(diag.warn_arithmetic_type_mismatch(line, op, left_expr, right_expr, left, right))
             return Shape.unknown()
 
+    if op == "^":
+        # Matrix power: A^n (handle before generic scalar-broadcast shortcuts)
+        # scalar^scalar -> scalar
+        if left.is_scalar() and right.is_scalar():
+            return Shape.scalar()
+        # scalar^anything or anything^matrix -> unknown
+        if left.is_scalar() or right.is_matrix():
+            return Shape.unknown()
+        # matrix^scalar: result same shape as A, but A must be square
+        if left.is_matrix() and right.is_scalar():
+            if dims_definitely_conflict(left.rows, left.cols):
+                warnings.append(diag.warn_matrix_power_non_square(line, left_expr, left))
+                return Shape.unknown()
+            return left
+        return Shape.unknown()
+
+    if op == "\\":
+        # mldivide: A\b — handle before generic scalar-broadcast shortcuts
+        # scalar\scalar -> scalar
+        if left.is_scalar() and right.is_scalar():
+            return Shape.scalar()
+        # scalar\matrix -> matrix (broadcast)
+        if left.is_scalar() and not right.is_scalar():
+            return right
+        # matrix\scalar -> scalar
+        if right.is_scalar() and left.is_matrix():
+            return Shape.scalar()
+        if left.is_unknown() or right.is_unknown():
+            return Shape.unknown()
+        if left.is_matrix() and right.is_matrix():
+            # A[m x n] \ b[m x p] -> [n x p], require A.rows == b.rows
+            record_constraint(ctx, env, left.rows, right.rows, line)
+            if dims_definitely_conflict(left.rows, right.rows):
+                warnings.append(diag.warn_mldivide_dim_mismatch(line, left_expr, right_expr, left, right))
+                return Shape.unknown()
+            return Shape.matrix(left.cols, right.cols)
+        return Shape.unknown()
+
     if left.is_scalar() and not right.is_scalar():
         return right
     if right.is_scalar() and not left.is_scalar():
         return left
 
-    if op in {"+", "-", ".*", "./", "/"}:
+    if op in {"+", "-", ".*", "./", "/", ".^"}:
         if left.is_unknown() or right.is_unknown():
             return Shape.unknown()
 
@@ -139,6 +177,29 @@ def eval_binop_ir(
 
             return Shape.matrix(left.rows, right.cols)
 
+        return Shape.unknown()
+
+    if op in {"&", "|"}:
+        # Element-wise logical: same shape rules as .* (broadcast compatible)
+        if left.is_scalar() and right.is_scalar():
+            return Shape.scalar()
+        if left.is_scalar() and not right.is_scalar():
+            return right
+        if right.is_scalar() and not left.is_scalar():
+            return left
+        if left.is_unknown() or right.is_unknown():
+            return Shape.unknown()
+        if left.is_matrix() and right.is_matrix():
+            record_constraint(ctx, env, left.rows, right.rows, line)
+            record_constraint(ctx, env, left.cols, right.cols, line)
+            r_conflict = dims_definitely_conflict(left.rows, right.rows)
+            c_conflict = dims_definitely_conflict(left.cols, right.cols)
+            if r_conflict or c_conflict:
+                warnings.append(diag.warn_elementwise_mismatch(line, op, left_expr, right_expr, left, right))
+                return Shape.unknown()
+            rows = join_dim(left.rows, right.rows)
+            cols = join_dim(left.cols, right.cols)
+            return Shape.matrix(rows, cols)
         return Shape.unknown()
 
     return Shape.unknown()

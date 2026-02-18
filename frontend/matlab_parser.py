@@ -448,12 +448,15 @@ class MatlabParser:
     # expressions (precedence climbing)
 
     PRECEDENCE = {
-        "||": 1,
+        "||": 0,
+        "|": 1,
         "&&": 2,
-        "==": 3, "~=": 3, "<": 3, "<=": 3, ">": 3, ">=": 3,
-        "+": 4, "-": 4,
-        "*": 5, "/": 5, ".*": 5, "./": 5,
-        ":": 6,
+        "&": 3,
+        "==": 4, "~=": 4, "<": 4, "<=": 4, ">": 4, ">=": 4,
+        "+": 5, "-": 5,
+        "*": 6, "/": 6, ".*": 6, "./": 6, "\\": 6,
+        ":": 7,
+        "^": 8, ".^": 8,
     }
 
     def parse_expr(self, min_prec: int = 0) -> Any:
@@ -528,7 +531,8 @@ class MatlabParser:
             if prec < min_prec:
                 break
             op_tok = self.eat(op)
-            right = self.parse_expr(prec + 1)
+            # Right-associative: ^ and .^ use prec (not prec+1) for right operand
+            right = self.parse_expr(prec if op in ("^", ".^") else prec + 1)
             left = [op, op_tok.line, left, right]
         return left
 
@@ -588,7 +592,8 @@ class MatlabParser:
             if prec < min_prec:
                 break
             op_tok = self.eat(op)
-            right = self.parse_expr(prec + 1)
+            # Right-associative: ^ and .^ use prec (not prec+1) for right operand
+            right = self.parse_expr(prec if op in ("^", ".^") else prec + 1)
             left = [op, op_tok.line, left, right]
         return left
     

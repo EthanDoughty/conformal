@@ -53,3 +53,6 @@ tools/ask
 tools/chat
 ask
 chat
+
+# Dogfood corpus (third-party MATLAB files for testing)
+dogfood/
