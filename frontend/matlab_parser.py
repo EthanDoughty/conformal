@@ -106,7 +106,11 @@ class MatlabParser:
             if self.current().kind == "FUNCTION":
                 items.append(self.parse_function())
             else:
+                saved_i = self.i
                 items.append(self.parse_stmt())
+                # Guard against infinite loop: if parse_stmt didn't advance, force-skip
+                if self.i == saved_i:
+                    self.i += 1
         return ["seq"] + items
 
     # function definitions
@@ -445,7 +449,11 @@ class MatlabParser:
         if self.current().kind == "NEWLINE":
             self.eat("NEWLINE")
         while not self.at_end() and self.current().kind not in until_kinds:
+            saved_i = self.i
             stmts.append(self.parse_stmt())
+            # Guard against infinite loop: if parse_stmt didn't advance, force-skip
+            if self.i == saved_i:
+                self.i += 1
         if not stmts:
             return [["skip"]]
         return stmts
