@@ -1,8 +1,9 @@
 {
   "name": "conformal",
   "displayName": "Conformal - MATLAB Shape Analyzer",
-  "description": "Static shape and dimension analysis for MATLAB",
-  "version": "1.1.3",
+  "description": "Static shape and dimension analysis for MATLAB. Catch matrix dimension errors before runtime. No MATLAB license required.",
+  "version": "1.2.0",
+  "keywords": ["matlab", "static analysis", "dimension", "shape", "matrix", "linter"],
   "publisher": "EthanDoughty",
   "license": "SEE LICENSE IN LICENSE",
   "icon": "icon.png",

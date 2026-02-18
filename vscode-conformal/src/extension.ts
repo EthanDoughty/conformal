@@ -77,6 +77,7 @@ export function activate(context: vscode.ExtensionContext) {
         documentSelector: [{ scheme: 'file', language: 'matlab' }],
         initializationOptions: getConformalSettings(),
         outputChannel: outputChannel,
+        connectionOptions: { maxRestartCount: 3 },
     };
 
     client = new LanguageClient('conformal', 'Conformal', serverOptions, clientOptions);
