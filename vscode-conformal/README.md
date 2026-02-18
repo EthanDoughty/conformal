@@ -1,67 +1,43 @@
-# Conformal — MATLAB Shape Analyzer
+# Conformal: MATLAB Shape Analyzer
 
-Static shape and dimension analysis for MATLAB, right in your editor. **No MATLAB license required.**
+Static shape and dimension analysis for MATLAB. No MATLAB license required.
 
-Conformal catches matrix dimension errors before you run your code — inner dimension mismatches in `A * B`, incompatible concatenation in `[A; B]`, type errors in arithmetic, and more. It tracks symbolic dimensions like `n` and `m` through operations, functions, and control flow.
+Conformal finds matrix dimension errors before you run your code. If `A` is `3x4` and `B` is `5x2`, it can tell you that `A * B` has an inner dimension mismatch, and that `[A; B]` has mismatched column counts. It tracks symbolic dimensions like `n`, `m`, and `n+m` through assignments, function calls, control flow, and across sibling `.m` files in the same directory.
 
-## What It Catches
+## What it catches
 
-- **Dimension mismatches** — `A * B` when inner dims conflict, `[A; B]` with different column counts
-- **Type errors** — arithmetic on strings/structs, transposing non-numeric types
-- **Index out of bounds** — `A(5, :)` when row count is 3
-- **Division by zero** — `x / y` when `y` is provably zero
-- **Negative dimensions** — `zeros(n-5, m)` when `n < 5`
-- **Shape-through-functions** — tracks dimensions across user-defined and anonymous functions
-- **Cross-file inference** — resolves shapes from sibling `.m` files in the same directory
+Most of what it catches comes down to dimension mismatches, whether that's in multiplication, concatenation, or element-wise operations. It can also flag type errors when you use structs or cells where numbers are expected, and it checks for index out of bounds, division by zero, and negative dimensions when it can prove them from the code. It follows shapes through user-defined functions, anonymous functions with closure capture, and cross-file calls to sibling `.m` files.
 
-## Editor Features
+## In the editor
 
-- **Real-time diagnostics** — dimension errors appear as squiggly underlines on save
-- **Hover tooltips** — see inferred shapes for variables (`matrix[3 x n]`), builtins, and functions
-- **Document outline** — function definitions in the Explorer sidebar and breadcrumbs
-- **Quick fixes** — `*` → `.*`, `&&` → `&`, `||` → `|`
-- **Status bar** — error/warning counts and active modes (fixpoint, strict)
-- **Syntax highlighting** — built-in MATLAB grammar (no MathWorks extension needed)
-- **Auto-restart** — server recovers from crashes automatically (up to 3 retries)
+Diagnostics show up as underlines as you type, and you can hover any variable to see its inferred shape (`matrix[3 x n]`). If you use `*` where `.*` was probably intended, or `&&` where `&` should be, it suggests the fix. Function definitions appear in the sidebar and breadcrumbs, and the status bar shows warning counts. The extension registers its own MATLAB grammar, so you don't need the MathWorks extension.
 
-## Analysis Capabilities
-
-- 270 analysis tests across 15 categories
-- 128 built-in function shape rules (zeros, ones, reshape, kron, blkdiag, ...)
-- Symbolic dimension tracking (`n`, `m`, `n+m`, `2*n`)
-- Constraint solving with conflict detection
-- Interval/value range analysis for bounds checking
-- Fixed-point loop convergence with accumulation refinement
-- Polymorphic function caching (per argument shapes)
-
-## Performance
-
-Conformal is fast enough for real-time keystroke analysis (enabled by default):
-
-- **Single file**: <100ms (even 700-line files with 36 warnings)
-- **Cross-file workspace analysis**: <70ms
-- **Full 270-test suite**: <500ms
-- **No MATLAB runtime needed** — pure static analysis
-
-See dimension errors as you type, not after you save.
+The analyzer handles most files in under 100ms, so real-time analysis is on by default with a 500ms debounce. A 700-line file with 36 warnings takes about 99ms, and cross-file workspace analysis runs in under 70ms. There's no MATLAB runtime involved.
 
 ## Install
 
-Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal) — search "Conformal" in Extensions.
+Search "Conformal" in VS Code Extensions, or run:
 
-**No manual setup required.** The extension automatically:
-- Creates a Python virtual environment on first use
-- Installs dependencies (pygls)
-- Bundles the analyzer (no separate download)
+```bash
+code --install-extension EthanDoughty.conformal
+```
 
-**Requirements**: Python 3.10+ must be installed on your system.
+On first activation, the extension creates a Python venv, installs its dependencies, and uses the bundled analyzer. You shouldn't need to configure anything.
+
+Requires Python 3.10+.
+
+## How it works
+
+The extension runs `python3 -m lsp` as an LSP subprocess over stdio. The server analyzes your `.m` files and publishes diagnostics back to the editor. When you save a file, it re-analyzes siblings that might depend on it. If the server crashes, it can auto-recover up to 3 times.
+
+Under the hood, there are 128 builtin shape rules, symbolic dimension tracking, constraint solving, interval analysis, and fixed-point loop convergence, all validated by 270 tests across 15 categories.
 
 ## Commands
 
-| Command | Description |
+| Command | What it does |
 |---------|-------------|
-| `Conformal: Analyze Current File` | Save and re-analyze the active `.m` file |
-| `Conformal: Toggle Fixpoint Mode` | Enable/disable fixed-point loop analysis |
+| `Conformal: Analyze Current File` | Save and re-analyze |
+| `Conformal: Toggle Fixpoint Mode` | Fixed-point loop analysis |
 | `Conformal: Toggle Strict Mode` | Fail on unsupported constructs |
 | `Conformal: Restart Server` | Restart the LSP server |
 
@@ -69,20 +45,10 @@ Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/item
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `conformal.pythonPath` | `python3` | Python interpreter (leave as default for auto-setup) |
-| `conformal.serverPath` | _(empty)_ | Analyzer source path (for development only) |
+| `conformal.pythonPath` | `python3` | Leave default for auto-setup |
+| `conformal.serverPath` | _(empty)_ | Dev use only |
 | `conformal.fixpoint` | `false` | Fixed-point loop analysis |
-| `conformal.strict` | `false` | Fail on unsupported constructs |
-| `conformal.analyzeOnChange` | `true` | Analyze as you type (500ms debounce) |
+| `conformal.strict` | `false` | Strict mode |
+| `conformal.analyzeOnChange` | `true` | Keystroke analysis, 500ms debounce |
 
-## How It Works
-
-The extension spawns `python3 -m lsp` as a Language Server Protocol subprocess. The server runs the Conformal analyzer on your `.m` files and publishes diagnostics. Hover requests show shapes from the last successful analysis. Saving a file triggers re-analysis of sibling files that may depend on it.
-
-Catches dimension bugs that MATLAB's built-in linter misses.
-
-## Links
-
-- [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
-- [GitHub Repository](https://github.com/EthanDoughty/conformal)
-- [Full Documentation](https://github.com/EthanDoughty/conformal#readme)
+[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal) · [GitHub](https://github.com/EthanDoughty/conformal)

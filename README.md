@@ -48,14 +48,9 @@ Final environment:
 
 ## Performance
 
-Conformal is fast enough for real-time analysis as you type:
+Single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and cross-file workspace analysis runs in about 70ms. The full 270-test suite finishes in under 500ms, with no MATLAB runtime involved.
 
-- **Single file**: <100ms (even 700-line files with 36 warnings)
-- **Cross-file workspace analysis**: <70ms
-- **Full 270-test suite**: <500ms
-- **No MATLAB runtime needed** — pure static analysis
-
-The VS Code extension enables analyze-on-change by default (500ms debounce) — see dimension errors as you type, not after you save.
+The VS Code extension can analyze on every keystroke by default, with a 500ms debounce.
 
 ## What the Analysis Detects
 
@@ -89,7 +84,7 @@ Dimension arithmetic works inside builtin arguments, so `zeros(n+1, 2*m)` is tra
 
 User-defined functions are analyzed at each call site with the caller's argument shapes. Three forms: single return (`function y = f(x)`), multi-return (`function [a, b] = f(x)`), and procedures (`function f(x)`). Anonymous functions `@(x) expr` are analyzed the same way, with by-value closure capture at definition time. Function handles `@funcName` dispatch to their targets. Results are cached per argument shape tuple so the same function called with the same shapes isn't re-analyzed.
 
-**Workspace awareness**: When analyzing a file, Conformal scans sibling `.m` files in the same directory and fully analyzes their bodies (lex → parse → IR) to infer real return shapes. Dimension aliasing works across file boundaries, subfunctions in external files are supported, and cross-file cycles (A→B→A) are detected and handled gracefully. Unparseable external files emit `W_EXTERNAL_PARSE_ERROR`. This eliminates false positives when working with multi-file projects.
+When analyzing a file, Conformal also scans sibling `.m` files in the same directory and fully analyzes their bodies (lex → parse → IR) to infer real return shapes. Dimension aliasing works across file boundaries, subfunctions in external files are supported, and cross-file cycles (A→B→A) are detected and handled gracefully. Unparseable external files emit `W_EXTERNAL_PARSE_ERROR`.
 
 ### Data structures
 
@@ -107,14 +102,11 @@ Variables with unknown concrete size get symbolic names like `n`, `m`, `k`. Thes
 
 ### Interval analysis
 
-Scalar integer variables are tracked through an integer interval domain `[lo, hi]` in parallel with shape inference. This enables three additional checks:
-- **Division by zero**: `A / x` where `x` is known to be `[0, 0]` emits `W_DIVISION_BY_ZERO`
-- **Out-of-bounds indexing**: `A(i, j)` where `i` or `j` is provably outside the matrix dimensions emits `W_INDEX_OUT_OF_BOUNDS`
-- **Negative dimension**: a dimension expression that is provably non-positive emits `W_POSSIBLY_NEGATIVE_DIM`
+Scalar integer variables are tracked through an integer interval domain `[lo, hi]` in parallel with shape inference. This enables three additional checks: `W_DIVISION_BY_ZERO` when the divisor is provably zero, `W_INDEX_OUT_OF_BOUNDS` when an index is provably outside the matrix dimensions, and `W_POSSIBLY_NEGATIVE_DIM` when a dimension expression is provably non-positive.
 
-For-loop variables are automatically bound to their range interval (`for i = 1:n` binds `i` to `[1, n]`). Interval bounds accept symbolic values (`SymDim`), so `for i = 1:n` records `i ∈ [1, n]` with a symbolic upper bound; comparisons against symbolic bounds fall back soundly (no false warnings). Intervals join conservatively across control-flow branches.
+For-loop variables are automatically bound to their range interval (`for i = 1:n` binds `i` to `[1, n]`). Interval bounds accept symbolic values, so `for i = 1:n` records `i ∈ [1, n]` with a symbolic upper bound. Comparisons against symbolic bounds fall back soundly. Intervals join conservatively across control-flow branches.
 
-**Conditional interval refinement**: Branch conditions narrow variable intervals inside the branch body. `if x > 0` refines `x` to `[1, +inf]` for the true branch, eliminating false-positive OOB and negative-dim warnings when guards prove safety. Supports `>`, `>=`, `<`, `<=`, `==`, `~=` comparisons, compound `&&` conditions, and operator flipping (`5 >= x`).
+Branch conditions narrow variable intervals inside the branch body. `if x > 0` refines `x` to `[1, +inf]` for the true branch, eliminating false-positive OOB and negative-dim warnings when guards prove safety. Supports `>`, `>=`, `<`, `<=`, `==`, `~=`, compound `&&` conditions, and operator flipping (`5 >= x`).
 
 ### Type errors
 
@@ -130,7 +122,7 @@ The analyzer parses and tracks shapes through:
 | Literals | `[1 2; 3 4]`, `{1, 2; 3, 4}`, `'string'`, `"string"`, `1:n` |
 | Indexing | `A(i,j)`, `A(:,j)`, `A(2:5,:)`, `C{i}`, `C{i} = x` |
 | Assignment | `x = expr`, `s.field = expr`, `C{i} = expr`, `M(i,j) = expr`, `[a, b] = f(x)` |
-| Functions | `function y = f(x)`, `@(x) expr`, `@funcName`, 123 builtins |
+| Functions | `function y = f(x)`, `@(x) expr`, `@funcName`, 128 builtins |
 | Control flow | `if`/`elseif`/`else`, `for`, `while`, `switch`/`case`, `try`/`catch` |
 | Statements | `break`, `continue`, `return` |
 | Data types | scalars, matrices, strings, structs, cell arrays, function handles |
@@ -180,7 +172,7 @@ The analyzer is validated by 270 self-checking test programs organized into 15 c
 % EXPECT_FIXPOINT: A = matrix[None x None]   % Override for --fixpoint mode
 ```
 
-The test runner validates that the analyzer's output matches these expectations, ensuring correctness across all supported language features.
+The test runner checks that the analyzer's output matches these expectations.
 
 ---
 
@@ -292,7 +284,7 @@ Matrix literals, string literals, and concatenation constraints.
 <details>
 <summary><h3>Builtins (15 tests)</h3></summary>
 
-Shape rules for 123 recognized MATLAB builtins (119 with handlers, 4 I/O builtins recognized but no handler), call/index disambiguation, and dimension arithmetic.
+Shape rules for 128 recognized MATLAB builtins (121 with single-return handlers, 11 with multi-return handlers, 4 I/O builtins recognized but no handler), call/index disambiguation, and dimension arithmetic.
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -431,15 +423,9 @@ Workspace Awareness (17 tests)
 | `workspace_cycle_b.m` | Helper file for cycle test (calls cycle_a) | — |
 | `workspace_parse_error_helper.m` | Helper file with recoverable parse error | — |
 
-Key features:
-- Interprocedural analysis: functions analyzed at each call site with the caller's argument shapes
-- Polymorphic caching: results cached per `(func_name, arg_shapes)` to avoid redundant re-analysis
-- Dimension aliasing: symbolic dimension names propagate across boundaries (e.g., `f(n)` where `f = @(k) zeros(k,k)` infers `matrix[n x n]`)
-- Lambda closure capture: by-value environment capture at definition time (MATLAB semantics)
-- Control flow precision: when branches assign different lambdas, both bodies are analyzed and results joined at call site
-- Cross-file shape inference: external `.m` files are fully parsed and analyzed; real return shapes propagate to caller (Phase 2)
-- Cross-file cycle detection: A→B→A cycles return unknown gracefully without infinite recursion
-- Subfunction support: local functions defined inside external files are accessible during cross-file analysis
+Functions are analyzed at each call site with the caller's argument shapes, and results are cached per argument shape tuple so the same function called with the same shapes isn't re-analyzed. Symbolic dimension names can propagate across function boundaries, so `f(n)` where `f = @(k) zeros(k,k)` infers `matrix[n x n]`. Lambdas capture their environment by-value at definition time, matching MATLAB semantics. When branches assign different lambdas, both bodies are analyzed and the results are joined at the call site.
+
+External `.m` files are fully parsed and analyzed to infer real return shapes, with cross-file cycles (A→B→A) handled gracefully. Local functions defined inside external files are accessible during cross-file analysis.
 
 </details>
 
@@ -597,7 +583,7 @@ Adversarial cross-file analysis scenarios: error propagation, struct/cell return
 | `ws_fill_diag.m` | Helper: function using indexed assignment to fill diagonal; caller infers correct shape | — |
 | `sum.m` | Helper: builtin shadowing test (shadows built-in `sum`) | — |
 
->Tests cover cross-file error scenarios, struct/cell propagation, builtin shadowing, procedure handling, conditional shape joins, subfunctions in external files, accumulation refinement, polymorphic caching stress, and domain-authentic patterns.
+>These tests exercise cross-file error propagation, struct and cell returns, builtin shadowing, and domain-authentic patterns like Kalman filters and gradient descent.
 
 </details>
 
@@ -637,26 +623,16 @@ Conformal ships with a Language Server Protocol (LSP) implementation that integr
 
 ### VS Code Extension
 
-**Installation** (from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)):
-Search for "Conformal" in the Extensions panel, or install from the command line:
+Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal) by searching for "Conformal" in the Extensions panel, or from the command line:
 ```bash
 code --install-extension EthanDoughty.conformal
 ```
 
-**Features**:
-- Real-time dimension mismatch detection (squiggly underlines)
-- Hover tooltips showing inferred shapes (e.g., `matrix[3 x n]`), with function signatures for user-defined and external functions, and `(builtin)` annotation for builtins
-- Quick-fix code actions (e.g., `*` → `.*` for elementwise, `&&` → `&` for non-scalar)
-- Document symbols: function outline shown in editor breadcrumbs and outline panel (`textDocument/documentSymbol`)
-- Status bar showing warning/error counts and active modes (fixpoint, strict)
-- Commands: Analyze File, Toggle Fixpoint, Toggle Strict, Restart Server
-- Auto-restart on crash (max 3 restarts) — no manual server restart needed
-- Cross-file diagnostic invalidation: saving any `.m` file in the workspace re-analyzes all open documents that share the same directory
-- Diagnostic tags: `W_UNSUPPORTED_*` codes rendered as faded/greyed text (visually distinct from errors)
-- Related information: diagnostics with a conflict site include a secondary annotation linking to the original line
-- Built-in MATLAB syntax highlighting (no MathWorks extension required)
-- Analyze-as-you-type by default (500ms debounce, configurable)
-- Error recovery (parse errors shown as diagnostics)
+Diagnostics appear as underlines as you type, with a configurable 500ms debounce. You can hover any variable to see its inferred shape, including function signatures for user-defined and external functions. There are quick-fix suggestions for common mistakes like `*` to `.*`, `&&` to `&`, and `||` to `|`. Function definitions show in the sidebar via document symbols, and the status bar tracks warning and error counts along with active modes.
+
+When you save a `.m` file, the server re-analyzes all open files in the same directory, since they could depend on each other. If the server crashes, it auto-restarts up to 3 times. `W_UNSUPPORTED_*` diagnostics render as faded text so they're visually distinct from real errors, and diagnostics with a conflict site link to the original line. Parse errors show as diagnostics rather than crashing the analysis.
+
+The extension includes built-in MATLAB syntax highlighting, so you don't need the MathWorks extension.
 
 **Configuration Settings**:
 | Setting | Default | Description |
@@ -667,11 +643,7 @@ code --install-extension EthanDoughty.conformal
 | `conformal.strict` | `false` | Fail on unsupported constructs (W_UNSUPPORTED_* warnings) |
 | `conformal.analyzeOnChange` | `true` | Analyze as you type (500ms debounce) |
 
-**How it works**:
-- The extension spawns `python3 -m lsp` as a subprocess over stdio
-- The LSP server runs the Conformal analyzer on document open/save/change
-- Diagnostics (warnings/errors) are published to the editor
-- Hover requests query the last successful analysis environment
+The extension spawns `python3 -m lsp` as a subprocess over stdio. The LSP server runs the analyzer on document open, save, and change events. Diagnostics are published to the editor, and hover requests return shapes from the last successful analysis.
 
 **Manual LSP Server Usage**:
 ```bash
@@ -730,12 +702,4 @@ I felt that it was very rewarding to use MATLAB as the source language for a sta
 
 ### Roadmap
 
-**Near-term**
-- Nested function support
-- Expanded builtin coverage (toolbox functions)
-- Constraint propagation across function boundaries
-
-**Long-term**
-- Additional editors (Neovim, MATLAB Online)
-- Cross-directory workspace analysis and `addpath` handling
-- Integration with MATLAB's built-in Code Analyzer
+The immediate priorities are nested function support, expanding builtin coverage to include common toolbox functions, and propagating constraints across function boundaries. Further out, I'd like to support additional editors like Neovim, add cross-directory workspace analysis with `addpath` handling, and explore integration with MATLAB's built-in Code Analyzer.
