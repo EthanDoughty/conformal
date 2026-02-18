@@ -4,7 +4,7 @@
 
 ### Static Shape & Dimension Analysis for MATLAB
 
-[![Version](https://img.shields.io/badge/version-1.10.0-orange.svg)](#motivation-and-future-directions)
+[![Version](https://img.shields.io/badge/version-1.11.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![Tests](https://img.shields.io/badge/tests-268%20passing-brightgreen.svg)](#test-suite)
@@ -634,10 +634,15 @@ code --install-extension EthanDoughty.conformal
 
 **Features**:
 - Real-time dimension mismatch detection (squiggly underlines)
-- Hover tooltips showing inferred shapes (e.g., `matrix[3 x n]`)
+- Hover tooltips showing inferred shapes (e.g., `matrix[3 x n]`), with function signatures for user-defined and external functions, and `(builtin)` annotation for builtins
 - Quick-fix code actions (e.g., `*` → `.*` for elementwise, `&&` → `&` for non-scalar)
+- Document symbols: function outline shown in editor breadcrumbs and outline panel (`textDocument/documentSymbol`)
 - Status bar showing warning/error counts and active modes (fixpoint, strict)
 - Commands: Analyze File, Toggle Fixpoint, Toggle Strict, Restart Server
+- Auto-restart on crash (max 3 restarts) — no manual server restart needed
+- Cross-file diagnostic invalidation: saving any `.m` file in the workspace re-analyzes all open documents that share the same directory
+- Diagnostic tags: `W_UNSUPPORTED_*` codes rendered as faded/greyed text (visually distinct from errors)
+- Related information: diagnostics with a conflict site include a secondary annotation linking to the original line
 - Built-in MATLAB syntax highlighting (no MathWorks extension required)
 - Analysis on save (or on change with debounce, configurable)
 - Error recovery (parse errors shown as diagnostics)

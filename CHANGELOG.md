@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-02-17
+### Added (Analyzer — 1.11.0 / Extension — 1.2.0, LSP 2.0 milestone)
+- **Document symbol provider** (`lsp/symbols.py`, new file): `textDocument/documentSymbol` request returns function outline for the current file; function names appear in editor breadcrumbs and outline panel
+- **Enhanced hover** (`lsp/hover.py`): builtins now show `(builtin) name`; user-defined functions show `(function) name(params) -> [outputs]`; external workspace functions show `(external) name from filename`; hover response includes a range field for precise identifier highlighting
+- **Cross-file diagnostic invalidation** (`lsp/server.py`): saving any `.m` file re-analyzes all cached documents that share the same workspace directory, ensuring sibling-file changes are reflected immediately without reopening files
+- **Stale cache fix** (`lsp/server.py`): `clear_parse_cache()` called in `did_save` handler to prevent stale cross-file parse results from the previous analysis run
+- **10 new Error-severity codes** in `lsp/diagnostics.py`: `ERROR_CODES` set expanded from 13 to 23 entries to cover all current error-level warning codes
+- **`DiagnosticTag.Unnecessary`** on all `W_UNSUPPORTED_*` diagnostics: editors render these as faded/greyed-out text (visually distinct from real errors)
+- **`DiagnosticRelatedInformation`** for diagnostics with `related_line`: secondary annotation linking to the conflicting location (e.g., original assignment line for a mismatch)
+- **`initializationOptions` handler** (`lsp/server.py`): fixpoint, strict, and analyzeOnChange settings can now be forwarded at server startup via `initializationOptions`, not only via `workspace/didChangeConfiguration`
+- **Source hash + settings hash cache-skip** (`lsp/server.py`): analysis is skipped when file content and settings are unchanged since the last run; `force` parameter overrides for cross-file invalidation
+- **SyntaxError vs Exception distinction** (`lsp/server.py`): parse-level errors are classified separately from unexpected runtime exceptions for cleaner diagnostic messages
+- **Server-side logging** (`lsp/server.py`): structured log output for key server lifecycle events and analysis triggers
+- **Extension auto-restart** (`vscode-conformal/`): `maxRestartCount: 3` in the LanguageClient config; the extension automatically restarts the LSP server on crash without user intervention
+
+### Changed
+- `lsp/hover.py`: hover format enriched with function signature and source annotations (builtins, user functions, external functions)
+- `vscode-conformal/package.json`: keywords and description updated for VS Code Marketplace search optimization; version bumped to 1.2.0
+
 ## [1.10.0] - 2026-02-17
 ### Added
 - **Indexed assignment**: Full pipeline support for `M(i,j) = expr`, `M(i) = expr`, `M(:,j) = expr` syntax (parser, IR, lowerer, analyzer)
