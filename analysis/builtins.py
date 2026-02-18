@@ -11,22 +11,23 @@ which builtins have explicit shape rules in the analyzer.
 KNOWN_BUILTINS = {
     "abs", "acos", "acosh", "all", "any", "asin", "asinh", "atan", "atan2", "atanh",
     "blkdiag",
-    "cat", "ceil", "cell", "char", "complex", "cond", "conj", "cos", "cosh", "cumprod", "cumsum",
+    "cat", "ceil", "cell", "char", "chol", "complex", "cond", "conj", "cos", "cosh", "cumprod", "cumsum",
     "det", "diag", "diff", "disp", "double",
-    "error", "exp", "eye",
+    "eig", "error", "exp", "eye",
     "false", "find", "flipud", "fliplr", "floor", "fprintf",
     "hypot",
     "imag", "inf", "int16", "int2str", "int32", "int64", "int8", "inv", "iscell", "ischar",
     "isempty", "isfinite", "isfloat", "isinf", "isinteger", "islogical", "isnan", "isnumeric",
     "isreal", "isscalar", "issorted", "issparse", "isstring", "isstruct", "issymmetric", "isvector",
     "kron",
-    "length", "linspace", "log", "log10", "log2", "logical",
+    "length", "linspace", "log", "log10", "log2", "logical", "lu",
     "mat2str", "max", "mean", "median", "min", "mod",
     "nan", "nnz", "norm", "not", "num2str", "numel",
     "ones",
     "power", "prod",
+    "qr",
     "rand", "randi", "randn", "rank", "rcond", "real", "rem", "repmat", "reshape", "round",
-    "sign", "sin", "single", "sinh", "size", "sort", "sprank", "sprintf", "sqrt", "std", "string", "sum",
+    "sign", "sin", "single", "sinh", "size", "sort", "sprank", "sprintf", "sqrt", "std", "string", "sum", "svd",
     "tan", "tanh", "trace", "transpose", "tril", "triu", "true",
     "uint16", "uint32", "uint64", "uint8", "unique",
     "var",
@@ -77,4 +78,5 @@ BUILTINS_WITH_SHAPE_RULES = {
     "double", "single", "int8", "int16", "int32", "int64",  # type casts
     "uint8", "uint16", "uint32", "uint64", "logical", "complex",  # more type casts
     "num2str", "int2str", "mat2str", "char", "string", "sprintf",  # string returns
+    "eig", "svd", "lu", "qr", "chol",  # linear algebra (single + multi-return)
 }

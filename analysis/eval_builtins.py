@@ -478,6 +478,40 @@ def _handle_find(fname, expr, env, warnings, ctx):
     return None
 
 
+def _handle_eig_single(fname, expr, env, warnings, ctx):
+    """eig(A) -> matrix[n x 1] for n x n input."""
+    from analysis.eval_expr import eval_expr_ir
+    if len(expr.args) != 1:
+        return None
+    try:
+        s = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
+    except ValueError:
+        return None
+    if s.is_scalar():
+        return Shape.scalar()
+    if s.is_matrix():
+        r, c = s.rows, s.cols
+        # For square matrix, return eigenvalue vector
+        if r == c:
+            return Shape.matrix(r, 1)
+        # Non-square: return unknown-length vector
+        return Shape.matrix(None, 1)
+    return Shape.unknown()
+
+
+def _handle_svd_single(fname, expr, env, warnings, ctx):
+    """svd(A) -> matrix[None x 1] (singular value vector)."""
+    from analysis.eval_expr import eval_expr_ir
+    if len(expr.args) != 1:
+        return None
+    try:
+        _ = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
+    except ValueError:
+        return None
+    # Singular values vector length = min(m, n), not expressible
+    return Shape.matrix(None, 1)
+
+
 def _handle_cat(fname, expr, env, warnings, ctx):
     """cat(dim, A, B, ...) -> concatenation along specified dimension.
 
@@ -715,6 +749,172 @@ BUILTIN_HANDLERS = {
     'randi': _handle_randi,
     'find': _handle_find,
     'cat': _handle_cat,
+    'eig': _handle_eig_single,
+    'svd': _handle_svd_single,
+}
+
+
+def _eval_first_arg_shape(expr, env, warnings, ctx):
+    """Evaluate first arg and return (rows, cols) or (None, None) for non-matrix."""
+    from analysis.eval_expr import eval_expr_ir
+    if len(expr.args) < 1:
+        return None, None
+    try:
+        s = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
+    except ValueError:
+        return None, None
+    if s.is_scalar():
+        return 1, 1
+    if s.is_matrix():
+        return s.rows, s.cols
+    return None, None
+
+
+def _handle_multi_eig(fname, expr, env, warnings, ctx, num_targets):
+    """[V, D] = eig(A) -> [matrix[n x n], matrix[n x n]]."""
+    if num_targets != 2:
+        return None
+    r, c = _eval_first_arg_shape(expr, env, warnings, ctx)
+    if r is None:
+        return [Shape.unknown(), Shape.unknown()]
+    # Use r for both dimensions (square matrix assumption)
+    n = join_dim(r, c) if r != c else r
+    return [Shape.matrix(n, n), Shape.matrix(n, n)]
+
+
+def _handle_multi_svd(fname, expr, env, warnings, ctx, num_targets):
+    """[U, S, V] = svd(A) -> [matrix[m x m], matrix[m x n], matrix[n x n]]."""
+    if num_targets != 3:
+        return None
+    m, n = _eval_first_arg_shape(expr, env, warnings, ctx)
+    if m is None:
+        return [Shape.unknown(), Shape.unknown(), Shape.unknown()]
+    return [Shape.matrix(m, m), Shape.matrix(m, n), Shape.matrix(n, n)]
+
+
+def _handle_multi_lu(fname, expr, env, warnings, ctx, num_targets):
+    """[L, U] = lu(A) or [L, U, P] = lu(A)."""
+    m, n = _eval_first_arg_shape(expr, env, warnings, ctx)
+    if m is None:
+        if num_targets == 2:
+            return [Shape.unknown(), Shape.unknown()]
+        elif num_targets == 3:
+            return [Shape.unknown(), Shape.unknown(), Shape.unknown()]
+        return None
+    if num_targets == 2:
+        # 2-output: [L, U] = [m x m, m x n]
+        return [Shape.matrix(m, m), Shape.matrix(m, n)]
+    elif num_targets == 3:
+        # 3-output: [L, U, P] = [m x n, n x n, m x m]
+        return [Shape.matrix(m, n), Shape.matrix(n, n), Shape.matrix(m, m)]
+    return None
+
+
+def _handle_multi_qr(fname, expr, env, warnings, ctx, num_targets):
+    """[Q, R] = qr(A) -> [matrix[m x m], matrix[m x n]]."""
+    if num_targets != 2:
+        return None
+    m, n = _eval_first_arg_shape(expr, env, warnings, ctx)
+    if m is None:
+        return [Shape.unknown(), Shape.unknown()]
+    return [Shape.matrix(m, m), Shape.matrix(m, n)]
+
+
+def _handle_multi_chol(fname, expr, env, warnings, ctx, num_targets):
+    """[R, p] = chol(A) -> [matrix[n x n], scalar]."""
+    if num_targets != 2:
+        return None
+    r, c = _eval_first_arg_shape(expr, env, warnings, ctx)
+    if r is None:
+        return [Shape.unknown(), Shape.scalar()]
+    # Use r for both dimensions (square matrix assumption)
+    n = join_dim(r, c) if r != c else r
+    return [Shape.matrix(n, n), Shape.scalar()]
+
+
+def _handle_multi_size(fname, expr, env, warnings, ctx, num_targets):
+    """[m, n] = size(A) -> [scalar, scalar]."""
+    if num_targets != 2:
+        return None
+    # Evaluate first arg for warning propagation
+    _, _ = _eval_first_arg_shape(expr, env, warnings, ctx)
+    return [Shape.scalar(), Shape.scalar()]
+
+
+def _handle_multi_sort(fname, expr, env, warnings, ctx, num_targets):
+    """[s, i] = sort(A) -> [shape_of(A), shape_of(A)]."""
+    if num_targets != 2:
+        return None
+    from analysis.eval_expr import eval_expr_ir
+    if len(expr.args) < 1:
+        return [Shape.unknown(), Shape.unknown()]
+    try:
+        s = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
+    except ValueError:
+        return [Shape.unknown(), Shape.unknown()]
+    return [s, s]
+
+
+def _handle_multi_find(fname, expr, env, warnings, ctx, num_targets):
+    """[row, col] = find(A) or [row, col, val] = find(A)."""
+    if num_targets == 2:
+        _, _ = _eval_first_arg_shape(expr, env, warnings, ctx)
+        return [Shape.matrix(1, None), Shape.matrix(1, None)]
+    elif num_targets == 3:
+        _, _ = _eval_first_arg_shape(expr, env, warnings, ctx)
+        return [Shape.matrix(1, None), Shape.matrix(1, None), Shape.matrix(1, None)]
+    return None
+
+
+def _handle_multi_unique(fname, expr, env, warnings, ctx, num_targets):
+    """[u, ia] = unique(A) or [u, ia, ic] = unique(A)."""
+    if num_targets == 2:
+        _, _ = _eval_first_arg_shape(expr, env, warnings, ctx)
+        return [Shape.matrix(1, None), Shape.matrix(None, 1)]
+    elif num_targets == 3:
+        _, _ = _eval_first_arg_shape(expr, env, warnings, ctx)
+        return [Shape.matrix(1, None), Shape.matrix(None, 1), Shape.matrix(None, 1)]
+    return None
+
+
+def _handle_multi_minmax(fname, expr, env, warnings, ctx, num_targets):
+    """[M, I] = min(A) or [M, I] = max(A)."""
+    if num_targets != 2:
+        return None
+    from analysis.eval_expr import _eval_index_arg_to_shape
+    if len(expr.args) < 1:
+        return [Shape.unknown(), Shape.unknown()]
+    arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
+    # Apply reduction logic (same as _handle_reduction for 1-arg)
+    if arg_shape.is_scalar():
+        return [Shape.scalar(), Shape.scalar()]
+    if arg_shape.is_matrix():
+        reduction = Shape.matrix(1, arg_shape.cols)
+        return [reduction, reduction]
+    return [Shape.unknown(), Shape.unknown()]
+
+
+# Supported forms lookup for count mismatch messages
+_MULTI_SUPPORTED_FORMS = {
+    'eig': '1 or 2', 'svd': '1 or 3', 'lu': '2 or 3', 'qr': '2',
+    'chol': '2', 'size': '2', 'sort': '2', 'find': '1, 2, or 3',
+    'unique': '1, 2, or 3', 'min': '1 or 2', 'max': '1 or 2',
+}
+
+
+# Multi-return builtin dispatch table
+BUILTIN_MULTI_HANDLERS = {
+    'eig': _handle_multi_eig,
+    'svd': _handle_multi_svd,
+    'lu': _handle_multi_lu,
+    'qr': _handle_multi_qr,
+    'chol': _handle_multi_chol,
+    'size': _handle_multi_size,
+    'sort': _handle_multi_sort,
+    'find': _handle_multi_find,
+    'unique': _handle_multi_unique,
+    'min': _handle_multi_minmax,
+    'max': _handle_multi_minmax,
 }
 
 

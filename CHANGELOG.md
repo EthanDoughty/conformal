@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-02-17
+### Added
+- **Multi-return shape inference for 11 builtins**: `eig`, `svd`, `lu`, `qr`, `chol`, `size`, `sort`, `find`, `unique`, `min`, `max` — `[V,D] = eig(A)`, `[U,S,V] = svd(A)`, `[L,U,P] = lu(A)`, etc. now infer output shapes precisely
+- New `BUILTIN_MULTI_HANDLERS` dispatch table in `analysis/eval_builtins.py` (11 entries); `AssignMulti` now dispatches to multi-return handlers before falling back to `W_MULTI_ASSIGN_BUILTIN`
+- Single-return handlers for `eig` (`matrix[n x 1]`, eigenvalue vector) and `svd` (`matrix[None x 1]`, singular value vector)
+- 5 new entries in `KNOWN_BUILTINS`: `eig`, `svd`, `lu`, `qr`, `chol` (128 total, 121 with single-return handlers, 11 with multi-return handlers)
+- New diagnostic builder `warn_multi_return_count` reuses `W_MULTI_ASSIGN_COUNT_MISMATCH` code
+- New test file: `tests/builtins/multi_return_builtins.m`
+- Total test count: 270 (was 269)
+
 ## [1.12.0] - 2026-02-17
 ### Added
 - **Expanded builtin coverage**: 59 new builtins (123 total, 119 with shape handlers, 4 I/O builtins recognized but no handler)

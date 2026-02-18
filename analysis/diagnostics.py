@@ -316,6 +316,25 @@ def warn_multi_assign_count_mismatch(line: int, func_name: str, expected: int, g
         message=f"function {func_name} returns {expected} values, got {got} targets"
     )
 
+
+def warn_multi_return_count(line: int, fname: str, supported: str, got: int) -> Diagnostic:
+    """Warning for builtin multi-return target count mismatch.
+
+    Args:
+        line: Source line number
+        fname: Builtin function name
+        supported: Human-readable string describing supported forms (e.g., "1 or 2", "1, 2, or 3")
+        got: Actual number of targets provided
+
+    Returns:
+        Diagnostic with code W_MULTI_ASSIGN_COUNT_MISMATCH
+    """
+    return Diagnostic(
+        line=line,
+        code="W_MULTI_ASSIGN_COUNT_MISMATCH",
+        message=f"builtin {fname} supports {supported} return values, got {got}"
+    )
+
 def warn_string_arithmetic(line: int, op: str, left_shape: Shape, right_shape: Shape) -> Diagnostic:
     """Warning for invalid string arithmetic (string + matrix/scalar)."""
     return Diagnostic(

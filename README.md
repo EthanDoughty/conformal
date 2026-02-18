@@ -4,10 +4,10 @@
 
 ### Static Shape & Dimension Analysis for MATLAB
 
-[![Version](https://img.shields.io/badge/version-1.12.0-orange.svg)](#motivation-and-future-directions)
+[![Version](https://img.shields.io/badge/version-1.13.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-269%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-270%20passing-brightgreen.svg)](#test-suite)
 [![pip installable](https://img.shields.io/badge/pip-installable-green.svg)](#getting-started)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
@@ -64,7 +64,7 @@ Parenthesized indexing `A(i,j)`, slice indexing `A(:,j)` and `A(i,:)`, range ind
 
 ### Functions
 
-123 builtins with shape rules across 10 categories:
+128 builtins with shape rules across 10 categories:
 - **Matrix constructors**: `zeros`, `ones`, `eye`, `rand`, `randn`, `true`, `false`, `nan`, `inf` (0-arg→scalar, 1-arg→n×n, 2-arg→m×n)
 - **Shape transformations**: `reshape` (with conformability check), `repmat`, `diag`, `transpose`, `horzcat`, `vertcat`, `kron` (Kronecker product: `kron(A[m×n], B[p×q])` → `matrix[(m*p) × (n*q)]`), `blkdiag` (variadic block diagonal: `blkdiag(A[m×n], B[p×q])` → `matrix[(m+p) × (n+q)]`)
 - **Element-wise math**: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `exp`, `log`, `sqrt`, `abs`, `ceil`, `floor`, `round`, `sign`, `real`, `imag`, `cumsum`, `cumprod`, and more

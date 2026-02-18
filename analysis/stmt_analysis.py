@@ -807,8 +807,35 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
 
         fname = stmt.expr.base.name
 
-        # Check if builtin (builtins don't support multiple returns)
+        # Check if builtin with multi-return handler
         if fname in KNOWN_BUILTINS:
+            from analysis.eval_builtins import BUILTIN_MULTI_HANDLERS, eval_builtin_call, _MULTI_SUPPORTED_FORMS
+            num_targets = len(stmt.targets)
+
+            # Single-target AssignMulti: [x] = builtin(...) is equivalent to x = builtin(...)
+            # Delegate to single-return path to avoid duplicating logic
+            if num_targets == 1:
+                result_shape = eval_builtin_call(fname, stmt.expr, env, warnings, ctx)
+                env.set(stmt.targets[0], result_shape)
+                return env
+
+            multi_handler = BUILTIN_MULTI_HANDLERS.get(fname)
+            if multi_handler is not None:
+                result = multi_handler(fname, stmt.expr, env, warnings, ctx, num_targets)
+                if result is not None:
+                    # Handler returned shapes -- bind them
+                    for target, shape in zip(stmt.targets, result):
+                        env.set(target, shape)
+                    return env
+                else:
+                    # Handler returned None -- target count not supported
+                    supported = _MULTI_SUPPORTED_FORMS.get(fname, "unknown")
+                    warnings.append(diag.warn_multi_return_count(
+                        stmt.line, fname, supported, num_targets))
+                    for target in stmt.targets:
+                        env.set(target, Shape.unknown())
+                    return env
+            # Builtin with no multi-return form at all
             warnings.append(diag.warn_multi_assign_builtin(stmt.line, fname))
             for target in stmt.targets:
                 env.set(target, Shape.unknown())
