@@ -36,6 +36,10 @@ _SUPPRESSED_CMD_STMTS = {
     "pan", "zoom", "format",
     "global", "persistent",
     "classdef",
+    # Workspace/path commands
+    "addpath", "rmpath", "load", "save", "cd", "pwd", "mkdir",
+    "exist", "which", "type", "doc", "help", "lookfor",
+    "display", "input", "assert", "narginchk", "nargoutchk",
 }
 from runtime.env import Env, join_env
 from runtime.shapes import Shape, Dim, add_dim, mul_dim

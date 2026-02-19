@@ -13,7 +13,7 @@ KNOWN_BUILTINS = {
     "blkdiag",
     "cat", "ceil", "cell", "cell2mat", "cellfun", "char", "chol", "circshift", "complex",
     "cond", "conj", "conv", "cos", "cosh", "cross", "cumprod", "cumsum",
-    "deconv", "det", "diag", "diff", "disp", "double",
+    "deal", "deconv", "delete", "det", "diag", "diff", "disp", "display", "double",
     "eig", "error", "exp", "expm", "eye",
     "false", "fclose", "fft", "fft2", "fieldnames", "find", "flipud", "fliplr",
     "floor", "fopen", "fprintf", "fread", "fscanf", "full", "fwrite", "fclose",

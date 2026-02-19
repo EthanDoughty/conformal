@@ -151,12 +151,13 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List['Diagnostic'], ctx: Analys
         # Curly indexing: c{i} or c{i,j}
         base_shape = eval_expr_ir(expr.base, env, warnings, ctx)
 
-        # Check base is cell
+        # Check base is cell (suppress warning for unknown — might be a cell we couldn't track)
         if not base_shape.is_cell():
             # Evaluate args for side effects
             for arg in expr.args:
                 _ = _eval_index_arg_to_shape(arg, env, warnings, ctx, container_shape=base_shape)
-            warnings.append(diag.warn_curly_indexing_non_cell(expr.line, base_shape))
+            if not base_shape.is_unknown():
+                warnings.append(diag.warn_curly_indexing_non_cell(expr.line, base_shape))
             return Shape.unknown()
 
         # If no element tracking, return unknown
@@ -533,9 +534,12 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List['Diagnostic'], ctx: Analys
                 return Shape.unknown()
             # Convert bottom → unknown at expression boundary
             return field_shape if not field_shape.is_bottom() else Shape.unknown()
-        else:
-            # Base is not a struct
+        elif not base_shape.is_unknown():
+            # Base is definitively non-struct (scalar, matrix, string, cell, etc.)
             warnings.append(diag.warn_field_access_non_struct(expr.line, base_shape))
+            return Shape.unknown()
+        else:
+            # Base is unknown — might be a struct we couldn't track, stay silent
             return Shape.unknown()
 
     if isinstance(expr, Lambda):

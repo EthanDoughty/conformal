@@ -2,7 +2,7 @@
 % Newlines inside delimiters should not terminate statement
 % Tests delimiter depth tracking during recovery
 
-% EXPECT: warnings = 1
+% EXPECT: warnings = 0
 % EXPECT: A = matrix[2 x 2]
 % EXPECT: foo = unknown
 % EXPECT: C = matrix[2 x 2]
