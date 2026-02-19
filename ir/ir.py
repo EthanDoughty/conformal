@@ -180,6 +180,19 @@ class IndexAssign(Stmt):
     expr: Expr
 
 @dataclass(frozen=True)
+class IndexStructAssign(Stmt):
+    """Chained indexed struct field assignment (A(i).field = expr, A{i}.field = expr).
+
+    Represents patterns like params(idx).location = val where an indexed
+    element is accessed as a struct and a field is assigned.
+    """
+    base_name: str           # The variable being assigned into ("params")
+    index_args: List[IndexArg]  # The indexing arguments ([idx])
+    index_kind: str          # "paren" or "curly" -- which type of indexing
+    fields: List[str]        # Field chain (["location"] or ["a", "b"] for nested)
+    expr: Expr               # RHS expression
+
+@dataclass(frozen=True)
 class ExprStmt(Stmt):
     """Expression statement (evaluates but doesn't assign)."""
     expr: Expr

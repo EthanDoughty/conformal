@@ -15,7 +15,7 @@ from analysis.constraints import snapshot_constraints, join_constraints, validat
 
 from ir import (
     Stmt, Expr,
-    Assign, StructAssign, CellAssign, IndexAssign, ExprStmt, While, For, If, IfChain, Switch, Try, Break, Continue,
+    Assign, StructAssign, CellAssign, IndexAssign, IndexStructAssign, ExprStmt, While, For, If, IfChain, Switch, Try, Break, Continue,
     OpaqueStmt, FunctionDef, AssignMulti, Return,
     Apply, Var, Const, IndexExpr, MatrixLit, BinOp, Neg, Not, Transpose, FieldAccess, Lambda, FuncHandle,
     End, CellLit, CurlyApply, StringLit,
@@ -419,6 +419,18 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
                             stmt.line, fmt, n_size, definite=False))
 
         # Shape is preserved — indexed assignment does not change dimensions
+        return env
+
+    if isinstance(stmt, IndexStructAssign):
+        # Chained indexed struct field assignment: A(i).field = expr, A{i}.field = expr
+        # Evaluate RHS for side effects
+        eval_expr_ir(stmt.expr, env, warnings, ctx)
+        # Conservative: preserve existing shape of the base variable
+        # If base is unbound (bottom), initialize to unknown
+        existing = env.get(stmt.base_name)
+        if existing is None or existing.is_bottom():
+            env.set(stmt.base_name, Shape.unknown())
+        # else: preserve existing shape (struct array assignment doesn't change dimensions)
         return env
 
     if isinstance(stmt, ExprStmt):

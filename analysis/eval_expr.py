@@ -506,6 +506,10 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List['Diagnostic'], ctx: Analys
     if isinstance(expr, FieldAccess):
         # Struct field access: s.field or s.a.b (nested)
         base_shape = eval_expr_ir(expr.base, env, warnings, ctx)
+        if expr.field == "<dynamic>":
+            # Dynamic field access s.(expr): field name is unknown at analysis time
+            # Return unknown without warning (conservative but silent)
+            return Shape.unknown()
         if base_shape.is_struct():
             field_shape = base_shape.fields_dict.get(expr.field)
             if field_shape is None:

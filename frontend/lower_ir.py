@@ -155,6 +155,17 @@ def lower_stmt(stmt: Any) -> Stmt:
         expr = lower_expr(stmt[4])
         return IndexAssign(line=line, base_name=base_name, args=args, expr=expr)
 
+    if tag == "index_struct_assign":
+        # ['index_struct_assign', line, base_name, index_args, index_kind, fields, expr]
+        line = stmt[1]
+        base_name = stmt[2]
+        index_args = [lower_index_arg(arg) for arg in stmt[3]]
+        index_kind = stmt[4]
+        fields = stmt[5]
+        expr = lower_expr(stmt[6])
+        return IndexStructAssign(line=line, base_name=base_name, index_args=index_args,
+                                 index_kind=index_kind, fields=fields, expr=expr)
+
     if tag == "assign_multi":
         # ['assign_multi', line, targets, expr]
         line = stmt[1]

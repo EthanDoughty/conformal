@@ -357,21 +357,30 @@ class MatlabParser:
             id_tok = self.eat("ID")
             # Check for struct assignment: ID.field.field... = expr
             if self.current().kind == "DOT":
-                # Parse field chain
+                # Parse field chain (supports dynamic field .(expr))
                 fields = []
                 while self.current().kind == "DOT":
                     self.eat("DOT")
-                    field_name = self.eat("ID").value
+                    if self.current().kind == "ID":
+                        field_name = self.eat("ID").value
+                    elif self.current().value == "(":
+                        # Dynamic field: ID.(expr)
+                        self.eat("(")
+                        self.parse_expr()  # consume expression but ignore value
+                        self.eat(")")
+                        field_name = "<dynamic>"
+                    else:
+                        break
                     fields.append(field_name)
 
                 # Now check for assignment
-                if self.current().value == "=":
+                if fields and self.current().value == "=":
                     eq_tok = self.eat("=")
                     expr = self.parse_expr()
                     return ["struct_assign", eq_tok.line, id_tok.value, fields, expr]
                 else:
                     # Not assignment, construct field access expression and continue
-                    # Build nested field_access nodes: s.a.b → field_access(field_access(var(s), a), b)
+                    # Build nested field_access nodes: s.a.b -> field_access(field_access(var(s), a), b)
                     base = ["var", id_tok.line, id_tok.value]
                     for field in fields:
                         base = ["field_access", id_tok.line, base, field]
@@ -384,7 +393,36 @@ class MatlabParser:
                 args = self.parse_paren_args()  # Reuse arg parser
                 self.eat("}")
 
-                # Check for assignment
+                # Check for chained struct assignment: ID{args}.field... = expr
+                if self.current().kind == "DOT":
+                    fields = []
+                    while self.current().kind == "DOT":
+                        self.eat("DOT")
+                        if self.current().kind == "ID":
+                            field_name = self.eat("ID").value
+                        elif self.current().value == "(":
+                            self.eat("(")
+                            self.parse_expr()
+                            self.eat(")")
+                            field_name = "<dynamic>"
+                        else:
+                            break
+                        fields.append(field_name)
+                    if fields and self.current().value == "=":
+                        eq_tok = self.eat("=")
+                        expr = self.parse_expr()
+                        return ["index_struct_assign", eq_tok.line, id_tok.value, args, "curly", fields, expr]
+                    else:
+                        # Not assignment, reconstruct as expression
+                        base = ["var", id_tok.line, id_tok.value]
+                        left = ["curly_apply", id_tok.line, base, args]
+                        for field in fields:
+                            left = ["field_access", id_tok.line, left, field]
+                        left = self.parse_postfix(left)
+                        expr_tail = self.parse_expr_rest(left, 0)
+                        return ["expr", expr_tail]
+
+                # Check for simple cell assignment
                 if self.current().value == "=":
                     eq_tok = self.eat("=")
                     expr = self.parse_expr()
@@ -407,6 +445,35 @@ class MatlabParser:
                     eq_tok = self.eat("=")
                     expr = self.parse_expr()
                     return ["index_assign", eq_tok.line, id_tok.value, args, expr]
+
+                # Check for chained struct assignment: ID(args).field... = expr
+                elif self.current().kind == "DOT":
+                    fields = []
+                    while self.current().kind == "DOT":
+                        self.eat("DOT")
+                        if self.current().kind == "ID":
+                            field_name = self.eat("ID").value
+                        elif self.current().value == "(":
+                            self.eat("(")
+                            self.parse_expr()
+                            self.eat(")")
+                            field_name = "<dynamic>"
+                        else:
+                            break
+                        fields.append(field_name)
+                    if fields and self.current().value == "=":
+                        eq_tok = self.eat("=")
+                        expr = self.parse_expr()
+                        return ["index_struct_assign", eq_tok.line, id_tok.value, args, "paren", fields, expr]
+                    else:
+                        # Not assignment, reconstruct as expression
+                        base = ["var", id_tok.line, id_tok.value]
+                        left = ["apply", id_tok.line, base, args]
+                        for field in fields:
+                            left = ["field_access", id_tok.line, left, field]
+                        left = self.parse_postfix(left)
+                        expr_tail = self.parse_expr_rest(left, 0)
+                        return ["expr", expr_tail]
                 else:
                     # Not assignment, construct Apply expression and continue
                     base = ["var", id_tok.line, id_tok.value]
@@ -705,6 +772,12 @@ class MatlabParser:
                 if self.current().kind == "ID":
                     field_name = self.eat("ID").value
                     left = ["field_access", dot_tok.line, left, field_name]
+                elif self.current().value == "(":
+                    # Dynamic field access: s.(expr)
+                    self.eat("(")
+                    self.parse_expr()  # consume field expression but ignore value
+                    self.eat(")")
+                    left = ["field_access", dot_tok.line, left, "<dynamic>"]
                 else:
                     # Not field access (might be .* or ./ but those are DOTOP, not DOT)
                     # This shouldn't happen with current lexer, but be defensive
