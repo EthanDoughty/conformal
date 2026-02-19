@@ -7,7 +7,7 @@
 [![Version](https://img.shields.io/badge/version-1.13.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-290%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-312%20passing-brightgreen.svg)](#test-suite)
 [![pip installable](https://img.shields.io/badge/pip-installable-green.svg)](#getting-started)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
@@ -48,7 +48,7 @@ Final environment:
 
 ## Performance
 
-Single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and cross-file workspace analysis runs in about 70ms. The full 290-test suite finishes in under 500ms, with no MATLAB runtime involved.
+Single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and cross-file workspace analysis runs in about 70ms. The full 312-test suite finishes in under 500ms, with no MATLAB runtime involved.
 
 The VS Code extension can analyze on every keystroke by default, with a 500ms debounce.
 
@@ -56,21 +56,23 @@ The VS Code extension can analyze on every keystroke by default, with a 500ms de
 
 All warnings include source line numbers. When the analyzer finds a definite error, it marks the result as `unknown` and keeps going so you get as many diagnostics as possible in a single pass.
 
+By default, Conformal shows only high-confidence warnings: dimension mismatches, type errors, bounds violations, division by zero, and constraint conflicts. There are 19 warning codes that only appear in `--strict` mode, mostly things that are low-confidence or cascade-prone in practice, like `W_UNKNOWN_FUNCTION`, `W_STRUCT_FIELD_NOT_FOUND`, and `W_SUSPICIOUS_COMPARISON`. In default mode, the dogfood corpus of 38 real-world files produces zero warnings; in strict mode that same corpus produces 873 (nearly all informational). The idea is that you can run default mode in CI without false-positive noise, and reach for `--strict` when you want the full picture.
+
 ### Operations
 
 Dimension mismatches in `+`, `-`, `*`, `.*`, `./`, `^`, `.^`. Inner dimension checks for matrix multiplication. Scalar-matrix broadcasting (`s*A`, `s + A`) is handled correctly. Backslash `A\b` (mldivide) follows the same inner-dimension logic as multiplication. Element-wise logical `&` and `|` pass shapes through like any element-wise op. Logical NOT `~` and dot-transpose `.'` also carry shapes through. When you use `*` where `.*` was probably intended, the analyzer suggests the fix.
 
 ### Literals and concatenation
 
-Matrix literals `[1 2; 3 4]`, cell array literals `{1, 2; 3, 4}`, and string literals (`'hello'`, `"world"`). Horizontal concatenation `[A B]` checks that row counts match; vertical concatenation `[A; B]` checks columns. Symbolic dimensions compose through concatenation, so `[A B]` where A is `n x k` and B is `n x m` gives `n x (k+m)`. Matrix literal spacing is handled correctly, so `[1 -2; 3 -4]` parses as four elements (not as subtraction).
+Matrix literals `[1 2; 3 4]`, cell array literals `{1, 2; 3, 4}`, and string literals (`'hello'`, `"world"`). Horizontal concatenation `[A B]` checks that row counts match; vertical concatenation `[A; B]` checks columns. Symbolic dimensions compose through concatenation, so `[A B]` where A is `n x k` and B is `n x m` gives `n x (k+m)`. An empty matrix `[]` is treated as the identity element for concatenation, so `[[] x]` and `[[] ; x]` both simplify to `x` with no false mismatch warning. Matrix literal spacing is handled correctly, so `[1 -2; 3 -4]` parses as four elements (not as subtraction).
 
 ### Indexing
 
-Parenthesized indexing `A(i,j)`, slice indexing `A(:,j)` and `A(i,:)`, range indexing `A(2:5,:)`, linear indexing, and full-matrix `A(:,:)`. Curly-brace indexing `C{i,j}` for cell arrays with per-element shape tracking (literal index extracts precise element shape). Cell element assignment `C{i} = expr`. The `end` keyword works in indexing contexts with arithmetic support (`C{end}`, `C{end-1}`, `A(1:end, 2)`, `A(end-2:end, :)`).
+Parenthesized indexing `A(i,j)`, slice indexing `A(:,j)` and `A(i,:)`, range indexing `A(2:5,:)`, linear indexing, and full-matrix `A(:,:)`. Curly-brace indexing `C{i,j}` for cell arrays with per-element shape tracking (literal index extracts precise element shape). Cell element assignment `C{i} = expr`. The `end` keyword works in indexing contexts with arithmetic support (`C{end}`, `C{end-1}`, `A(1:end, 2)`, `A(end-2:end, :)`). Indexed assignment `M(i,j) = expr` preserves the matrix shape; bounds are not checked on the write side, since MATLAB auto-expands arrays on assignment. Read-side out-of-bounds checking is unchanged.
 
 ### Functions
 
-128 builtins with shape rules across 10 categories:
+Over 200 MATLAB builtins are recognized (so calls to them don't produce spurious `W_UNKNOWN_FUNCTION` warnings), and around 128 of those have explicit shape rules across 10 handler categories:
 - **Matrix constructors**: `zeros`, `ones`, `eye`, `rand`, `randn`, `true`, `false`, `nan`, `inf` (0-arg→scalar, 1-arg→n×n, 2-arg→m×n)
 - **Shape transformations**: `reshape` (with conformability check), `repmat`, `diag`, `transpose`, `horzcat`, `vertcat`, `kron` (Kronecker product: `kron(A[m×n], B[p×q])` → `matrix[(m*p) × (n*q)]`), `blkdiag` (variadic block diagonal: `blkdiag(A[m×n], B[p×q])` → `matrix[(m+p) × (n+q)]`)
 - **Element-wise math**: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `exp`, `log`, `sqrt`, `abs`, `ceil`, `floor`, `round`, `sign`, `real`, `imag`, `cumsum`, `cumprod`, and more
@@ -122,7 +124,7 @@ The analyzer parses and tracks shapes through:
 | Literals | `[1 2; 3 4]`, `{1, 2; 3, 4}`, `'string'`, `"string"`, `1:n` |
 | Indexing | `A(i,j)`, `A(:,j)`, `A(2:5,:)`, `C{i}`, `C{i} = x` |
 | Assignment | `x = expr`, `s.field = expr`, `C{i} = expr`, `M(i,j) = expr`, `[a, b] = f(x)`, `[~, b] = f(x)` |
-| Functions | `function y = f(x)`, `function name` (no-arg), `@(x) expr`, `@funcName`, 128 builtins |
+| Functions | `function y = f(x)`, `function name` (no-arg), `@(x) expr`, `@funcName`, 200+ recognized builtins (128 with shape rules) |
 | Control flow | `if`/`elseif`/`else`, `for`, `while`, `switch`/`case`, `try`/`catch` |
 | Statements | `break`, `continue`, `return` |
 | Data types | scalars, matrices, strings, structs, cell arrays, function handles |
@@ -158,13 +160,13 @@ analysis/           15 focused submodules: expression eval, statements, function
 runtime/            Shape domain (shapes.py), symbolic dimensions (symdim.py), and environments
 lsp/                Language Server Protocol implementation (server.py, diagnostics.py, hover.py, code_actions.py)
 vscode-conformal/   VS Code extension (TypeScript thin client)
-tests/              Self-checking MATLAB programs (290 tests, 16 categories)
+tests/              Self-checking MATLAB programs (312 tests, 16 categories)
 tools/              Debugging utilities (AST printer)
 ```
 
 ## Test Suite
 
-The analyzer is validated by 290 self-checking test programs organized into 16 categories. Each test embeds its expected behavior as inline assertions:
+The analyzer is validated by 312 self-checking test programs organized into 16 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -238,7 +240,7 @@ MATLAB-style indexing including scalar, slice, range, linear indexing, and `end`
 | `end_position.m` | `end` resolves to column dimension in column position (non-square matrix) | 0 |
 | `symbolic_end_range.m` | `end` on symbolic matrices: `A(1:end,:)` → `n x m`, `A(1:end-1,:)` → `(n-1) x m` | 0 |
 | `index_assign.m` | Basic indexed assignment `M(i,j) = expr` preserves matrix dimensions | 0 |
-| `index_assign_bounds.m` | Indexed assignment with provably out-of-bounds index emits `W_INDEX_OUT_OF_BOUNDS` | 1 |
+| `index_assign_bounds.m` | MATLAB auto-expands arrays on write; no `W_INDEX_OUT_OF_BOUNDS` on indexed assignment | 0 |
 | `index_assign_loop.m` | Indexed assignment inside for loop body | 0 |
 | `index_assign_in_function.m` | Indexed assignment in function body; caller sees correct return shape | 0 |
 
@@ -272,7 +274,7 @@ Control-flow join semantics for if/elseif/else, switch/case, try/catch, break, a
 </details>
 
 <details>
-<summary><h3>Literals (9 tests)</h3></summary>
+<summary><h3>Literals (11 tests)</h3></summary>
 
 Matrix literals, string literals, and concatenation constraints.
 
@@ -287,13 +289,15 @@ Matrix literals, string literals, and concatenation constraints.
 | `string_in_control_flow.m` | String/scalar shape joins across branches | 0 |
 | `matrix_spacing.m` | Matrix literal spacing: `[1 -2]` is two elements (not subtraction) | 0 |
 | `cell_spacing.m` | Cell literal spacing disambiguation (`{1 -2}` is two elements) | 0 |
+| `empty_concat.m` | `[]` is identity for concatenation: `[[] x]` → `x`, `[[] ; x]` → `x` | 1 |
+| `negative_matrix_elements.m` | Matrix literals with negative elements: `[-1 -2]` is `1x2`, not a scalar | 0 |
 
 </details>
 
 <details>
 <summary><h3>Builtins (17 tests)</h3></summary>
 
-Shape rules for 128 recognized MATLAB builtins (121 with single-return handlers, 11 with multi-return handlers, 4 I/O builtins recognized but no handler), call/index disambiguation, and dimension arithmetic.
+Shape rules for 200+ recognized MATLAB builtins (128 with shape handlers: 121 single-return, 11 multi-return), call/index disambiguation, and dimension arithmetic.
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -446,7 +450,7 @@ External `.m` files are fully parsed and analyzed to infer real return shapes, w
 </details>
 
 <details>
-<summary><h3>Structs (5 tests)</h3></summary>
+<summary><h3>Structs (6 tests)</h3></summary>
 
 Struct creation, field access, and control-flow joins.
 
@@ -457,6 +461,7 @@ Struct creation, field access, and control-flow joins.
 | `struct_field_not_found.m` | Missing field access emits warning | 1 |
 | `struct_field_reassign.m` | Field reassignment with different shape updates field map | 0 |
 | `struct_in_control_flow.m` | Struct shape join takes union of fields from both branches | 0 |
+| `field_access_unknown.m` | Field access on `unknown` base does not warn; empty matrix promotes to struct on assignment | 0 |
 
 >Struct join uses union-with-bottom semantics. Fields present in only one branch get `bottom` in the other, then join to `unknown`.
 
@@ -648,14 +653,14 @@ Cross-file workspace scaling tests: chains, diamond patterns, fan-out/fan-in, po
 ### Running the Tests
 
 ```bash
-# Run all 290 tests
+# Run all 312 tests
 make test
 python3 conformal.py --tests
 
 # Run with fixed-point loop analysis
 python3 conformal.py --fixpoint --tests
 
-# Run strict mode (fail on unsupported constructs)
+# Run strict mode (show all warnings including informational and low-confidence diagnostics)
 python3 conformal.py --strict --tests
 ```
 
@@ -665,7 +670,7 @@ python3 conformal.py --strict --tests
 git clone https://github.com/EthanDoughty/conformal.git
 cd conformal
 make install          # pip install -e '.[lsp]' (editable + pygls)
-conformal --tests     # verify 290 tests pass
+conformal --tests     # verify 312 tests pass
 ```
 
 Analyze a file:
@@ -696,7 +701,7 @@ The extension includes built-in MATLAB syntax highlighting, so you don't need th
 | `conformal.pythonPath` | `python3` | Python interpreter (leave as default for auto-setup) |
 | `conformal.serverPath` | _(empty)_ | Analyzer source path (for development only) |
 | `conformal.fixpoint` | `false` | Enable fixed-point loop analysis (iterative convergence) |
-| `conformal.strict` | `false` | Fail on unsupported constructs (W_UNSUPPORTED_* warnings) |
+| `conformal.strict` | `false` | Show all warnings including informational and low-confidence diagnostics |
 | `conformal.analyzeOnChange` | `true` | Analyze as you type (500ms debounce) |
 
 The extension spawns `python3 -m lsp` as a subprocess over stdio. The LSP server runs the analyzer on document open, save, and change events. Diagnostics are published to the editor, and hover requests return shapes from the last successful analysis.
@@ -716,7 +721,7 @@ python3 -m lsp
 
 `--tests` – run full test suite
 
-`--strict` – fail on unsupported constructs
+`--strict` – show all warnings including informational and low-confidence diagnostics
 
 `--fixpoint` – use fixed-point iteration for loop analysis
 
@@ -736,7 +741,7 @@ For adoption, the distribution story matters more than the language. A VS Code e
 
 ## Real-World Compatibility
 
-To check how the parser and analyzer hold up on real MATLAB code, a dogfood corpus of 36 `.m` files was drawn from 8 open-source repos on GitHub, covering robotics, signal processing, and scientific computing. 35 of 36 files parse and analyze cleanly, a 97% rate, with the one failure being a file that uses `...` line continuation (not yet supported).
+To check how the parser and analyzer hold up on real MATLAB code, a dogfood corpus of 38 `.m` files was drawn from 8 open-source repos on GitHub, covering robotics, signal processing, and scientific computing. In default mode, the corpus produces zero warnings, and in strict mode it produces 873 (nearly all informational or low-confidence).
 
 The repos in the corpus include petercorke/robotics-toolbox-matlab (1491 stars), rpng/kalibr_allan (648 stars), gpeyre/matlab-toolboxes (344 stars), and ImperialCollegeLondon/sap-voicebox (248 stars), among others. These files use a wide range of MATLAB idioms: pre-2016 end-less function definitions, space-separated multi-return syntax (`function [a b c] = f(...)`), Latin-1 encoded files from European authors, `\` for linear solves, and complex matrix literal spacing like `[1 -2; 3 -4]`. Parser robustness improvements came directly from failures on this corpus.
 
@@ -748,7 +753,7 @@ Conformal analyzes a subset of MATLAB. Here's what it doesn't cover:
 |----------|---------------|
 | Scope | Multi-file workspace analysis (Phase 2): sibling `.m` files are parsed and analyzed to infer real return shapes. No `addpath` handling or cross-directory analysis yet. |
 | Functions | No nested functions. No `varargin`/`varargout`. No `eval`, `feval`, or `str2func`. |
-| Builtins | 128 builtins recognized (121 with single-return handlers, 11 with multi-return handlers). Toolbox functions and other unrecognized calls produce an unknown-function warning. |
+| Builtins | 200+ builtins recognized; 128 have explicit shape rules (121 single-return, 11 multi-return). Toolbox functions and other unrecognized calls produce a `W_UNKNOWN_FUNCTION` warning (strict-only by default). |
 | Cell arrays | Per-element tracking available for literal-indexed cells. Dynamic indexing conservatively joins all elements. |
 | Indexing | `end` keyword supported with arithmetic (`C{end}`, `C{end-1}`, `A(1:end)`, `A(end-2:end, :)`). Variable operands in `end` arithmetic fall through to conservative join. |
 | Data types | No classes, no maps, no tables, no N-D arrays (only 2-D matrices). No complex number tracking. |

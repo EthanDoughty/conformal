@@ -1,9 +1,8 @@
-% Test 18: Indexing a scalar is suspicious, warning is expected
-% x is scalar; y = x(1) should warn and be treated as unknown.
+% Test 18: Indexing a scalar returns scalar (valid MATLAB: x(1) returns x)
 %
-% EXPECT: warnings = 1
+% EXPECT: warnings = 0
 % EXPECT: x = scalar
-% EXPECT: y = unknown
+% EXPECT: y = scalar
 
 x = 7;
 y = x(1);

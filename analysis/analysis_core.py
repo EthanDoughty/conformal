@@ -20,13 +20,8 @@ def shapes_definitely_incompatible(old: Shape, new: Shape) -> bool:
     if old.is_unknown() or new.is_unknown() or old.is_bottom() or new.is_bottom():
         return False
 
-    # Scalar vs matrix is definitely incompatible for reassignment
-    if old.is_scalar() and new.is_matrix():
-        return True
-    if old.is_matrix() and new.is_scalar():
-        return True
-
-    # Matrix vs matrix: check any provable dimension conflicts
+    # Scalar vs matrix reassignment is normal MATLAB style (x = 0; x = zeros(n,1))
+    # Only check matrix vs matrix dimension conflicts
     if old.is_matrix() and new.is_matrix():
         if dims_definitely_conflict(old.rows, new.rows):
             return True

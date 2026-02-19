@@ -1086,11 +1086,49 @@ def _handle_multi_minmax(fname, expr, env, warnings, ctx, num_targets):
     return [Shape.unknown(), Shape.unknown()]
 
 
+def _handle_multi_fileparts(fname, expr, env, warnings, ctx, num_targets):
+    """[pathstr, name, ext] = fileparts(filename) — all strings."""
+    if num_targets <= 3:
+        return [Shape.string()] * num_targets
+    return None
+
+
+def _handle_multi_fopen(fname, expr, env, warnings, ctx, num_targets):
+    """[fid, message] = fopen(filename) — scalar + string."""
+    if num_targets == 2:
+        return [Shape.scalar(), Shape.string()]
+    return None
+
+
+def _handle_multi_meshgrid(fname, expr, env, warnings, ctx, num_targets):
+    """[X, Y] = meshgrid(x, y) or [X, Y, Z] = meshgrid(x, y, z) — matrices."""
+    if num_targets in (2, 3):
+        return [Shape.unknown()] * num_targets
+    return None
+
+
+def _handle_multi_cellfun(fname, expr, env, warnings, ctx, num_targets):
+    """[out1, out2, ...] = cellfun(func, C) — all unknown."""
+    return [Shape.unknown()] * num_targets
+
+
+def _handle_multi_ndgrid(fname, expr, env, warnings, ctx, num_targets):
+    """[X1, X2, ...] = ndgrid(x1, x2, ...) — matrices."""
+    return [Shape.unknown()] * num_targets
+
+
+def _handle_multi_regexp(fname, expr, env, warnings, ctx, num_targets):
+    """[tok, match, ...] = regexp(str, expr, ...) — all unknown."""
+    return [Shape.unknown()] * num_targets
+
+
 # Supported forms lookup for count mismatch messages
 _MULTI_SUPPORTED_FORMS = {
     'eig': '1 or 2', 'svd': '1 or 3', 'lu': '2 or 3', 'qr': '2',
     'chol': '2', 'size': '2', 'sort': '2', 'find': '1, 2, or 3',
     'unique': '1, 2, or 3', 'min': '1 or 2', 'max': '1 or 2',
+    'fileparts': '1-3', 'fopen': '2', 'meshgrid': '2 or 3',
+    'cellfun': 'any', 'ndgrid': 'any', 'regexp': 'any', 'regexpi': 'any',
 }
 
 
@@ -1107,6 +1145,13 @@ BUILTIN_MULTI_HANDLERS = {
     'unique': _handle_multi_unique,
     'min': _handle_multi_minmax,
     'max': _handle_multi_minmax,
+    'fileparts': _handle_multi_fileparts,
+    'fopen': _handle_multi_fopen,
+    'meshgrid': _handle_multi_meshgrid,
+    'cellfun': _handle_multi_cellfun,
+    'ndgrid': _handle_multi_ndgrid,
+    'regexp': _handle_multi_regexp,
+    'regexpi': _handle_multi_regexp,
 }
 
 

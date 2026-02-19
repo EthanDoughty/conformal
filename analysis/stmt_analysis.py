@@ -332,12 +332,19 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
             env.set(stmt.base_name, Shape.cell(None, None, elements=None))
             return env
         elif not base_shape.is_cell():
-            # Evaluate index args for side effects
-            for arg in stmt.args:
-                _ = _eval_index_arg_to_shape(arg, env, warnings, ctx, container_shape=base_shape)
-            # Base is not a cell: warn and keep original shape
-            warnings.append(diag.warn_cell_assign_non_cell(stmt.line, stmt.base_name, base_shape))
-            return env
+            # MATLAB's [] is a universal empty initializer — promote matrix[0x0] to cell silently
+            _is_empty_matrix = (base_shape.kind == 'matrix' and base_shape.rows == 0 and base_shape.cols == 0)
+            if _is_empty_matrix:
+                env.set(stmt.base_name, Shape.cell(None, None, elements=None))
+                # Fall through to cell assignment logic below
+            else:
+                # Evaluate index args for side effects
+                for arg in stmt.args:
+                    _ = _eval_index_arg_to_shape(arg, env, warnings, ctx, container_shape=base_shape)
+                # Base is not a cell: warn and keep original shape
+                if not base_shape.is_unknown():
+                    warnings.append(diag.warn_cell_assign_non_cell(stmt.line, stmt.base_name, base_shape))
+                return env
 
         # Base is cell: try to update element tracking
         # Check if we can extract literal index
@@ -384,45 +391,21 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
             env.set(stmt.base_name, Shape.unknown())
             return env
 
-        # Validate base is indexable (matrix or unknown)
-        if not base_shape.is_matrix() and not base_shape.is_unknown():
+        # Validate base is indexable (matrix, scalar, struct, or unknown)
+        # scalar: MATLAB grows scalars to vectors on indexed assign (x = 5; x(2) = 10)
+        # struct: MATLAB creates struct arrays on indexed assign (s(1).field = val)
+        # matrix[0x0]: MATLAB's [] is a universal empty initializer
+        _is_empty_matrix = (base_shape.kind == 'matrix' and base_shape.rows == 0 and base_shape.cols == 0)
+        _is_indexable = (base_shape.is_matrix() or base_shape.is_unknown()
+                         or base_shape.is_scalar() or base_shape.is_struct()
+                         or _is_empty_matrix)
+        if not _is_indexable:
             warnings.append(diag.warn_index_assign_type_mismatch(
                 stmt.line, stmt.base_name, base_shape))
             return env
 
-        # Bounds checking for 2-arg form on known-size matrices
-        if base_shape.is_matrix() and len(stmt.args) == 2:
-            from analysis.eval_expr import _get_expr_interval, _get_concrete_dim_size
-            m, n = base_shape.rows, base_shape.cols
-            a1, a2 = stmt.args
-
-            m_size = _get_concrete_dim_size(m, ctx)
-            n_size = _get_concrete_dim_size(n, ctx)
-
-            if isinstance(a1, IndexExpr) and m_size is not None:
-                idx_interval = _get_expr_interval(a1.expr, env, ctx)
-                if idx_interval is not None:
-                    fmt = f"[{idx_interval.lo}, {idx_interval.hi}]"
-                    if (isinstance(idx_interval.lo, int) and idx_interval.lo > m_size) or \
-                       (isinstance(idx_interval.hi, int) and idx_interval.hi < 1):
-                        warnings.append(diag.warn_index_out_of_bounds(
-                            stmt.line, fmt, m_size))
-                    elif isinstance(idx_interval.hi, int) and idx_interval.hi > m_size:
-                        warnings.append(diag.warn_index_out_of_bounds(
-                            stmt.line, fmt, m_size, definite=False))
-
-            if isinstance(a2, IndexExpr) and n_size is not None:
-                idx_interval = _get_expr_interval(a2.expr, env, ctx)
-                if idx_interval is not None:
-                    fmt = f"[{idx_interval.lo}, {idx_interval.hi}]"
-                    if (isinstance(idx_interval.lo, int) and idx_interval.lo > n_size) or \
-                       (isinstance(idx_interval.hi, int) and idx_interval.hi < 1):
-                        warnings.append(diag.warn_index_out_of_bounds(
-                            stmt.line, fmt, n_size))
-                    elif isinstance(idx_interval.hi, int) and idx_interval.hi > n_size:
-                        warnings.append(diag.warn_index_out_of_bounds(
-                            stmt.line, fmt, n_size, definite=False))
-
+        # No OOB bounds checking: MATLAB auto-expands arrays on indexed assignment
+        # (e.g., A = zeros(3); A(10,10) = 1 grows A to 10x10).
         # Shape is preserved — indexed assignment does not change dimensions
         return env
 
@@ -593,9 +576,7 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         return env
 
     if isinstance(stmt, Return):
-        if not ctx.analyzing_functions:
-            # Script context: warn and stop
-            warnings.append(diag.warn_return_outside_function(stmt.line))
+        # return is valid in both functions (exit function) and scripts (exit script)
         raise EarlyReturn()
 
     if isinstance(stmt, Break):

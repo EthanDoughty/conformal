@@ -1,5 +1,5 @@
 % Basic indexed assignment: shape preservation
-% EXPECT: warnings = 3
+% EXPECT: warnings = 1
 
 A = zeros(3, 4);
 A(1, 1) = 5;
@@ -21,11 +21,11 @@ D = zeros(n, m);
 D(1, 1) = 0;
 % EXPECT: D = matrix[n x m]
 
-% Indexed assignment to scalar (type mismatch) — WARNING 1
+% Indexed assignment to scalar — valid MATLAB (grows scalar to vector)
 x = 5;
 x(1) = 10;
 
-% Indexed assignment to struct (type mismatch) — WARNING 2
+% Indexed assignment to struct — valid MATLAB (struct array creation)
 st.field = 1;
 st(1, 1) = 5;
 

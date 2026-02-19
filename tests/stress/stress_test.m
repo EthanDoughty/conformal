@@ -3,7 +3,7 @@
 % Purpose: performance benchmarking and stability testing.
 %
 % This file intentionally contains many errors to trigger every warning path.
-% EXPECT: warnings = 36
+% EXPECT: warnings = 35
 
 % ==========================================================================
 % SECTION 1: Shape kinds — all 7 types

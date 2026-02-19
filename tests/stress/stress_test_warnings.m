@@ -1,7 +1,7 @@
 % Stress Test: Warning Code Coverage
 % Exercises thin-coverage and rarely-triggered warning codes.
 % Each section targets a specific W_* code.
-% EXPECT: warnings = 30
+% EXPECT: warnings = 27
 
 % ==========================================================================
 % W_TOO_MANY_INDICES: 3+ indices on a 2D matrix

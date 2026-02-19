@@ -152,11 +152,13 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List['Diagnostic'], ctx: Analys
         base_shape = eval_expr_ir(expr.base, env, warnings, ctx)
 
         # Check base is cell (suppress warning for unknown — might be a cell we couldn't track)
+        # Also suppress for matrix[0 x 0] — MATLAB's [] is a universal empty initializer
+        _is_empty_matrix = (base_shape.kind == 'matrix' and base_shape.rows == 0 and base_shape.cols == 0)
         if not base_shape.is_cell():
             # Evaluate args for side effects
             for arg in expr.args:
                 _ = _eval_index_arg_to_shape(arg, env, warnings, ctx, container_shape=base_shape)
-            if not base_shape.is_unknown():
+            if not base_shape.is_unknown() and not _is_empty_matrix:
                 warnings.append(diag.warn_curly_indexing_non_cell(expr.line, base_shape))
             return Shape.unknown()
 
@@ -536,7 +538,10 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List['Diagnostic'], ctx: Analys
             return field_shape if not field_shape.is_bottom() else Shape.unknown()
         elif not base_shape.is_unknown():
             # Base is definitively non-struct (scalar, matrix, string, cell, etc.)
-            warnings.append(diag.warn_field_access_non_struct(expr.line, base_shape))
+            # Suppress for matrix[0x0] — MATLAB's [] is a universal empty initializer
+            _is_empty_matrix = (base_shape.kind == 'matrix' and base_shape.rows == 0 and base_shape.cols == 0)
+            if not _is_empty_matrix:
+                warnings.append(diag.warn_field_access_non_struct(expr.line, base_shape))
             return Shape.unknown()
         else:
             # Base is unknown — might be a struct we couldn't track, stay silent
@@ -591,8 +596,8 @@ def _eval_indexing(base_shape: Shape, args, line: int, expr, env: Env, warnings:
         return Shape.unknown()
 
     if base_shape.is_scalar():
-        warnings.append(diag.warn_indexing_scalar(line, expr))
-        return Shape.unknown()
+        # MATLAB allows indexing scalars: x(1) returns x, x(i) may grow the scalar
+        return Shape.scalar()
 
     if base_shape.is_matrix():
         m = base_shape.rows

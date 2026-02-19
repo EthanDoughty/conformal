@@ -168,6 +168,9 @@ class MatlabParser:
         Tracks block depth to find the matching 'end' for the classdef.
         Does not parse internals (methods, properties, etc.).
         Returns ['raw_stmt', line, [], 'classdef'] for lowering to OpaqueStmt.
+
+        Uses paren_depth to distinguish 'end' as block closer vs. 'end' as
+        array index keyword inside (), [], or {} (e.g. A(end:-1:1)).
         """
         start_tok = self.current()
         line = start_tok.line
@@ -179,9 +182,19 @@ class MatlabParser:
         # ID tokens that open a block inside classdef bodies
         id_block_openers = {"methods", "properties", "events", "enumeration"}
 
+        paren_depth = 0  # tracks (), [], {} nesting
+
         while not self.at_end():
             tok = self.current()
             self.i += 1
+
+            # Track delimiter nesting — end inside delimiters is an index keyword
+            if tok.value in ("(", "[", "{"):
+                paren_depth += 1
+            elif tok.value in (")", "]", "}"):
+                paren_depth = max(0, paren_depth - 1)
+            elif paren_depth > 0:
+                continue  # skip block depth tracking inside delimiters
 
             if tok.kind == "END":
                 depth -= 1
@@ -683,15 +696,15 @@ class MatlabParser:
         if tok.value == "+":
             # Unary plus: +expr is a no-op (identity), used in matrix literal context like [1 +2]
             plus_tok = self.eat("+")
-            operand = self.parse_expr(self.PRECEDENCE["+"])
+            operand = self.parse_expr(self.PRECEDENCE["+"], matrix_context=matrix_context)
             left = operand  # unary + is identity
         elif tok.value == "-":
             minus_tok = self.eat("-")
-            operand = self.parse_expr(self.PRECEDENCE["-"])
+            operand = self.parse_expr(self.PRECEDENCE["-"], matrix_context=matrix_context)
             left = ["neg", minus_tok.line, operand]
         elif tok.value == "~":
             not_tok = self.eat("~")
-            operand = self.parse_expr(self.PRECEDENCE["+"])  # same precedence as unary -
+            operand = self.parse_expr(self.PRECEDENCE["+"], matrix_context=matrix_context)  # same precedence as unary -
             left = ["not", not_tok.line, operand]
         elif tok.kind == "NUMBER":
             num_tok = self.eat("NUMBER")

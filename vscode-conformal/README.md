@@ -30,7 +30,7 @@ Requires Python 3.10+.
 
 The extension runs `python3 -m lsp` as an LSP subprocess over stdio. The server analyzes your `.m` files and publishes diagnostics back to the editor. When you save a file, it re-analyzes siblings that might depend on it. If the server crashes, it can auto-recover up to 3 times.
 
-Under the hood, there are 128 builtin shape rules, symbolic dimension tracking, constraint solving, interval analysis, and fixed-point loop convergence, all validated by 290 tests across 16 categories. The parser has been tested against 36 `.m` files drawn from real open-source MATLAB repos, covering robotics, signal processing, and scientific computing, and passes 35 of 36 (97%).
+Under the hood, there are 128 builtin shape rules (200+ recognized builtins total), symbolic dimension tracking, constraint solving, interval analysis, and fixed-point loop convergence, all validated by 312 tests across 16 categories. The parser has been tested against 38 `.m` files drawn from real open-source MATLAB repos, covering robotics, signal processing, and scientific computing, and produces zero warnings on all of them in default mode.
 
 ## Commands
 
@@ -38,7 +38,7 @@ Under the hood, there are 128 builtin shape rules, symbolic dimension tracking, 
 |---------|-------------|
 | `Conformal: Analyze Current File` | Save and re-analyze |
 | `Conformal: Toggle Fixpoint Mode` | Fixed-point loop analysis |
-| `Conformal: Toggle Strict Mode` | Fail on unsupported constructs |
+| `Conformal: Toggle Strict Mode` | Show all warnings including informational and low-confidence diagnostics |
 | `Conformal: Restart Server` | Restart the LSP server |
 
 ## Settings
@@ -48,7 +48,7 @@ Under the hood, there are 128 builtin shape rules, symbolic dimension tracking, 
 | `conformal.pythonPath` | `python3` | Leave default for auto-setup |
 | `conformal.serverPath` | _(empty)_ | Dev use only |
 | `conformal.fixpoint` | `false` | Fixed-point loop analysis |
-| `conformal.strict` | `false` | Strict mode |
+| `conformal.strict` | `false` | Show all warnings including informational and low-confidence diagnostics |
 | `conformal.analyzeOnChange` | `true` | Keystroke analysis, 500ms debounce |
 
 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal) · [GitHub](https://github.com/EthanDoughty/conformal)

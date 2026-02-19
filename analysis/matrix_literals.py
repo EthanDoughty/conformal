@@ -106,6 +106,10 @@ def infer_matrix_literal_shape(
 
             s = as_matrix_shape(s0)
 
+            # Empty matrix [] is identity for concatenation — skip it
+            if s.is_matrix() and s.rows == 0 and s.cols == 0:
+                continue
+
             if s.is_unknown():
                 elem_rows.append(None)
                 elem_cols.append(None)
@@ -115,6 +119,10 @@ def infer_matrix_literal_shape(
             else:
                 elem_rows.append(None)
                 elem_cols.append(None)
+
+        # If all elements were empty matrices, skip row entirely (identity for concat)
+        if not elem_rows:
+            continue
 
         # Horizontal concat constraint inside this row
         height = elem_rows[0]
@@ -140,6 +148,10 @@ def infer_matrix_literal_shape(
         width = sum_dims(elem_cols)
         row_heights.append(height)
         row_widths.append(width)
+
+    # If all rows were empty matrices, result is empty
+    if not row_widths:
+        return Shape.matrix(0, 0)
 
     # Vertical concat constraint across rows
     common_width = row_widths[0]

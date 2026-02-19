@@ -9,6 +9,30 @@ from runtime.shapes import Shape
 from ir.ir import *
 
 # ---------------
+# Warning tier classification
+# ---------------
+
+# Codes suppressed in default mode; shown only with --strict.
+# The analyzer always emits them — filtering is a presentation concern.
+STRICT_ONLY_CODES = frozenset({
+    # Parser / recognition limits
+    "W_UNSUPPORTED_STMT", "W_UNSUPPORTED_MULTI_ASSIGN",
+    "W_UNKNOWN_FUNCTION", "W_EXTERNAL_PARSE_ERROR",
+    # Cascade-prone field / cell warnings
+    "W_STRUCT_FIELD_NOT_FOUND", "W_FIELD_ACCESS_NON_STRUCT",
+    "W_CURLY_INDEXING_NON_CELL", "W_CELL_ASSIGN_NON_CELL",
+    # Informational (not bugs)
+    "W_REASSIGN_INCOMPATIBLE", "W_RECURSIVE_FUNCTION",
+    "W_RECURSIVE_LAMBDA", "W_LAMBDA_CALL_APPROXIMATE",
+    "W_MULTI_ASSIGN_NON_CALL", "W_MULTI_ASSIGN_BUILTIN",
+    # Stylistic / suspicious
+    "W_SUSPICIOUS_COMPARISON", "W_MATRIX_COMPARISON",
+    "W_LOGICAL_OP_NON_SCALAR", "W_STRING_ARITHMETIC",
+    # 2D shape system limitation (3D+ arrays produce false positives)
+    "W_TOO_MANY_INDICES",
+})
+
+# ---------------
 # Diagnostic dataclass
 # ---------------
 

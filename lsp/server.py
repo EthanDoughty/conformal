@@ -21,7 +21,7 @@ from analysis.workspace import scan_workspace, clear_parse_cache
 from analysis.builtins import KNOWN_BUILTINS
 from runtime.env import Env
 from ir.ir import Program
-from analysis.diagnostics import Diagnostic as ConformalDiagnostic
+from analysis.diagnostics import Diagnostic as ConformalDiagnostic, STRICT_ONLY_CODES
 from lsp.diagnostics import to_lsp_diagnostic
 from lsp.hover import get_hover
 from lsp.code_actions import code_actions_for_diagnostic
@@ -132,18 +132,9 @@ def _validate(ls: LanguageServer, uri: str, source: str, force: bool = False) ->
         ir_prog = lower_program(syntax_ast)
         env, warnings = analyze_program_ir(ir_prog, fixpoint=ctx.fixpoint, ctx=ctx)
 
-        # In strict mode, check for unsupported warnings
-        if server_settings["strict"]:
-            unsupported = [w for w in warnings if w.code.startswith("W_UNSUPPORTED_")]
-            if unsupported:
-                # Add a summary error diagnostic
-                warnings = list(warnings) + [
-                    ConformalDiagnostic(
-                        line=unsupported[0].line,
-                        code="W_STRICT_MODE",
-                        message=f"Strict mode: {len(unsupported)} unsupported construct(s) found",
-                    )
-                ]
+        # Filter low-confidence warnings in default mode
+        if not server_settings["strict"]:
+            warnings = [w for w in warnings if w.code not in STRICT_ONLY_CODES]
 
         # Convert to LSP diagnostics
         lsp_diagnostics = [

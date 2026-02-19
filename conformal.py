@@ -9,7 +9,7 @@ from pathlib import Path
 from frontend.matlab_parser import parse_matlab
 from frontend.lower_ir import lower_program
 from analysis import analyze_program_ir
-from analysis.diagnostics import has_unsupported
+from analysis.diagnostics import has_unsupported, STRICT_ONLY_CODES
 from analysis.context import AnalysisContext
 from analysis.workspace import scan_workspace
 
@@ -56,6 +56,10 @@ def run_file(file_path: str, strict: bool = False, fixpoint: bool = False,
     # Run IR analysis
     env, warnings = analyze_program_ir(ir_prog, fixpoint=fixpoint, ctx=ctx)
     t_analyze = time.perf_counter()
+
+    # Filter low-confidence warnings in default mode
+    if not strict:
+        warnings = [w for w in warnings if w.code not in STRICT_ONLY_CODES]
 
     print(f"=== Analysis for {file_path} ===")
     if not warnings:
@@ -141,7 +145,7 @@ def main() -> int:
     parser.add_argument(
         "--strict",
         action="store_true",
-        help="Exit with error if unsupported constructs detected"
+        help="Show all warnings including informational and low-confidence diagnostics"
     )
     parser.add_argument(
         "--fixpoint",
