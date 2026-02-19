@@ -35,6 +35,7 @@ _SUPPRESSED_CMD_STMTS = {
     "box", "view", "lighting", "material", "camlight", "rotate3d",
     "pan", "zoom", "format",
     "global", "persistent",
+    "classdef",
 }
 from runtime.env import Env, join_env
 from runtime.shapes import Shape, Dim, add_dim, mul_dim

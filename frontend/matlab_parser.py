@@ -147,6 +147,10 @@ class MatlabParser:
                     return ["seq"] + items
             if self.at_end():
                 break
+            # Check for classdef: consume entire class block as a single opaque stmt
+            if self.current().kind == "ID" and self.current().value == "classdef":
+                items.append(self._consume_classdef())
+                continue
             # Check for function definition
             if self.current().kind == "FUNCTION":
                 items.append(self.parse_function())
@@ -157,6 +161,42 @@ class MatlabParser:
                 if self.i == saved_i:
                     self.i += 1
         return ["seq"] + items
+
+    def _consume_classdef(self) -> Any:
+        """Consume a classdef block as a single opaque statement.
+
+        Tracks block depth to find the matching 'end' for the classdef.
+        Does not parse internals (methods, properties, etc.).
+        Returns ['raw_stmt', line, [], 'classdef'] for lowering to OpaqueStmt.
+        """
+        start_tok = self.current()
+        line = start_tok.line
+        depth = 1  # classdef opens a block
+        self.i += 1  # skip 'classdef'
+
+        # Keywords that open a new block (keyword tokens)
+        block_openers = {"IF", "FOR", "WHILE", "SWITCH", "TRY", "FUNCTION", "PARFOR"}
+        # ID tokens that open a block inside classdef bodies
+        id_block_openers = {"methods", "properties", "events", "enumeration"}
+
+        while not self.at_end():
+            tok = self.current()
+            self.i += 1
+
+            if tok.kind == "END":
+                depth -= 1
+                if depth == 0:
+                    break
+            elif tok.kind in block_openers:
+                depth += 1
+            elif tok.kind == "ID" and tok.value in id_block_openers:
+                depth += 1
+
+        # Skip trailing newline/semicolon
+        while not self.at_end() and (self.current().kind == "NEWLINE" or self.current().kind == ";" or self.current().value == ";"):
+            self.i += 1
+
+        return ["raw_stmt", line, [], "classdef"]
 
     # function definitions
 
