@@ -1,6 +1,6 @@
 % Test: A(i).field = val chained indexed struct assignment parses correctly (no recovery OpaqueStmt)
-% EXPECT: warnings = 1
-% EXPECT: s = unknown
+% EXPECT: warnings = 0
+% EXPECT: s = struct{}
 
 s = struct();
 s(1).name = 'hello';

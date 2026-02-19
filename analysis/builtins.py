@@ -9,31 +9,44 @@ which builtins have explicit shape rules in the analyzer.
 # Builtins recognized as function calls (not array indexing).
 # Sorted alphabetically for maintainability.
 KNOWN_BUILTINS = {
-    "abs", "acos", "acosh", "all", "any", "asin", "asinh", "atan", "atan2", "atanh",
+    "abs", "acos", "acosh", "accumarray", "all", "any", "asin", "asinh", "atan", "atan2", "atanh",
     "blkdiag",
-    "cat", "ceil", "cell", "char", "chol", "complex", "cond", "conj", "cos", "cosh", "cumprod", "cumsum",
-    "det", "diag", "diff", "disp", "double",
-    "eig", "error", "exp", "eye",
-    "false", "find", "flipud", "fliplr", "floor", "fprintf",
-    "hypot",
-    "imag", "inf", "int16", "int2str", "int32", "int64", "int8", "inv", "iscell", "ischar",
-    "isempty", "isfinite", "isfloat", "isinf", "isinteger", "islogical", "isnan", "isnumeric",
+    "cat", "ceil", "cell", "cell2mat", "cellfun", "char", "chol", "circshift", "complex",
+    "cond", "conj", "conv", "cos", "cosh", "cross", "cumprod", "cumsum",
+    "deconv", "det", "diag", "diff", "disp", "double",
+    "eig", "error", "exp", "expm", "eye",
+    "false", "fclose", "fft", "fft2", "fieldnames", "find", "flipud", "fliplr",
+    "floor", "fopen", "fprintf", "fread", "fscanf", "full", "fwrite", "fclose",
+    "gamrnd",
+    "histogram", "horzcat", "hypot",
+    "ifft", "ifft2", "imag", "inf", "int16", "int2str", "int32", "int64", "int8",
+    "interp1", "interp2", "inv", "iscell", "ischar", "isempty", "isfield",
+    "isfinite", "isfloat", "isinf", "isinteger", "islogical", "isnan", "isnumeric",
     "isreal", "isscalar", "issorted", "issparse", "isstring", "isstruct", "issymmetric", "isvector",
     "kron",
-    "length", "linspace", "log", "log10", "log2", "logical", "lu",
-    "mat2str", "max", "mean", "median", "min", "mod",
-    "nan", "nnz", "norm", "not", "num2str", "numel",
-    "ones",
-    "power", "prod",
+    "length", "linspace", "log", "log10", "log2", "logical", "logm", "lu",
+    "mat2str", "max", "mean", "median", "min", "mod", "mvnrnd",
+    "nan", "ndims", "nnz", "norm", "not", "null", "num2cell", "num2str", "numel",
+    "ones", "orth",
+    "pinv", "plot", "plot3", "polyfit", "polyval", "power", "prod",
     "qr",
     "rand", "randi", "randn", "rank", "rcond", "real", "rem", "repmat", "reshape", "round",
-    "sign", "sin", "single", "sinh", "size", "sort", "sprank", "sprintf", "sqrt", "std", "string", "sum", "svd",
+    "setdiff", "sign", "sin", "single", "sinh", "size", "sort", "sparse", "sprank",
+    "sprintf", "sqrt", "sqrtm", "std", "string", "struct", "sub2ind", "sum", "svd",
     "tan", "tanh", "trace", "transpose", "tril", "triu", "true",
-    "uint16", "uint32", "uint64", "uint8", "unique",
-    "var",
+    "uint16", "uint32", "uint64", "uint8", "union", "unique",
+    "var", "vertcat",
     "warning",
     "xor",
     "zeros",
+    # Graphics/plotting — recognized but no shape handler (I/O side effects only)
+    "axis", "bar", "box", "cla", "clabel", "clf", "close", "colorbar", "colormap",
+    "contour", "contourf", "drawnow", "errorbar", "figure", "fill", "gca", "gcf",
+    "grid", "hold", "image", "imagesc", "legend", "light", "line", "loglog",
+    "mesh", "meshgrid", "patch", "pause", "pcolor", "quiver", "scatter",
+    "semilogx", "semilogy", "set", "get", "shading", "stem", "subplot", "surf",
+    "surface", "text", "title", "view", "xlabel", "xlim", "ylabel", "ylim",
+    "zlabel", "zlim",
 }
 
 # Builtins with explicit shape rules (handled in eval_expr_ir).
@@ -79,4 +92,22 @@ BUILTINS_WITH_SHAPE_RULES = {
     "uint8", "uint16", "uint32", "uint64", "logical", "complex",  # more type casts
     "num2str", "int2str", "mat2str", "char", "string", "sprintf",  # string returns
     "eig", "svd", "lu", "qr", "chol",  # linear algebra (single + multi-return)
+    # Domain builtins with shape handlers
+    "fft", "ifft", "fft2", "ifft2",  # FFT (same shape)
+    "sparse", "full",  # sparsity (passthrough or constructor)
+    "cross",  # cross product (passthrough first arg)
+    "conv", "deconv",  # convolution (column vector)
+    "polyfit",  # polynomial fit (row vector)
+    "polyval", "interp1",  # evaluation (same shape as x)
+    "meshgrid",  # grid generation (matrix)
+    "struct",  # struct constructor (field tracking)
+    "fieldnames",  # field names (cell array)
+    "ndims",  # dimensionality (scalar)
+    "sub2ind",  # subscript to linear index
+    "horzcat", "vertcat",  # concatenation builtins
+    "pinv",  # pseudoinverse (like inv)
+    "expm", "logm", "sqrtm",  # matrix functions (passthrough)
+    "circshift",  # circular shift (passthrough)
+    "null", "orth",  # null/orthogonal basis (passthrough)
+    "isfield",  # struct predicate (scalar)
 }

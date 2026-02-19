@@ -28,6 +28,16 @@ from analysis.matrix_literals import infer_matrix_literal_shape
 if TYPE_CHECKING:
     from analysis.diagnostics import Diagnostic
 
+# MATLAB predefined constants — recognized when not shadowed by user assignment
+_MATLAB_CONSTANTS = {
+    "pi": Shape.scalar(), "inf": Shape.scalar(), "Inf": Shape.scalar(),
+    "nan": Shape.scalar(), "NaN": Shape.scalar(), "eps": Shape.scalar(),
+    "true": Shape.scalar(), "false": Shape.scalar(),
+    "i": Shape.scalar(), "j": Shape.scalar(),
+    "realmin": Shape.scalar(), "realmax": Shape.scalar(), "intmax": Shape.scalar(),
+    "intmin": Shape.scalar(), "flintmax": Shape.scalar(),
+}
+
 
 def _eval_index_arg_to_shape(arg: IndexArg, env: Env, warnings: List['Diagnostic'], ctx: AnalysisContext, container_shape: Optional[Shape] = None) -> Shape:
     """Evaluate an IndexArg to a Shape.
@@ -81,7 +91,12 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List['Diagnostic'], ctx: Analys
         shape = env.get(expr.name)
         # Convert bottom -> unknown at expression evaluation boundary
         # (bottom is internal to Env, expression eval never sees it)
-        return shape if not shape.is_bottom() else Shape.unknown()
+        if shape.is_bottom():
+            # Check for MATLAB predefined constants before giving up
+            if expr.name in _MATLAB_CONSTANTS:
+                return _MATLAB_CONSTANTS[expr.name]
+            return Shape.unknown()
+        return shape
 
     if isinstance(expr, Const):
         return Shape.scalar()

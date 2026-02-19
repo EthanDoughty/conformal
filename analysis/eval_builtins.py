@@ -628,6 +628,138 @@ def _handle_randi(fname, expr, env, warnings, ctx):
     return None
 
 
+def _handle_fft(fname, expr, env, warnings, ctx):
+    """fft(x), ifft(x), fft2(x), ifft2(x) — same shape as input."""
+    from analysis.eval_expr import eval_expr_ir
+    if len(expr.args) >= 1:
+        s = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
+        if s.is_scalar() or s.is_matrix():
+            return s
+    return None
+
+
+def _handle_sparse_full(fname, expr, env, warnings, ctx):
+    """sparse(A) / full(A) — passthrough shape. sparse(m,n) — constructor."""
+    from analysis.eval_expr import eval_expr_ir
+    # sparse(m, n) — constructor form (check before passthrough)
+    if fname == "sparse" and len(expr.args) == 2:
+        try:
+            r = expr_to_dim_ir(unwrap_arg(expr.args[0]), env)
+            c = expr_to_dim_ir(unwrap_arg(expr.args[1]), env)
+            return Shape.matrix(r, c)
+        except ValueError:
+            pass
+    # sparse(A) / full(A) — passthrough
+    if len(expr.args) == 1:
+        s = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
+        if s.is_scalar() or s.is_matrix():
+            return s
+    return None
+
+
+def _handle_cross(fname, expr, env, warnings, ctx):
+    """cross(a, b) — returns vector same size as inputs (must be 3-element)."""
+    from analysis.eval_expr import eval_expr_ir
+    if len(expr.args) >= 1:
+        return eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
+    return None
+
+
+def _handle_conv(fname, expr, env, warnings, ctx):
+    """conv(a, b) — returns vector of length len(a)+len(b)-1."""
+    # Conservative: return unknown-length vector
+    return Shape.matrix(None, 1)
+
+
+def _handle_polyfit(fname, expr, env, warnings, ctx):
+    """polyfit(x, y, n) — returns row vector of n+1 coefficients."""
+    if len(expr.args) >= 3:
+        try:
+            n_dim = expr_to_dim_ir(unwrap_arg(expr.args[2]), env)
+            return Shape.matrix(1, add_dim(n_dim, 1))
+        except ValueError:
+            pass
+    return Shape.matrix(1, None)
+
+
+def _handle_polyval(fname, expr, env, warnings, ctx):
+    """polyval(p, x) — returns same shape as x."""
+    from analysis.eval_expr import eval_expr_ir
+    if len(expr.args) >= 2:
+        return eval_expr_ir(unwrap_arg(expr.args[1]), env, warnings, ctx)
+    return None
+
+
+def _handle_meshgrid(fname, expr, env, warnings, ctx):
+    """meshgrid(x, y) — returns matrix, but we don't track multi-return here."""
+    return Shape.matrix(None, None)
+
+
+def _handle_struct(fname, expr, env, warnings, ctx):
+    """struct('field1', val1, 'field2', val2, ...) — infer field names and shapes."""
+    from analysis.eval_expr import eval_expr_ir
+    # struct() with no args — empty struct
+    if len(expr.args) == 0:
+        return Shape.struct({})
+    # struct('field', val, 'field2', val2, ...) — pairs of string + value
+    from ir import StringLit
+    fields = {}
+    args = expr.args
+    i = 0
+    while i + 1 < len(args):
+        key_expr = unwrap_arg(args[i])
+        val_expr = unwrap_arg(args[i + 1])
+        if isinstance(key_expr, StringLit):
+            val_shape = eval_expr_ir(val_expr, env, warnings, ctx)
+            fields[key_expr.value] = val_shape
+        else:
+            # Non-literal field name — can't track statically
+            return Shape.struct({})
+        i += 2
+    return Shape.struct(fields)
+
+
+def _handle_fieldnames(fname, expr, env, warnings, ctx):
+    """fieldnames(s) — returns cell array of field names."""
+    return Shape.cell(None, 1)
+
+
+def _handle_ndims(fname, expr, env, warnings, ctx):
+    """ndims(A) — always returns a scalar."""
+    return Shape.scalar()
+
+
+def _handle_sub2ind(fname, expr, env, warnings, ctx):
+    """sub2ind(sz, i, j, ...) — returns same shape as index args."""
+    from analysis.eval_expr import eval_expr_ir
+    if len(expr.args) >= 2:
+        return eval_expr_ir(unwrap_arg(expr.args[1]), env, warnings, ctx)
+    return Shape.scalar()
+
+
+def _handle_horzcat_vertcat(fname, expr, env, warnings, ctx):
+    """horzcat(a, b, ...) / vertcat(a, b, ...) — concatenation builtins."""
+    from analysis.eval_expr import eval_expr_ir
+    if len(expr.args) == 0:
+        return Shape.matrix(0, 0)
+    shapes = [eval_expr_ir(unwrap_arg(a), env, warnings, ctx) for a in expr.args]
+    if fname == "horzcat":
+        # Horizontal: rows must match, cols add
+        r = shapes[0].rows if shapes[0].is_matrix() else (1 if shapes[0].is_scalar() else None)
+        c = 0
+        for s in shapes:
+            sc = s.cols if s.is_matrix() else (1 if s.is_scalar() else None)
+            c = add_dim(c, sc)
+        return Shape.matrix(r, c)
+    else:  # vertcat
+        c = shapes[0].cols if shapes[0].is_matrix() else (1 if shapes[0].is_scalar() else None)
+        r = 0
+        for s in shapes:
+            sr = s.rows if s.is_matrix() else (1 if s.is_scalar() else None)
+            r = add_dim(r, sr)
+        return Shape.matrix(r, c)
+
+
 # Dispatch table: builtin name -> handler function
 BUILTIN_HANDLERS = {
     'zeros': _handle_zeros_ones,
@@ -751,6 +883,34 @@ BUILTIN_HANDLERS = {
     'cat': _handle_cat,
     'eig': _handle_eig_single,
     'svd': _handle_svd_single,
+    # New domain builtins
+    'fft': _handle_fft,
+    'ifft': _handle_fft,
+    'fft2': _handle_fft,
+    'ifft2': _handle_fft,
+    'sparse': _handle_sparse_full,
+    'full': _handle_sparse_full,
+    'cross': _handle_cross,
+    'conv': _handle_conv,
+    'deconv': _handle_conv,
+    'polyfit': _handle_polyfit,
+    'polyval': _handle_polyval,
+    'meshgrid': _handle_meshgrid,
+    'struct': _handle_struct,
+    'fieldnames': _handle_fieldnames,
+    'ndims': _handle_ndims,
+    'sub2ind': _handle_sub2ind,
+    'horzcat': _handle_horzcat_vertcat,
+    'vertcat': _handle_horzcat_vertcat,
+    'pinv': _handle_inv,
+    'expm': _handle_passthrough,
+    'logm': _handle_passthrough,
+    'sqrtm': _handle_passthrough,
+    'circshift': _handle_passthrough,
+    'null': _handle_passthrough,
+    'orth': _handle_passthrough,
+    'isfield': _handle_scalar_predicate,
+    'interp1': _handle_polyval,
 }
 
 
