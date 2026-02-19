@@ -266,6 +266,10 @@ class MatlabParser:
         try:
             if tok.kind == "FOR":
                 return self.parse_for()
+            elif tok.kind == "PARFOR":
+                return self.parse_for(is_parfor=True)
+            elif tok.kind in ("GLOBAL", "PERSISTENT"):
+                return self.parse_global()
             elif tok.kind == "WHILE":
                 return self.parse_while()
             elif tok.kind == "IF":
@@ -423,9 +427,9 @@ class MatlabParser:
 
     # control flow
 
-    def parse_for(self) -> Any:
+    def parse_for(self, is_parfor: bool = False) -> Any:
         """Internal: ['for', ['var', i], ['range', start, end], body]"""
-        self.eat("FOR")
+        self.eat("PARFOR" if is_parfor else "FOR")
         var_tok = self.eat("ID")
         self.eat("=")
         start = self.parse_expr()
@@ -440,6 +444,17 @@ class MatlabParser:
         body = self.parse_block(until_kinds=("END",))
         self.eat("END")
         return ["for", ["var", var_tok.value], range_node, body]
+
+    def parse_global(self) -> Any:
+        """Parse global/persistent declaration: collect space-separated identifiers.
+        Internal: ['global_decl', line, [var_names]]
+        """
+        kw_tok = self.eat(self.current().kind)  # eat GLOBAL or PERSISTENT
+        line = kw_tok.line
+        var_names = []
+        while self.current().kind == "ID":
+            var_names.append(self.eat("ID").value)
+        return ["global_decl", line, var_names]
 
     def parse_while(self) -> Any:
         """Internal: ['while', cond, body]"""

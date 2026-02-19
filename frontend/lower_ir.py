@@ -221,6 +221,13 @@ def lower_stmt(stmt: Any) -> Stmt:
     if tag == "continue":
         return Continue(line=stmt[1])
 
+    if tag == "global_decl":
+        # ['global_decl', line, var_names]
+        line = stmt[1]
+        var_names = stmt[2]
+        raw_text = "global " + " ".join(var_names)
+        return OpaqueStmt(line=line, targets=var_names, raw=raw_text)
+
     if tag == "raw_stmt":
         # ['raw_stmt', line, tokens, raw_text]
         line = stmt[1]

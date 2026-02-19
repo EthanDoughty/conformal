@@ -22,11 +22,12 @@ class Token:
 
 # MATLAB keywords in the subset
 KEYWORDS = {
-    "for", "while", "if", "else", "elseif", "end",
+    "for", "parfor", "while", "if", "else", "elseif", "end",
     "switch", "case", "otherwise",
     "try", "catch",
     "break", "continue",
-    "function", "return"
+    "function", "return",
+    "global", "persistent",
 }
 
 # Simple tokenization rules (TRANSPOSE handled separately in context-sensitive lexer)

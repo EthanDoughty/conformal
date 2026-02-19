@@ -22,6 +22,20 @@ from ir import (
 )
 
 import analysis.diagnostics as diag
+
+# Command-syntax builtins whose OpaqueStmt should not emit W_UNSUPPORTED_STMT.
+# These are I/O, plotting, and display commands with no shape-relevant side effects.
+_SUPPRESSED_CMD_STMTS = {
+    "hold", "grid", "axis", "xlabel", "ylabel", "zlabel", "title", "legend",
+    "figure", "subplot", "close", "clf", "colorbar", "colormap", "cla",
+    "drawnow", "pause", "clear", "clearvars", "clc", "diary", "dbstop",
+    "keyboard", "set", "get", "plot", "plot3", "surf", "mesh", "contour",
+    "imagesc", "imshow", "bar", "histogram", "scatter", "stem", "stairs",
+    "disp", "fprintf", "warning", "error", "print", "saveas", "shg",
+    "box", "view", "lighting", "material", "camlight", "rotate3d",
+    "pan", "zoom", "format",
+    "global", "persistent",
+}
 from runtime.env import Env, join_env
 from runtime.shapes import Shape, Dim, add_dim, mul_dim
 from analysis.analysis_core import shapes_definitely_incompatible
@@ -551,8 +565,11 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         return env
 
     if isinstance(stmt, OpaqueStmt):
-        # Emit warning for unsupported statement
-        warnings.append(diag.warn_unsupported_stmt(stmt.line, stmt.raw, stmt.targets))
+        # Suppress W_UNSUPPORTED_STMT for known command-syntax builtins that have
+        # no shape-relevant side effects (plotting, I/O, global/persistent decls).
+        first_word = stmt.raw.split()[0] if stmt.raw.strip() else ""
+        if first_word not in _SUPPRESSED_CMD_STMTS:
+            warnings.append(diag.warn_unsupported_stmt(stmt.line, stmt.raw, stmt.targets))
         # Havoc all target variables (set to unknown)
         for target_name in stmt.targets:
             env.set(target_name, Shape.unknown())
