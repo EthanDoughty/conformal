@@ -860,7 +860,13 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
 
             multi_handler = BUILTIN_MULTI_HANDLERS.get(fname)
             if multi_handler is not None:
-                result = multi_handler(fname, stmt.expr, env, warnings, ctx, num_targets)
+                try:
+                    result = multi_handler(fname, stmt.expr, env, warnings, ctx, num_targets)
+                except ValueError:
+                    # Range/Colon args passed to builtins expecting plain Expr
+                    for target in stmt.targets:
+                        _bind(target, Shape.unknown())
+                    return env
                 if result is not None:
                     # Handler returned shapes -- bind them
                     for target, shape in zip(stmt.targets, result):

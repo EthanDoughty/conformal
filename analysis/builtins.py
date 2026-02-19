@@ -9,41 +9,55 @@ which builtins have explicit shape rules in the analyzer.
 # Builtins recognized as function calls (not array indexing).
 # Sorted alphabetically for maintainability.
 KNOWN_BUILTINS = {
-    "abs", "acos", "acosh", "accumarray", "all", "any", "asin", "asinh", "atan", "atan2", "atanh",
-    "blkdiag",
-    "cat", "ceil", "cell", "cell2mat", "cellfun", "char", "chol", "circshift", "complex",
-    "cond", "conj", "conv", "cos", "cosh", "cross", "cumprod", "cumsum",
-    "deal", "deconv", "delete", "det", "diag", "diff", "disp", "display", "double",
-    "eig", "error", "exp", "expm", "eye",
-    "false", "fclose", "fft", "fft2", "fieldnames", "find", "flipud", "fliplr",
-    "floor", "fopen", "fprintf", "fread", "fscanf", "full", "fwrite", "fclose",
-    "gamrnd",
-    "histogram", "horzcat", "hypot",
-    "ifft", "ifft2", "imag", "inf", "int16", "int2str", "int32", "int64", "int8",
-    "interp1", "interp2", "inv", "iscell", "ischar", "isempty", "isfield",
-    "isfinite", "isfloat", "isinf", "isinteger", "islogical", "isnan", "isnumeric",
-    "isreal", "isscalar", "issorted", "issparse", "isstring", "isstruct", "issymmetric", "isvector",
+    "abs", "acos", "acosh", "accumarray", "addpath", "all", "angle", "any", "arrayfun",
+    "asin", "asinh", "assert", "atan", "atan2", "atanh",
+    "bicgstab", "bitand", "bitshift", "bitor", "bitxor", "blkdiag",
+    "cat", "cd", "ceil", "cell", "cell2mat", "cell2struct", "cellfun", "cgs", "char", "chol",
+    "circshift", "class", "complex", "cond", "conj", "contains", "conv", "cos", "cosh",
+    "cross", "cumprod", "cumsum",
+    "datestr", "dbstack", "deal", "deblank", "dec2hex", "deconv", "deg2rad", "delete",
+    "det", "diag", "diff", "dir", "disp", "display", "double",
+    "eig", "eigs", "error", "eval", "exist", "exp", "expm", "eye",
+    "false", "fclose", "feval", "fft", "fft2", "fftshift", "fieldnames", "fileparts",
+    "find", "flipud", "fliplr", "floor", "fopen", "fprintf", "fread", "fscanf",
+    "full", "fullfile", "fwrite", "fclose",
+    "gamrnd", "getfield", "gmres",
+    "hex2dec", "hex2num", "histogram", "horzcat", "hypot",
+    "ifft", "ifft2", "ifftshift", "imag", "inf", "Inf", "input", "int16", "int2str",
+    "int32", "int64", "int8", "interp1", "interp2", "intersect", "inv", "iscell",
+    "ischar", "isempty", "isfield", "isfinite", "isfloat", "isinf", "isinteger",
+    "islogical", "ismember", "isnan", "isnumeric", "isreal", "isscalar", "issorted",
+    "issparse", "isstring", "isstruct", "issymmetric", "isvector",
     "kron",
-    "length", "linspace", "log", "log10", "log2", "logical", "logm", "lu",
-    "mat2str", "max", "mean", "median", "min", "mod", "mvnrnd",
-    "nan", "ndims", "nnz", "norm", "not", "null", "num2cell", "num2str", "numel",
-    "ones", "orth",
-    "pinv", "plot", "plot3", "polyfit", "polyval", "power", "prod",
+    "length", "linspace", "load", "log", "log10", "log2", "logical", "logm", "logspace",
+    "lower", "lsqnonneg", "lu",
+    "mat2cell", "mat2str", "max", "mean", "median", "min", "mink", "mkdir", "mod",
+    "mvnrnd",
+    "nan", "NaN", "nanmax", "nanmean", "nanmin", "nanstd", "nansum", "nargin",
+    "nargout", "ndgrid", "ndims", "nnz", "norm", "normpdf", "not", "null", "num2cell",
+    "num2hex", "num2str", "numel",
+    "ones", "orderfields", "orth",
+    "pcg", "permute", "pinv", "plot", "plot3", "poly", "polyfit", "polyval", "power",
+    "ppval", "print", "prod",
     "qr",
-    "rand", "randi", "randn", "rank", "rcond", "real", "rem", "repmat", "reshape", "round",
-    "setdiff", "sign", "sin", "single", "sinh", "size", "sort", "sparse", "sprank",
-    "sprintf", "sqrt", "sqrtm", "std", "string", "struct", "sub2ind", "sum", "svd",
-    "tan", "tanh", "trace", "transpose", "tril", "triu", "true",
-    "uint16", "uint32", "uint64", "uint8", "union", "unique",
+    "rad2deg", "rand", "randi", "randn", "rank", "rcond", "real", "regexp", "regexpi",
+    "rem", "repmat", "reshape", "rmpath", "roots", "round",
+    "save", "saveas", "setdiff", "setfield", "setxor", "sgolayfilt", "shiftdim", "squeeze",
+    "sign", "sin", "single", "sinh", "size", "sort", "sparse", "spline", "sprank",
+    "sprintf", "sqrt", "sqrtm", "std", "str2double", "strcmp", "strcmpi", "strfind",
+    "strjoin", "strmatch", "strrep", "strsplit", "strtrim", "string", "struct",
+    "struct2cell", "structfun", "sub2ind", "sum", "svd", "svds",
+    "tan", "tanh", "trace", "transpose", "tril", "triu", "true", "typecast",
+    "uint16", "uint32", "uint64", "uint8", "union", "unique", "unwrap", "upper",
     "var", "vertcat",
-    "warning",
+    "warning", "whos", "wishrnd",
     "xor",
     "zeros",
     # Graphics/plotting — recognized but no shape handler (I/O side effects only)
     "axis", "bar", "box", "cla", "clabel", "clf", "close", "colorbar", "colormap",
     "contour", "contourf", "drawnow", "errorbar", "figure", "fill", "gca", "gcf",
     "grid", "hold", "image", "imagesc", "legend", "light", "line", "loglog",
-    "mesh", "meshgrid", "patch", "pause", "pcolor", "quiver", "scatter",
+    "maxk", "mesh", "meshgrid", "patch", "pause", "pcolor", "quiver", "scatter",
     "semilogx", "semilogy", "set", "get", "shading", "stem", "subplot", "surf",
     "surface", "text", "title", "view", "xlabel", "xlim", "ylabel", "ylim",
     "zlabel", "zlim",
@@ -54,7 +68,7 @@ KNOWN_BUILTINS = {
 BUILTINS_WITH_SHAPE_RULES = {
     "zeros", "ones",      # matrix constructors (1/2-arg forms)
     "eye", "rand", "randn", "randi",  # matrix constructors (0/1/2-arg forms)
-    "true", "false", "nan", "inf",  # logical/special constructors (0/1/2-arg forms)
+    "true", "false", "nan", "inf", "NaN", "Inf",  # logical/special constructors (0/1/2-arg forms)
     "cell",               # cell array constructor (1/2-arg forms)
     "abs", "sqrt",        # element-wise (pass through shape)
     "sin", "cos", "tan", "asin", "acos", "atan",  # trig (pass through)
@@ -77,7 +91,7 @@ BUILTINS_WITH_SHAPE_RULES = {
     "trace", "rank", "cond", "rcond", "nnz", "sprank",  # more scalar queries
     "diag",               # shape-dependent (vector↔diagonal matrix)
     "inv",                # matrix inverse (pass-through for square)
-    "linspace",           # row vector generator
+    "linspace", "logspace",  # row vector generators
     "sum", "prod", "mean", "any", "all",  # reductions
     "median", "var", "std",  # more reductions
     "min", "max",         # min/max (reduction or elementwise)
@@ -94,6 +108,12 @@ BUILTINS_WITH_SHAPE_RULES = {
     "eig", "svd", "lu", "qr", "chol",  # linear algebra (single + multi-return)
     # Domain builtins with shape handlers
     "fft", "ifft", "fft2", "ifft2",  # FFT (same shape)
+    "fftshift", "ifftshift",  # FFT shift (passthrough)
+    "sgolayfilt", "squeeze", "unwrap", "deg2rad", "rad2deg", "angle",  # passthrough
+    "typecast",  # type cast (passthrough)
+    "nanmean", "nansum", "nanstd", "nanmin", "nanmax",  # NaN-ignoring reductions
+    "fullfile",  # string-returning path join
+    "strcmpi", "strcmp", "exist", "str2double",  # scalar predicates/queries
     "sparse", "full",  # sparsity (passthrough or constructor)
     "cross",  # cross product (passthrough first arg)
     "conv", "deconv",  # convolution (column vector)

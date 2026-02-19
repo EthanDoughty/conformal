@@ -185,6 +185,11 @@ def _handle_scalar_query(fname, expr, env, warnings, ctx):
     return None
 
 
+def _handle_scalar_nary(fname, expr, env, warnings, ctx):
+    """strcmp, strcmpi, exist, etc. -> always scalar regardless of arg count."""
+    return Shape.scalar()
+
+
 def _handle_reshape(fname, expr, env, warnings, ctx):
     """reshape(x, m, n) -> matrix[m x n] with conformability check."""
     from analysis.eval_expr import eval_expr_ir
@@ -770,7 +775,9 @@ BUILTIN_HANDLERS = {
     'true': _handle_matrix_constructor,
     'false': _handle_matrix_constructor,
     'nan': _handle_matrix_constructor,
+    'NaN': _handle_matrix_constructor,
     'inf': _handle_matrix_constructor,
+    'Inf': _handle_matrix_constructor,
     'size': _handle_size,
     'isscalar': _handle_scalar_predicate,
     'iscell': _handle_scalar_predicate,
@@ -841,6 +848,7 @@ BUILTIN_HANDLERS = {
     'diag': _handle_diag,
     'inv': _handle_inv,
     'linspace': _handle_linspace,
+    'logspace': _handle_linspace,
     'sum': _handle_reduction,
     'prod': _handle_reduction,
     'mean': _handle_reduction,
@@ -911,6 +919,30 @@ BUILTIN_HANDLERS = {
     'orth': _handle_passthrough,
     'isfield': _handle_scalar_predicate,
     'interp1': _handle_polyval,
+    # Group 2: string-returning builtins
+    'fullfile': _handle_string_return,
+    # Group 3: scalar-returning builtins
+    'strcmpi': _handle_scalar_nary,
+    'strcmp': _handle_scalar_nary,
+    'exist': _handle_scalar_nary,
+    'str2double': _handle_scalar_query,
+    # Group 4: passthrough builtins
+    'sgolayfilt': _handle_passthrough,
+    'squeeze': _handle_passthrough,
+    'fftshift': _handle_passthrough,
+    'ifftshift': _handle_passthrough,
+    'unwrap': _handle_passthrough,
+    'deg2rad': _handle_passthrough,
+    'rad2deg': _handle_passthrough,
+    'angle': _handle_passthrough,
+    # Group 5: type cast builtins
+    'typecast': _handle_type_cast,
+    # Group 6: NaN-ignoring reduction builtins
+    'nanmean': _handle_reduction,
+    'nansum': _handle_reduction,
+    'nanstd': _handle_reduction,
+    'nanmin': _handle_reduction,
+    'nanmax': _handle_reduction,
 }
 
 
@@ -1093,7 +1125,11 @@ def eval_builtin_call(fname: str, expr: Apply, env: Env, warnings: List['Diagnos
     """
     handler = BUILTIN_HANDLERS.get(fname)
     if handler:
-        result = handler(fname, expr, env, warnings, ctx)
+        try:
+            result = handler(fname, expr, env, warnings, ctx)
+        except ValueError:
+            # Range/Colon args passed to builtins expecting plain Expr
+            return Shape.unknown()
         if result is not None:
             return result
     # Known builtin without a matching shape rule: return unknown silently

@@ -33,7 +33,7 @@ KEYWORDS = {
 # Simple tokenization rules (TRANSPOSE handled separately in context-sensitive lexer)
 TOKEN_SPEC = [
     ("DQSTRING", r'"(?:[^"]|"")*"'), # double-quoted strings with "" escaping
-    ("NUMBER",   r"\d+(?:\.\d*)?"), # ints or floats
+    ("NUMBER",   r"\d+(?:\.\d*)?(?:[eE][+-]?\d+)?"), # ints, floats, scientific notation
     ("ID",       r"[A-Za-z_]\w*"), # identifiers
     ("CONTINUATION", r"\.\.\.[^\n]*\n?"),  # ... line continuation
     ("DOTOP",    r"\.\*|\./|\.\^|\.\'"), # element-wise ops and dot-transpose
