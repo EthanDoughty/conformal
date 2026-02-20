@@ -21,26 +21,31 @@ class Expr:
 class Var(Expr):
     """Variable reference."""
     name: str
+    col: int = 0
 
 @dataclass(frozen=True)
 class Const(Expr):
     """Numeric constant."""
     value: float
+    col: int = 0
 
 @dataclass(frozen=True)
 class StringLit(Expr):
     """String literal ('hello' or "world")."""
     value: str
+    col: int = 0
 
 @dataclass(frozen=True)
 class Neg(Expr):
     """Unary negation (-x)."""
     operand: Expr
+    col: int = 0
 
 @dataclass(frozen=True)
 class Not(Expr):
     """Logical NOT (~x)."""
     operand: Expr
+    col: int = 0
 
 @dataclass(frozen=True)
 class BinOp(Expr):
@@ -48,28 +53,33 @@ class BinOp(Expr):
     op: str
     left: Expr
     right: Expr
+    col: int = 0
 
 @dataclass(frozen=True)
 class Transpose(Expr):
     """Matrix transpose (A')."""
     operand: Expr
+    col: int = 0
 
 @dataclass(frozen=True)
 class FieldAccess(Expr):
     """Struct field access (s.field or s.a.b for nested)."""
     base: Expr
     field: str  # Outermost field in chain (nested as FieldAccess(FieldAccess(...), field))
+    col: int = 0
 
 @dataclass(frozen=True)
 class Lambda(Expr):
     """Anonymous function (@(x) x+1 or @(x,y) x+y)."""
     params: List[str]
     body: Expr
+    col: int = 0
 
 @dataclass(frozen=True)
 class FuncHandle(Expr):
     """Named function handle (@myFunc)."""
     name: str
+    col: int = 0
 
 @dataclass(frozen=True)
 class End(Expr):
@@ -77,7 +87,7 @@ class End(Expr):
 
     Examples: c{end}, A(end, :), c{end-1}
     """
-    pass
+    col: int = 0
 
 @dataclass(frozen=True)
 class Apply(Expr):
@@ -89,6 +99,7 @@ class Apply(Expr):
     """
     base: Expr
     args: List[IndexArg]
+    col: int = 0
 
 # ---- Indexing ----
 
@@ -100,18 +111,20 @@ class IndexArg:
 @dataclass(frozen=True)
 class Colon(IndexArg):
     """Colon indexing (:) - select all elements."""
-    pass
+    col: int = 0
 
 @dataclass(frozen=True)
 class Range(IndexArg):
     """Range indexing (start:end)."""
     start: Expr
     end: Expr
+    col: int = 0
 
 @dataclass(frozen=True)
 class IndexExpr(IndexArg):
     """Single expression index."""
     expr: Expr
+    col: int = 0
 
 # ---- Matrix literals ----
 
@@ -119,11 +132,13 @@ class IndexExpr(IndexArg):
 class MatrixLit(Expr):
     """Matrix literal ([1 2; 3 4])."""
     rows: List[List[Expr]]
+    col: int = 0
 
 @dataclass(frozen=True)
 class CellLit(Expr):
     """Cell array literal ({1, 2; 3, 4})."""
     rows: List[List[Expr]]
+    col: int = 0
 
 @dataclass(frozen=True)
 class CurlyApply(Expr):
@@ -134,6 +149,7 @@ class CurlyApply(Expr):
     """
     base: Expr
     args: List[IndexArg]
+    col: int = 0
 
 # ---- Statements / Program ----
 
@@ -147,6 +163,7 @@ class Assign(Stmt):
     """Assignment statement (x = expr)."""
     name: str
     expr: Expr
+    col: int = 0
 
 @dataclass(frozen=True)
 class StructAssign(Stmt):
@@ -157,6 +174,7 @@ class StructAssign(Stmt):
     base_name: str
     fields: List[str]  # Chain of field names
     expr: Expr
+    col: int = 0
 
 @dataclass(frozen=True)
 class CellAssign(Stmt):
@@ -167,6 +185,7 @@ class CellAssign(Stmt):
     base_name: str
     args: List[IndexArg]  # Curly index arguments
     expr: Expr
+    col: int = 0
 
 @dataclass(frozen=True)
 class IndexAssign(Stmt):
@@ -178,6 +197,7 @@ class IndexAssign(Stmt):
     base_name: str
     args: List[IndexArg]  # Parenthesized index arguments
     expr: Expr
+    col: int = 0
 
 @dataclass(frozen=True)
 class IndexStructAssign(Stmt):
@@ -191,11 +211,13 @@ class IndexStructAssign(Stmt):
     index_kind: str          # "paren" or "curly" -- which type of indexing
     fields: List[str]        # Field chain (["location"] or ["a", "b"] for nested)
     expr: Expr               # RHS expression
+    col: int = 0
 
 @dataclass(frozen=True)
 class ExprStmt(Stmt):
     """Expression statement (evaluates but doesn't assign)."""
     expr: Expr
+    col: int = 0
 
 @dataclass(frozen=True)
 class If(Stmt):
@@ -203,12 +225,14 @@ class If(Stmt):
     cond: Expr
     then_body: List[Stmt]
     else_body: List[Stmt]
+    col: int = 0
 
 @dataclass(frozen=True)
 class While(Stmt):
     """While loop statement."""
     cond: Expr
     body: List[Stmt]
+    col: int = 0
 
 @dataclass(frozen=True)
 class For(Stmt):
@@ -216,6 +240,7 @@ class For(Stmt):
     var: str
     it: Expr  # Iterator expression (typically a range like 1:n)
     body: List[Stmt]
+    col: int = 0
 
 @dataclass(frozen=True)
 class OpaqueStmt(Stmt):
@@ -226,6 +251,7 @@ class OpaqueStmt(Stmt):
     """
     targets: List[str]  # Variable names to havoc
     raw: str = ""  # Optional: original source text
+    col: int = 0
 
 @dataclass(frozen=True)
 class FunctionDef(Stmt):
@@ -239,6 +265,7 @@ class FunctionDef(Stmt):
     params: List[str]  # Input parameter names
     output_vars: List[str]  # Output variable names (empty for procedures)
     body: List[Stmt]
+    col: int = 0
 
 @dataclass(frozen=True)
 class AssignMulti(Stmt):
@@ -248,11 +275,12 @@ class AssignMulti(Stmt):
     """
     targets: List[str]  # Variable names to assign
     expr: Expr  # Expression (must evaluate to multiple values)
+    col: int = 0
 
 @dataclass(frozen=True)
 class Return(Stmt):
     """Return statement (early exit from function). MATLAB return has no value."""
-    pass
+    col: int = 0
 
 @dataclass(frozen=True)
 class IfChain(Stmt):
@@ -265,6 +293,7 @@ class IfChain(Stmt):
     conditions: List[Expr]
     bodies: List[List[Stmt]]
     else_body: List[Stmt]
+    col: int = 0
 
 @dataclass(frozen=True)
 class Switch(Stmt):
@@ -272,22 +301,24 @@ class Switch(Stmt):
     expr: Expr
     cases: List[Tuple[Expr, List[Stmt]]]
     otherwise: List[Stmt]
+    col: int = 0
 
 @dataclass(frozen=True)
 class Try(Stmt):
     """Try/catch error handling."""
     try_body: List[Stmt]
     catch_body: List[Stmt]
+    col: int = 0
 
 @dataclass(frozen=True)
 class Break(Stmt):
     """Break statement (exit loop)."""
-    pass
+    col: int = 0
 
 @dataclass(frozen=True)
 class Continue(Stmt):
     """Continue statement (skip to next iteration)."""
-    pass
+    col: int = 0
 
 @dataclass(frozen=True)
 class Program:

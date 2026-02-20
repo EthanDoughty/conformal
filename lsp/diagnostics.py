@@ -56,8 +56,9 @@ def to_lsp_diagnostic(d: ConformalDiagnostic, source_lines: list[str], uri: str)
     else:
         end_char = 0
 
+    start_char = d.col - 1 if d.col > 0 else 0  # LSP uses 0-based columns
     range_ = types.Range(
-        start=types.Position(line=line_num, character=0),
+        start=types.Position(line=line_num, character=start_char),
         end=types.Position(line=line_num, character=end_char),
     )
 

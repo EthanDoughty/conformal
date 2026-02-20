@@ -50,6 +50,8 @@ class Diagnostic:
     code: str
     message: str
     related_line: Optional[int] = None
+    col: int = 0
+    related_col: Optional[int] = None
 
     def __str__(self) -> str:
         """Backward-compatible string rendering for test expectations."""

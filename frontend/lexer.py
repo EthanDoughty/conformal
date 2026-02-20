@@ -19,6 +19,7 @@ class Token:
     value: str # original text
     pos: int # character offset for error messages
     line: int  # line number
+    col: int = 0  # 1-based column offset (0 = unknown)
 
 # MATLAB keywords in the subset
 KEYWORDS = {
@@ -62,6 +63,7 @@ def lex(src: str) -> List[Token]:
     tokens: List[Token] = []
     line = 1
     pos = 0
+    last_newline_pos = -1  # So pos 0 → col 1 (1-based)
     prev_kind = None  # Track previous token for context-sensitive quote handling
     bracket_depth = 0  # Track []/{ } nesting for string-vs-transpose in matrix/cell context
     saw_space = False  # Whitespace since last token (for matrix context disambiguation)
@@ -78,31 +80,31 @@ def lex(src: str) -> List[Token]:
 
         if kind == "DQSTRING":
             content = value[1:-1].replace('""', '"')
-            tokens.append(Token("STRING", content, start_pos, line))
+            tokens.append(Token("STRING", content, start_pos, line, start_pos - last_newline_pos))
             prev_kind = "STRING"
             saw_space = False
             pos = m.end()
         elif kind == "NUMBER":
-            tokens.append(Token("NUMBER", value, start_pos, line))
+            tokens.append(Token("NUMBER", value, start_pos, line, start_pos - last_newline_pos))
             prev_kind = "NUMBER"
             saw_space = False
             pos = m.end()
         elif kind == "ID":
             if value in KEYWORDS:
-                tokens.append(Token(value.upper(), value, start_pos, line))
+                tokens.append(Token(value.upper(), value, start_pos, line, start_pos - last_newline_pos))
                 prev_kind = value.upper()
             else:
-                tokens.append(Token("ID", value, start_pos, line))
+                tokens.append(Token("ID", value, start_pos, line, start_pos - last_newline_pos))
                 prev_kind = "ID"
             saw_space = False
             pos = m.end()
         elif kind == "DOTOP":
-            tokens.append(Token(kind, value, start_pos, line))
+            tokens.append(Token(kind, value, start_pos, line, start_pos - last_newline_pos))
             prev_kind = kind
             saw_space = False
             pos = m.end()
         elif kind == "DOT":
-            tokens.append(Token("DOT", value, start_pos, line))
+            tokens.append(Token("DOT", value, start_pos, line, start_pos - last_newline_pos))
             prev_kind = "DOT"
             saw_space = False
             pos = m.end()
@@ -111,13 +113,14 @@ def lex(src: str) -> List[Token]:
                 bracket_depth += 1
             elif value == "}":
                 bracket_depth = max(0, bracket_depth - 1)
-            tokens.append(Token(value, value, start_pos, line))
+            tokens.append(Token(value, value, start_pos, line, start_pos - last_newline_pos))
             prev_kind = value
             saw_space = False
             pos = m.end()
         elif kind == "CONTINUATION":
             if "\n" in value:
                 line += 1
+                last_newline_pos = start_pos + value.rindex('\n')
             pos = m.end()
             # Don't update prev_kind: preserves transpose/string context
         elif kind == "QUOTE":
@@ -127,7 +130,7 @@ def lex(src: str) -> List[Token]:
             if is_transpose and bracket_depth > 0 and saw_space:
                 is_transpose = False
             if is_transpose:
-                tokens.append(Token("TRANSPOSE", value, start_pos, line))
+                tokens.append(Token("TRANSPOSE", value, start_pos, line, start_pos - last_newline_pos))
                 prev_kind = "TRANSPOSE"
                 saw_space = False
                 pos = m.end()
@@ -142,7 +145,7 @@ def lex(src: str) -> List[Token]:
                     raise SyntaxError(f"Unterminated string at line {line}, pos {start_pos}")
                 # Extract string content (between quotes)
                 string_content = src[start_pos+1:end_pos]
-                tokens.append(Token("STRING", string_content, start_pos, line))
+                tokens.append(Token("STRING", string_content, start_pos, line, start_pos - last_newline_pos))
                 prev_kind = "STRING"
                 saw_space = False
                 pos = end_pos + 1  # Skip past closing quote
@@ -151,14 +154,15 @@ def lex(src: str) -> List[Token]:
                 bracket_depth += 1
             elif value == "]":
                 bracket_depth = max(0, bracket_depth - 1)
-            tokens.append(Token(value, value, start_pos, line))
+            tokens.append(Token(value, value, start_pos, line, start_pos - last_newline_pos))
             prev_kind = value
             saw_space = False
             pos = m.end()
         elif kind == "NEWLINE":
-            tokens.append(Token("NEWLINE", value, start_pos, line))
+            tokens.append(Token("NEWLINE", value, start_pos, line, start_pos - last_newline_pos))
             if value == "\n":
                 line += 1
+                last_newline_pos = start_pos
             prev_kind = "NEWLINE"
             saw_space = False
             pos = m.end()
@@ -171,5 +175,5 @@ def lex(src: str) -> List[Token]:
         else:
             pos = m.end()
 
-    tokens.append(Token("EOF", "", len(src), line))
+    tokens.append(Token("EOF", "", len(src), line, len(src) - last_newline_pos))
     return tokens
