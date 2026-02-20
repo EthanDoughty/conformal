@@ -58,6 +58,7 @@ def lex(src: str) -> List[Token]:
     - After ID/)/]/NUMBER/TRANSPOSE → ' is TRANSPOSE
     - After OP/=/(/,/;/[/NEWLINE/start/keywords → ' starts STRING
     """
+    src = src.replace('\r\n', '\n').replace('\r', '\n')
     tokens: List[Token] = []
     line = 1
     pos = 0
