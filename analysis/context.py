@@ -3,6 +3,7 @@
 """Analysis context, function signatures, and control-flow exceptions."""
 
 from __future__ import annotations
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import List, Dict, Set, TYPE_CHECKING
 
@@ -50,3 +51,18 @@ class AnalysisContext:
     value_ranges: Dict[str, 'Interval'] = field(default_factory=dict)  # var_name -> integer interval (for bounds checking)
     external_functions: Dict[str, 'ExternalSignature'] = field(default_factory=dict)  # fname -> signature from sibling .m files
     analyzing_external: Set[str] = field(default_factory=set)  # Cross-file recursion guard (filename stems)
+
+    @contextmanager
+    def snapshot_scope(self):
+        """Save and restore scope-sensitive fields around function/lambda body analysis."""
+        saved_constraints = set(self.constraints)
+        saved_provenance = dict(self.constraint_provenance)
+        saved_scalars = dict(self.scalar_bindings)
+        saved_ranges = dict(self.value_ranges)
+        try:
+            yield
+        finally:
+            self.constraints = saved_constraints
+            self.constraint_provenance = saved_provenance
+            self.scalar_bindings = saved_scalars
+            self.value_ranges = saved_ranges

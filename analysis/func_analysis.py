@@ -10,7 +10,6 @@ from ir import IndexArg, IndexExpr
 import analysis.diagnostics as diag
 from analysis.context import FunctionSignature, EarlyReturn, EarlyBreak, EarlyContinue, AnalysisContext
 from analysis.dim_extract import expr_to_dim_ir
-from analysis.constraints import snapshot_constraints
 from runtime.env import Env, widen_env
 from runtime.shapes import Shape
 
@@ -111,64 +110,52 @@ def analyze_function_call(
     # Mark function as currently being analyzed
     ctx.analyzing_functions.add(func_name)
 
-    # Snapshot constraints, scalar_bindings, and value_ranges before analyzing function body (for isolation)
-    baseline_constraints = snapshot_constraints(ctx)
-    baseline_provenance = dict(ctx.constraint_provenance)
-    baseline_scalar_bindings = dict(ctx.scalar_bindings)
-    baseline_value_ranges = dict(ctx.value_ranges)
-
     try:
-        # Analyze function body with fresh workspace
-        func_env = Env()
-        func_warnings: List['Diagnostic'] = []
+        with ctx.snapshot_scope():
+            # Analyze function body with fresh workspace
+            func_env = Env()
+            func_warnings: List['Diagnostic'] = []
 
-        # Bind parameters to argument shapes + set up dimension aliases
-        for param_name, arg, arg_shape in zip(sig.params, args, arg_shapes):
-            func_env.set(param_name, arg_shape)
+            # Bind parameters to argument shapes + set up dimension aliases
+            for param_name, arg, arg_shape in zip(sig.params, args, arg_shapes):
+                func_env.set(param_name, arg_shape)
 
-            # Dimension aliasing: extract dimension from arg expression (Const, Var, etc.)
-            if isinstance(arg, IndexExpr):
-                caller_dim = expr_to_dim_ir(arg.expr, env)
-                if caller_dim is not None:
-                    func_env.dim_aliases[param_name] = caller_dim
+                # Dimension aliasing: extract dimension from arg expression (Const, Var, etc.)
+                if isinstance(arg, IndexExpr):
+                    caller_dim = expr_to_dim_ir(arg.expr, env)
+                    if caller_dim is not None:
+                        func_env.dim_aliases[param_name] = caller_dim
 
-        # Analyze function body (inherit fixpoint setting)
-        try:
-            for stmt in sig.body:
-                analyze_stmt_ir(stmt, func_env, func_warnings, ctx)
-        except EarlyReturn:
-            pass  # Function returned early — outputs are current env values
+            # Analyze function body (inherit fixpoint setting)
+            try:
+                for stmt in sig.body:
+                    analyze_stmt_ir(stmt, func_env, func_warnings, ctx)
+            except EarlyReturn:
+                pass  # Function returned early — outputs are current env values
 
-        # Extract return values from output variables
-        result_shapes = []
-        for out_var in sig.output_vars:
-            shape = func_env.get(out_var)
-            # Convert bottom (unset output var) to unknown
-            if shape.is_bottom():
-                result_shapes.append(Shape.unknown())
-            else:
-                result_shapes.append(shape)
+            # Extract return values from output variables
+            result_shapes = []
+            for out_var in sig.output_vars:
+                shape = func_env.get(out_var)
+                # Convert bottom (unset output var) to unknown
+                if shape.is_bottom():
+                    result_shapes.append(Shape.unknown())
+                else:
+                    result_shapes.append(shape)
 
-        # Return output shapes (or single unknown if no outputs)
-        result = result_shapes if result_shapes else [Shape.unknown()]
+            # Return output shapes (or single unknown if no outputs)
+            result = result_shapes if result_shapes else [Shape.unknown()]
 
-        # Store in cache before formatting warnings
-        ctx.analysis_cache[cache_key] = (result, list(func_warnings))
+            # Store in cache before formatting warnings
+            ctx.analysis_cache[cache_key] = (result, list(func_warnings))
 
-        # Format warnings for current call site
-        for func_warn in func_warnings:
-            formatted = _format_dual_location_warning(func_warn, func_name, line)
-            warnings.append(formatted)
+            # Format warnings for current call site
+            for func_warn in func_warnings:
+                formatted = _format_dual_location_warning(func_warn, func_name, line)
+                warnings.append(formatted)
 
-        return result
-
+            return result
     finally:
-        # Restore constraints, scalar_bindings, and value_ranges (discard function-internal state)
-        ctx.constraints = set(baseline_constraints)
-        ctx.constraint_provenance = baseline_provenance
-        ctx.scalar_bindings = baseline_scalar_bindings
-        ctx.value_ranges = baseline_value_ranges
-
         # Remove function from analyzing set
         ctx.analyzing_functions.discard(func_name)
 
@@ -235,53 +222,45 @@ def analyze_external_function_call(
         cached_shapes, _ = ctx.analysis_cache[cache_key]
         return list(cached_shapes)
 
-    # Registry swap + recursion guard + constraint isolation
+    # Registry swap + recursion guard (site-specific; saved/restored outside snapshot_scope)
     saved_registry = ctx.function_registry
     ctx.function_registry = dict(subfunctions)
     ctx.analyzing_external.add(fname)
     ctx.analyzing_functions.add(fname)  # So return statements work correctly inside external bodies
-    baseline_constraints = snapshot_constraints(ctx)
-    baseline_provenance = dict(ctx.constraint_provenance)
-    baseline_scalar_bindings = dict(ctx.scalar_bindings)
-    baseline_value_ranges = dict(ctx.value_ranges)
 
     try:
-        func_env = Env()
-        func_warnings: List['Diagnostic'] = []  # Suppressed — not propagated to caller
+        with ctx.snapshot_scope():
+            func_env = Env()
+            func_warnings: List['Diagnostic'] = []  # Suppressed — not propagated to caller
 
-        # Bind parameters with dimension aliasing
-        for param_name, arg, arg_shape in zip(primary_sig.params, args, arg_shapes):
-            func_env.set(param_name, arg_shape)
-            if isinstance(arg, IndexExpr):
-                caller_dim = expr_to_dim_ir(arg.expr, env)
-                if caller_dim is not None:
-                    func_env.dim_aliases[param_name] = caller_dim
+            # Bind parameters with dimension aliasing
+            for param_name, arg, arg_shape in zip(primary_sig.params, args, arg_shapes):
+                func_env.set(param_name, arg_shape)
+                if isinstance(arg, IndexExpr):
+                    caller_dim = expr_to_dim_ir(arg.expr, env)
+                    if caller_dim is not None:
+                        func_env.dim_aliases[param_name] = caller_dim
 
-        # Analyze function body
-        try:
-            for stmt in primary_sig.body:
-                analyze_stmt_ir(stmt, func_env, func_warnings, ctx)
-        except EarlyReturn:
-            pass
+            # Analyze function body
+            try:
+                for stmt in primary_sig.body:
+                    analyze_stmt_ir(stmt, func_env, func_warnings, ctx)
+            except EarlyReturn:
+                pass
 
-        # Extract return values
-        result_shapes = []
-        for out_var in primary_sig.output_vars:
-            shape = func_env.get(out_var)
-            result_shapes.append(Shape.unknown() if shape.is_bottom() else shape)
+            # Extract return values
+            result_shapes = []
+            for out_var in primary_sig.output_vars:
+                shape = func_env.get(out_var)
+                result_shapes.append(Shape.unknown() if shape.is_bottom() else shape)
 
-        result = result_shapes if result_shapes else [Shape.unknown()]
-        ctx.analysis_cache[cache_key] = (result, [])
-        return result
-
+            result = result_shapes if result_shapes else [Shape.unknown()]
+            ctx.analysis_cache[cache_key] = (result, [])
+            return result
     finally:
         ctx.function_registry = saved_registry
         ctx.analyzing_external.discard(fname)
         ctx.analyzing_functions.discard(fname)
-        ctx.constraints = set(baseline_constraints)
-        ctx.constraint_provenance = baseline_provenance
-        ctx.scalar_bindings = baseline_scalar_bindings
-        ctx.value_ranges = baseline_value_ranges
 
 
 def _analyze_loop_body(body: list, env: Env, warnings: List['Diagnostic'], ctx: AnalysisContext) -> None:

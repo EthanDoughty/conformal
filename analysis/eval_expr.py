@@ -376,43 +376,31 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List['Diagnostic'], ctx: Analys
                         # Analyze lambda body
                         ctx.analyzing_lambdas.add(callable_id)
 
-                        # Snapshot constraints, scalar_bindings, and value_ranges before analyzing lambda body (for isolation)
-                        from analysis.constraints import snapshot_constraints
-                        baseline_constraints = snapshot_constraints(ctx)
-                        baseline_provenance = dict(ctx.constraint_provenance)
-                        baseline_scalar_bindings = dict(ctx.scalar_bindings)
-                        baseline_value_ranges = dict(ctx.value_ranges)
-
                         try:
-                            # Create env from closure snapshot + bind params
-                            call_env = closure_env.copy()
-                            # Allow self-reference for recursion detection
-                            # (enables f = @(x) f(x-1) to trigger recursion guard)
-                            call_env.set(base_var_name, Shape.function_handle(lambda_ids=frozenset({callable_id})))
-                            for i, (param, arg_shape) in enumerate(zip(params, arg_shapes)):
-                                call_env.set(param, arg_shape)
-                                # Dimension aliasing: extract dimension from arg expression
-                                arg = expr.args[i]
-                                if isinstance(arg, IndexExpr):
-                                    caller_dim = expr_to_dim_ir(arg.expr, env)
-                                    if caller_dim is not None:
-                                        call_env.dim_aliases[param] = caller_dim
+                            with ctx.snapshot_scope():
+                                # Create env from closure snapshot + bind params
+                                call_env = closure_env.copy()
+                                # Allow self-reference for recursion detection
+                                # (enables f = @(x) f(x-1) to trigger recursion guard)
+                                call_env.set(base_var_name, Shape.function_handle(lambda_ids=frozenset({callable_id})))
+                                for i, (param, arg_shape) in enumerate(zip(params, arg_shapes)):
+                                    call_env.set(param, arg_shape)
+                                    # Dimension aliasing: extract dimension from arg expression
+                                    arg = expr.args[i]
+                                    if isinstance(arg, IndexExpr):
+                                        caller_dim = expr_to_dim_ir(arg.expr, env)
+                                        if caller_dim is not None:
+                                            call_env.dim_aliases[param] = caller_dim
 
-                            # Analyze body expression
-                            lambda_warnings = []
-                            result = eval_expr_ir(body_expr, call_env, lambda_warnings, ctx)
+                                # Analyze body expression
+                                lambda_warnings = []
+                                result = eval_expr_ir(body_expr, call_env, lambda_warnings, ctx)
 
-                            # Cache result
-                            ctx.analysis_cache[cache_key] = (result, lambda_warnings)
-                            warnings.extend(lambda_warnings)
-                            results.append(result)
+                                # Cache result
+                                ctx.analysis_cache[cache_key] = (result, lambda_warnings)
+                                warnings.extend(lambda_warnings)
+                                results.append(result)
                         finally:
-                            # Restore constraints, scalar_bindings, and value_ranges (discard lambda-internal state)
-                            ctx.constraints = set(baseline_constraints)
-                            ctx.constraint_provenance = baseline_provenance
-                            ctx.scalar_bindings = baseline_scalar_bindings
-                            ctx.value_ranges = baseline_value_ranges
-
                             ctx.analyzing_lambdas.discard(callable_id)
 
                     elif callable_id in ctx._handle_registry:
