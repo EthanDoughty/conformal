@@ -3,6 +3,7 @@
 """Lower list-based syntax AST to typed IR AST."""
 
 from __future__ import annotations
+import sys
 from typing import Any, List
 from ir.ir import *
 
@@ -248,11 +249,17 @@ def lower_stmt(stmt: Any) -> Stmt:
         return OpaqueStmt(line=line, targets=targets, raw=raw_text)
 
     if tag == "skip":
-        # Skip empty statements
+        # Intentional no-op: parser emits 'skip' for continuation lines and empty statements.
+        # Returning a harmless ExprStmt(Const(0.0)) here is correct; it produces no warnings
+        # and is filtered out during analysis like any other side-effect-free expression.
         return ExprStmt(line=0, expr=Const(line=0, value=0.0))
 
-    # Fallback for unexpected statement types
-    return ExprStmt(line=0, expr=Const(line=0, value=0.0))
+    # Fallback for unrecognized statement tags: use OpaqueStmt so the analyzer
+    # havoces any written targets and emits W_UNSUPPORTED_STMT, which is the
+    # correct conservative recovery path for unknown statement forms.
+    tag_line = stmt[1] if len(stmt) > 1 and isinstance(stmt[1], int) else 0
+    print(f"Warning: lower_stmt: unrecognized tag {tag!r}", file=sys.stderr)
+    return OpaqueStmt(line=tag_line, targets=[], raw=f"<unrecognized: {tag}>")
 
 
 def lower_expr(expr: Any) -> Expr:
@@ -315,8 +322,10 @@ def lower_expr(expr: Any) -> Expr:
     if tag in {"+", "-", "*", "/", ".*", "./", "==", "~=", "<", "<=", ">", ">=", "&&", "||", ":", "^", ".^", "\\", "&", "|"}:
         return BinOp(line=expr[1], op=tag, left=lower_expr(expr[2]), right=lower_expr(expr[3]))
 
-    # Fallback for unexpected expression types
-    return Const(line=0, value=0.0)
+    # Unrecognized expression tags cannot be soundly replaced with any constant.
+    # Raise immediately so the bug surfaces in tests rather than silently
+    # injecting a 0.0 that changes program semantics.
+    raise ValueError(f"lower_expr: unrecognized tag {tag!r}")
 
 
 def lower_index_arg(index_arg: Any) -> IndexArg:
