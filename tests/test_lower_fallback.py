@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from frontend.lower_ir import lower_expr, lower_stmt
 from ir.ir import OpaqueStmt
+from runtime.shapes import Shape, ShapeKind
 
 
 def test_lower_expr_raises_on_unknown_tag():
@@ -61,8 +62,52 @@ def test_lower_stmt_skip_unchanged():
     print("PASS: lower_stmt 'skip' handler is unchanged")
 
 
+def test_shapekind_str_mixin_backward_compat():
+    """ShapeKind.SCALAR == "scalar" must be True due to str mixin."""
+    assert ShapeKind.SCALAR == "scalar", "str mixin backward compat broken"
+    assert ShapeKind.MATRIX == "matrix", "str mixin backward compat broken"
+    assert ShapeKind.STRING == "string", "str mixin backward compat broken"
+    assert ShapeKind.STRUCT == "struct", "str mixin backward compat broken"
+    assert ShapeKind.FUNCTION_HANDLE == "function_handle", "str mixin backward compat broken"
+    assert ShapeKind.CELL == "cell", "str mixin backward compat broken"
+    assert ShapeKind.UNKNOWN == "unknown", "str mixin backward compat broken"
+    assert ShapeKind.BOTTOM == "bottom", "str mixin backward compat broken"
+    print("PASS: ShapeKind str mixin backward compatibility works")
+
+
+def test_shape_kind_string_coercion():
+    """Shape(kind='scalar') still works via __post_init__ coercion."""
+    s = Shape(kind="scalar")
+    assert s.kind == ShapeKind.SCALAR, "Coercion from string 'scalar' failed"
+    assert isinstance(s.kind, ShapeKind), "kind should be ShapeKind enum, not bare str"
+    print("PASS: Shape(kind='scalar') coerces to ShapeKind.SCALAR")
+
+
+def test_shape_kind_typo_raises():
+    """Shape(kind='matirx') must raise ValueError (typo detection)."""
+    try:
+        Shape(kind="matirx")
+        assert False, "Expected ValueError but no exception was raised"
+    except ValueError:
+        pass
+    print("PASS: Shape(kind='matirx') raises ValueError")
+
+
+def test_is_empty_matrix():
+    """Shape.is_empty_matrix() predicate works correctly."""
+    assert not Shape.scalar().is_empty_matrix(), "scalar should not be empty matrix"
+    assert not Shape.matrix(3, 4).is_empty_matrix(), "3x4 matrix should not be empty matrix"
+    assert not Shape.unknown().is_empty_matrix(), "unknown should not be empty matrix"
+    assert Shape.matrix(0, 0).is_empty_matrix(), "0x0 matrix should be empty matrix"
+    print("PASS: Shape.is_empty_matrix() predicate is correct")
+
+
 if __name__ == '__main__':
     test_lower_expr_raises_on_unknown_tag()
     test_lower_stmt_returns_opaque_on_unknown_tag()
     test_lower_stmt_skip_unchanged()
+    test_shapekind_str_mixin_backward_compat()
+    test_shape_kind_string_coercion()
+    test_shape_kind_typo_raises()
+    test_is_empty_matrix()
     print("\nAll tests passed.")

@@ -7,6 +7,7 @@ Defines the Shape type and dimension operations used throughout the analyzer.
 
 from __future__ import annotations
 from dataclasses import dataclass
+from enum import Enum
 from typing import Optional, Union
 
 from runtime.symdim import SymDim
@@ -19,6 +20,22 @@ from runtime.symdim import SymDim
 Dim = Union[int, SymDim, None]
 
 
+class ShapeKind(str, Enum):
+    """Enumeration of all valid shape kinds.
+
+    Inherits from str so that ShapeKind.SCALAR == "scalar" is True,
+    preserving backward compatibility with all existing string comparisons.
+    """
+    SCALAR = "scalar"
+    MATRIX = "matrix"
+    STRING = "string"
+    STRUCT = "struct"
+    FUNCTION_HANDLE = "function_handle"
+    CELL = "cell"
+    UNKNOWN = "unknown"
+    BOTTOM = "bottom"
+
+
 @dataclass(frozen=True)
 class Shape:
     """Abstract shape for MATLAB values.
@@ -26,7 +43,16 @@ class Shape:
     Represents one of: scalar, matrix[rows x cols], string, struct, function_handle, unknown, or bottom.
     Matrix dimensions can be concrete integers, symbolic names, or None.
     """
-    kind: str
+    kind: ShapeKind
+
+    def __post_init__(self):
+        """Coerce string kind values to ShapeKind enum for backward compatibility.
+
+        This allows Shape(kind="scalar") to continue working while also catching
+        typos like Shape(kind="matirx") with a ValueError at construction time.
+        """
+        if isinstance(self.kind, str) and not isinstance(self.kind, ShapeKind):
+            object.__setattr__(self, 'kind', ShapeKind(self.kind))
     rows: Optional[Dim] = None
     cols: Optional[Dim] = None
     _fields: tuple = ()  # For struct shapes: tuple of (field_name, Shape) pairs (sorted)
@@ -38,27 +64,27 @@ class Shape:
     @staticmethod
     def scalar() -> "Shape":
         """Create a scalar shape."""
-        return Shape(kind="scalar")
+        return Shape(kind=ShapeKind.SCALAR)
 
     @staticmethod
     def matrix(rows: Dim, cols: Dim) -> "Shape":
         """Create a matrix shape with given dimensions."""
-        return Shape(kind="matrix", rows=rows, cols=cols)
+        return Shape(kind=ShapeKind.MATRIX, rows=rows, cols=cols)
 
     @staticmethod
     def unknown() -> "Shape":
         """Create an unknown shape (for error cases)."""
-        return Shape(kind="unknown")
+        return Shape(kind=ShapeKind.UNKNOWN)
 
     @staticmethod
     def bottom() -> "Shape":
         """Create a bottom shape (no information / unbound variable)."""
-        return Shape(kind="bottom")
+        return Shape(kind=ShapeKind.BOTTOM)
 
     @staticmethod
     def string() -> "Shape":
         """Create a string shape (char array literal)."""
-        return Shape(kind="string")
+        return Shape(kind=ShapeKind.STRING)
 
     @staticmethod
     def struct(fields: dict) -> "Shape":
@@ -70,7 +96,7 @@ class Shape:
         Returns:
             Struct shape with fields stored as sorted tuple for hashability
         """
-        return Shape(kind="struct", _fields=tuple(sorted(fields.items())))
+        return Shape(kind=ShapeKind.STRUCT, _fields=tuple(sorted(fields.items())))
 
     @staticmethod
     def cell(rows: Dim, cols: Dim, elements: Optional[dict] = None) -> "Shape":
@@ -88,7 +114,7 @@ class Shape:
             elem_tuple = None
         else:
             elem_tuple = tuple(sorted(elements.items()))
-        return Shape(kind="cell", rows=rows, cols=cols, _elements=elem_tuple)
+        return Shape(kind=ShapeKind.CELL, rows=rows, cols=cols, _elements=elem_tuple)
 
     @staticmethod
     def function_handle(lambda_ids=None) -> "Shape":
@@ -97,7 +123,7 @@ class Shape:
         Args:
             lambda_ids: Optional frozenset of lambda/handle IDs for precise analysis
         """
-        return Shape(kind="function_handle", _lambda_ids=lambda_ids)
+        return Shape(kind=ShapeKind.FUNCTION_HANDLE, _lambda_ids=lambda_ids)
 
     @property
     def fields_dict(self) -> dict:
@@ -148,6 +174,10 @@ class Shape:
         Strings are numeric because MATLAB treats char arrays as numeric values.
         """
         return self.kind in ("scalar", "matrix", "string")
+
+    def is_empty_matrix(self) -> bool:
+        """Check if this is a 0x0 matrix (MATLAB's universal empty initializer [])."""
+        return self.kind == ShapeKind.MATRIX and self.rows == 0 and self.cols == 0
 
     # Pretty print / debug
 

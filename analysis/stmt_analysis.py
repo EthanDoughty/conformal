@@ -333,8 +333,7 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
             return env
         elif not base_shape.is_cell():
             # MATLAB's [] is a universal empty initializer — promote matrix[0x0] to cell silently
-            _is_empty_matrix = (base_shape.kind == 'matrix' and base_shape.rows == 0 and base_shape.cols == 0)
-            if _is_empty_matrix:
+            if base_shape.is_empty_matrix():
                 env.set(stmt.base_name, Shape.cell(None, None, elements=None))
                 # Fall through to cell assignment logic below
             else:
@@ -395,10 +394,9 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         # scalar: MATLAB grows scalars to vectors on indexed assign (x = 5; x(2) = 10)
         # struct: MATLAB creates struct arrays on indexed assign (s(1).field = val)
         # matrix[0x0]: MATLAB's [] is a universal empty initializer
-        _is_empty_matrix = (base_shape.kind == 'matrix' and base_shape.rows == 0 and base_shape.cols == 0)
         _is_indexable = (base_shape.is_matrix() or base_shape.is_unknown()
                          or base_shape.is_scalar() or base_shape.is_struct()
-                         or _is_empty_matrix)
+                         or base_shape.is_empty_matrix())
         if not _is_indexable:
             warnings.append(diag.warn_index_assign_type_mismatch(
                 stmt.line, stmt.base_name, base_shape))

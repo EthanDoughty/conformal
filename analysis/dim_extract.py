@@ -216,13 +216,12 @@ def _update_struct_field(
     # If base is not a struct, warn and treat as fresh struct
     # Suppress warning for unknown base — unknown subsumes struct (lattice top)
     # Suppress warning for matrix[0x0] — MATLAB's [] is a universal empty initializer
-    _is_empty_matrix = (base_shape.kind == 'matrix' and base_shape.rows == 0 and base_shape.cols == 0)
     if not base_shape.is_struct():
         if base_shape.is_unknown():
             # Unknown base: keep as unknown — we can't know its field set,
             # so creating a concrete struct would cause cascading W_STRUCT_FIELD_NOT_FOUND
             return Shape.unknown()
-        if not _is_empty_matrix:
+        if not base_shape.is_empty_matrix():
             warnings.append(diag.warn_field_access_non_struct(line, base_shape))
         # Still create struct (best-effort recovery for empty matrix, scalar, etc.)
         result = value_shape
