@@ -157,6 +157,66 @@ def _handle_cell_constructor(fname, expr, env, warnings, ctx):
     return None
 
 
+PASSTHROUGH_BUILTINS = frozenset({
+    'abs', 'sqrt', 'sin', 'cos', 'tan', 'asin', 'acos', 'atan',
+    'tanh', 'cosh', 'sinh', 'atanh', 'acosh', 'asinh', 'conj', 'not',
+    'flipud', 'fliplr', 'triu', 'tril', 'sort', 'unique',
+    'exp', 'log', 'log2', 'log10', 'ceil', 'floor', 'round', 'sign',
+    'real', 'imag', 'cumsum', 'cumprod',
+    'expm', 'logm', 'sqrtm', 'circshift', 'null', 'orth',
+    'sgolayfilt', 'squeeze', 'fftshift', 'ifftshift', 'unwrap',
+    'deg2rad', 'rad2deg', 'angle',
+})
+
+SCALAR_PREDICATE_BUILTINS = frozenset({
+    'isscalar', 'iscell', 'isempty', 'isnumeric', 'islogical', 'ischar',
+    'isnan', 'isinf', 'isfinite', 'issymmetric', 'isstruct', 'isreal',
+    'issparse', 'isvector', 'isinteger', 'isfloat', 'isstring', 'issorted',
+    'isfield',
+})
+
+TYPE_CAST_BUILTINS = frozenset({
+    'double', 'single', 'int8', 'int16', 'int32', 'int64',
+    'uint8', 'uint16', 'uint32', 'uint64', 'logical', 'complex', 'typecast',
+})
+
+REDUCTION_BUILTINS = frozenset({
+    'sum', 'prod', 'mean', 'any', 'all', 'median', 'var', 'std',
+    'nanmean', 'nansum', 'nanstd', 'nanmin', 'nanmax',
+})
+
+SCALAR_QUERY_BUILTINS = frozenset({
+    'length', 'numel', 'det', 'norm', 'trace', 'rank', 'cond', 'rcond',
+    'nnz', 'sprank', 'str2double',
+})
+
+MATRIX_CONSTRUCTOR_BUILTINS = frozenset({
+    'eye', 'rand', 'randn', 'true', 'false', 'nan', 'NaN', 'inf', 'Inf',
+})
+
+STRING_RETURN_BUILTINS = frozenset({
+    'num2str', 'int2str', 'mat2str', 'char', 'string', 'sprintf', 'fullfile',
+})
+
+SCALAR_NARY_BUILTINS = frozenset({
+    'strcmpi', 'strcmp', 'exist',
+})
+
+# Sanity check: no builtin should appear in more than one declarative set
+_all_declarative = (
+    PASSTHROUGH_BUILTINS | SCALAR_PREDICATE_BUILTINS | TYPE_CAST_BUILTINS |
+    REDUCTION_BUILTINS | SCALAR_QUERY_BUILTINS | MATRIX_CONSTRUCTOR_BUILTINS |
+    STRING_RETURN_BUILTINS | SCALAR_NARY_BUILTINS
+)
+assert (
+    len(_all_declarative) ==
+    len(PASSTHROUGH_BUILTINS) + len(SCALAR_PREDICATE_BUILTINS) +
+    len(TYPE_CAST_BUILTINS) + len(REDUCTION_BUILTINS) +
+    len(SCALAR_QUERY_BUILTINS) + len(MATRIX_CONSTRUCTOR_BUILTINS) +
+    len(STRING_RETURN_BUILTINS) + len(SCALAR_NARY_BUILTINS)
+), "Declarative builtin sets have overlapping entries"
+
+
 def _handle_passthrough(fname, expr, env, warnings, ctx):
     """abs(x), sqrt(x) -> same shape as x."""
     from analysis.eval_expr import _eval_index_arg_to_shape
@@ -765,98 +825,21 @@ def _handle_horzcat_vertcat(fname, expr, env, warnings, ctx):
         return Shape.matrix(r, c)
 
 
-# Dispatch table: builtin name -> handler function
+# Dispatch table: builtin name -> handler function (complex builtins only)
+# Simple stereotype builtins are handled declaratively via the frozensets above.
 BUILTIN_HANDLERS = {
     'zeros': _handle_zeros_ones,
     'ones': _handle_zeros_ones,
-    'eye': _handle_matrix_constructor,
-    'rand': _handle_matrix_constructor,
-    'randn': _handle_matrix_constructor,
-    'true': _handle_matrix_constructor,
-    'false': _handle_matrix_constructor,
-    'nan': _handle_matrix_constructor,
-    'NaN': _handle_matrix_constructor,
-    'inf': _handle_matrix_constructor,
-    'Inf': _handle_matrix_constructor,
     'size': _handle_size,
-    'isscalar': _handle_scalar_predicate,
-    'iscell': _handle_scalar_predicate,
-    'isempty': _handle_scalar_predicate,
-    'isnumeric': _handle_scalar_predicate,
-    'islogical': _handle_scalar_predicate,
-    'ischar': _handle_scalar_predicate,
-    'isnan': _handle_scalar_predicate,
-    'isinf': _handle_scalar_predicate,
-    'isfinite': _handle_scalar_predicate,
-    'issymmetric': _handle_scalar_predicate,
-    'isstruct': _handle_scalar_predicate,
-    'isreal': _handle_scalar_predicate,
-    'issparse': _handle_scalar_predicate,
-    'isvector': _handle_scalar_predicate,
-    'isinteger': _handle_scalar_predicate,
-    'isfloat': _handle_scalar_predicate,
-    'isstring': _handle_scalar_predicate,
-    'issorted': _handle_scalar_predicate,
     'cell': _handle_cell_constructor,
-    'abs': _handle_passthrough,
-    'sqrt': _handle_passthrough,
-    'sin': _handle_passthrough,
-    'cos': _handle_passthrough,
-    'tan': _handle_passthrough,
-    'asin': _handle_passthrough,
-    'acos': _handle_passthrough,
-    'atan': _handle_passthrough,
-    'tanh': _handle_passthrough,
-    'cosh': _handle_passthrough,
-    'sinh': _handle_passthrough,
-    'atanh': _handle_passthrough,
-    'acosh': _handle_passthrough,
-    'asinh': _handle_passthrough,
-    'conj': _handle_passthrough,
-    'not': _handle_passthrough,
-    'flipud': _handle_passthrough,
-    'fliplr': _handle_passthrough,
-    'triu': _handle_passthrough,
-    'tril': _handle_passthrough,
-    'sort': _handle_passthrough,
-    'unique': _handle_passthrough,
-    'exp': _handle_passthrough,
-    'log': _handle_passthrough,
-    'log2': _handle_passthrough,
-    'log10': _handle_passthrough,
-    'ceil': _handle_passthrough,
-    'floor': _handle_passthrough,
-    'round': _handle_passthrough,
-    'sign': _handle_passthrough,
-    'real': _handle_passthrough,
-    'imag': _handle_passthrough,
-    'cumsum': _handle_passthrough,
-    'cumprod': _handle_passthrough,
     'transpose': _handle_transpose_fn,
-    'length': _handle_scalar_query,
-    'numel': _handle_scalar_query,
-    'det': _handle_scalar_query,
-    'norm': _handle_scalar_query,
-    'trace': _handle_scalar_query,
-    'rank': _handle_scalar_query,
-    'cond': _handle_scalar_query,
-    'rcond': _handle_scalar_query,
-    'nnz': _handle_scalar_query,
-    'sprank': _handle_scalar_query,
     'reshape': _handle_reshape,
     'repmat': _handle_repmat,
     'diag': _handle_diag,
     'inv': _handle_inv,
+    'pinv': _handle_inv,
     'linspace': _handle_linspace,
     'logspace': _handle_linspace,
-    'sum': _handle_reduction,
-    'prod': _handle_reduction,
-    'mean': _handle_reduction,
-    'any': _handle_reduction,
-    'all': _handle_reduction,
-    'median': _handle_reduction,
-    'var': _handle_reduction,
-    'std': _handle_reduction,
     'min': _handle_minmax,
     'max': _handle_minmax,
     'mod': _handle_elementwise_2arg,
@@ -868,30 +851,11 @@ BUILTIN_HANDLERS = {
     'diff': _handle_diff,
     'kron': _handle_kron,
     'blkdiag': _handle_blkdiag,
-    'double': _handle_type_cast,
-    'single': _handle_type_cast,
-    'int8': _handle_type_cast,
-    'int16': _handle_type_cast,
-    'int32': _handle_type_cast,
-    'int64': _handle_type_cast,
-    'uint8': _handle_type_cast,
-    'uint16': _handle_type_cast,
-    'uint32': _handle_type_cast,
-    'uint64': _handle_type_cast,
-    'logical': _handle_type_cast,
-    'complex': _handle_type_cast,
-    'num2str': _handle_string_return,
-    'int2str': _handle_string_return,
-    'mat2str': _handle_string_return,
-    'char': _handle_string_return,
-    'string': _handle_string_return,
-    'sprintf': _handle_string_return,
     'randi': _handle_randi,
     'find': _handle_find,
     'cat': _handle_cat,
     'eig': _handle_eig_single,
     'svd': _handle_svd_single,
-    # New domain builtins
     'fft': _handle_fft,
     'ifft': _handle_fft,
     'fft2': _handle_fft,
@@ -903,6 +867,7 @@ BUILTIN_HANDLERS = {
     'deconv': _handle_conv,
     'polyfit': _handle_polyfit,
     'polyval': _handle_polyval,
+    'interp1': _handle_polyval,
     'meshgrid': _handle_meshgrid,
     'struct': _handle_struct,
     'fieldnames': _handle_fieldnames,
@@ -910,40 +875,11 @@ BUILTIN_HANDLERS = {
     'sub2ind': _handle_sub2ind,
     'horzcat': _handle_horzcat_vertcat,
     'vertcat': _handle_horzcat_vertcat,
-    'pinv': _handle_inv,
-    'expm': _handle_passthrough,
-    'logm': _handle_passthrough,
-    'sqrtm': _handle_passthrough,
-    'circshift': _handle_passthrough,
-    'null': _handle_passthrough,
-    'orth': _handle_passthrough,
-    'isfield': _handle_scalar_predicate,
-    'interp1': _handle_polyval,
-    # Group 2: string-returning builtins
-    'fullfile': _handle_string_return,
-    # Group 3: scalar-returning builtins
-    'strcmpi': _handle_scalar_nary,
-    'strcmp': _handle_scalar_nary,
-    'exist': _handle_scalar_nary,
-    'str2double': _handle_scalar_query,
-    # Group 4: passthrough builtins
-    'sgolayfilt': _handle_passthrough,
-    'squeeze': _handle_passthrough,
-    'fftshift': _handle_passthrough,
-    'ifftshift': _handle_passthrough,
-    'unwrap': _handle_passthrough,
-    'deg2rad': _handle_passthrough,
-    'rad2deg': _handle_passthrough,
-    'angle': _handle_passthrough,
-    # Group 5: type cast builtins
-    'typecast': _handle_type_cast,
-    # Group 6: NaN-ignoring reduction builtins
-    'nanmean': _handle_reduction,
-    'nansum': _handle_reduction,
-    'nanstd': _handle_reduction,
-    'nanmin': _handle_reduction,
-    'nanmax': _handle_reduction,
 }
+
+# Verify no overlap between declarative sets and BUILTIN_HANDLERS
+assert not (_all_declarative & set(BUILTIN_HANDLERS)), \
+    f"Overlap between declarative sets and BUILTIN_HANDLERS: {_all_declarative & set(BUILTIN_HANDLERS)}"
 
 
 def _eval_first_arg_shape(expr, env, warnings, ctx):
@@ -1168,6 +1104,7 @@ def eval_builtin_call(fname: str, expr: Apply, env: Env, warnings: List['Diagnos
     Returns:
         Inferred shape of the result
     """
+    # Complex handlers take priority (checked first)
     handler = BUILTIN_HANDLERS.get(fname)
     if handler:
         try:
@@ -1177,5 +1114,50 @@ def eval_builtin_call(fname: str, expr: Apply, env: Env, warnings: List['Diagnos
             return Shape.unknown()
         if result is not None:
             return result
+
+    # Declarative dispatch for stereotyped builtins
+    # Import here to avoid circular dependency at module level
+    from analysis.eval_expr import _eval_index_arg_to_shape, eval_expr_ir
+
+    if fname in PASSTHROUGH_BUILTINS or fname in TYPE_CAST_BUILTINS:
+        # Calls _eval_index_arg_to_shape (handles IndexArg/Colon/Range directly)
+        # Only handles the 1-arg case; 2+ args fall through to unknown
+        if len(expr.args) == 1:
+            return _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
+        return Shape.unknown()
+
+    if fname in SCALAR_PREDICATE_BUILTINS:
+        # Calls eval_expr_ir(unwrap_arg(...)) — unwraps first, then evaluates
+        if len(expr.args) >= 1:
+            try:
+                eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
+            except ValueError:
+                pass
+        return Shape.scalar()
+
+    if fname in SCALAR_QUERY_BUILTINS:
+        # Calls _eval_index_arg_to_shape (like passthrough), returns scalar
+        if len(expr.args) >= 1:
+            _ = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
+        return Shape.scalar()
+
+    if fname in SCALAR_NARY_BUILTINS:
+        # No argument evaluation — always returns scalar
+        return Shape.scalar()
+
+    if fname in STRING_RETURN_BUILTINS:
+        # Evaluate ALL args for warning propagation, return string
+        for arg in expr.args:
+            _ = _eval_index_arg_to_shape(arg, env, warnings, ctx)
+        return Shape.string()
+
+    if fname in REDUCTION_BUILTINS:
+        # Delegate to existing _handle_reduction logic
+        return _handle_reduction(fname, expr, env, warnings, ctx) or Shape.unknown()
+
+    if fname in MATRIX_CONSTRUCTOR_BUILTINS:
+        # Delegate to existing _handle_matrix_constructor logic
+        return _handle_matrix_constructor(fname, expr, env, warnings, ctx) or Shape.unknown()
+
     # Known builtin without a matching shape rule: return unknown silently
     return Shape.unknown()
