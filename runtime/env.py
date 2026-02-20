@@ -4,28 +4,62 @@
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from runtime.shapes import Shape, join_shape, widen_shape
 
 
 @dataclass
 class Env:
-    """Mapping from variable names to their inferred shapes."""
+    """Mapping from variable names to their inferred shapes.
+
+    Supports optional parent-pointer scope chains for nested scoping.
+    get() walks the chain; set() writes to local scope only.
+    """
     bindings: Dict[str, Shape] = field(default_factory=dict)
     dim_aliases: Dict[str, Any] = field(default_factory=dict)
+    parent: Optional[Env] = None
 
-    def copy(self) -> "Env":
-        """Create a shallow copy of this environment."""
-        return Env(bindings=self.bindings.copy(), dim_aliases=self.dim_aliases.copy())
+    def copy(self) -> Env:
+        """Shallow copy of local scope, sharing the same parent."""
+        return Env(bindings=self.bindings.copy(),
+                   dim_aliases=self.dim_aliases.copy(),
+                   parent=self.parent)
 
     def get(self, name: str) -> Shape:
-        """Get the shape of a variable, or bottom if not found."""
-        return self.bindings.get(name, Shape.bottom())
+        """Get shape by name, walking parent chain if not local."""
+        if name in self.bindings:
+            return self.bindings[name]
+        if self.parent is not None:
+            return self.parent.get(name)
+        return Shape.bottom()
 
     def set(self, name: str, shape: Shape) -> None:
-        """Set the shape of a variable."""
+        """Set shape in local scope."""
         self.bindings[name] = shape
+
+    def has_local(self, name: str) -> bool:
+        """Check if name is bound in local scope (not parent)."""
+        return name in self.bindings
+
+    def __contains__(self, name: str) -> bool:
+        """Check if name is bound anywhere in the scope chain."""
+        if name in self.bindings:
+            return True
+        return self.parent is not None and name in self.parent
+
+    def push_scope(self) -> Env:
+        """Create a child scope with this env as parent."""
+        return Env(parent=self)
+
+    def replace_local(self, other: Env) -> None:
+        """Replace local bindings and aliases from another env."""
+        self.bindings = other.bindings
+        self.dim_aliases = other.dim_aliases
+
+    def local_bindings_equal(self, other: Env) -> bool:
+        """Compare local bindings only (not parent chain)."""
+        return self.bindings == other.bindings
 
     def __repr__(self) -> str:
         """String representation showing all bindings."""
@@ -43,11 +77,11 @@ def join_env(env1: Env, env2: Env) -> Env:
     Returns:
         Merged environment with joined shapes for each variable
     """
-    result = Env()
+    result = Env(parent=env1.parent)
     all_vars = sorted(set(env1.bindings.keys()) | set(env2.bindings.keys()))
     for var_name in all_vars:
-        shape1 = env1.get(var_name)
-        shape2 = env2.get(var_name)
+        shape1 = env1.bindings.get(var_name, Shape.bottom())
+        shape2 = env2.bindings.get(var_name, Shape.bottom())
         result.set(var_name, join_shape(shape1, shape2))
     return result
 
@@ -66,10 +100,10 @@ def widen_env(env1: Env, env2: Env) -> Env:
     Returns:
         Widened environment with pointwise widen_shape applied
     """
-    result = Env()
+    result = Env(parent=env1.parent)
     all_vars = sorted(set(env1.bindings.keys()) | set(env2.bindings.keys()))
     for var_name in all_vars:
-        shape1 = env1.get(var_name)    # returns unknown if unbound
-        shape2 = env2.get(var_name)
+        shape1 = env1.bindings.get(var_name, Shape.bottom())
+        shape2 = env2.bindings.get(var_name, Shape.bottom())
         result.set(var_name, widen_shape(shape1, shape2))
     return result

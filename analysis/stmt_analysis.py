@@ -294,7 +294,7 @@ def _join_branch_results(
         result = live_envs[0]
         for other in live_envs[1:]:
             result = join_env(result, other)
-        env.bindings = result.bindings
+        env.replace_local(result)
 
         # Join constraints
         joined_constraints = join_constraints(baseline_constraints, live_constraints)
@@ -327,7 +327,7 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         old_shape = env.get(stmt.name)
         new_shape = eval_expr_ir(stmt.expr, env, warnings, ctx)
 
-        if stmt.name in env.bindings and shapes_definitely_incompatible(old_shape, new_shape):
+        if env.has_local(stmt.name) and shapes_definitely_incompatible(old_shape, new_shape):
             warnings.append(diag.warn_reassign_incompatible(stmt.line, stmt.name, new_shape, old_shape))
 
         env.set(stmt.name, new_shape)

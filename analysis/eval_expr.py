@@ -575,7 +575,7 @@ def _eval_apply(expr: Apply, env: Env, warnings: List['Diagnostic'], ctx: Analys
             return eval_builtin_call(fname, expr, env, warnings, ctx)
 
         # Priority 3-5: base name is unbound (not a local variable)
-        if fname not in env.bindings:
+        if not env.has_local(fname):
             # Priority 3: user-defined function
             if fname in ctx.function_registry:
                 output_shapes = analyze_function_call(fname, expr.args, line, env, warnings, ctx)

@@ -297,8 +297,8 @@ def _analyze_loop_body(body: list, env: Env, warnings: List['Diagnostic'], ctx: 
 
     # Phase 2 (Stabilize): Re-analyze if widening changed anything
     # (widened dims like None x 1 should stabilize immediately in body)
-    if widened.bindings != env.bindings:
-        env.bindings = widened.bindings
+    if not env.local_bindings_equal(widened):
+        env.replace_local(widened)
         try:
             for s in body:
                 analyze_stmt_ir(s, env, warnings, ctx)
@@ -308,4 +308,4 @@ def _analyze_loop_body(body: list, env: Env, warnings: List['Diagnostic'], ctx: 
     # Phase 3 (Post-loop join): Model "loop may execute 0 times"
     # Use widen_env (same operator) to join pre-loop and post-loop states
     final = widen_env(pre_loop_env, env)
-    env.bindings = final.bindings
+    env.replace_local(final)
