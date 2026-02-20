@@ -7,7 +7,7 @@
 [![Version](https://img.shields.io/badge/version-1.13.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-312%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-322%20passing-brightgreen.svg)](#test-suite)
 [![pip installable](https://img.shields.io/badge/pip-installable-green.svg)](#getting-started)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
@@ -48,7 +48,7 @@ Final environment:
 
 ## Performance
 
-Single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and cross-file workspace analysis runs in about 70ms. The full 312-test suite finishes in under 500ms, with no MATLAB runtime involved.
+Single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and cross-file workspace analysis runs in about 70ms. The full 322-test suite finishes in under 500ms, with no MATLAB runtime involved.
 
 The VS Code extension can analyze on every keystroke by default, with a 500ms debounce.
 
@@ -84,9 +84,9 @@ Over 200 MATLAB builtins are recognized (so calls to them don't produce spurious
 
 Dimension arithmetic works inside builtin arguments, so `zeros(n+1, 2*m)` is tracked symbolically.
 
-User-defined functions are analyzed at each call site with the caller's argument shapes. Three forms: single return (`function y = f(x)`), multi-return (`function [a, b] = f(x)`), and procedures (including no-arg `function name` syntax). The parser also handles pre-2016 end-less function definitions (files where `end` is omitted), and space-separated multi-return syntax (`function [a b c] = f(...)` without commas). Anonymous functions `@(x) expr` are analyzed the same way, with by-value closure capture at definition time. Function handles `@funcName` dispatch to their targets. Results are cached per argument shape tuple so the same function called with the same shapes isn't re-analyzed.
+User-defined functions are analyzed at each call site with the caller's argument shapes. Three forms: single return (`function y = f(x)`), multi-return (`function [a, b] = f(x)`), and procedures (including no-arg `function name` syntax). Nested `function...end` blocks inside another function body are also supported, with read/write access to the parent workspace via scope chains and forward-reference visibility between siblings. The parser also handles pre-2016 end-less function definitions (files where `end` is omitted), and space-separated multi-return syntax (`function [a b c] = f(...)` without commas). Anonymous functions `@(x) expr` are analyzed the same way, with by-value closure capture at definition time. Function handles `@funcName` dispatch to their targets. Results are cached per argument shape tuple so the same function called with the same shapes isn't re-analyzed.
 
-When analyzing a file, Conformal also scans sibling `.m` files in the same directory and fully analyzes their bodies (lex → parse → IR) to infer real return shapes. Dimension aliasing works across file boundaries, subfunctions in external files are supported, and cross-file cycles (A→B→A) are detected and handled gracefully. Unparseable external files emit `W_EXTERNAL_PARSE_ERROR`.
+When analyzing a file, Conformal also scans sibling `.m` files in the same directory and fully analyzes their bodies (parse → analyze) to infer real return shapes. Dimension aliasing works across file boundaries, subfunctions in external files are supported, and cross-file cycles (A→B→A) are detected and handled gracefully. Unparseable external files emit `W_EXTERNAL_PARSE_ERROR`.
 
 ### Data structures
 
@@ -124,14 +124,14 @@ The analyzer parses and tracks shapes through:
 | Literals | `[1 2; 3 4]`, `{1, 2; 3, 4}`, `'string'`, `"string"`, `1:n` |
 | Indexing | `A(i,j)`, `A(:,j)`, `A(2:5,:)`, `C{i}`, `C{i} = x` |
 | Assignment | `x = expr`, `s.field = expr`, `C{i} = expr`, `M(i,j) = expr`, `[a, b] = f(x)`, `[~, b] = f(x)` |
-| Functions | `function y = f(x)`, `function name` (no-arg), `@(x) expr`, `@funcName`, 200+ recognized builtins (128 with shape rules) |
+| Functions | `function y = f(x)`, `function name` (no-arg), nested `function` blocks, `@(x) expr`, `@funcName`, 200+ recognized builtins (128 with shape rules) |
 | Control flow | `if`/`elseif`/`else`, `for`, `while`, `switch`/`case`, `try`/`catch` |
 | Statements | `break`, `continue`, `return` |
 | Data types | scalars, matrices, strings, structs, cell arrays, function handles |
 
 ## Shape System
 
-Every expression gets a shape from the abstract domain. There are 7 kinds:
+Every expression gets a shape from the abstract domain. There are 7 user-visible kinds (plus an internal `bottom` for unbound variables):
 
 | Shape | Example | Notes |
 |-------|---------|-------|
@@ -142,6 +142,8 @@ Every expression gets a shape from the abstract domain. There are 7 kinds:
 | `function_handle` | `@(x) x'`, `@sin` | Tracks lambda ID for join precision |
 | `cell[r x c]` | `cell[3 x 1]` | Cell array with optional per-element shape tracking |
 | `unknown` | | Error or indeterminate; the lattice top |
+
+Each kind is a frozen dataclass subclass of `Shape`, so the domain is extensible and hash-safe. The `bottom` shape is the lattice identity (used internally for unbound variables, never surfaced in output).
 
 Dimensions in `matrix[r x c]` can be:
 - Concrete integers: `3`, `100`
@@ -154,19 +156,19 @@ Symbolic dimensions use a frozen polynomial representation (`SymDim`) with ratio
 ## Project Structure
 
 ```
-frontend/           Parsing (lexer.py, matlab_parser.py) and IR lowering
+frontend/           Parser (lexer.py, matlab_parser.py) — emits IR dataclass nodes directly
 ir/                 Typed IR dataclass definitions
 analysis/           15 focused submodules: expression eval, statements, functions, builtins, binops, constraints, diagnostics, intervals
 runtime/            Shape domain (shapes.py), symbolic dimensions (symdim.py), and environments
 lsp/                Language Server Protocol implementation (server.py, diagnostics.py, hover.py, code_actions.py)
 vscode-conformal/   VS Code extension (TypeScript thin client)
-tests/              Self-checking MATLAB programs (312 tests, 16 categories)
+tests/              Self-checking MATLAB programs (322 tests, 16 categories)
 tools/              Debugging utilities (AST printer)
 ```
 
 ## Test Suite
 
-The analyzer is validated by 312 self-checking test programs organized into 16 categories. Each test embeds its expected behavior as inline assertions:
+The analyzer is validated by 322 self-checking test programs organized into 16 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -179,7 +181,7 @@ The test runner checks that the analyzer's output matches these expectations.
 ---
 
 <details open>
-<summary><h3>Basics (15 tests)</h3></summary>
+<summary><h3>Basics (16 tests)</h3></summary>
 
 Foundation tests for core matrix operations and dimension compatibility.
 
@@ -200,6 +202,7 @@ Foundation tests for core matrix operations and dimension compatibility.
 | `logical_not.m` | Logical NOT `~x` shape passthrough | 0 |
 | `tilde_unused.m` | Tilde `[~, x] = f()` as unused output placeholder | 0 |
 | `space_destructure.m` | Space-separated destructuring `[a b] = expr` without commas | 0 |
+| `scientific_notation.m` | Scientific notation literals (`1e6`, `1.5e-3`, `1E+9`) parsed as scalars | 0 |
 
 </details>
 
@@ -247,7 +250,7 @@ MATLAB-style indexing including scalar, slice, range, linear indexing, and `end`
 </details>
 
 <details open>
-<summary><h3>Control Flow (15 tests)</h3></summary>
+<summary><h3>Control Flow (17 tests)</h3></summary>
 
 Control-flow join semantics for if/elseif/else, switch/case, try/catch, break, and continue.
 
@@ -268,6 +271,8 @@ Control-flow join semantics for if/elseif/else, switch/case, try/catch, break, a
 | `try_catch_basic.m` | Try/catch joins try-branch with catch-branch | 1 |
 | `try_catch_no_error.m` | Catch block unused when no error in try block | 0 |
 | `try_nested.m` | Nested try/catch blocks work correctly | 0 |
+| `break_in_if_else.m` | Break in if-inside-loop correctly propagates; else branch shape used when break taken | 0 |
+| `try_catch_break.m` | Break inside try/catch block propagates correctly out of the enclosing loop | 0 |
 
 >Conservative join semantics. When branches disagree on a variable's shape, the analyzer joins to the least upper bound (often `unknown`).
 
@@ -295,7 +300,7 @@ Matrix literals, string literals, and concatenation constraints.
 </details>
 
 <details>
-<summary><h3>Builtins (17 tests)</h3></summary>
+<summary><h3>Builtins (22 tests)</h3></summary>
 
 Shape rules for 200+ recognized MATLAB builtins (128 with shape handlers: 121 single-return, 11 multi-return), call/index disambiguation, and dimension arithmetic.
 
@@ -318,6 +323,11 @@ Shape rules for 200+ recognized MATLAB builtins (128 with shape handlers: 121 si
 | `kron_blkdiag.m` | `kron` (Kronecker product) and `blkdiag` (variadic block diagonal) shape rules | 0 |
 | `expanded_builtins.m` | Coverage across all handler categories (hyperbolic trig, type casts, string returns, etc.) | 0 |
 | `multi_return_builtins.m` | Multi-return builtins like `eig`, `svd`, `sort`, `find` with `[a, b] = f(x)` syntax | 0 |
+| `math_constants.m` | Predefined constants (`pi`, `eps`, `inf`, `nan`, `i`) recognized as scalars | 0 |
+| `struct_constructor.m` | `struct()` constructor with field names and values; field tracking | 0 |
+| `domain_builtins.m` | Domain builtins: `fft`/`ifft` (passthrough), `polyfit` (row vector), `polyval` (input shape), `ndims` (scalar) | 0 |
+| `range_args.m` | Builtins receiving colon-range arguments like `polyval(p, 1:10)` don't crash | 0 |
+| `corpus_builtins.m` | Dogfood corpus builtins recognized without `W_UNKNOWN_FUNCTION` (NaN/Inf variants, string ops, nan-ignoring reductions, I/O ops) | 0 |
 
 >Dimension arithmetic uses canonical polynomial representation to track expressions like `zeros(n+m+1, 2*k)`.
 
@@ -363,9 +373,9 @@ Loop analysis with single-pass and fixed-point widening modes (via `--fixpoint`)
 </details>
 
 <details>
-<summary><h3>Functions (66 tests)</h3></summary>
+<summary><h3>Functions (73 tests)</h3></summary>
 
-Interprocedural analysis for user-defined functions, anonymous functions (lambdas), and workspace-aware external function resolution.
+Interprocedural analysis for user-defined functions, anonymous functions (lambdas), nested functions, and workspace-aware external function resolution.
 
 Named Functions (27 tests)
 
@@ -443,7 +453,21 @@ Workspace Awareness (17 tests)
 | `workspace_cycle_b.m` | Helper file for cycle test (calls cycle_a) | — |
 | `workspace_parse_error_helper.m` | Helper file with recoverable parse error | — |
 
+Nested Functions (7 tests)
+
+| Test | What It Validates | Warnings |
+|------|-------------------|----------|
+| `nested_def_basic.m` | Nested `function...end` defined inside outer function, callable from within | 0 |
+| `nested_def_closure.m` | Nested function reads parent workspace variables | 0 |
+| `nested_def_writeback.m` | Nested function writes back to parent workspace variable | 1 |
+| `nested_def_dim_alias.m` | Dimension aliasing through nested function boundaries | 0 |
+| `nested_def_sibling.m` | Sibling nested functions can call each other via forward references | 0 |
+| `nested_def_param_shadow.m` | Nested function parameters shadow parent variables without write-back | 0 |
+| `nested_def_scope.m` | Nested function is not visible at top-level script scope | 1 |
+
 Functions are analyzed at each call site with the caller's argument shapes, and results are cached per argument shape tuple so the same function called with the same shapes isn't re-analyzed. Symbolic dimension names can propagate across function boundaries, so `f(n)` where `f = @(k) zeros(k,k)` infers `matrix[n x n]`. Lambdas capture their environment by-value at definition time, matching MATLAB semantics. When branches assign different lambdas, both bodies are analyzed and the results are joined at the call site.
+
+Nested functions have read access to the parent scope via scope chains, can write back to the parent workspace after returning, and can call sibling nested functions via forward references. A nested function's parameters shadow parent variables without any write-back. The scope chain uses `ScopedEnv` parent pointers, so `get()` walks up to find variables defined in any enclosing scope.
 
 External `.m` files are fully parsed and analyzed to infer real return shapes, with cross-file cycles (A→B→A) handled gracefully. Local functions defined inside external files are accessible during cross-file analysis.
 
@@ -468,7 +492,7 @@ Struct creation, field access, and control-flow joins.
 </details>
 
 <details>
-<summary><h3>Cells (25 tests)</h3></summary>
+<summary><h3>Cells (26 tests)</h3></summary>
 
 Cell array literals, curly-brace indexing, element assignment, and per-element shape tracking (v0.12.2-0.14.1).
 
@@ -499,13 +523,14 @@ Cell array literals, curly-brace indexing, element assignment, and per-element s
 | `end_arithmetic.m` | `end` keyword arithmetic in cell indexing (`end-1`, `end-2`) | 0 |
 | `end_outside_indexing.m` | `end` keyword outside indexing emits warning | 1 |
 | `curly_indexing_non_cell.m` | Curly indexing on non-cell value is an error | 1 |
+| `empty_matrix_promotion.m` | `x = []; x{1} = val` promotes `[]` to cell without warning (MATLAB's universal empty initializer) | 0 |
 
 >Cell arrays use abstract shape `cell[r x c]` with optional per-element tracking. Literal indexing `C{i}` extracts precise element shapes when available. Dynamic indexing joins all elements conservatively. The `end` keyword resolves to the last element index and supports arithmetic (`end-1`, `end/2`).
 
 </details>
 
 <details>
-<summary><h3>Recovery (7 tests)</h3></summary>
+<summary><h3>Recovery (17 tests)</h3></summary>
 
 Parser error recovery and unsupported construct handling (graceful degradation).
 
@@ -518,6 +543,16 @@ Parser error recovery and unsupported construct handling (graceful degradation).
 | `dot_elementwise.m` | Dot-elementwise edge cases handled | 0 |
 | `end_in_parens.m` | `end` keyword inside parentheses unsupported | 1 |
 | `power_recovery.m` | `^` in complex and nested expressions doesn't break recovery | 0 |
+| `line_continuation.m` | `...` line continuation in expressions, function args, and matrix literals | 0 |
+| `tilde_param.m` | Tilde `~` as unused parameter placeholder in function definitions (`function f(~, data)`) | 0 |
+| `dqstring_escape.m` | Double-quoted string literals with `""` escape sequences | 0 |
+| `void_return.m` | `function [] = name(x)` void-return function syntax | 0 |
+| `bracket_string_concat.m` | Transpose-vs-string disambiguation inside `[]` (space before `'` means string, not transpose) | 0 |
+| `parfor_loop.m` | `parfor` loops parsed and analyzed identically to `for` loops | 0 |
+| `global_decl.m` | `global` and `persistent` declarations parsed; declared variables treated as `unknown` | 0 |
+| `dynamic_field.m` | Dynamic field access `s.(expr)` parses correctly and evaluates to `unknown` | 0 |
+| `classdef_suppress.m` | `classdef` blocks consumed without spurious `W_END_OUTSIDE_INDEXING` | 0 |
+| `chained_index_struct.m` | Chained indexed struct assignment `A(i).field = val` parses without triggering recovery | 0 |
 
 >Best-effort analysis. When the parser encounters unsupported syntax, it emits a `W_UNSUPPORTED_*` warning, treats the result as `unknown`, and keeps going.
 
@@ -549,7 +584,7 @@ Dimension constraint solving: equality constraints recorded during operations, v
 </details>
 
 <details>
-<summary><h3>Intervals (18 tests)</h3></summary>
+<summary><h3>Intervals (19 tests)</h3></summary>
 
 Integer interval domain tracking scalar value ranges for division-by-zero, out-of-bounds indexing, and negative-dimension checks (v1.7.0). Conditional interval refinement and symbolic interval bounds added in v1.8.0.
 
@@ -573,13 +608,14 @@ Integer interval domain tracking scalar value ranges for division-by-zero, out-o
 | `conditional_refine_symbolic.m` | Symbolic condition `if n > 0`: refinement with symbolic bounds | 0 |
 | `conditional_refine_while.m` | While loop condition refines interval in loop body | 0 |
 | `symbolic_interval_for_loop.m` | Symbolic upper bound `for i = 1:n` → `i ∈ [1, n]`; no false OOB on `A(i,:)` | 0 |
+| `scalar_propagation.m` | Concrete scalar values propagate into dimension constructors (`m = 3; zeros(m,m)` → `matrix[3 x 3]`) | 0 |
 
 >Interval analysis runs in parallel with shape inference. `W_INDEX_OUT_OF_BOUNDS` and `W_DIVISION_BY_ZERO` have Error severity (definite runtime errors). Conditional refinement eliminates false positives when branch guards prove safety; symbolic bounds fall back soundly.
 
 </details>
 
 <details>
-<summary><h3>Workspace Adversarial (1 test, 17 helpers)</h3></summary>
+<summary><h3>Workspace Adversarial (1 test, 20 helpers)</h3></summary>
 
 Adversarial cross-file analysis scenarios: error propagation, struct/cell returns, builtin shadowing, procedure handling, conditional shape joins, subfunctions, accumulation refinement, polymorphic caching stress, and domain-authentic patterns (Kalman, covariance, gradient descent).
 
@@ -604,6 +640,8 @@ Adversarial cross-file analysis scenarios: error propagation, struct/cell return
 | `ws_with_subfunc.m` | Helper: function with subfunctions across file boundary | — |
 | `ws_fill_diag.m` | Helper: function using indexed assignment to fill diagonal; caller infers correct shape | — |
 | `sum.m` | Helper: builtin shadowing test (shadows built-in `sum`) | — |
+| `ws_continued.m` | Helper: function signature with `...` line continuation across parameters | — |
+| `ws_tilde_param.m` | Helper: function with tilde `~` as unused parameter in definition | — |
 
 >These tests exercise cross-file error propagation, struct and cell returns, builtin shadowing, and domain-authentic patterns like Kalman filters and gradient descent.
 
@@ -653,7 +691,7 @@ Cross-file workspace scaling tests: chains, diamond patterns, fan-out/fan-in, po
 ### Running the Tests
 
 ```bash
-# Run all 312 tests
+# Run all 322 tests
 make test
 python3 conformal.py --tests
 
@@ -670,7 +708,7 @@ python3 conformal.py --strict --tests
 git clone https://github.com/EthanDoughty/conformal.git
 cd conformal
 make install          # pip install -e '.[lsp]' (editable + pygls)
-conformal --tests     # verify 312 tests pass
+conformal --tests     # verify 322 tests pass
 ```
 
 Analyze a file:
@@ -735,7 +773,7 @@ Exit codes:
 
 Most of the work in this project is tree manipulation: walking ASTs, matching patterns on IR nodes, joining lattice elements, and tracking dictionaries of variable shapes. Python is well-suited for this. Dataclasses make clean IR nodes, dicts are first-class, and there's no compile step slowing down iteration. The entire analyzer ships as a single codebase with zero dependencies.
 
-The obvious downside is speed. For CLI use and files up to a few hundred lines, it's plenty fast. For IDE integration (the 1.0 goal), latency will matter more. The plan there is incremental analysis and per-function caching, not a full rewrite. The pipeline is cleanly layered (parser → IR → analysis), so if profiling reveals a bottleneck, it can be addressed without rearchitecting.
+The obvious downside is speed. For CLI use and files up to a few hundred lines, it's plenty fast. For IDE integration (the 1.0 goal), latency will matter more. The plan there is incremental analysis and per-function caching, not a full rewrite. The pipeline is cleanly layered (parser emits IR directly → analysis), so if profiling reveals a bottleneck, it can be addressed without rearchitecting.
 
 For adoption, the distribution story matters more than the language. A VS Code extension that bundles everything and just works will get more users than a fast binary that requires manual setup.
 
@@ -752,14 +790,14 @@ Conformal analyzes a subset of MATLAB. Here's what it doesn't cover:
 | Category | What's missing |
 |----------|---------------|
 | Scope | Multi-file workspace analysis (Phase 2): sibling `.m` files are parsed and analyzed to infer real return shapes. No `addpath` handling or cross-directory analysis yet. |
-| Functions | No nested functions. No `varargin`/`varargout`. No `eval`, `feval`, or `str2func`. |
+| Functions | No `varargin`/`varargout`. No `eval`, `feval`, or `str2func`. Nested functions are supported (read/write parent scope, sibling calls, forward references). |
 | Builtins | 200+ builtins recognized; 128 have explicit shape rules (121 single-return, 11 multi-return). Toolbox functions and other unrecognized calls produce a `W_UNKNOWN_FUNCTION` warning (strict-only by default). |
 | Cell arrays | Per-element tracking available for literal-indexed cells. Dynamic indexing conservatively joins all elements. |
 | Indexing | `end` keyword supported with arithmetic (`C{end}`, `C{end-1}`, `A(1:end)`, `A(end-2:end, :)`). Variable operands in `end` arithmetic fall through to conservative join. |
 | Data types | No classes, no maps, no tables, no N-D arrays (only 2-D matrices). No complex number tracking. |
-| Syntax | No command-style calls (`save file.mat`), no `global`/`persistent`, no `parfor`, no `classdef`. |
-| I/O and graphics | No `load`, `save`, `fprintf`, `plot`, or any side-effecting functions. |
-| Dynamic features | No `eval`, no dynamic field access (`s.(name)`), no runtime type introspection beyond type predicates (`iscell`, `isscalar`, `isnumeric`, etc.). |
+| Syntax | No command-style calls (`save file.mat`). `global`/`persistent` declarations are parsed (targets get `unknown` shape). `parfor` is treated as a regular `for` loop. `classdef` blocks are parsed and suppressed without side effects. |
+| I/O and graphics | `load`, `save`, `fprintf`, `plot`, and other side-effecting functions are recognized (no spurious `W_UNKNOWN_FUNCTION`) but their return shapes are not tracked. |
+| Dynamic features | No `eval`, no `feval`, no `str2func`. Dynamic field access `s.(expr)` is parsed and evaluates to `unknown`. Runtime type introspection beyond type predicates (`iscell`, `isscalar`, `isnumeric`, etc.) is not tracked. |
 
 These are deliberate scope boundaries, not bugs. The analyzer focuses on the matrix-heavy computational core of MATLAB where dimension errors are most common and most costly.
 
@@ -769,4 +807,4 @@ I felt that it was very rewarding to use MATLAB as the source language for a sta
 
 ### Roadmap
 
-The immediate priorities are nested function support, expanding builtin coverage to include common toolbox functions, and propagating constraints across function boundaries. Further out, I'd like to support additional editors like Neovim, add cross-directory workspace analysis with `addpath` handling, and explore integration with MATLAB's built-in Code Analyzer.
+The immediate priorities are expanding builtin coverage to include common toolbox functions and propagating constraints across function boundaries. Further out, I'd like to support additional editors like Neovim, add cross-directory workspace analysis with `addpath` handling, and explore integration with MATLAB's built-in Code Analyzer.
