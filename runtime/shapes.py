@@ -7,7 +7,6 @@ Defines the Shape type and dimension operations used throughout the analyzer.
 
 from __future__ import annotations
 from dataclasses import dataclass
-from enum import Enum
 from typing import Optional, Union
 
 from runtime.symdim import SymDim
@@ -20,74 +19,53 @@ from runtime.symdim import SymDim
 Dim = Union[int, SymDim, None]
 
 
-class ShapeKind(str, Enum):
-    """Enumeration of all valid shape kinds.
-
-    Inherits from str so that ShapeKind.SCALAR == "scalar" is True,
-    preserving backward compatibility with all existing string comparisons.
-    """
-    SCALAR = "scalar"
-    MATRIX = "matrix"
-    STRING = "string"
-    STRUCT = "struct"
-    FUNCTION_HANDLE = "function_handle"
-    CELL = "cell"
-    UNKNOWN = "unknown"
-    BOTTOM = "bottom"
-
-
-@dataclass(frozen=True)
 class Shape:
-    """Abstract shape for MATLAB values.
+    """Abstract base for all shape kinds.
 
-    Represents one of: scalar, matrix[rows x cols], string, struct, function_handle, unknown, or bottom.
-    Matrix dimensions can be concrete integers, symbolic names, or None.
+    Subclasses are frozen dataclasses (one per kind). This base class provides:
+    - Class-level attribute defaults so all consumer code (``._elements``,
+      ``._lambda_ids``, ``.rows``, ``.cols``) works without modification.
+    - Default ``is_*()`` predicates (all return False).
+    - Static factory methods that return the appropriate subclass.
+    - ``fields_dict`` property.
     """
-    kind: ShapeKind
 
-    def __post_init__(self):
-        """Coerce string kind values to ShapeKind enum for backward compatibility.
-
-        This allows Shape(kind="scalar") to continue working while also catching
-        typos like Shape(kind="matirx") with a ValueError at construction time.
-        """
-        if isinstance(self.kind, str) and not isinstance(self.kind, ShapeKind):
-            object.__setattr__(self, 'kind', ShapeKind(self.kind))
+    # Class-level defaults so attribute access never crashes on any subclass
     rows: Optional[Dim] = None
     cols: Optional[Dim] = None
-    _fields: tuple = ()  # For struct shapes: tuple of (field_name, Shape) pairs (sorted)
-    _lambda_ids: Optional[frozenset] = None  # For function_handle shapes: set of lambda/handle IDs
-    _elements: Optional[tuple] = None  # For cell shapes: tuple of (linear_index, Shape) pairs (sorted)
+    _fields: tuple = ()
+    _lambda_ids: Optional[frozenset] = None
+    _elements: Optional[tuple] = None
 
     # Constructors
 
     @staticmethod
-    def scalar() -> "Shape":
+    def scalar() -> "ScalarShape":
         """Create a scalar shape."""
-        return Shape(kind=ShapeKind.SCALAR)
+        return ScalarShape()
 
     @staticmethod
-    def matrix(rows: Dim, cols: Dim) -> "Shape":
+    def matrix(rows: Dim, cols: Dim) -> "MatrixShape":
         """Create a matrix shape with given dimensions."""
-        return Shape(kind=ShapeKind.MATRIX, rows=rows, cols=cols)
+        return MatrixShape(rows, cols)
 
     @staticmethod
-    def unknown() -> "Shape":
+    def unknown() -> "UnknownShape":
         """Create an unknown shape (for error cases)."""
-        return Shape(kind=ShapeKind.UNKNOWN)
+        return UnknownShape()
 
     @staticmethod
-    def bottom() -> "Shape":
+    def bottom() -> "BottomShape":
         """Create a bottom shape (no information / unbound variable)."""
-        return Shape(kind=ShapeKind.BOTTOM)
+        return BottomShape()
 
     @staticmethod
-    def string() -> "Shape":
+    def string() -> "StringShape":
         """Create a string shape (char array literal)."""
-        return Shape(kind=ShapeKind.STRING)
+        return StringShape()
 
     @staticmethod
-    def struct(fields: dict) -> "Shape":
+    def struct(fields: dict) -> "StructShape":
         """Create a struct shape with given fields.
 
         Args:
@@ -96,10 +74,10 @@ class Shape:
         Returns:
             Struct shape with fields stored as sorted tuple for hashability
         """
-        return Shape(kind=ShapeKind.STRUCT, _fields=tuple(sorted(fields.items())))
+        return StructShape(_fields=tuple(sorted(fields.items())))
 
     @staticmethod
-    def cell(rows: Dim, cols: Dim, elements: Optional[dict] = None) -> "Shape":
+    def cell(rows: Dim, cols: Dim, elements: Optional[dict] = None) -> "CellShape":
         """Create a cell array shape with optional per-element shapes.
 
         Args:
@@ -114,16 +92,16 @@ class Shape:
             elem_tuple = None
         else:
             elem_tuple = tuple(sorted(elements.items()))
-        return Shape(kind=ShapeKind.CELL, rows=rows, cols=cols, _elements=elem_tuple)
+        return CellShape(rows, cols, elem_tuple)
 
     @staticmethod
-    def function_handle(lambda_ids=None) -> "Shape":
+    def function_handle(lambda_ids=None) -> "FunctionHandleShape":
         """Create a function handle shape (anonymous or named).
 
         Args:
             lambda_ids: Optional frozenset of lambda/handle IDs for precise analysis
         """
-        return Shape(kind=ShapeKind.FUNCTION_HANDLE, _lambda_ids=lambda_ids)
+        return FunctionHandleShape(lambda_ids)
 
     @property
     def fields_dict(self) -> dict:
@@ -132,77 +110,178 @@ class Shape:
         Returns:
             Dict of field names to shapes, or empty dict if not a struct
         """
-        return dict(self._fields) if self.kind == "struct" else {}
+        return dict(self._fields) if self._fields else {}
 
-    # Predicates
+    # Predicates (all return False on the base class)
 
     def is_scalar(self) -> bool:
         """Check if this is a scalar shape."""
-        return self.kind == "scalar"
+        return False
 
     def is_matrix(self) -> bool:
         """Check if this is a matrix shape."""
-        return self.kind == "matrix"
+        return False
 
     def is_unknown(self) -> bool:
         """Check if this is an unknown shape."""
-        return self.kind == "unknown"
+        return False
 
     def is_bottom(self) -> bool:
         """Check if this is a bottom shape."""
-        return self.kind == "bottom"
+        return False
 
     def is_string(self) -> bool:
         """Check if this is a string shape."""
-        return self.kind == "string"
+        return False
 
     def is_struct(self) -> bool:
         """Check if this is a struct shape."""
-        return self.kind == "struct"
+        return False
 
     def is_cell(self) -> bool:
         """Check if this is a cell array shape."""
-        return self.kind == "cell"
+        return False
 
     def is_function_handle(self) -> bool:
         """Check if this is a function handle shape."""
-        return self.kind == "function_handle"
+        return False
 
     def is_numeric(self) -> bool:
         """Check if this is a numeric type (scalar, matrix, or string).
 
         Strings are numeric because MATLAB treats char arrays as numeric values.
         """
-        return self.kind in ("scalar", "matrix", "string")
+        return False
 
     def is_empty_matrix(self) -> bool:
         """Check if this is a 0x0 matrix (MATLAB's universal empty initializer [])."""
-        return self.kind == ShapeKind.MATRIX and self.rows == 0 and self.cols == 0
+        return False
 
-    # Pretty print / debug
+
+# ---------------------------------------------------------------------------
+# Frozen-dataclass subclasses (one per shape kind)
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class ScalarShape(Shape):
+    """A scalar (single numeric value)."""
+    kind: str = "scalar"  # class-level attribute for backward compat string access
+
+    def is_scalar(self) -> bool:
+        return True
+
+    def is_numeric(self) -> bool:
+        return True
 
     def __str__(self) -> str:
-        if self.kind == "scalar":
-            return "scalar"
-        if self.kind == "matrix":
-            return f"matrix[{_dim_str(self.rows)} x {_dim_str(self.cols)}]"
-        if self.kind == "string":
-            return "string"
-        if self.kind == "struct":
-            # Format: struct{x: scalar, y: matrix[3 x 1]}
-            # Filter out bottom fields (internal-only, shouldn't appear in user output)
-            field_strs = [f"{name}: {shape}" for name, shape in self._fields if not shape.is_bottom()]
-            return "struct{" + ", ".join(field_strs) + "}"
-        if self.kind == "cell":
-            return f"cell[{_dim_str(self.rows)} x {_dim_str(self.cols)}]"
-        if self.kind == "function_handle":
-            return "function_handle"
-        if self.kind == "bottom":
-            return "bottom"  # Should never appear in user-visible output
+        return "scalar"
+
+
+@dataclass(frozen=True)
+class MatrixShape(Shape):
+    """A 2-D matrix with symbolic or concrete dimensions."""
+    rows: Dim = None
+    cols: Dim = None
+    kind: str = "matrix"
+
+    def is_matrix(self) -> bool:
+        return True
+
+    def is_numeric(self) -> bool:
+        return True
+
+    def is_empty_matrix(self) -> bool:
+        return self.rows == 0 and self.cols == 0
+
+    def __str__(self) -> str:
+        return f"matrix[{_dim_str(self.rows)} x {_dim_str(self.cols)}]"
+
+
+@dataclass(frozen=True)
+class StringShape(Shape):
+    """A string (char array)."""
+    kind: str = "string"
+
+    def is_string(self) -> bool:
+        return True
+
+    def is_numeric(self) -> bool:
+        # MATLAB treats char arrays as numeric values
+        return True
+
+    def __str__(self) -> str:
+        return "string"
+
+
+@dataclass(frozen=True)
+class StructShape(Shape):
+    """A struct with named fields."""
+    _fields: tuple = ()
+    kind: str = "struct"
+
+    @property
+    def fields_dict(self) -> dict:
+        return dict(self._fields) if self._fields else {}
+
+    def is_struct(self) -> bool:
+        return True
+
+    def __str__(self) -> str:
+        # Filter out bottom fields (internal-only, shouldn't appear in user output)
+        field_strs = [f"{name}: {shape}" for name, shape in self._fields if not shape.is_bottom()]
+        return "struct{" + ", ".join(field_strs) + "}"
+
+
+@dataclass(frozen=True)
+class FunctionHandleShape(Shape):
+    """A function handle (anonymous function or named handle)."""
+    _lambda_ids: Optional[frozenset] = None
+    kind: str = "function_handle"
+
+    def is_function_handle(self) -> bool:
+        return True
+
+    def __str__(self) -> str:
+        return "function_handle"
+
+
+@dataclass(frozen=True)
+class CellShape(Shape):
+    """A cell array with optional per-element shape tracking."""
+    rows: Dim = None
+    cols: Dim = None
+    _elements: Optional[tuple] = None
+    kind: str = "cell"
+
+    def is_cell(self) -> bool:
+        return True
+
+    def __str__(self) -> str:
+        return f"cell[{_dim_str(self.rows)} x {_dim_str(self.cols)}]"
+
+
+@dataclass(frozen=True)
+class UnknownShape(Shape):
+    """Unknown/indeterminate shape (top of the lattice)."""
+    kind: str = "unknown"
+
+    def is_unknown(self) -> bool:
+        return True
+
+    def __str__(self) -> str:
         return "unknown"
 
-    def __repr__(self) -> str:
-        return f"Shape(kind={self.kind!r}, rows={self.rows!r}, cols={self.cols!r})"
+
+@dataclass(frozen=True)
+class BottomShape(Shape):
+    """Bottom shape — no information / unbound variable (lattice identity)."""
+    kind: str = "bottom"
+
+    def is_bottom(self) -> bool:
+        return True
+
+    def __str__(self) -> str:
+        return "bottom"  # Should never appear in user-visible output
 
 
 # Dimension helpers

@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from frontend.lower_ir import lower_expr, lower_stmt
 from ir.ir import OpaqueStmt
-from runtime.shapes import Shape, ShapeKind
+from runtime.shapes import Shape, ScalarShape, MatrixShape
 
 
 def test_lower_expr_raises_on_unknown_tag():
@@ -62,37 +62,6 @@ def test_lower_stmt_skip_unchanged():
     print("PASS: lower_stmt 'skip' handler is unchanged")
 
 
-def test_shapekind_str_mixin_backward_compat():
-    """ShapeKind.SCALAR == "scalar" must be True due to str mixin."""
-    assert ShapeKind.SCALAR == "scalar", "str mixin backward compat broken"
-    assert ShapeKind.MATRIX == "matrix", "str mixin backward compat broken"
-    assert ShapeKind.STRING == "string", "str mixin backward compat broken"
-    assert ShapeKind.STRUCT == "struct", "str mixin backward compat broken"
-    assert ShapeKind.FUNCTION_HANDLE == "function_handle", "str mixin backward compat broken"
-    assert ShapeKind.CELL == "cell", "str mixin backward compat broken"
-    assert ShapeKind.UNKNOWN == "unknown", "str mixin backward compat broken"
-    assert ShapeKind.BOTTOM == "bottom", "str mixin backward compat broken"
-    print("PASS: ShapeKind str mixin backward compatibility works")
-
-
-def test_shape_kind_string_coercion():
-    """Shape(kind='scalar') still works via __post_init__ coercion."""
-    s = Shape(kind="scalar")
-    assert s.kind == ShapeKind.SCALAR, "Coercion from string 'scalar' failed"
-    assert isinstance(s.kind, ShapeKind), "kind should be ShapeKind enum, not bare str"
-    print("PASS: Shape(kind='scalar') coerces to ShapeKind.SCALAR")
-
-
-def test_shape_kind_typo_raises():
-    """Shape(kind='matirx') must raise ValueError (typo detection)."""
-    try:
-        Shape(kind="matirx")
-        assert False, "Expected ValueError but no exception was raised"
-    except ValueError:
-        pass
-    print("PASS: Shape(kind='matirx') raises ValueError")
-
-
 def test_is_empty_matrix():
     """Shape.is_empty_matrix() predicate works correctly."""
     assert not Shape.scalar().is_empty_matrix(), "scalar should not be empty matrix"
@@ -102,12 +71,44 @@ def test_is_empty_matrix():
     print("PASS: Shape.is_empty_matrix() predicate is correct")
 
 
+def test_shape_subclass_hierarchy():
+    """Shape factory methods return typed subclasses with correct behavior."""
+    # isinstance checks
+    assert isinstance(Shape.scalar(), ScalarShape), "Shape.scalar() must return ScalarShape"
+    assert isinstance(Shape.matrix(3, 4), MatrixShape), "Shape.matrix() must return MatrixShape"
+
+    # kind attribute (class attribute on each subclass)
+    assert Shape.scalar().kind == "scalar", "ScalarShape.kind must be 'scalar'"
+    assert Shape.matrix(3, 4).kind == "matrix", "MatrixShape.kind must be 'matrix'"
+
+    # Structural equality
+    assert Shape.scalar() == Shape.scalar(), "ScalarShape() == ScalarShape() must be True"
+    assert Shape.matrix(3, 4) == Shape.matrix(3, 4), "MatrixShape(3,4) == MatrixShape(3,4) must be True"
+
+    # Hash stability
+    assert hash(Shape.scalar()) == hash(Shape.scalar()), "hash(ScalarShape()) must be stable"
+    assert hash(Shape.matrix(3, 4)) == hash(Shape.matrix(3, 4)), "hash(MatrixShape(3,4)) must be stable"
+
+    # __str__ output unchanged
+    assert str(Shape.matrix(3, 4)) == "matrix[3 x 4]", f"str mismatch: {str(Shape.matrix(3, 4))!r}"
+    assert str(Shape.scalar()) == "scalar", f"str mismatch: {str(Shape.scalar())!r}"
+    assert str(Shape.unknown()) == "unknown", f"str mismatch: {str(Shape.unknown())!r}"
+
+    # Cross-kind inequality
+    assert Shape.scalar() != Shape.unknown(), "ScalarShape != UnknownShape must be True"
+    assert Shape.scalar() != Shape.matrix(3, 4), "ScalarShape != MatrixShape must be True"
+
+    # Predicates
+    assert Shape.scalar().is_scalar(), "ScalarShape.is_scalar() must be True"
+    assert not Shape.scalar().is_matrix(), "ScalarShape.is_matrix() must be False"
+
+    print("PASS: Shape subclass hierarchy is correct")
+
+
 if __name__ == '__main__':
     test_lower_expr_raises_on_unknown_tag()
     test_lower_stmt_returns_opaque_on_unknown_tag()
     test_lower_stmt_skip_unchanged()
-    test_shapekind_str_mixin_backward_compat()
-    test_shape_kind_string_coercion()
-    test_shape_kind_typo_raises()
     test_is_empty_matrix()
+    test_shape_subclass_hierarchy()
     print("\nAll tests passed.")
