@@ -270,6 +270,13 @@ def analyze_nested_function_call(
             except EarlyReturn:
                 pass
 
+            # Write-back: flush modified parent-visible variables to parent env.
+            # Skip parameters (they shadow parent vars intentionally).
+            param_set = set(sig.params)
+            for var_name, shape in func_env.bindings.items():
+                if var_name not in param_set and var_name in parent_env:
+                    parent_env.set(var_name, shape)
+
             # Extract return values from output variables
             result_shapes = []
             for out_var in sig.output_vars:
