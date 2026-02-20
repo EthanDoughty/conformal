@@ -7,10 +7,10 @@
 % EXPECT: n = scalar
 % EXPECT: k = scalar
 % EXPECT: m = scalar
-% EXPECT: A = matrix[n x k]
-% EXPECT: B = matrix[n x m]
-% EXPECT: C = matrix[n x (k+m)]
-% EXPECT: D = matrix[(2*n) x k]
+% EXPECT: A = matrix[4 x 5]
+% EXPECT: B = matrix[4 x 2]
+% EXPECT: C = matrix[4 x 7]
+% EXPECT: D = matrix[8 x 5]
 
 n = 4;
 k = 5;

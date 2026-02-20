@@ -3,4 +3,4 @@ a = 3;
 b = a + 2;
 A = zeros(b, b);
 x = A(6, 1);
-% EXPECT: A = matrix[b x b]
+% EXPECT: A = matrix[5 x 5]

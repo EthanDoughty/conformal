@@ -1,10 +1,10 @@
 % Test: reshape and repmat builtin shape rules
-% EXPECT: warnings = 2
+% EXPECT: warnings = 3
 % EXPECT: reshape_concrete = matrix[3 x 2]
-% EXPECT: reshape_symbolic = matrix[n x m]
+% EXPECT: reshape_symbolic = matrix[5 x 4]
 % EXPECT: repmat_scalar = matrix[2 x 3]
 % EXPECT: repmat_concrete = matrix[4 x 6]
-% EXPECT: repmat_symbolic = matrix[(k*n) x (k*m)]
+% EXPECT: repmat_symbolic = matrix[8 x 12]
 % EXPECT: reshape_from_scalar = matrix[3 x 2]
 % EXPECT: reshape_nonmatching = matrix[4 x 4]
 

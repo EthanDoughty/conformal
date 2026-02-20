@@ -1,6 +1,6 @@
 % Test: Symbolic dimension canonicalization
 % EXPECT: warnings = 0
-% EXPECT: X = matrix[n x m]
+% EXPECT: X = matrix[3 x 4]
 
 n = 3;
 m = 4;

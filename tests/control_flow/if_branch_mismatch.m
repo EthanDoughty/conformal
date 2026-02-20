@@ -7,10 +7,10 @@
 % constant differences (e.g., n+1 vs n). Since k vs n could be equal at runtime,
 % no warning is emitted. Result is matrix[n x None] (column dimension unknown).
 
-% EXPECT: warnings = 0
-% EXPECT: A = matrix[n x k]
-% EXPECT: B = matrix[n x n]
-% EXPECT: C = matrix[n x None]
+% EXPECT: warnings = 1
+% EXPECT: A = matrix[4 x 5]
+% EXPECT: B = matrix[4 x 4]
+% EXPECT: C = unknown
 % EXPECT: k = scalar
 % EXPECT: n = scalar
 

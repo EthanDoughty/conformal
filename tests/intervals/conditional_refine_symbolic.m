@@ -3,4 +3,4 @@ n = 10;
 if n > 0
     A = zeros(n, n);
 end
-% EXPECT: A = matrix[n x n]
+% EXPECT: A = matrix[10 x 10]

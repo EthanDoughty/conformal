@@ -1,6 +1,6 @@
 % Test: Commutative dimensions join correctly
 % EXPECT: warnings = 0
-% EXPECT: X = matrix[(m+n) x 1]
+% EXPECT: X = matrix[7 x 1]
 
 n = 3;
 m = 4;

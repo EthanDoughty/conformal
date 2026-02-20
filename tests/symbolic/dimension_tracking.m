@@ -3,10 +3,10 @@
 % A * v' is valid when A is nxn
 
 % EXPECT: warnings = 0
-% EXPECT: A = matrix[n x n]
+% EXPECT: A = matrix[5 x 5]
 % EXPECT: n = scalar
 % EXPECT: v = matrix[1 x None]
-% EXPECT: y = matrix[n x 1]
+% EXPECT: y = matrix[5 x 1]
 
 n = 5;
 v = 1:n;

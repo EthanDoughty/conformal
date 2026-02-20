@@ -29,7 +29,7 @@ def _handle_zeros_ones(fname, expr, env, warnings, ctx):
         if interval_definitely_negative(dim_interval):
             warnings.append(diag.warn_possibly_negative_dim(expr.line, dim_interval))
         try:
-            d = expr_to_dim_ir(arg, env)
+            d = expr_to_dim_ir(arg, env, ctx)
             return shape_of_zeros(d, d) if fname == "zeros" else shape_of_ones(d, d)
         except ValueError:
             pass
@@ -44,8 +44,8 @@ def _handle_zeros_ones(fname, expr, env, warnings, ctx):
         if interval_definitely_negative(dim1_interval):
             warnings.append(diag.warn_possibly_negative_dim(expr.line, dim1_interval))
         try:
-            r_dim = expr_to_dim_ir(arg0, env)
-            c_dim = expr_to_dim_ir(arg1, env)
+            r_dim = expr_to_dim_ir(arg0, env, ctx)
+            c_dim = expr_to_dim_ir(arg1, env, ctx)
             return shape_of_zeros(r_dim, c_dim) if fname == "zeros" else shape_of_ones(r_dim, c_dim)
         except ValueError:
             pass
@@ -68,7 +68,7 @@ def _handle_matrix_constructor(fname, expr, env, warnings, ctx):
             if interval_definitely_negative(dim_interval):
                 warnings.append(diag.warn_possibly_negative_dim(expr.line, dim_interval))
             try:
-                d = expr_to_dim_ir(arg, env)
+                d = expr_to_dim_ir(arg, env, ctx)
                 return Shape.matrix(d, d)
             except ValueError:
                 pass
@@ -83,8 +83,8 @@ def _handle_matrix_constructor(fname, expr, env, warnings, ctx):
             if interval_definitely_negative(dim1_interval):
                 warnings.append(diag.warn_possibly_negative_dim(expr.line, dim1_interval))
             try:
-                r = expr_to_dim_ir(arg0, env)
-                c = expr_to_dim_ir(arg1, env)
+                r = expr_to_dim_ir(arg0, env, ctx)
+                c = expr_to_dim_ir(arg1, env, ctx)
                 return Shape.matrix(r, c)
             except ValueError:
                 pass
@@ -134,7 +134,7 @@ def _handle_cell_constructor(fname, expr, env, warnings, ctx):
         if interval_definitely_negative(dim_interval):
             warnings.append(diag.warn_possibly_negative_dim(expr.line, dim_interval))
         try:
-            d = expr_to_dim_ir(arg, env)
+            d = expr_to_dim_ir(arg, env, ctx)
             return Shape.cell(d, d)
         except ValueError:
             pass
@@ -149,8 +149,8 @@ def _handle_cell_constructor(fname, expr, env, warnings, ctx):
         if interval_definitely_negative(dim1_interval):
             warnings.append(diag.warn_possibly_negative_dim(expr.line, dim1_interval))
         try:
-            r_dim = expr_to_dim_ir(arg0, env)
-            c_dim = expr_to_dim_ir(arg1, env)
+            r_dim = expr_to_dim_ir(arg0, env, ctx)
+            c_dim = expr_to_dim_ir(arg1, env, ctx)
             return Shape.cell(r_dim, c_dim)
         except ValueError:
             pass
@@ -197,8 +197,8 @@ def _handle_reshape(fname, expr, env, warnings, ctx):
     if len(expr.args) == 3:
         try:
             input_shape = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
-            m = expr_to_dim_ir(unwrap_arg(expr.args[1]), env)
-            n = expr_to_dim_ir(unwrap_arg(expr.args[2]), env)
+            m = expr_to_dim_ir(unwrap_arg(expr.args[1]), env, ctx)
+            n = expr_to_dim_ir(unwrap_arg(expr.args[2]), env, ctx)
 
             # Conformability check: input element count must equal output element count
             if not input_shape.is_unknown():
@@ -227,8 +227,8 @@ def _handle_repmat(fname, expr, env, warnings, ctx):
     if len(expr.args) == 3:
         try:
             a_shape = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
-            m = expr_to_dim_ir(unwrap_arg(expr.args[1]), env)
-            n = expr_to_dim_ir(unwrap_arg(expr.args[2]), env)
+            m = expr_to_dim_ir(unwrap_arg(expr.args[1]), env, ctx)
+            n = expr_to_dim_ir(unwrap_arg(expr.args[2]), env, ctx)
             if a_shape.is_unknown():
                 return Shape.unknown()
             if a_shape.is_scalar():
@@ -287,7 +287,7 @@ def _handle_linspace(fname, expr, env, warnings, ctx):
         try:
             _ = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
             _ = eval_expr_ir(unwrap_arg(expr.args[1]), env, warnings, ctx)
-            n = expr_to_dim_ir(unwrap_arg(expr.args[2]), env)
+            n = expr_to_dim_ir(unwrap_arg(expr.args[2]), env, ctx)
             return Shape.matrix(1, n)
         except ValueError:
             pass
@@ -312,7 +312,7 @@ def _handle_reduction(fname, expr, env, warnings, ctx):
     elif len(expr.args) == 2:
         arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
         try:
-            dim_val = expr_to_dim_ir(unwrap_arg(expr.args[1]), env)
+            dim_val = expr_to_dim_ir(unwrap_arg(expr.args[1]), env, ctx)
             # Only handle concrete int dims 1 or 2
             if dim_val == 1:
                 if arg_shape.is_matrix():
@@ -530,7 +530,7 @@ def _handle_cat(fname, expr, env, warnings, ctx):
 
     # First arg is the dimension
     try:
-        dim_val = expr_to_dim_ir(unwrap_arg(expr.args[0]), env)
+        dim_val = expr_to_dim_ir(unwrap_arg(expr.args[0]), env, ctx)
     except ValueError:
         return None
 
@@ -610,7 +610,7 @@ def _handle_randi(fname, expr, env, warnings, ctx):
         if interval_definitely_negative(dim_interval):
             warnings.append(diag.warn_possibly_negative_dim(expr.line, dim_interval))
         try:
-            d = expr_to_dim_ir(arg, env)
+            d = expr_to_dim_ir(arg, env, ctx)
             return Shape.matrix(d, d)
         except ValueError:
             pass
@@ -625,8 +625,8 @@ def _handle_randi(fname, expr, env, warnings, ctx):
         if interval_definitely_negative(dim1_interval):
             warnings.append(diag.warn_possibly_negative_dim(expr.line, dim1_interval))
         try:
-            r = expr_to_dim_ir(arg0, env)
-            c = expr_to_dim_ir(arg1, env)
+            r = expr_to_dim_ir(arg0, env, ctx)
+            c = expr_to_dim_ir(arg1, env, ctx)
             return Shape.matrix(r, c)
         except ValueError:
             pass
@@ -649,8 +649,8 @@ def _handle_sparse_full(fname, expr, env, warnings, ctx):
     # sparse(m, n) — constructor form (check before passthrough)
     if fname == "sparse" and len(expr.args) == 2:
         try:
-            r = expr_to_dim_ir(unwrap_arg(expr.args[0]), env)
-            c = expr_to_dim_ir(unwrap_arg(expr.args[1]), env)
+            r = expr_to_dim_ir(unwrap_arg(expr.args[0]), env, ctx)
+            c = expr_to_dim_ir(unwrap_arg(expr.args[1]), env, ctx)
             return Shape.matrix(r, c)
         except ValueError:
             pass
@@ -680,7 +680,7 @@ def _handle_polyfit(fname, expr, env, warnings, ctx):
     """polyfit(x, y, n) — returns row vector of n+1 coefficients."""
     if len(expr.args) >= 3:
         try:
-            n_dim = expr_to_dim_ir(unwrap_arg(expr.args[2]), env)
+            n_dim = expr_to_dim_ir(unwrap_arg(expr.args[2]), env, ctx)
             return Shape.matrix(1, add_dim(n_dim, 1))
         except ValueError:
             pass

@@ -91,12 +91,14 @@ def expr_to_dim_ir_with_end(expr: Expr, env: Env, container_dim: Optional[int]) 
     return None
 
 
-def expr_to_dim_ir(expr: Expr, env: Env) -> Dim:
+def expr_to_dim_ir(expr: Expr, env: Env, ctx=None) -> Dim:
     """Convert an expression to a dimension value if possible.
 
     Args:
         expr: Expression to convert
         env: Current environment
+        ctx: Optional analysis context; when provided, exact scalar value ranges
+             are used to resolve variable names to concrete integers.
 
     Returns:
         Integer dimension, symbolic name, or None if not determinable
@@ -113,11 +115,20 @@ def expr_to_dim_ir(expr: Expr, env: Env) -> Dim:
         # Check for dimension alias first (propagates caller's dim name)
         if expr.name in env.dim_aliases:
             return env.dim_aliases[expr.name]
+        # If ctx provided, check for exact scalar value in value_ranges
+        if ctx is not None:
+            from analysis.intervals import Interval
+            interval = ctx.value_ranges.get(expr.name)
+            if (interval is not None
+                    and isinstance(interval.lo, int)
+                    and isinstance(interval.hi, int)
+                    and interval.lo == interval.hi):
+                return interval.lo
         return SymDim.var(expr.name)
     if isinstance(expr, BinOp):
         # Recursively extract dimensions from left and right operands
-        left_dim = expr_to_dim_ir(expr.left, env)
-        right_dim = expr_to_dim_ir(expr.right, env)
+        left_dim = expr_to_dim_ir(expr.left, env, ctx)
+        right_dim = expr_to_dim_ir(expr.right, env, ctx)
 
         # If either operand cannot be extracted, return None
         if left_dim is None or right_dim is None:
