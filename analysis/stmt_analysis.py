@@ -752,7 +752,9 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         return env
 
     if isinstance(stmt, FunctionDef):
-        # Phase A stub: skip function definitions (Phase C will register them)
+        # When inside a function body, register as a nested function (already pre-scanned,
+        # this is a no-op since pre-scan already populated nested_function_registry).
+        # At top level, pass 1 handles registration; this is also a no-op.
         return env
 
     if isinstance(stmt, AssignMulti):
@@ -813,6 +815,22 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         # Check function registry
         if fname in ctx.function_registry:
             output_shapes = analyze_function_call(fname, stmt.expr.args, stmt.line, env, warnings, ctx)
+
+            if len(stmt.targets) != len(output_shapes):
+                warnings.append(diag.warn_multi_assign_count_mismatch(
+                    stmt.line, fname, expected=len(output_shapes), got=len(stmt.targets)
+                ))
+                for target in stmt.targets:
+                    _bind(target, Shape.unknown())
+            else:
+                for target, shape in zip(stmt.targets, output_shapes):
+                    _bind(target, shape)
+            return env
+
+        # Check nested function registry (scoped nested functions)
+        if fname in ctx.nested_function_registry:
+            from analysis.func_analysis import analyze_nested_function_call
+            output_shapes = analyze_nested_function_call(fname, stmt.expr.args, stmt.line, env, warnings, ctx)
 
             if len(stmt.targets) != len(output_shapes):
                 warnings.append(diag.warn_multi_assign_count_mismatch(

@@ -51,6 +51,7 @@ class AnalysisContext:
     value_ranges: Dict[str, 'Interval'] = field(default_factory=dict)  # var_name -> integer interval (for bounds checking)
     external_functions: Dict[str, 'ExternalSignature'] = field(default_factory=dict)  # fname -> signature from sibling .m files
     analyzing_external: Set[str] = field(default_factory=set)  # Cross-file recursion guard (filename stems)
+    nested_function_registry: Dict[str, 'FunctionSignature'] = field(default_factory=dict)  # scoped nested functions
 
     @contextmanager
     def snapshot_scope(self):
@@ -59,6 +60,7 @@ class AnalysisContext:
         saved_provenance = dict(self.constraint_provenance)
         saved_scalars = dict(self.scalar_bindings)
         saved_ranges = dict(self.value_ranges)
+        saved_nested = dict(self.nested_function_registry)
         try:
             yield
         finally:
@@ -66,3 +68,4 @@ class AnalysisContext:
             self.constraint_provenance = saved_provenance
             self.scalar_bindings = saved_scalars
             self.value_ranges = saved_ranges
+            self.nested_function_registry = saved_nested

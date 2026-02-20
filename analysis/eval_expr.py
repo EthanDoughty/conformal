@@ -374,7 +374,7 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List['Diagnostic'], ctx: Analys
         # Named function handle: check if function exists
         handle_id = ctx._next_lambda_id
         ctx._next_lambda_id += 1
-        if expr.name in ctx.function_registry or expr.name in KNOWN_BUILTINS or expr.name in ctx.external_functions:
+        if expr.name in ctx.function_registry or expr.name in KNOWN_BUILTINS or expr.name in ctx.external_functions or expr.name in ctx.nested_function_registry:
             ctx._handle_registry[handle_id] = expr.name
             return Shape.function_handle(lambda_ids=frozenset({handle_id}))
         else:
@@ -590,6 +590,18 @@ def _eval_apply(expr: Apply, env: Env, warnings: List['Diagnostic'], ctx: Analys
                 else:
                     # Multiple returns in expression context, use first return value
                     return output_shapes[0]
+
+            # Priority 3.5: nested function (scoped to current parent function body)
+            if fname in ctx.nested_function_registry:
+                from analysis.func_analysis import analyze_nested_function_call
+                output_shapes = analyze_nested_function_call(fname, expr.args, line, env, warnings, ctx)
+
+                # Check if procedure (no return value)
+                if len(ctx.nested_function_registry[fname].output_vars) == 0:
+                    warnings.append(diag.warn_procedure_in_expr(line, fname))
+                    return Shape.unknown()
+
+                return output_shapes[0] if output_shapes else Shape.unknown()
 
             # Priority 4: external function from workspace (cross-file analysis)
             if fname in ctx.external_functions:

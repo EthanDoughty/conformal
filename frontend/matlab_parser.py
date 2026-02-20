@@ -111,12 +111,14 @@ class MatlabParser:
             return False
 
         block_openers = {"IF", "FOR", "WHILE", "SWITCH", "TRY"}
-        block_depth = 0
+        # Start at depth 1: we already consumed the first FUNCTION token, so we are
+        # inside the outermost function body. Depth 0 would mean "between functions".
+        block_depth = 1
         delim_depth = 0
 
         for tok in self.tokens[start + 1:]:
             if tok.kind == "EOF":
-                return block_depth >= 0
+                return block_depth >= 1  # never saw an END → end-less mode
 
             if tok.value in ("(", "[", "{"):
                 delim_depth += 1
@@ -128,12 +130,15 @@ class MatlabParser:
                     block_depth += 1
                 elif tok.kind == "END":
                     block_depth -= 1
-                    if block_depth < 0:
-                        return False  # END closes the function → ended mode
+                    if block_depth == 0:
+                        return False  # END closes the outermost function → ended mode
                 elif tok.kind == "FUNCTION":
-                    return True  # second FUNCTION at depth 0 → end-less mode
+                    if block_depth >= 1:
+                        block_depth += 1  # nested function inside body, treat as block opener
+                    else:
+                        return True  # second FUNCTION at depth 0 → end-less mode
 
-        return True  # hit end of token list with block_depth >= 0 → end-less mode
+        return True  # hit end of token list without closing END → end-less mode
 
     # token helpers
 
@@ -421,6 +426,8 @@ class MatlabParser:
             elif tok.kind == "RETURN":
                 tok = self.eat("RETURN")
                 return Return(line=tok.line, col=tok.col)
+            elif tok.kind == "FUNCTION":
+                return self.parse_function()
             elif tok.kind == "NEWLINE":
                 self.eat("NEWLINE")
                 return ExprStmt(line=0, col=0, expr=Const(line=0, col=0, value=0.0))
