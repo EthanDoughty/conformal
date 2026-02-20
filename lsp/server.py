@@ -13,8 +13,7 @@ from urllib.parse import urlparse, unquote
 from pygls.lsp.server import LanguageServer
 from lsprotocol import types
 
-from frontend.pipeline import parse_matlab
-from frontend.lower_ir import lower_program
+from frontend.matlab_parser import parse_matlab
 from analysis import analyze_program_ir
 from analysis.context import AnalysisContext
 from analysis.workspace import scan_workspace
@@ -128,8 +127,7 @@ def _validate(ls: LanguageServer, uri: str, source: str, force: bool = False) ->
         )
 
         # Parse and analyze
-        syntax_ast = parse_matlab(source)
-        ir_prog = lower_program(syntax_ast)
+        ir_prog = parse_matlab(source)
         env, warnings = analyze_program_ir(ir_prog, fixpoint=ctx.fixpoint, ctx=ctx)
 
         # Filter low-confidence warnings in default mode

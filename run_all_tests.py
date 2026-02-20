@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 from frontend.matlab_parser import parse_matlab
-from frontend.lower_ir import lower_program
 from analysis import analyze_program_ir
 from analysis.context import AnalysisContext
 from analysis.workspace import scan_workspace
@@ -107,12 +106,10 @@ def run_test(path: str, fixpoint: bool = False) -> tuple[bool, bool]:
     expected_shapes, expected_warning_count = parse_expectations(src, fixpoint=fixpoint)
 
     try:
-        syntax_ast = parse_matlab(src)
+        ir_prog = parse_matlab(src)
     except Exception as e:
         print(f"Error while parsing {path}: {e}\n")
         return False, False
-
-    ir_prog = lower_program(syntax_ast)
 
     # Scan workspace for external functions
     test_path = Path(path)

@@ -150,7 +150,7 @@ def load_external_function(sig: ExternalSignature) -> Optional[Tuple[FunctionSig
     Returns:
         (primary_FunctionSignature, subfunctions_dict) or None on any error
     """
-    from frontend.pipeline import parse_syntax, lower_to_ir
+    from frontend.matlab_parser import parse_matlab
 
     source_path = sig.source_path
     try:
@@ -164,8 +164,7 @@ def load_external_function(sig: ExternalSignature) -> Optional[Tuple[FunctionSig
         ir_prog = cached[1]
     else:
         try:
-            syntax_ast = parse_syntax(source)
-            ir_prog = lower_to_ir(syntax_ast)
+            ir_prog = parse_matlab(source)
             _parsed_cache[source_path] = (content_hash, ir_prog)
         except Exception:
             return None

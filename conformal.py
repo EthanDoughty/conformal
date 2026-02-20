@@ -7,7 +7,6 @@ import time
 from pathlib import Path
 
 from frontend.matlab_parser import parse_matlab
-from frontend.lower_ir import lower_program
 from analysis import analyze_program_ir
 from analysis.diagnostics import has_unsupported, STRICT_ONLY_CODES
 from analysis.context import AnalysisContext
@@ -37,15 +36,12 @@ def run_file(file_path: str, strict: bool = False, fixpoint: bool = False,
     try:
         src = path.read_text(errors='replace')
         t_read = time.perf_counter()
-        syntax_ast = parse_matlab(src)
+        ir_prog = parse_matlab(src)
     except Exception as e:
         print(f"Error while parsing {file_path}: {e}")
         return 1
 
     t_parse = time.perf_counter()
-
-    ir_prog = lower_program(syntax_ast)
-    t_lower = time.perf_counter()
 
     # Scan workspace for external functions
     ext = scan_workspace(path.parent, exclude=path.name)
@@ -78,8 +74,7 @@ def run_file(file_path: str, strict: bool = False, fixpoint: bool = False,
         print(f"\n--- Benchmark ({line_count} lines, {len(warnings)} warnings) ---")
         print(f"  Read:      {(t_read - t_start) * 1000:7.1f}ms")
         print(f"  Parse:     {(t_parse - t_read) * 1000:7.1f}ms")
-        print(f"  Lower:     {(t_lower - t_parse) * 1000:7.1f}ms")
-        print(f"  Workspace: {(t_scan - t_lower) * 1000:7.1f}ms")
+        print(f"  Workspace: {(t_scan - t_parse) * 1000:7.1f}ms")
         print(f"  Analyze:   {(t_analyze - t_scan) * 1000:7.1f}ms")
         print(f"  Total:     {total_ms:7.1f}ms")
         if total_ms > 0:
