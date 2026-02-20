@@ -17,7 +17,7 @@ from frontend.pipeline import parse_matlab
 from frontend.lower_ir import lower_program
 from analysis import analyze_program_ir
 from analysis.context import AnalysisContext
-from analysis.workspace import scan_workspace, clear_parse_cache
+from analysis.workspace import scan_workspace
 from analysis.builtins import KNOWN_BUILTINS
 from runtime.env import Env
 from ir.ir import Program
@@ -223,8 +223,7 @@ async def did_open(ls: LanguageServer, params: types.DidOpenTextDocumentParams):
 @server.feature(types.TEXT_DOCUMENT_DID_SAVE)
 async def did_save(ls: LanguageServer, params: types.DidSaveTextDocumentParams):
     """Handle document save: analyze immediately (no debounce)."""
-    # Clear parse cache to invalidate stale cross-file analysis
-    clear_parse_cache()
+    # Parse cache is content-addressed (auto-invalidates on file changes)
 
     doc = ls.workspace.get_text_document(params.text_document.uri)
     _validate(ls, params.text_document.uri, doc.source)

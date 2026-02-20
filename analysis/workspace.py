@@ -121,17 +121,28 @@ def scan_workspace(directory: Path, exclude: str = None) -> Dict[str, ExternalSi
     return result
 
 
-# Cache of parsed external files (keyed by absolute source_path)
-_parsed_cache: Dict[str, object] = {}
+# Cache of parsed external files: path -> (content_hash, ir_program)
+# Content-addressed: cache hits are validated by hashing the file on disk,
+# so stale entries are detected automatically without external invalidation.
+import hashlib
+_parsed_cache: Dict[str, Tuple[str, object]] = {}
 
 
 def clear_parse_cache() -> None:
-    """Clear the parsed external file cache. Useful for LSP cache invalidation."""
+    """Clear the parsed external file cache.
+
+    With content-addressed caching this is rarely needed (stale entries
+    self-invalidate on next load), but useful for forcing a full re-parse
+    in tests or after bulk file operations.
+    """
     _parsed_cache.clear()
 
 
 def load_external_function(sig: ExternalSignature) -> Optional[Tuple[FunctionSignature, Dict[str, FunctionSignature]]]:
     """Load and parse an external .m file, extracting its primary function and subfunctions.
+
+    Uses content-addressed caching: the file is read and hashed on every call,
+    but only re-parsed when the content has actually changed.
 
     Args:
         sig: ExternalSignature from workspace scanning
@@ -142,14 +153,20 @@ def load_external_function(sig: ExternalSignature) -> Optional[Tuple[FunctionSig
     from frontend.pipeline import parse_syntax, lower_to_ir
 
     source_path = sig.source_path
-    if source_path in _parsed_cache:
-        ir_prog = _parsed_cache[source_path]
+    try:
+        source = Path(source_path).read_text(encoding='utf-8', errors='replace')
+    except (OSError, UnicodeDecodeError):
+        return None
+
+    content_hash = hashlib.md5(source.encode()).hexdigest()
+    cached = _parsed_cache.get(source_path)
+    if cached is not None and cached[0] == content_hash:
+        ir_prog = cached[1]
     else:
         try:
-            source = Path(source_path).read_text(encoding='utf-8', errors='replace')
             syntax_ast = parse_syntax(source)
             ir_prog = lower_to_ir(syntax_ast)
-            _parsed_cache[source_path] = ir_prog
+            _parsed_cache[source_path] = (content_hash, ir_prog)
         except Exception:
             return None
 
