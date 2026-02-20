@@ -311,179 +311,7 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List['Diagnostic'], ctx: Analys
             return Shape.unknown()
 
     if isinstance(expr, Apply):
-        line = expr.line
-
-        # Check for indexing indicators: colon or range in args
-        has_colon_or_range = any(isinstance(arg, (Colon, Range)) for arg in expr.args)
-
-        # Check if base variable is a function handle (shadows builtins)
-        if isinstance(expr.base, Var):
-            base_var_name = expr.base.name
-            base_var_shape = env.get(base_var_name)
-            if base_var_shape.is_function_handle():
-                # Function handle call: analyze lambda/handle bodies
-                if base_var_shape._lambda_ids is None:
-                    # Opaque handle (no IDs) → fallback to approximate
-                    warnings.append(diag.warn_lambda_call_approximate(line, base_var_name))
-                    return Shape.unknown()
-
-                # Evaluate all argument shapes
-                arg_shapes = []
-                for arg in expr.args:
-                    if isinstance(arg, (Colon, Range)):
-                        # Colon/Range in function call args is invalid
-                        arg_shapes.append(Shape.unknown())
-                    elif isinstance(arg, IndexExpr):
-                        arg_shape = eval_expr_ir(arg.expr, env, warnings, ctx)
-                        arg_shapes.append(arg_shape)
-                    else:
-                        # Should not happen (Apply.args are IndexArg)
-                        arg_shapes.append(Shape.unknown())
-
-                # Analyze all possible callables (lambdas + handles)
-                results = []
-                for callable_id in sorted(base_var_shape._lambda_ids):  # sorted for determinism
-                    if callable_id in ctx._lambda_metadata:
-                        # Lambda body analysis
-                        params, body_expr, closure_env = ctx._lambda_metadata[callable_id]
-                        # Compute dimension aliases for cache key
-                        arg_dim_aliases = tuple(
-                            (param, expr_to_dim_ir(arg.expr, env)) if isinstance(arg, IndexExpr) else (param, None)
-                            for param, arg in zip(params, expr.args)
-                        )
-                        cache_key = ("lambda", callable_id, tuple(arg_shapes), arg_dim_aliases)
-
-                        # Cache check
-                        if cache_key in ctx.analysis_cache:
-                            cached_shape, cached_warnings = ctx.analysis_cache[cache_key]
-                            warnings.extend(cached_warnings)
-                            results.append(cached_shape)
-                            continue
-
-                        # Recursion guard
-                        if callable_id in ctx.analyzing_lambdas:
-                            warnings.append(diag.warn_recursive_lambda(line))
-                            results.append(Shape.unknown())
-                            continue
-
-                        # Check arg count
-                        if len(arg_shapes) != len(params):
-                            warnings.append(diag.warn_lambda_arg_count_mismatch(line, len(params), len(arg_shapes)))
-                            results.append(Shape.unknown())
-                            continue
-
-                        # Analyze lambda body
-                        ctx.analyzing_lambdas.add(callable_id)
-
-                        try:
-                            with ctx.snapshot_scope():
-                                # Create env from closure snapshot + bind params
-                                call_env = closure_env.copy()
-                                # Allow self-reference for recursion detection
-                                # (enables f = @(x) f(x-1) to trigger recursion guard)
-                                call_env.set(base_var_name, Shape.function_handle(lambda_ids=frozenset({callable_id})))
-                                for i, (param, arg_shape) in enumerate(zip(params, arg_shapes)):
-                                    call_env.set(param, arg_shape)
-                                    # Dimension aliasing: extract dimension from arg expression
-                                    arg = expr.args[i]
-                                    if isinstance(arg, IndexExpr):
-                                        caller_dim = expr_to_dim_ir(arg.expr, env)
-                                        if caller_dim is not None:
-                                            call_env.dim_aliases[param] = caller_dim
-
-                                # Analyze body expression
-                                lambda_warnings = []
-                                result = eval_expr_ir(body_expr, call_env, lambda_warnings, ctx)
-
-                                # Cache result
-                                ctx.analysis_cache[cache_key] = (result, lambda_warnings)
-                                warnings.extend(lambda_warnings)
-                                results.append(result)
-                        finally:
-                            ctx.analyzing_lambdas.discard(callable_id)
-
-                    elif callable_id in ctx._handle_registry:
-                        # Function handle dispatch (Phase 3)
-                        func_name = ctx._handle_registry[callable_id]
-                        if func_name in ctx.function_registry:
-                            # Dispatch to user-defined function
-                            output_shapes = analyze_function_call(func_name, expr.args, line, env, warnings, ctx)
-                            # Use first output (or unknown if none)
-                            if len(output_shapes) >= 1:
-                                results.append(output_shapes[0])
-                            else:
-                                results.append(Shape.unknown())
-                        elif func_name in KNOWN_BUILTINS:
-                            # Dispatch to builtin: create synthetic Apply and recursively evaluate
-                            # Build a synthetic Var with the builtin name (not the handle variable name)
-                            # to avoid infinite recursion
-                            synthetic_apply = Apply(
-                                base=Var(name=func_name, line=line),
-                                args=expr.args,
-                                line=line
-                            )
-                            # Recursively evaluate — will dispatch to builtin logic
-                            # Safe because the synthetic Var is not bound as a function_handle
-                            builtin_result = eval_expr_ir(synthetic_apply, env, warnings, ctx)
-                            results.append(builtin_result)
-                        elif func_name in ctx.external_functions:
-                            # External function from workspace — cross-file analysis
-                            from analysis.func_analysis import analyze_external_function_call
-                            ext_shapes = analyze_external_function_call(
-                                func_name, ctx.external_functions[func_name], expr.args, line, env, warnings, ctx)
-                            results.append(ext_shapes[0] if ext_shapes else Shape.unknown())
-                        else:
-                            # Function not found (should not happen — validated at FuncHandle eval)
-                            results.append(Shape.unknown())
-
-                # Join all results
-                if not results:
-                    # No lambda metadata or handle registry (should not happen)
-                    warnings.append(diag.warn_lambda_call_approximate(line, base_var_name))
-                    return Shape.unknown()
-
-                joined = results[0]
-                for r in results[1:]:
-                    joined = join_shape(joined, r)
-                return joined
-
-        # Check if base is a known builtin function
-        if isinstance(expr.base, Var):
-            fname = expr.base.name
-            if fname in KNOWN_BUILTINS:
-                return eval_builtin_call(fname, expr, env, warnings, ctx)
-
-            # Check if variable is unbound (unknown function)
-            if fname not in env.bindings:
-                # Check function registry before giving up
-                if fname in ctx.function_registry:
-                    output_shapes = analyze_function_call(fname, expr.args, line, env, warnings, ctx)
-
-                    # Check if procedure (no return value)
-                    if len(ctx.function_registry[fname].output_vars) == 0:
-                        warnings.append(diag.warn_procedure_in_expr(line, fname))
-                        return Shape.unknown()
-
-                    if len(output_shapes) == 1:
-                        return output_shapes[0]
-                    else:
-                        # Multiple returns in expression context, use first return value
-                        return output_shapes[0]
-
-                # Check external functions (workspace scanning — cross-file analysis)
-                if fname in ctx.external_functions:
-                    from analysis.func_analysis import analyze_external_function_call
-                    output_shapes = analyze_external_function_call(
-                        fname, ctx.external_functions[fname], expr.args, line, env, warnings, ctx)
-                    return output_shapes[0]
-
-                # Truly unknown function
-                warnings.append(diag.warn_unknown_function(line, fname))
-                return Shape.unknown()
-
-        # Default: treat as indexing (bound variable)
-        base_shape = eval_expr_ir(expr.base, env, warnings, ctx)
-        return _eval_indexing(base_shape, expr.args, line, expr, env, warnings, ctx)
+        return _eval_apply(expr, env, warnings, ctx)
 
     if isinstance(expr, Transpose):
         inner = eval_expr_ir(expr.operand, env, warnings, ctx)
@@ -562,6 +390,222 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List['Diagnostic'], ctx: Analys
         return eval_binop_ir(op, left_shape, right_shape, warnings, expr.left, expr.right, line, ctx, env)
 
     return Shape.unknown()
+
+
+def _eval_handle_call(base_var_name: str, base_var_shape: Shape, expr: Apply, env: Env, warnings: List['Diagnostic'], ctx: AnalysisContext) -> Shape:
+    """Dispatch a call through a function handle variable.
+
+    Called when base_var_shape.is_function_handle() is True. Iterates over
+    all callable IDs stored in the handle (lambdas and named-function handles),
+    analyzes each, and joins the results.
+
+    Args:
+        base_var_name: Name of the handle variable (for diagnostics and closure self-ref)
+        base_var_shape: Shape of the handle variable (must be function_handle)
+        expr: The Apply node being evaluated
+        env: Current environment
+        warnings: List to append warnings to
+        ctx: Analysis context
+
+    Returns:
+        Joined shape of all callable results, or unknown if none can be resolved
+    """
+    line = expr.line
+
+    if base_var_shape._lambda_ids is None:
+        # Opaque handle (no IDs) → fallback to approximate
+        warnings.append(diag.warn_lambda_call_approximate(line, base_var_name))
+        return Shape.unknown()
+
+    # Evaluate all argument shapes
+    arg_shapes = []
+    for arg in expr.args:
+        if isinstance(arg, (Colon, Range)):
+            # Colon/Range in function call args is invalid
+            arg_shapes.append(Shape.unknown())
+        elif isinstance(arg, IndexExpr):
+            arg_shape = eval_expr_ir(arg.expr, env, warnings, ctx)
+            arg_shapes.append(arg_shape)
+        else:
+            # Should not happen (Apply.args are IndexArg)
+            arg_shapes.append(Shape.unknown())
+
+    # Analyze all possible callables (lambdas + handles)
+    results = []
+    for callable_id in sorted(base_var_shape._lambda_ids):  # sorted for determinism
+        if callable_id in ctx._lambda_metadata:
+            # Lambda body analysis
+            params, body_expr, closure_env = ctx._lambda_metadata[callable_id]
+            # Compute dimension aliases for cache key
+            arg_dim_aliases = tuple(
+                (param, expr_to_dim_ir(arg.expr, env)) if isinstance(arg, IndexExpr) else (param, None)
+                for param, arg in zip(params, expr.args)
+            )
+            cache_key = ("lambda", callable_id, tuple(arg_shapes), arg_dim_aliases)
+
+            # Cache check
+            if cache_key in ctx.analysis_cache:
+                cached_shape, cached_warnings = ctx.analysis_cache[cache_key]
+                warnings.extend(cached_warnings)
+                results.append(cached_shape)
+                continue
+
+            # Recursion guard
+            if callable_id in ctx.analyzing_lambdas:
+                warnings.append(diag.warn_recursive_lambda(line))
+                results.append(Shape.unknown())
+                continue
+
+            # Check arg count
+            if len(arg_shapes) != len(params):
+                warnings.append(diag.warn_lambda_arg_count_mismatch(line, len(params), len(arg_shapes)))
+                results.append(Shape.unknown())
+                continue
+
+            # Analyze lambda body
+            ctx.analyzing_lambdas.add(callable_id)
+
+            try:
+                with ctx.snapshot_scope():
+                    # Create env from closure snapshot + bind params
+                    call_env = closure_env.copy()
+                    # Allow self-reference for recursion detection
+                    # (enables f = @(x) f(x-1) to trigger recursion guard)
+                    call_env.set(base_var_name, Shape.function_handle(lambda_ids=frozenset({callable_id})))
+                    for i, (param, arg_shape) in enumerate(zip(params, arg_shapes)):
+                        call_env.set(param, arg_shape)
+                        # Dimension aliasing: extract dimension from arg expression
+                        arg = expr.args[i]
+                        if isinstance(arg, IndexExpr):
+                            caller_dim = expr_to_dim_ir(arg.expr, env)
+                            if caller_dim is not None:
+                                call_env.dim_aliases[param] = caller_dim
+
+                    # Analyze body expression
+                    lambda_warnings = []
+                    result = eval_expr_ir(body_expr, call_env, lambda_warnings, ctx)
+
+                    # Cache result
+                    ctx.analysis_cache[cache_key] = (result, lambda_warnings)
+                    warnings.extend(lambda_warnings)
+                    results.append(result)
+            finally:
+                ctx.analyzing_lambdas.discard(callable_id)
+
+        elif callable_id in ctx._handle_registry:
+            # Function handle dispatch (Phase 3)
+            func_name = ctx._handle_registry[callable_id]
+            if func_name in ctx.function_registry:
+                # Dispatch to user-defined function
+                output_shapes = analyze_function_call(func_name, expr.args, line, env, warnings, ctx)
+                # Use first output (or unknown if none)
+                if len(output_shapes) >= 1:
+                    results.append(output_shapes[0])
+                else:
+                    results.append(Shape.unknown())
+            elif func_name in KNOWN_BUILTINS:
+                # Dispatch directly to builtin call handler.
+                # eval_builtin_call only accesses expr.args and expr.line — never expr.base —
+                # so passing the original expr (whose .base is the handle variable) is safe.
+                builtin_result = eval_builtin_call(func_name, expr, env, warnings, ctx)
+                results.append(builtin_result)
+            elif func_name in ctx.external_functions:
+                # External function from workspace — cross-file analysis
+                from analysis.func_analysis import analyze_external_function_call
+                ext_shapes = analyze_external_function_call(
+                    func_name, ctx.external_functions[func_name], expr.args, line, env, warnings, ctx)
+                results.append(ext_shapes[0] if ext_shapes else Shape.unknown())
+            else:
+                # Function not found (should not happen — validated at FuncHandle eval)
+                results.append(Shape.unknown())
+
+    # Join all results
+    if not results:
+        # No lambda metadata or handle registry (should not happen)
+        warnings.append(diag.warn_lambda_call_approximate(line, base_var_name))
+        return Shape.unknown()
+
+    joined = results[0]
+    for r in results[1:]:
+        joined = join_shape(joined, r)
+    return joined
+
+
+def _eval_apply(expr: Apply, env: Env, warnings: List['Diagnostic'], ctx: AnalysisContext) -> Shape:
+    """Evaluate an Apply node (function call or array indexing).
+
+    Apply dispatch priority (MATLAB semantics):
+    1. Base is a bound function_handle variable -> lambda/handle dispatch
+       (shadows builtins; Colon/Range args are treated as invalid call args)
+    2. Base is a known builtin -> eval_builtin_call
+    3. Base is in function_registry (user-defined) -> analyze_function_call
+    4. Base is in external_functions (workspace) -> analyze_external_function_call
+    5. Base name is truly unbound -> W_UNKNOWN_FUNCTION
+    6. Fallback (bound non-handle variable) -> array indexing via _eval_indexing
+
+    Note: has_colon_or_range is computed below but is not referenced in any
+    branch (dead code from an earlier design where colon args forced indexing
+    mode). It is left in place to keep the diff minimal.
+
+    Args:
+        expr: Apply node to evaluate
+        env: Current environment
+        warnings: List to append warnings to
+        ctx: Analysis context
+
+    Returns:
+        Inferred shape of the apply result
+    """
+    line = expr.line
+
+    # Check for indexing indicators: colon or range in args
+    has_colon_or_range = any(isinstance(arg, (Colon, Range)) for arg in expr.args)
+
+    # Priority 1: base variable is a function handle (shadows builtins)
+    if isinstance(expr.base, Var):
+        base_var_name = expr.base.name
+        base_var_shape = env.get(base_var_name)
+        if base_var_shape.is_function_handle():
+            return _eval_handle_call(base_var_name, base_var_shape, expr, env, warnings, ctx)
+
+    # Priority 2: base is a known builtin function
+    if isinstance(expr.base, Var):
+        fname = expr.base.name
+        if fname in KNOWN_BUILTINS:
+            return eval_builtin_call(fname, expr, env, warnings, ctx)
+
+        # Priority 3-5: base name is unbound (not a local variable)
+        if fname not in env.bindings:
+            # Priority 3: user-defined function
+            if fname in ctx.function_registry:
+                output_shapes = analyze_function_call(fname, expr.args, line, env, warnings, ctx)
+
+                # Check if procedure (no return value)
+                if len(ctx.function_registry[fname].output_vars) == 0:
+                    warnings.append(diag.warn_procedure_in_expr(line, fname))
+                    return Shape.unknown()
+
+                if len(output_shapes) == 1:
+                    return output_shapes[0]
+                else:
+                    # Multiple returns in expression context, use first return value
+                    return output_shapes[0]
+
+            # Priority 4: external function from workspace (cross-file analysis)
+            if fname in ctx.external_functions:
+                from analysis.func_analysis import analyze_external_function_call
+                output_shapes = analyze_external_function_call(
+                    fname, ctx.external_functions[fname], expr.args, line, env, warnings, ctx)
+                return output_shapes[0]
+
+            # Priority 5: truly unknown function
+            warnings.append(diag.warn_unknown_function(line, fname))
+            return Shape.unknown()
+
+    # Priority 6: fallback — treat as indexing (bound non-handle variable)
+    base_shape = eval_expr_ir(expr.base, env, warnings, ctx)
+    return _eval_indexing(base_shape, expr.args, line, expr, env, warnings, ctx)
+
 
 def _eval_indexing(base_shape: Shape, args, line: int, expr, env: Env, warnings: List['Diagnostic'], ctx: AnalysisContext) -> Shape:
     """Indexing logic for Apply-as-indexing nodes.
