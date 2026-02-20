@@ -87,14 +87,14 @@ class MatlabParser:
             or tok.value in {"(", "-", "+", "~", "[", "{"}
             )
 
-    def recover_to_stmt_boundary(self, start_line: int) -> Any:
+    def recover_to_stmt_boundary(self, start_line) -> Any:
         """Recover from parse error by consuming tokens until statement boundary.
 
         Statement boundary is `;` or NEWLINE when delimiter depth is 0.
         Tracks (), [], {} depth so newlines inside don't terminate.
         Stops before `end` at depth 0 to preserve block structure.
 
-        Returns: ['raw_stmt', line, tokens, raw_text]
+        Returns: ['raw_stmt', (line, col), tokens, raw_text]
         """
         tokens_consumed = []
         depth = 0  # Track (), [], {} nesting
@@ -173,7 +173,7 @@ class MatlabParser:
         array index keyword inside (), [], or {} (e.g. A(end:-1:1)).
         """
         start_tok = self.current()
-        line = start_tok.line
+        line = (start_tok.line, start_tok.col)
         depth = 1  # classdef opens a block
         self.i += 1  # skip 'classdef'
 
@@ -223,7 +223,7 @@ class MatlabParser:
           function name(arg1, arg2)                   # procedure (no return)
         """
         func_tok = self.eat("FUNCTION")
-        line = func_tok.line
+        line = (func_tok.line, func_tok.col)
 
         # Parse output variables (or none for procedure)
         output_vars = []
@@ -313,7 +313,7 @@ class MatlabParser:
 
     def parse_stmt(self) -> Any:
         tok = self.current()
-        start_line = tok.line
+        start_line = (tok.line, tok.col)
         start_pos = self.i
 
         try:
@@ -333,13 +333,13 @@ class MatlabParser:
                 return self.parse_try()
             elif tok.kind == "BREAK":
                 tok = self.eat("BREAK")
-                return ["break", tok.line]
+                return ["break", (tok.line, tok.col)]
             elif tok.kind == "CONTINUE":
                 tok = self.eat("CONTINUE")
-                return ["continue", tok.line]
+                return ["continue", (tok.line, tok.col)]
             elif tok.kind == "RETURN":
                 tok = self.eat("RETURN")
-                return ["return", tok.line]
+                return ["return", (tok.line, tok.col)]
             elif tok.kind == "NEWLINE":
                 self.eat("NEWLINE")
                 return ["skip"]
@@ -394,7 +394,7 @@ class MatlabParser:
                     # Destructuring assignment confirmed
                     eq_tok = self.eat("=")
                     expr = self.parse_expr()
-                    return ["assign_multi", eq_tok.line, targets, expr]
+                    return ["assign_multi", (eq_tok.line, eq_tok.col), targets, expr]
                 else:
                     # Not destructuring, backtrack and parse as matrix literal
                     self.i = saved_pos
@@ -430,13 +430,13 @@ class MatlabParser:
                 if fields and self.current().value == "=":
                     eq_tok = self.eat("=")
                     expr = self.parse_expr()
-                    return ["struct_assign", eq_tok.line, id_tok.value, fields, expr]
+                    return ["struct_assign", (eq_tok.line, eq_tok.col), id_tok.value, fields, expr]
                 else:
                     # Not assignment, construct field access expression and continue
                     # Build nested field_access nodes: s.a.b -> field_access(field_access(var(s), a), b)
-                    base = ["var", id_tok.line, id_tok.value]
+                    base = ["var", (id_tok.line, id_tok.col), id_tok.value]
                     for field in fields:
-                        base = ["field_access", id_tok.line, base, field]
+                        base = ["field_access", (id_tok.line, id_tok.col), base, field]
                     expr_tail = self.parse_expr_rest(base, 0)
                     return ["expr", expr_tail]
             # Check for cell assignment: ID{i} = expr or ID{i,j} = expr
@@ -464,13 +464,13 @@ class MatlabParser:
                     if fields and self.current().value == "=":
                         eq_tok = self.eat("=")
                         expr = self.parse_expr()
-                        return ["index_struct_assign", eq_tok.line, id_tok.value, args, "curly", fields, expr]
+                        return ["index_struct_assign", (eq_tok.line, eq_tok.col), id_tok.value, args, "curly", fields, expr]
                     else:
                         # Not assignment, reconstruct as expression
-                        base = ["var", id_tok.line, id_tok.value]
-                        left = ["curly_apply", id_tok.line, base, args]
+                        base = ["var", (id_tok.line, id_tok.col), id_tok.value]
+                        left = ["curly_apply", (id_tok.line, id_tok.col), base, args]
                         for field in fields:
-                            left = ["field_access", id_tok.line, left, field]
+                            left = ["field_access", (id_tok.line, id_tok.col), left, field]
                         left = self.parse_postfix(left)
                         expr_tail = self.parse_expr_rest(left, 0)
                         return ["expr", expr_tail]
@@ -479,11 +479,11 @@ class MatlabParser:
                 if self.current().value == "=":
                     eq_tok = self.eat("=")
                     expr = self.parse_expr()
-                    return ["cell_assign", eq_tok.line, id_tok.value, args, expr]
+                    return ["cell_assign", (eq_tok.line, eq_tok.col), id_tok.value, args, expr]
                 else:
                     # Not assignment, construct CurlyApply expression
-                    base = ["var", id_tok.line, id_tok.value]
-                    left = ["curly_apply", id_tok.line, base, args]
+                    base = ["var", (id_tok.line, id_tok.col), id_tok.value]
+                    left = ["curly_apply", (id_tok.line, id_tok.col), base, args]
                     expr_tail = self.parse_expr_rest(left, 0)
                     return ["expr", expr_tail]
             # Check for indexed assignment: ID(i,j) = expr
@@ -497,7 +497,7 @@ class MatlabParser:
                 if self.current().value == "=":
                     eq_tok = self.eat("=")
                     expr = self.parse_expr()
-                    return ["index_assign", eq_tok.line, id_tok.value, args, expr]
+                    return ["index_assign", (eq_tok.line, eq_tok.col), id_tok.value, args, expr]
 
                 # Check for chained struct assignment: ID(args).field... = expr
                 elif self.current().kind == "DOT":
@@ -517,29 +517,29 @@ class MatlabParser:
                     if fields and self.current().value == "=":
                         eq_tok = self.eat("=")
                         expr = self.parse_expr()
-                        return ["index_struct_assign", eq_tok.line, id_tok.value, args, "paren", fields, expr]
+                        return ["index_struct_assign", (eq_tok.line, eq_tok.col), id_tok.value, args, "paren", fields, expr]
                     else:
                         # Not assignment, reconstruct as expression
-                        base = ["var", id_tok.line, id_tok.value]
-                        left = ["apply", id_tok.line, base, args]
+                        base = ["var", (id_tok.line, id_tok.col), id_tok.value]
+                        left = ["apply", (id_tok.line, id_tok.col), base, args]
                         for field in fields:
-                            left = ["field_access", id_tok.line, left, field]
+                            left = ["field_access", (id_tok.line, id_tok.col), left, field]
                         left = self.parse_postfix(left)
                         expr_tail = self.parse_expr_rest(left, 0)
                         return ["expr", expr_tail]
                 else:
                     # Not assignment, construct Apply expression and continue
-                    base = ["var", id_tok.line, id_tok.value]
-                    left = ["apply", id_tok.line, base, args]
+                    base = ["var", (id_tok.line, id_tok.col), id_tok.value]
+                    left = ["apply", (id_tok.line, id_tok.col), base, args]
                     left = self.parse_postfix(left)  # Handle chained .field, {i}, (), '
                     expr_tail = self.parse_expr_rest(left, 0)
                     return ["expr", expr_tail]
             elif self.current().value == "=":
                 self.eat("=")
                 expr = self.parse_expr()
-                return ["assign", id_tok.line, id_tok.value, expr]
+                return ["assign", (id_tok.line, id_tok.col), id_tok.value, expr]
             else:
-                expr_tail = self.parse_expr_rest(["var", id_tok.line, id_tok.value], 0)
+                expr_tail = self.parse_expr_rest(["var", (id_tok.line, id_tok.col), id_tok.value], 0)
                 return ["expr", expr_tail]
         else:
             expr = self.parse_expr()
@@ -567,14 +567,13 @@ class MatlabParser:
 
     def parse_global(self) -> Any:
         """Parse global/persistent declaration: collect space-separated identifiers.
-        Internal: ['global_decl', line, [var_names]]
+        Internal: ['global_decl', (line, col), [var_names]]
         """
         kw_tok = self.eat(self.current().kind)  # eat GLOBAL or PERSISTENT
-        line = kw_tok.line
         var_names = []
         while self.current().kind == "ID":
             var_names.append(self.eat("ID").value)
-        return ["global_decl", line, var_names]
+        return ["global_decl", (kw_tok.line, kw_tok.col), var_names]
 
     def parse_while(self) -> Any:
         """Internal: ['while', cond, body]"""
@@ -701,20 +700,20 @@ class MatlabParser:
         elif tok.value == "-":
             minus_tok = self.eat("-")
             operand = self.parse_expr(self.PRECEDENCE["-"], matrix_context=matrix_context)
-            left = ["neg", minus_tok.line, operand]
+            left = ["neg", (minus_tok.line, minus_tok.col), operand]
         elif tok.value == "~":
             not_tok = self.eat("~")
             operand = self.parse_expr(self.PRECEDENCE["+"], matrix_context=matrix_context)  # same precedence as unary -
-            left = ["not", not_tok.line, operand]
+            left = ["not", (not_tok.line, not_tok.col), operand]
         elif tok.kind == "NUMBER":
             num_tok = self.eat("NUMBER")
-            left = ["const", num_tok.line, float(num_tok.value)]
+            left = ["const", (num_tok.line, num_tok.col), float(num_tok.value)]
         elif tok.kind == "STRING":
             str_tok = self.eat("STRING")
-            left = ["string", str_tok.line, str_tok.value]
+            left = ["string", (str_tok.line, str_tok.col), str_tok.value]
         elif tok.kind == "ID":
             id_tok = self.eat("ID")
-            left = ["var", id_tok.line, id_tok.value]
+            left = ["var", (id_tok.line, id_tok.col), id_tok.value]
             left = self.parse_postfix(left)
         elif tok.value == "(":
             self.eat("(")
@@ -740,11 +739,11 @@ class MatlabParser:
                         params.append(self.eat("ID").value)
                 self.eat(")")
                 body = self.parse_expr()
-                left = ["lambda", at_tok.line, params, body]
+                left = ["lambda", (at_tok.line, at_tok.col), params, body]
             elif next_tok.kind == "ID":
                 # Named function handle: @myFunc
                 name = self.eat("ID").value
-                left = ["func_handle", at_tok.line, name]
+                left = ["func_handle", (at_tok.line, at_tok.col), name]
             else:
                 raise ParseError(
                     f"Expected '(' or function name after '@' at {next_tok.pos}"
@@ -752,7 +751,7 @@ class MatlabParser:
         elif tok.kind == "END":
             # 'end' keyword (will warn if not in indexing context during analysis)
             end_tok = self.eat("END")
-            left = ["end", end_tok.line]
+            left = ["end", (end_tok.line, end_tok.col)]
         else:
             raise ParseError(
                 f"Unexpected token {tok.kind} {tok.value!r} in expression at {tok.pos}"
@@ -783,7 +782,7 @@ class MatlabParser:
             op_tok = self.eat(op)
             # Right-associative: ^ and .^ use prec (not prec+1) for right operand
             right = self.parse_expr(prec if op in ("^", ".^") else prec + 1)
-            left = [op, op_tok.line, left, right]
+            left = [op, (op_tok.line, op_tok.col), left, right]
         return left
 
     def parse_postfix(self, left: Any) -> Any:
@@ -802,35 +801,35 @@ class MatlabParser:
                 self.eat(")")
 
                 # Emit unified apply node. Disambiguation happens in analyzer.
-                left = ["apply", lparen_tok.line, left, args]
+                left = ["apply", (lparen_tok.line, lparen_tok.col), left, args]
 
             elif tok.value == "{":
                 # Curly indexing c{i} or c{i,j}
                 lcurly_tok = self.eat("{")
                 args = self.parse_paren_args()
                 self.eat("}")
-                left = ["curly_apply", lcurly_tok.line, left, args]
+                left = ["curly_apply", (lcurly_tok.line, lcurly_tok.col), left, args]
 
             elif tok.kind == "TRANSPOSE":
                 t_tok = self.eat("TRANSPOSE")
-                left = ["transpose", t_tok.line, left]
+                left = ["transpose", (t_tok.line, t_tok.col), left]
 
             elif tok.kind == "DOTOP" and tok.value == ".'":
                 t_tok = self.eat("DOTOP")
-                left = ["transpose", t_tok.line, left]
+                left = ["transpose", (t_tok.line, t_tok.col), left]
 
             elif tok.kind == "DOT":
                 # Field access: check if next token is ID (not .* or ./)
                 dot_tok = self.eat("DOT")
                 if self.current().kind == "ID":
                     field_name = self.eat("ID").value
-                    left = ["field_access", dot_tok.line, left, field_name]
+                    left = ["field_access", (dot_tok.line, dot_tok.col), left, field_name]
                 elif self.current().value == "(":
                     # Dynamic field access: s.(expr)
                     self.eat("(")
                     self.parse_expr()  # consume field expression but ignore value
                     self.eat(")")
-                    left = ["field_access", dot_tok.line, left, "<dynamic>"]
+                    left = ["field_access", (dot_tok.line, dot_tok.col), left, "<dynamic>"]
                 else:
                     # Not field access (might be .* or ./ but those are DOTOP, not DOT)
                     # This shouldn't happen with current lexer, but be defensive
@@ -867,17 +866,18 @@ class MatlabParser:
             op_tok = self.eat(op)
             # Right-associative: ^ and .^ use prec (not prec+1) for right operand
             right = self.parse_expr(prec if op in ("^", ".^") else prec + 1)
-            left = [op, op_tok.line, left, right]
+            left = [op, (op_tok.line, op_tok.col), left, right]
         return left
-    
+
     def _parse_delimited_rows(self, end_token: str) -> Tuple[int, List[List[Any]]]:
         """
         Parse delimited rows for matrix or cell literals.
         Shared logic for [ ] and { } literals.
         Returns (line, rows) tuple.
         """
-        # Get the opening token (already consumed by caller, use current line)
-        line = self.current().line
+        # Get the opening token (already consumed by caller, use current position)
+        cur = self.current()
+        line = (cur.line, cur.col)
 
         rows: List[List[Any]] = []
 
@@ -946,26 +946,29 @@ class MatlabParser:
     def parse_matrix_literal(self) -> Any:
         """
         Parse MATLAB-style matrix literal: [ a b, c ; d e ]
-        Internal form: ['matrix', line, rows]
+        Internal form: ['matrix', (line, col), rows]
         where rows is List[List[expr]]
         """
         lbrack = self.eat("[")
-        line = lbrack.line
-        line, rows = self._parse_delimited_rows("]")
+        lc, rows = self._parse_delimited_rows("]")
         self.eat("]")
-        return ["matrix", line, rows]
+        # Use bracket token position if literal is empty (lc falls back to closing bracket)
+        if not rows:
+            lc = (lbrack.line, lbrack.col)
+        return ["matrix", lc, rows]
 
     def parse_cell_literal(self) -> Any:
         """
         Parse MATLAB-style cell literal: { a b, c ; d e }
-        Internal form: ['cell', line, rows]
+        Internal form: ['cell', (line, col), rows]
         where rows is List[List[expr]]
         """
         lcurly = self.eat("{")
-        line = lcurly.line
-        line, rows = self._parse_delimited_rows("}")
+        lc, rows = self._parse_delimited_rows("}")
         self.eat("}")
-        return ["cell", line, rows]
+        if not rows:
+            lc = (lcurly.line, lcurly.col)
+        return ["cell", lc, rows]
     
     def parse_index_arg(self) -> Any:
         """Parse a single argument inside () for indexing/calls
@@ -980,7 +983,7 @@ class MatlabParser:
         # : by itself
         if tok.value == ":":
             c_tok = self.eat(":")
-            return ["colon", c_tok.line]
+            return ["colon", (c_tok.line, c_tok.col)]
 
         # Temporarily hide : from precedence table to prevent it being consumed
         # Save original precedence
@@ -997,7 +1000,7 @@ class MatlabParser:
                 colon_tok = self.eat(":")
                 # Parse range endpoint (still with : hidden)
                 range_end = self.parse_expr()
-                return ["range", colon_tok.line, start, range_end]
+                return ["range", (colon_tok.line, colon_tok.col), start, range_end]
 
             return start
         finally:

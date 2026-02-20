@@ -8,19 +8,34 @@ from typing import Any, List
 from ir.ir import *
 
 
+def _unpack_lc(lc: Any):
+    """Unpack a (line, col) tuple from a syntax AST position field.
+
+    Returns (line, col) integers. Accepts a tuple (from the updated parser) or
+    a plain int (legacy path, col defaults to 0).
+    """
+    if isinstance(lc, tuple):
+        return lc[0], lc[1]
+    if isinstance(lc, int):
+        return lc, 0
+    return 0, 0
+
+
 def lower_function(func: Any) -> FunctionDef:
     """Convert syntax function to IR FunctionDef.
 
     Args:
-        func: ['function', line, output_vars, name, params, body]
+        func: ['function', (line, col), output_vars, name, params, body]
 
     Returns:
         IR FunctionDef
     """
-    tag, line, output_vars, name, params, body = func
+    tag, lc, output_vars, name, params, body = func
     assert tag == "function"
+    line, col = _unpack_lc(lc)
     return FunctionDef(
         line=line,
+        col=col,
         name=name,
         params=params,
         output_vars=output_vars,
@@ -129,55 +144,59 @@ def lower_stmt(stmt: Any) -> Stmt:
     tag = stmt[0]
 
     if tag == "assign":
-        line, name, expr = stmt[1], stmt[2], stmt[3]
-        return Assign(line=line, name=name, expr=lower_expr(expr))
+        line, col = _unpack_lc(stmt[1])
+        name, expr = stmt[2], stmt[3]
+        return Assign(line=line, col=col, name=name, expr=lower_expr(expr))
 
     if tag == "struct_assign":
-        # ['struct_assign', line, base_name, fields, expr]
-        line = stmt[1]
+        # ['struct_assign', (line, col), base_name, fields, expr]
+        line, col = _unpack_lc(stmt[1])
         base_name = stmt[2]
         fields = stmt[3]
         expr = lower_expr(stmt[4])
-        return StructAssign(line=line, base_name=base_name, fields=fields, expr=expr)
+        return StructAssign(line=line, col=col, base_name=base_name, fields=fields, expr=expr)
 
     if tag == "cell_assign":
-        # ['cell_assign', line, base_name, args, expr]
-        line = stmt[1]
+        # ['cell_assign', (line, col), base_name, args, expr]
+        line, col = _unpack_lc(stmt[1])
         base_name = stmt[2]
         args = [lower_index_arg(arg) for arg in stmt[3]]
         expr = lower_expr(stmt[4])
-        return CellAssign(line=line, base_name=base_name, args=args, expr=expr)
+        return CellAssign(line=line, col=col, base_name=base_name, args=args, expr=expr)
 
     if tag == "index_assign":
-        # ['index_assign', line, base_name, args, expr]
-        line = stmt[1]
+        # ['index_assign', (line, col), base_name, args, expr]
+        line, col = _unpack_lc(stmt[1])
         base_name = stmt[2]
         args = [lower_index_arg(arg) for arg in stmt[3]]
         expr = lower_expr(stmt[4])
-        return IndexAssign(line=line, base_name=base_name, args=args, expr=expr)
+        return IndexAssign(line=line, col=col, base_name=base_name, args=args, expr=expr)
 
     if tag == "index_struct_assign":
-        # ['index_struct_assign', line, base_name, index_args, index_kind, fields, expr]
-        line = stmt[1]
+        # ['index_struct_assign', (line, col), base_name, index_args, index_kind, fields, expr]
+        line, col = _unpack_lc(stmt[1])
         base_name = stmt[2]
         index_args = [lower_index_arg(arg) for arg in stmt[3]]
         index_kind = stmt[4]
         fields = stmt[5]
         expr = lower_expr(stmt[6])
-        return IndexStructAssign(line=line, base_name=base_name, index_args=index_args,
+        return IndexStructAssign(line=line, col=col, base_name=base_name, index_args=index_args,
                                  index_kind=index_kind, fields=fields, expr=expr)
 
     if tag == "assign_multi":
-        # ['assign_multi', line, targets, expr]
-        line = stmt[1]
+        # ['assign_multi', (line, col), targets, expr]
+        line, col = _unpack_lc(stmt[1])
         targets = stmt[2]
         expr = lower_expr(stmt[3])
-        return AssignMulti(line=line, targets=targets, expr=expr)
+        return AssignMulti(line=line, col=col, targets=targets, expr=expr)
 
     if tag == "expr":
         expr = stmt[1]
-        line = expr[1] if isinstance(expr, list) and len(expr) > 1 and isinstance(expr[1], int) else 0
-        return ExprStmt(line=line, expr=lower_expr(expr))
+        if isinstance(expr, list) and len(expr) > 1 and isinstance(expr[1], (int, tuple)):
+            line, col = _unpack_lc(expr[1])
+        else:
+            line, col = 0, 0
+        return ExprStmt(line=line, col=col, expr=lower_expr(expr))
 
     if tag == "if":
         # Updated for v0.11.0: handle 5-element format with elseifs
@@ -189,17 +208,17 @@ def lower_stmt(stmt: Any) -> Stmt:
 
         if not elseifs:
             # Simple if/else (backward compatible)
-            return If(line=cond.line, cond=cond, then_body=then_body, else_body=else_body)
+            return If(line=cond.line, col=cond.col, cond=cond, then_body=then_body, else_body=else_body)
         else:
             # IfChain
             conditions = [cond] + [lower_expr(ec) for ec, _ in elseifs]
             bodies = [then_body] + [[lower_stmt(s) for s in body] for _, body in elseifs]
-            return IfChain(line=cond.line, conditions=conditions, bodies=bodies, else_body=else_body)
+            return IfChain(line=cond.line, col=cond.col, conditions=conditions, bodies=bodies, else_body=else_body)
 
     if tag == "while":
         cond = lower_expr(stmt[1])
         body = [lower_stmt(x) for x in stmt[2]]
-        return While(line=cond.line, cond=cond, body=body)
+        return While(line=cond.line, col=cond.col, cond=cond, body=body)
 
     if tag == "for":
         # ['for', ['var', name], it_expr, body]
@@ -207,10 +226,11 @@ def lower_stmt(stmt: Any) -> Stmt:
         var_name = var_node[1] if var_node[0] == "var" else var_node[2]
         iterator_expr = lower_expr(stmt[2])
         body = [lower_stmt(x) for x in stmt[3]]
-        return For(line=iterator_expr.line, var=var_name, it=iterator_expr, body=body)
+        return For(line=iterator_expr.line, col=iterator_expr.col, var=var_name, it=iterator_expr, body=body)
 
     if tag == "return":
-        return Return(line=stmt[1])
+        line, col = _unpack_lc(stmt[1])
+        return Return(line=line, col=col)
 
     if tag == "switch":
         # ['switch', expr, cases, otherwise_body]
@@ -218,35 +238,41 @@ def lower_stmt(stmt: Any) -> Stmt:
         cases = [(lower_expr(case_val), [lower_stmt(s) for s in case_body])
                  for case_val, case_body in stmt[2]]
         otherwise = [lower_stmt(s) for s in stmt[3]]
-        return Switch(line=expr.line, expr=expr, cases=cases, otherwise=otherwise)
+        return Switch(line=expr.line, col=expr.col, expr=expr, cases=cases, otherwise=otherwise)
 
     if tag == "try":
         # ['try', try_body, catch_body]
-        line = stmt[1][0][1] if stmt[1] and isinstance(stmt[1][0], list) and len(stmt[1][0]) > 1 else 0
+        first = stmt[1][0] if stmt[1] else None
+        if first and isinstance(first, list) and len(first) > 1:
+            line, col = _unpack_lc(first[1])
+        else:
+            line, col = 0, 0
         try_body = [lower_stmt(s) for s in stmt[1]]
         catch_body = [lower_stmt(s) for s in stmt[2]]
-        return Try(line=line, try_body=try_body, catch_body=catch_body)
+        return Try(line=line, col=col, try_body=try_body, catch_body=catch_body)
 
     if tag == "break":
-        return Break(line=stmt[1])
+        line, col = _unpack_lc(stmt[1])
+        return Break(line=line, col=col)
 
     if tag == "continue":
-        return Continue(line=stmt[1])
+        line, col = _unpack_lc(stmt[1])
+        return Continue(line=line, col=col)
 
     if tag == "global_decl":
-        # ['global_decl', line, var_names]
-        line = stmt[1]
+        # ['global_decl', (line, col), var_names]
+        line, col = _unpack_lc(stmt[1])
         var_names = stmt[2]
         raw_text = "global " + " ".join(var_names)
-        return OpaqueStmt(line=line, targets=var_names, raw=raw_text)
+        return OpaqueStmt(line=line, col=col, targets=var_names, raw=raw_text)
 
     if tag == "raw_stmt":
-        # ['raw_stmt', line, tokens, raw_text]
-        line = stmt[1]
+        # ['raw_stmt', (line, col), tokens, raw_text]
+        line, col = _unpack_lc(stmt[1])
         tokens = stmt[2]
         raw_text = stmt[3]
         targets = extract_targets_from_tokens(tokens)
-        return OpaqueStmt(line=line, targets=targets, raw=raw_text)
+        return OpaqueStmt(line=line, col=col, targets=targets, raw=raw_text)
 
     if tag == "skip":
         # Intentional no-op: parser emits 'skip' for continuation lines and empty statements.
@@ -257,9 +283,12 @@ def lower_stmt(stmt: Any) -> Stmt:
     # Fallback for unrecognized statement tags: use OpaqueStmt so the analyzer
     # havoces any written targets and emits W_UNSUPPORTED_STMT, which is the
     # correct conservative recovery path for unknown statement forms.
-    tag_line = stmt[1] if len(stmt) > 1 and isinstance(stmt[1], int) else 0
+    if len(stmt) > 1 and isinstance(stmt[1], (int, tuple)):
+        tag_line, tag_col = _unpack_lc(stmt[1])
+    else:
+        tag_line, tag_col = 0, 0
     print(f"Warning: lower_stmt: unrecognized tag {tag!r}", file=sys.stderr)
-    return OpaqueStmt(line=tag_line, targets=[], raw=f"<unrecognized: {tag}>")
+    return OpaqueStmt(line=tag_line, col=tag_col, targets=[], raw=f"<unrecognized: {tag}>")
 
 
 def lower_expr(expr: Any) -> Expr:
@@ -274,53 +303,68 @@ def lower_expr(expr: Any) -> Expr:
     tag = expr[0]
 
     if tag == "var":
-        return Var(line=expr[1], name=expr[2])
+        line, col = _unpack_lc(expr[1])
+        return Var(line=line, col=col, name=expr[2])
 
     if tag == "const":
-        return Const(line=expr[1], value=float(expr[2]))
+        line, col = _unpack_lc(expr[1])
+        return Const(line=line, col=col, value=float(expr[2]))
 
     if tag == "string":
-        return StringLit(line=expr[1], value=expr[2])
+        line, col = _unpack_lc(expr[1])
+        return StringLit(line=line, col=col, value=expr[2])
 
     if tag == "neg":
-        return Neg(line=expr[1], operand=lower_expr(expr[2]))
+        line, col = _unpack_lc(expr[1])
+        return Neg(line=line, col=col, operand=lower_expr(expr[2]))
 
     if tag == "not":
-        return Not(line=expr[1], operand=lower_expr(expr[2]))
+        line, col = _unpack_lc(expr[1])
+        return Not(line=line, col=col, operand=lower_expr(expr[2]))
 
     if tag == "transpose":
-        return Transpose(line=expr[1], operand=lower_expr(expr[2]))
+        line, col = _unpack_lc(expr[1])
+        return Transpose(line=line, col=col, operand=lower_expr(expr[2]))
 
     if tag == "field_access":
-        # ['field_access', line, base_expr, field_name]
-        return FieldAccess(line=expr[1], base=lower_expr(expr[2]), field=expr[3])
+        # ['field_access', (line, col), base_expr, field_name]
+        line, col = _unpack_lc(expr[1])
+        return FieldAccess(line=line, col=col, base=lower_expr(expr[2]), field=expr[3])
 
     if tag == "lambda":
-        # ['lambda', line, params, body_expr]
-        return Lambda(line=expr[1], params=expr[2], body=lower_expr(expr[3]))
+        # ['lambda', (line, col), params, body_expr]
+        line, col = _unpack_lc(expr[1])
+        return Lambda(line=line, col=col, params=expr[2], body=lower_expr(expr[3]))
 
     if tag == "func_handle":
-        # ['func_handle', line, name]
-        return FuncHandle(line=expr[1], name=expr[2])
+        # ['func_handle', (line, col), name]
+        line, col = _unpack_lc(expr[1])
+        return FuncHandle(line=line, col=col, name=expr[2])
 
     if tag == "end":
-        # ['end', line]
-        return End(line=expr[1])
+        # ['end', (line, col)]
+        line, col = _unpack_lc(expr[1])
+        return End(line=line, col=col)
 
     if tag == "apply":
-        return Apply(line=expr[1], base=lower_expr(expr[2]), args=[lower_index_arg(arg) for arg in expr[3]])
+        line, col = _unpack_lc(expr[1])
+        return Apply(line=line, col=col, base=lower_expr(expr[2]), args=[lower_index_arg(arg) for arg in expr[3]])
 
     if tag == "curly_apply":
-        return CurlyApply(line=expr[1], base=lower_expr(expr[2]), args=[lower_index_arg(arg) for arg in expr[3]])
+        line, col = _unpack_lc(expr[1])
+        return CurlyApply(line=line, col=col, base=lower_expr(expr[2]), args=[lower_index_arg(arg) for arg in expr[3]])
 
     if tag == "matrix":
-        return MatrixLit(line=expr[1], rows=[[lower_expr(elem) for elem in row] for row in expr[2]])
+        line, col = _unpack_lc(expr[1])
+        return MatrixLit(line=line, col=col, rows=[[lower_expr(elem) for elem in row] for row in expr[2]])
 
     if tag == "cell":
-        return CellLit(line=expr[1], rows=[[lower_expr(elem) for elem in row] for row in expr[2]])
+        line, col = _unpack_lc(expr[1])
+        return CellLit(line=line, col=col, rows=[[lower_expr(elem) for elem in row] for row in expr[2]])
 
     if tag in {"+", "-", "*", "/", ".*", "./", "==", "~=", "<", "<=", ">", ">=", "&&", "||", ":", "^", ".^", "\\", "&", "|"}:
-        return BinOp(line=expr[1], op=tag, left=lower_expr(expr[2]), right=lower_expr(expr[3]))
+        line, col = _unpack_lc(expr[1])
+        return BinOp(line=line, col=col, op=tag, left=lower_expr(expr[2]), right=lower_expr(expr[3]))
 
     # Unrecognized expression tags cannot be soundly replaced with any constant.
     # Raise immediately so the bug surfaces in tests rather than silently
@@ -340,16 +384,22 @@ def lower_index_arg(index_arg: Any) -> IndexArg:
     tag = index_arg[0]
 
     if tag == "colon":
-        return Colon(line=index_arg[1])
+        line, col = _unpack_lc(index_arg[1])
+        return Colon(line=line, col=col)
 
     # Range inside indexing args is encoded as ":" in the syntax AST
     if tag == ":":
-        return Range(line=index_arg[1], start=lower_expr(index_arg[2]), end=lower_expr(index_arg[3]))
+        line, col = _unpack_lc(index_arg[1])
+        return Range(line=line, col=col, start=lower_expr(index_arg[2]), end=lower_expr(index_arg[3]))
 
     # Also support explicit "range" tag if it exists
     if tag == "range":
-        return Range(line=index_arg[1], start=lower_expr(index_arg[2]), end=lower_expr(index_arg[3]))
+        line, col = _unpack_lc(index_arg[1])
+        return Range(line=line, col=col, start=lower_expr(index_arg[2]), end=lower_expr(index_arg[3]))
 
     # Otherwise it's a normal expression subscript
-    line = index_arg[1] if isinstance(index_arg, list) and len(index_arg) > 1 and isinstance(index_arg[1], int) else 0
-    return IndexExpr(line=line, expr=lower_expr(index_arg))
+    if isinstance(index_arg, list) and len(index_arg) > 1 and isinstance(index_arg[1], (int, tuple)):
+        line, col = _unpack_lc(index_arg[1])
+    else:
+        line, col = 0, 0
+    return IndexExpr(line=line, col=col, expr=lower_expr(index_arg))
