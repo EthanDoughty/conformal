@@ -573,6 +573,18 @@ class MatlabParser:
                 return StructAssign(line=eq_tok.line, col=eq_tok.col,
                                     base_name=base, fields=fields, expr=rhs)
 
+        # Fields followed by paren index: s.field(n) = expr
+        # Evaluate RHS for side effects, preserve base struct shape
+        if (len(chain) >= 2 and chain[-1][0] == 'paren'
+                and all(k == 'field' for k, _ in chain[:-1])):
+            return ExprStmt(line=eq_tok.line, col=eq_tok.col, expr=rhs)
+
+        # Fields followed by curly index: s.field{n} = expr
+        # Same logic — evaluate RHS, preserve base
+        if (len(chain) >= 2 and chain[-1][0] == 'curly'
+                and all(k == 'field' for k, _ in chain[:-1])):
+            return ExprStmt(line=eq_tok.line, col=eq_tok.col, expr=rhs)
+
         # Fallback: unrecognised pattern, havoc base variable
         return OpaqueStmt(line=eq_tok.line, col=eq_tok.col, targets=[base], raw=[])
 
