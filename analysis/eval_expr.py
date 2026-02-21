@@ -346,7 +346,10 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List['Diagnostic'], ctx: Analys
         if base_shape.is_struct():
             field_shape = base_shape.fields_dict.get(expr.field)
             if field_shape is None:
-                # Field not found in struct
+                if base_shape._open:
+                    # Open struct: field might exist but is untracked — return unknown silently
+                    return Shape.unknown()
+                # Closed struct: field definitely not present
                 warnings.append(diag.warn_struct_field_not_found(expr.line, expr.field, base_shape))
                 return Shape.unknown()
             # Convert bottom → unknown at expression boundary

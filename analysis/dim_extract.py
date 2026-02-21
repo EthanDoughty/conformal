@@ -225,13 +225,16 @@ def _update_struct_field(
         return result
 
     # If base is not a struct, warn and treat as fresh struct
-    # Suppress warning for unknown base — unknown subsumes struct (lattice top)
+    # Suppress warning for unknown base — create open struct to track assigned fields
     # Suppress warning for matrix[0x0] — MATLAB's [] is a universal empty initializer
     if not base_shape.is_struct():
         if base_shape.is_unknown():
-            # Unknown base: keep as unknown — we can't know its field set,
-            # so creating a concrete struct would cause cascading W_STRUCT_FIELD_NOT_FOUND
-            return Shape.unknown()
+            # Unknown base: create open struct (has at least this field, may have others)
+            # This avoids cascading W_STRUCT_FIELD_NOT_FOUND for untracked fields
+            result = value_shape
+            for field in reversed(fields):
+                result = Shape.struct({field: result}, open=True)
+            return result
         if not base_shape.is_empty_matrix():
             warnings.append(diag.warn_field_access_non_struct(line, base_shape))
         # Still create struct (best-effort recovery for empty matrix, scalar, etc.)
@@ -240,12 +243,12 @@ def _update_struct_field(
             result = Shape.struct({field: result})
         return result
 
-    # Base is struct: walk the chain and update
+    # Base is struct: walk the chain and update (preserve _open flag)
     if len(fields) == 1:
         # Simple case: s.field = value
         updated_fields = dict(base_shape.fields_dict)
         updated_fields[fields[0]] = value_shape
-        return Shape.struct(updated_fields)
+        return Shape.struct(updated_fields, open=base_shape._open)
     else:
         # Nested case: s.a.b = value
         # Recursively update s.a, then update s
@@ -258,7 +261,7 @@ def _update_struct_field(
         # Recursively update inner fields
         updated_inner = _update_struct_field(outer_field_shape, inner_fields, value_shape, line, warnings)
 
-        # Update outer struct with new inner value
+        # Update outer struct with new inner value (preserve _open flag)
         updated_fields = dict(base_shape.fields_dict)
         updated_fields[outer_field] = updated_inner
-        return Shape.struct(updated_fields)
+        return Shape.struct(updated_fields, open=base_shape._open)

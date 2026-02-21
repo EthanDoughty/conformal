@@ -65,16 +65,17 @@ class Shape:
         return StringShape()
 
     @staticmethod
-    def struct(fields: dict) -> "StructShape":
+    def struct(fields: dict, open: bool = False) -> "StructShape":
         """Create a struct shape with given fields.
 
         Args:
             fields: Dict mapping field names to shapes
+            open: If True, struct may have additional unknown fields (open lattice element)
 
         Returns:
             Struct shape with fields stored as sorted tuple for hashability
         """
-        return StructShape(_fields=tuple(sorted(fields.items())))
+        return StructShape(_fields=tuple(sorted(fields.items())), _open=open)
 
     @staticmethod
     def cell(rows: Dim, cols: Dim, elements: Optional[dict] = None) -> "CellShape":
@@ -217,6 +218,7 @@ class StringShape(Shape):
 class StructShape(Shape):
     """A struct with named fields."""
     _fields: tuple = ()
+    _open: bool = False
     kind: str = "struct"
 
     @property
@@ -229,6 +231,8 @@ class StructShape(Shape):
     def __str__(self) -> str:
         # Filter out bottom fields (internal-only, shouldn't appear in user output)
         field_strs = [f"{name}: {shape}" for name, shape in self._fields if not shape.is_bottom()]
+        if self._open:
+            field_strs.append("...")
         return "struct{" + ", ".join(field_strs) + "}"
 
 
@@ -506,14 +510,20 @@ def widen_shape(old: Shape, new: Shape) -> Shape:
         return Shape.function_handle(lambda_ids=merged_ids)
 
     if old.is_struct() and new.is_struct():
-        # Union-with-bottom widen: union of all field names, missing fields get bottom
+        # Union-with-bottom widen: union of all field names
+        # Open structs propagate: if either is open, result is open
+        result_open = old._open or new._open
         all_fields = set(old.fields_dict.keys()) | set(new.fields_dict.keys())
         widened_fields = {}
         for field_name in all_fields:
-            f_old = old.fields_dict.get(field_name, Shape.bottom())
-            f_new = new.fields_dict.get(field_name, Shape.bottom())
+            # Missing field in open struct → unknown (field may exist with any shape)
+            # Missing field in closed struct → bottom (field definitely absent)
+            default_old = Shape.unknown() if old._open else Shape.bottom()
+            default_new = Shape.unknown() if new._open else Shape.bottom()
+            f_old = old.fields_dict.get(field_name, default_old)
+            f_new = new.fields_dict.get(field_name, default_new)
             widened_fields[field_name] = widen_shape(f_old, f_new)
-        return Shape.struct(widened_fields)
+        return Shape.struct(widened_fields, open=result_open)
 
     if old.is_cell() and new.is_cell():
         # Widen dimensions
@@ -594,14 +604,20 @@ def join_shape(s1: Shape, s2: Shape) -> Shape:
         return Shape.function_handle(lambda_ids=merged_ids)
 
     if s1.is_struct() and s2.is_struct():
-        # Union-with-bottom join: union of all field names, missing fields get bottom
+        # Union-with-bottom join: union of all field names
+        # Open structs propagate: if either is open, result is open
+        result_open = s1._open or s2._open
         all_fields = set(s1.fields_dict.keys()) | set(s2.fields_dict.keys())
         joined_fields = {}
         for field_name in all_fields:
-            f1 = s1.fields_dict.get(field_name, Shape.bottom())
-            f2 = s2.fields_dict.get(field_name, Shape.bottom())
+            # Missing field in open struct → unknown (field may exist with any shape)
+            # Missing field in closed struct → bottom (field definitely absent)
+            default1 = Shape.unknown() if s1._open else Shape.bottom()
+            default2 = Shape.unknown() if s2._open else Shape.bottom()
+            f1 = s1.fields_dict.get(field_name, default1)
+            f2 = s2.fields_dict.get(field_name, default2)
             joined_fields[field_name] = join_shape(f1, f2)
-        return Shape.struct(joined_fields)
+        return Shape.struct(joined_fields, open=result_open)
 
     if s1.is_cell() and s2.is_cell():
         # Join dimensions

@@ -50,7 +50,7 @@ def extract_targets_from_tokens(tokens: List[Any]) -> List[str]:
                 break
 
     # Destructuring: [A, B, ...] = ...
-    # Enforce strict validation: only ID, COMMA, NEWLINE, or ~ inside brackets
+    # Also handles struct field targets like [s.x, s.y] = ... (extracts base names)
     if len(tokens) >= 2 and tokens[0].value == "[":
         depth = 0
         bracket_end = -1
@@ -64,19 +64,32 @@ def extract_targets_from_tokens(tokens: List[Any]) -> List[str]:
                     break
 
         if bracket_end > 0 and bracket_end + 1 < len(tokens) and tokens[bracket_end + 1].value == "=":
-            # Validate bracket contents: only ID, COMMA, NEWLINE, ~
+            # Validate bracket contents: only ID, COMMA, NEWLINE, ~, DOT
             valid_destructuring = True
             for j in range(1, bracket_end):
                 tok = tokens[j]
-                if tok.kind not in {"ID", "NEWLINE"} and tok.value not in {",", "~"}:
+                if tok.kind not in {"ID", "NEWLINE"} and tok.value not in {",", "~", "."}:
                     valid_destructuring = False
                     break
 
             if valid_destructuring:
-                # Extract identifiers from inside brackets
-                for j in range(1, bracket_end):
-                    if tokens[j].kind == "ID":
-                        targets.append(tokens[j].value)
+                # Extract base identifiers from inside brackets, skipping .field suffixes
+                j = 1
+                while j < bracket_end:
+                    tok = tokens[j]
+                    if tok.kind == "ID":
+                        targets.append(tok.value)
+                        j += 1
+                        # Skip .field chain (DOT ID DOT ID ...)
+                        while j < bracket_end and tokens[j].value == ".":
+                            j += 1  # skip DOT
+                            if j < bracket_end and tokens[j].kind == "ID":
+                                j += 1  # skip field name
+                    elif tok.value == "~":
+                        targets.append("~")
+                        j += 1
+                    else:
+                        j += 1
                 return targets
 
     return []
