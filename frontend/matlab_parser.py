@@ -786,8 +786,10 @@ class MatlabParser:
             left = self.parse_postfix(left)
         elif tok.value == "[":
             left = self.parse_matrix_literal()
+            left = self.parse_postfix(left)
         elif tok.value == "{":
             left = self.parse_cell_literal()
+            left = self.parse_postfix(left)
         elif tok.value == "@":
             # Anonymous function or named function handle
             at_tok = self.eat("@")
