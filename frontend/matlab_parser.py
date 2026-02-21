@@ -450,235 +450,154 @@ class MatlabParser:
             self.i = start_pos
             return self.recover_to_stmt_boundary(start_line)
 
-    def parse_simple_stmt(self):
-        """Parse assignment or expression statement.
+    def _parse_bracket_stmt(self):
+        """Parse destructuring assignment [a, b] = expr, or fall back to matrix literal."""
+        saved_pos = self.i
+        try:
+            self.eat("[")
 
-        Supports:
-        - ID = expr
-        - [ID, ID, ...] = expr  (destructuring assignment)
-        - expr (expression statement)
-        """
-        if self.current().value == "[":
-            # Check for destructuring assignment: [a, b] = expr
-            # Lookahead to distinguish from matrix literal
-            saved_pos = self.i
-            try:
-                self.eat("[")
-                # Parse ID list (IDs or ~ placeholders)
-                def _eat_target() -> str:
-                    if self.current().value == "~":
-                        self.eat("~")
-                        return "~"
-                    return self.eat("ID").value
-                targets = [_eat_target()]
-                while self.current().value == "," or self.current().kind == "ID" or self.current().value == "~":
-                    if self.current().value == ",":
-                        self.eat(",")
-                    targets.append(_eat_target())
-                self.eat("]")
+            def _eat_target() -> str:
+                if self.current().value == "~":
+                    self.eat("~")
+                    return "~"
+                return self.eat("ID").value
 
-                # Check for =
-                if self.current().value == "=":
-                    # Destructuring assignment confirmed
-                    eq_tok = self.eat("=")
-                    expr = self.parse_expr()
-                    return AssignMulti(line=eq_tok.line, col=eq_tok.col, targets=targets, expr=expr)
-                else:
-                    # Not destructuring, backtrack and parse as matrix literal
-                    self.i = saved_pos
-                    expr = self.parse_expr()
-                    return ExprStmt(line=expr.line, col=expr.col, expr=expr)
-            except ParseError:
-                # Backtrack and parse as matrix literal
+            targets = [_eat_target()]
+            while self.current().value == "," or self.current().kind == "ID" or self.current().value == "~":
+                if self.current().value == ",":
+                    self.eat(",")
+                targets.append(_eat_target())
+            self.eat("]")
+
+            if self.current().value == "=":
+                eq_tok = self.eat("=")
+                expr = self.parse_expr()
+                return AssignMulti(line=eq_tok.line, col=eq_tok.col, targets=targets, expr=expr)
+            else:
                 self.i = saved_pos
                 expr = self.parse_expr()
                 return ExprStmt(line=expr.line, col=expr.col, expr=expr)
+        except ParseError:
+            self.i = saved_pos
+            expr = self.parse_expr()
+            return ExprStmt(line=expr.line, col=expr.col, expr=expr)
 
-        if self.current().kind == "ID":
-            id_tok = self.eat("ID")
-            # Check for struct assignment: ID.field.field... = expr
+    def _parse_lhs_chain(self) -> list:
+        """Greedily consume accessor chain after an ID token.
+
+        Returns list of tuples:
+          ('field', name)  -- .field or .(expr)  [dynamic yields '<dynamic>']
+          ('paren', args)  -- (args)
+          ('curly', args)  -- {args}
+        """
+        chain = []
+        while True:
             if self.current().kind == "DOT":
-                # Parse field chain (supports dynamic field .(expr))
-                fields = []
-                while self.current().kind == "DOT":
-                    self.eat("DOT")
-                    if self.current().kind == "ID":
-                        field_name = self.eat("ID").value
-                    elif self.current().value == "(":
-                        # Dynamic field: ID.(expr)
-                        self.eat("(")
-                        self.parse_expr()  # consume expression but ignore value
-                        self.eat(")")
-                        field_name = "<dynamic>"
-                    else:
-                        break
-                    fields.append(field_name)
-
-                # Now check for assignment
-                if fields and self.current().value == "=":
-                    eq_tok = self.eat("=")
-                    expr = self.parse_expr()
-                    return StructAssign(line=eq_tok.line, col=eq_tok.col,
-                                        base_name=id_tok.value, fields=fields, expr=expr)
-                # Check for chained index in field chain: s.field(i).field2 = expr
-                # or s.field{i}.field2 = expr
-                elif fields and self.current().value in ("(", "{"):
-                    saved = self.i
-                    bracket = self.current().value
-                    close = ")" if bracket == "(" else "}"
-                    try:
-                        self.eat(bracket)
-                        self.parse_paren_args()  # consume index args (discarded)
-                        self.eat(close)
-                        # Parse suffix field chain
-                        suffix_fields = []
-                        while self.current().kind == "DOT":
-                            self.eat("DOT")
-                            if self.current().kind == "ID":
-                                suffix_fields.append(self.eat("ID").value)
-                            elif self.current().value == "(":
-                                # Dynamic field access: .(expr)
-                                self.eat("(")
-                                self.parse_expr()
-                                self.eat(")")
-                                suffix_fields.append("<dynamic>")
-                            else:
-                                break
-                        if suffix_fields and self.current().value == "=":
-                            eq_tok = self.eat("=")
-                            expr = self.parse_expr()
-                            return StructAssign(line=eq_tok.line, col=eq_tok.col,
-                                                base_name=id_tok.value,
-                                                fields=fields + suffix_fields, expr=expr)
-                        else:
-                            self.i = saved  # backtrack: not a chained struct assign
-                    except ParseError:
-                        self.i = saved  # backtrack on any parse failure
-                    # Fall through to expression handling below
-                    base = Var(line=id_tok.line, col=id_tok.col, name=id_tok.value)
-                    for field in fields:
-                        base = FieldAccess(line=id_tok.line, col=id_tok.col, base=base, field=field)
-                    expr_tail = self.parse_expr_rest(base, 0)
-                    return ExprStmt(line=expr_tail.line, col=expr_tail.col, expr=expr_tail)
+                self.eat("DOT")
+                if self.current().kind == "ID":
+                    chain.append(('field', self.eat("ID").value))
+                elif self.current().value == "(":
+                    self.eat("(")
+                    self.parse_expr()
+                    self.eat(")")
+                    chain.append(('field', '<dynamic>'))
                 else:
-                    # Not assignment, construct field access expression and continue
-                    # Build nested field_access nodes: s.a.b -> FieldAccess(FieldAccess(Var(s), a), b)
-                    base = Var(line=id_tok.line, col=id_tok.col, name=id_tok.value)
-                    for field in fields:
-                        base = FieldAccess(line=id_tok.line, col=id_tok.col, base=base, field=field)
-                    expr_tail = self.parse_expr_rest(base, 0)
-                    return ExprStmt(line=expr_tail.line, col=expr_tail.col, expr=expr_tail)
-            # Check for cell assignment: ID{i} = expr or ID{i,j} = expr
-            elif self.current().value == "{":
-                # Parse curly index args
-                self.eat("{")
-                args = self.parse_paren_args()  # Reuse arg parser
-                self.eat("}")
-
-                # Check for chained struct assignment: ID{args}.field... = expr
-                if self.current().kind == "DOT":
-                    fields = []
-                    while self.current().kind == "DOT":
-                        self.eat("DOT")
-                        if self.current().kind == "ID":
-                            field_name = self.eat("ID").value
-                        elif self.current().value == "(":
-                            self.eat("(")
-                            self.parse_expr()
-                            self.eat(")")
-                            field_name = "<dynamic>"
-                        else:
-                            break
-                        fields.append(field_name)
-                    if fields and self.current().value == "=":
-                        eq_tok = self.eat("=")
-                        expr = self.parse_expr()
-                        return IndexStructAssign(line=eq_tok.line, col=eq_tok.col,
-                                                 base_name=id_tok.value, index_args=args,
-                                                 index_kind="curly", fields=fields, expr=expr)
-                    else:
-                        # Not assignment, reconstruct as expression
-                        base = Var(line=id_tok.line, col=id_tok.col, name=id_tok.value)
-                        left = CurlyApply(line=id_tok.line, col=id_tok.col, base=base, args=args)
-                        for field in fields:
-                            left = FieldAccess(line=id_tok.line, col=id_tok.col, base=left, field=field)
-                        left = self.parse_postfix(left)
-                        expr_tail = self.parse_expr_rest(left, 0)
-                        return ExprStmt(line=expr_tail.line, col=expr_tail.col, expr=expr_tail)
-
-                # Check for simple cell assignment
-                if self.current().value == "=":
-                    eq_tok = self.eat("=")
-                    expr = self.parse_expr()
-                    return CellAssign(line=eq_tok.line, col=eq_tok.col,
-                                      base_name=id_tok.value, args=args, expr=expr)
-                else:
-                    # Not assignment, construct CurlyApply expression
-                    base = Var(line=id_tok.line, col=id_tok.col, name=id_tok.value)
-                    left = CurlyApply(line=id_tok.line, col=id_tok.col, base=base, args=args)
-                    expr_tail = self.parse_expr_rest(left, 0)
-                    return ExprStmt(line=expr_tail.line, col=expr_tail.col, expr=expr_tail)
-            # Check for indexed assignment: ID(i,j) = expr
+                    break
             elif self.current().value == "(":
-                # Parse paren index args
                 self.eat("(")
                 args = self.parse_paren_args()
                 self.eat(")")
-
-                # Check for assignment
-                if self.current().value == "=":
-                    eq_tok = self.eat("=")
-                    expr = self.parse_expr()
-                    return IndexAssign(line=eq_tok.line, col=eq_tok.col,
-                                       base_name=id_tok.value, args=args, expr=expr)
-
-                # Check for chained struct assignment: ID(args).field... = expr
-                elif self.current().kind == "DOT":
-                    fields = []
-                    while self.current().kind == "DOT":
-                        self.eat("DOT")
-                        if self.current().kind == "ID":
-                            field_name = self.eat("ID").value
-                        elif self.current().value == "(":
-                            self.eat("(")
-                            self.parse_expr()
-                            self.eat(")")
-                            field_name = "<dynamic>"
-                        else:
-                            break
-                        fields.append(field_name)
-                    if fields and self.current().value == "=":
-                        eq_tok = self.eat("=")
-                        expr = self.parse_expr()
-                        return IndexStructAssign(line=eq_tok.line, col=eq_tok.col,
-                                                 base_name=id_tok.value, index_args=args,
-                                                 index_kind="paren", fields=fields, expr=expr)
-                    else:
-                        # Not assignment, reconstruct as expression
-                        base = Var(line=id_tok.line, col=id_tok.col, name=id_tok.value)
-                        left = Apply(line=id_tok.line, col=id_tok.col, base=base, args=args)
-                        for field in fields:
-                            left = FieldAccess(line=id_tok.line, col=id_tok.col, base=left, field=field)
-                        left = self.parse_postfix(left)
-                        expr_tail = self.parse_expr_rest(left, 0)
-                        return ExprStmt(line=expr_tail.line, col=expr_tail.col, expr=expr_tail)
-                else:
-                    # Not assignment, construct Apply expression and continue
-                    base = Var(line=id_tok.line, col=id_tok.col, name=id_tok.value)
-                    left = Apply(line=id_tok.line, col=id_tok.col, base=base, args=args)
-                    left = self.parse_postfix(left)  # Handle chained .field, {i}, (), '
-                    expr_tail = self.parse_expr_rest(left, 0)
-                    return ExprStmt(line=expr_tail.line, col=expr_tail.col, expr=expr_tail)
-            elif self.current().value == "=":
-                self.eat("=")
-                expr = self.parse_expr()
-                return Assign(line=id_tok.line, col=id_tok.col, name=id_tok.value, expr=expr)
+                chain.append(('paren', args))
+            elif self.current().value == "{":
+                self.eat("{")
+                args = self.parse_paren_args()
+                self.eat("}")
+                chain.append(('curly', args))
             else:
-                expr_tail = self.parse_expr_rest(Var(line=id_tok.line, col=id_tok.col, name=id_tok.value), 0)
-                return ExprStmt(line=expr_tail.line, col=expr_tail.col, expr=expr_tail)
-        else:
-            expr = self.parse_expr()
+                break
+        return chain
+
+    def _chain_to_expr(self, id_tok, chain):
+        """Reconstruct an expression tree from an ID token and a parsed chain."""
+        expr = Var(line=id_tok.line, col=id_tok.col, name=id_tok.value)
+        for kind, data in chain:
+            if kind == 'field':
+                expr = FieldAccess(line=id_tok.line, col=id_tok.col, base=expr, field=data)
+            elif kind == 'paren':
+                expr = Apply(line=id_tok.line, col=id_tok.col, base=expr, args=data)
+            elif kind == 'curly':
+                expr = CurlyApply(line=id_tok.line, col=id_tok.col, base=expr, args=data)
+        return expr
+
+    def _classify_assignment(self, id_tok, chain, eq_tok, rhs):
+        """Map a parsed LHS chain to the appropriate IR assignment node."""
+        base = id_tok.value
+
+        # Empty chain: plain assignment
+        if not chain:
+            return Assign(line=id_tok.line, col=id_tok.col, name=base, expr=rhs)
+
+        # All fields: struct assignment
+        if all(k == 'field' for k, _ in chain):
+            fields = [d for _, d in chain]
+            return StructAssign(line=eq_tok.line, col=eq_tok.col,
+                                base_name=base, fields=fields, expr=rhs)
+
+        # Single paren: indexed assignment
+        if len(chain) == 1 and chain[0][0] == 'paren':
+            return IndexAssign(line=eq_tok.line, col=eq_tok.col,
+                               base_name=base, args=chain[0][1], expr=rhs)
+
+        # Single curly: cell assignment
+        if len(chain) == 1 and chain[0][0] == 'curly':
+            return CellAssign(line=eq_tok.line, col=eq_tok.col,
+                              base_name=base, args=chain[0][1], expr=rhs)
+
+        # IndexStructAssign: first element is paren or curly, rest are all fields
+        if chain[0][0] in ('paren', 'curly') and all(k == 'field' for k, _ in chain[1:]) and len(chain) > 1:
+            index_kind = chain[0][0]
+            index_args = chain[0][1]
+            fields = [d for _, d in chain[1:]]
+            return IndexStructAssign(line=eq_tok.line, col=eq_tok.col,
+                                     base_name=base, index_args=index_args,
+                                     index_kind=index_kind, fields=fields, expr=rhs)
+
+        # B5 pattern: field(s), then paren/curly, then field(s) — collapse all fields
+        index_pos = next((i for i, (k, _) in enumerate(chain) if k in ('paren', 'curly')), None)
+        if index_pos is not None:
+            prefix = chain[:index_pos]
+            suffix = chain[index_pos + 1:]
+            if (prefix and all(k == 'field' for k, _ in prefix)
+                    and suffix and all(k == 'field' for k, _ in suffix)):
+                fields = [d for _, d in prefix] + [d for _, d in suffix]
+                return StructAssign(line=eq_tok.line, col=eq_tok.col,
+                                    base_name=base, fields=fields, expr=rhs)
+
+        # Fallback: unrecognised pattern, havoc base variable
+        return OpaqueStmt(line=eq_tok.line, col=eq_tok.col, targets=[base], raw=[])
+
+    def parse_simple_stmt(self):
+        """Parse assignment or expression statement."""
+        if self.current().value == "[":
+            return self._parse_bracket_stmt()
+
+        if self.current().kind == "ID":
+            id_tok = self.eat("ID")
+            chain = self._parse_lhs_chain()
+
+            if self.current().value == "=":
+                eq_tok = self.eat("=")
+                rhs = self.parse_expr()
+                return self._classify_assignment(id_tok, chain, eq_tok, rhs)
+
+            # Not an assignment: reconstruct as expression and continue parsing
+            expr = self._chain_to_expr(id_tok, chain)
+            expr = self.parse_postfix(expr)
+            expr = self.parse_expr_rest(expr, 0)
             return ExprStmt(line=expr.line, col=expr.col, expr=expr)
+
+        expr = self.parse_expr()
+        return ExprStmt(line=expr.line, col=expr.col, expr=expr)
 
     # control flow
 
