@@ -7,7 +7,7 @@ from typing import List, Tuple, TYPE_CHECKING
 
 from legacy.analysis_legacy import analyze_program as analyze_program_legacy
 
-from analysis.context import FunctionSignature, EarlyReturn, EarlyBreak, EarlyContinue, AnalysisContext
+from analysis.context import FunctionSignature, EarlyReturn, EarlyBreak, EarlyContinue, AnalysisContext, CallContext
 from analysis.stmt_analysis import analyze_stmt_ir
 from analysis.witness import generate_witnesses
 from ir import Program, FunctionDef
@@ -33,7 +33,7 @@ def analyze_program_ir(program: Program, fixpoint: bool = False, ctx: AnalysisCo
         Tuple of (final environment, list of warning messages)
     """
     if ctx is None:
-        ctx = AnalysisContext(fixpoint=fixpoint)
+        ctx = AnalysisContext(call=CallContext(fixpoint=fixpoint))
 
     env = Env()
     warnings: List['Diagnostic'] = []
@@ -41,7 +41,7 @@ def analyze_program_ir(program: Program, fixpoint: bool = False, ctx: AnalysisCo
     # Pass 1: Register function definitions
     for item in program.body:
         if isinstance(item, FunctionDef):
-            ctx.function_registry[item.name] = FunctionSignature(
+            ctx.call.function_registry[item.name] = FunctionSignature(
                 name=item.name,
                 params=item.params,
                 output_vars=item.output_vars,

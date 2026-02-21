@@ -429,7 +429,7 @@ def _get_expr_bound(expr: 'Expr', env: 'Env', ctx: 'AnalysisContext') -> Bound:
 
     # Try exact interval from variable
     if isinstance(expr, Var):
-        interval = ctx.value_ranges.get(expr.name)
+        interval = ctx.cst.value_ranges.get(expr.name)
         if interval is not None and interval.lo == interval.hi:
             # Exact value (works for both int and SymDim via __eq__)
             return interval.lo
@@ -518,15 +518,15 @@ def _apply_refinements(ctx: 'AnalysisContext', refinements: List[Tuple[str, str,
         negate: If True, negate the comparison operator
     """
     for var_name, op, bound in refinements:
-        current = ctx.value_ranges.get(var_name, Interval(None, None))
+        current = ctx.cst.value_ranges.get(var_name, Interval(None, None))
         if negate:
             op = negate_comparison_op(op)
         guard = interval_from_comparison(op, bound)
         if guard is not None:
             refined = meet_interval(current, guard)
             if refined is not None:
-                ctx.value_ranges[var_name] = refined
+                ctx.cst.value_ranges[var_name] = refined
             else:
                 # Meet is empty: branch is dead code. Use guard interval to
                 # prevent false positives inside unreachable branches.
-                ctx.value_ranges[var_name] = guard
+                ctx.cst.value_ranges[var_name] = guard

@@ -88,15 +88,15 @@ def eval_binop_ir(
         # matrix^scalar: result same shape as A, but A must be square
         if left.is_matrix() and right.is_scalar():
             if dims_definitely_conflict(left.rows, left.cols):
-                ctx.conflict_sites.append(ConflictSite(
+                ctx.cst.conflict_sites.append(ConflictSite(
                     dim_a=left.rows, dim_b=left.cols,
                     line=line, warning_code="W_MATRIX_POWER_NON_SQUARE",
-                    constraints_snapshot=frozenset(ctx.constraints),
-                    scalar_bindings_snapshot=tuple(sorted(ctx.scalar_bindings.items())),
+                    constraints_snapshot=frozenset(ctx.cst.constraints),
+                    scalar_bindings_snapshot=tuple(sorted(ctx.cst.scalar_bindings.items())),
                     value_ranges_snapshot=tuple(sorted(
-                        (k, (v.lo, v.hi)) for k, v in ctx.value_ranges.items()
+                        (k, (v.lo, v.hi)) for k, v in ctx.cst.value_ranges.items()
                     )),
-                    path_snapshot=tuple(ctx.path_constraints.snapshot()),
+                    path_snapshot=tuple(ctx.cst.path_constraints.snapshot()),
                 ))
                 warnings.append(diag.warn_matrix_power_non_square(line, left_expr, left))
                 return Shape.unknown()
@@ -120,15 +120,15 @@ def eval_binop_ir(
             # A[m x n] \ b[m x p] -> [n x p], require A.rows == b.rows
             record_constraint(ctx, env, left.rows, right.rows, line)
             if dims_definitely_conflict(left.rows, right.rows):
-                ctx.conflict_sites.append(ConflictSite(
+                ctx.cst.conflict_sites.append(ConflictSite(
                     dim_a=left.rows, dim_b=right.rows,
                     line=line, warning_code="W_MLDIVIDE_DIM_MISMATCH",
-                    constraints_snapshot=frozenset(ctx.constraints),
-                    scalar_bindings_snapshot=tuple(sorted(ctx.scalar_bindings.items())),
+                    constraints_snapshot=frozenset(ctx.cst.constraints),
+                    scalar_bindings_snapshot=tuple(sorted(ctx.cst.scalar_bindings.items())),
                     value_ranges_snapshot=tuple(sorted(
-                        (k, (v.lo, v.hi)) for k, v in ctx.value_ranges.items()
+                        (k, (v.lo, v.hi)) for k, v in ctx.cst.value_ranges.items()
                     )),
-                    path_snapshot=tuple(ctx.path_constraints.snapshot()),
+                    path_snapshot=tuple(ctx.cst.path_constraints.snapshot()),
                 ))
                 warnings.append(diag.warn_mldivide_dim_mismatch(line, left_expr, right_expr, left, right))
                 return Shape.unknown()
@@ -167,15 +167,15 @@ def eval_binop_ir(
                 # Record the first conflicting dim pair
                 _da = left.rows if r_conflict else left.cols
                 _db = right.rows if r_conflict else right.cols
-                ctx.conflict_sites.append(ConflictSite(
+                ctx.cst.conflict_sites.append(ConflictSite(
                     dim_a=_da, dim_b=_db,
                     line=line, warning_code="W_ELEMENTWISE_MISMATCH",
-                    constraints_snapshot=frozenset(ctx.constraints),
-                    scalar_bindings_snapshot=tuple(sorted(ctx.scalar_bindings.items())),
+                    constraints_snapshot=frozenset(ctx.cst.constraints),
+                    scalar_bindings_snapshot=tuple(sorted(ctx.cst.scalar_bindings.items())),
                     value_ranges_snapshot=tuple(sorted(
-                        (k, (v.lo, v.hi)) for k, v in ctx.value_ranges.items()
+                        (k, (v.lo, v.hi)) for k, v in ctx.cst.value_ranges.items()
                     )),
-                    path_snapshot=tuple(ctx.path_constraints.snapshot()),
+                    path_snapshot=tuple(ctx.cst.path_constraints.snapshot()),
                 ))
                 warnings.append(diag.warn_elementwise_mismatch(line, op, left_expr, right_expr, left, right)
                 )
@@ -201,15 +201,15 @@ def eval_binop_ir(
             record_constraint(ctx, env, left.cols, right.rows, line)
 
             if dims_definitely_conflict(left.cols, right.rows):
-                ctx.conflict_sites.append(ConflictSite(
+                ctx.cst.conflict_sites.append(ConflictSite(
                     dim_a=left.cols, dim_b=right.rows,
                     line=line, warning_code="W_INNER_DIM_MISMATCH",
-                    constraints_snapshot=frozenset(ctx.constraints),
-                    scalar_bindings_snapshot=tuple(sorted(ctx.scalar_bindings.items())),
+                    constraints_snapshot=frozenset(ctx.cst.constraints),
+                    scalar_bindings_snapshot=tuple(sorted(ctx.cst.scalar_bindings.items())),
                     value_ranges_snapshot=tuple(sorted(
-                        (k, (v.lo, v.hi)) for k, v in ctx.value_ranges.items()
+                        (k, (v.lo, v.hi)) for k, v in ctx.cst.value_ranges.items()
                     )),
-                    path_snapshot=tuple(ctx.path_constraints.snapshot()),
+                    path_snapshot=tuple(ctx.cst.path_constraints.snapshot()),
                 ))
                 suggest = (
                     not dims_definitely_conflict(left.rows, right.rows)
@@ -241,15 +241,15 @@ def eval_binop_ir(
             if r_conflict or c_conflict:
                 _da = left.rows if r_conflict else left.cols
                 _db = right.rows if r_conflict else right.cols
-                ctx.conflict_sites.append(ConflictSite(
+                ctx.cst.conflict_sites.append(ConflictSite(
                     dim_a=_da, dim_b=_db,
                     line=line, warning_code="W_ELEMENTWISE_MISMATCH",
-                    constraints_snapshot=frozenset(ctx.constraints),
-                    scalar_bindings_snapshot=tuple(sorted(ctx.scalar_bindings.items())),
+                    constraints_snapshot=frozenset(ctx.cst.constraints),
+                    scalar_bindings_snapshot=tuple(sorted(ctx.cst.scalar_bindings.items())),
                     value_ranges_snapshot=tuple(sorted(
-                        (k, (v.lo, v.hi)) for k, v in ctx.value_ranges.items()
+                        (k, (v.lo, v.hi)) for k, v in ctx.cst.value_ranges.items()
                     )),
-                    path_snapshot=tuple(ctx.path_constraints.snapshot()),
+                    path_snapshot=tuple(ctx.cst.path_constraints.snapshot()),
                 ))
                 warnings.append(diag.warn_elementwise_mismatch(line, op, left_expr, right_expr, left, right))
                 return Shape.unknown()

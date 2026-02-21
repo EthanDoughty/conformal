@@ -118,7 +118,7 @@ def expr_to_dim_ir(expr: Expr, env: Env, ctx=None) -> Dim:
         # If ctx provided, check for exact scalar value in value_ranges
         if ctx is not None:
             from analysis.intervals import Interval
-            interval = ctx.value_ranges.get(expr.name)
+            interval = ctx.cst.value_ranges.get(expr.name)
             if (interval is not None
                     and isinstance(interval.lo, int)
                     and isinstance(interval.hi, int)

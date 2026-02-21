@@ -270,8 +270,8 @@ def _join_branch_results(
 ) -> None:
     """Join analyzed branches: propagate if all returned, else join survivors.
 
-    Mutates env.bindings, ctx.constraints, ctx.constraint_provenance,
-    and ctx.value_ranges in place.
+    Mutates env.bindings, ctx.cst.constraints, ctx.cst.constraint_provenance,
+    and ctx.cst.value_ranges in place.
 
     Raises:
         EarlyReturn: If all branches returned and no deferred exception.
@@ -298,17 +298,17 @@ def _join_branch_results(
 
         # Join constraints
         joined_constraints = join_constraints(baseline_constraints, live_constraints)
-        ctx.constraints = joined_constraints
+        ctx.cst.constraints = joined_constraints
 
         # Provenance pruning: remove entries for constraints that did not survive
         new_provenance = {}
         for constraint in joined_constraints:
-            if constraint in ctx.constraint_provenance:
-                new_provenance[constraint] = ctx.constraint_provenance[constraint]
-        ctx.constraint_provenance = new_provenance
+            if constraint in ctx.cst.constraint_provenance:
+                new_provenance[constraint] = ctx.cst.constraint_provenance[constraint]
+        ctx.cst.constraint_provenance = new_provenance
 
         # Join value_ranges
-        ctx.value_ranges = join_value_ranges(baseline_ranges, live_ranges)
+        ctx.cst.value_ranges = join_value_ranges(baseline_ranges, live_ranges)
 
 
 def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: AnalysisContext) -> Env:
@@ -338,7 +338,7 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
             concrete_value = try_extract_const_value(stmt.expr)
             if concrete_value is not None:
                 # Record scalar binding for future constraint checks
-                ctx.scalar_bindings[stmt.name] = concrete_value
+                ctx.cst.scalar_bindings[stmt.name] = concrete_value
                 # Validate against existing constraints
                 validate_binding(ctx, env, stmt.name, concrete_value, warnings, stmt.line)
 
@@ -347,14 +347,14 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
             from analysis.eval_expr import _get_expr_interval
             interval = _get_expr_interval(stmt.expr, env, ctx)
             if interval is not None:
-                ctx.value_ranges[stmt.name] = interval
-            elif stmt.name in ctx.value_ranges:
+                ctx.cst.value_ranges[stmt.name] = interval
+            elif stmt.name in ctx.cst.value_ranges:
                 # Remove stale interval if we can't compute a new one
-                del ctx.value_ranges[stmt.name]
+                del ctx.cst.value_ranges[stmt.name]
         else:
             # Non-scalar: remove from value_ranges
-            if stmt.name in ctx.value_ranges:
-                del ctx.value_ranges[stmt.name]
+            if stmt.name in ctx.cst.value_ranges:
+                del ctx.cst.value_ranges[stmt.name]
 
         return env
 
@@ -499,7 +499,7 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
 
         # Apply conditional refinements inside loop body (condition is true inside loop)
         from analysis.intervals import extract_condition_refinements, _apply_refinements
-        baseline_ranges = dict(ctx.value_ranges)
+        baseline_ranges = dict(ctx.cst.value_ranges)
         refinements = extract_condition_refinements(stmt.cond, env, ctx)
         _apply_refinements(ctx, refinements, negate=False)
 
@@ -507,7 +507,7 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         _analyze_loop_body(stmt.body, env, warnings, ctx)
 
         # Reset value_ranges to baseline after loop (conservative)
-        ctx.value_ranges = baseline_ranges
+        ctx.cst.value_ranges = baseline_ranges
 
         return env
 
@@ -525,7 +525,7 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
             lo_val = try_extract_const_value(stmt.it.left)
             hi_val = try_extract_const_value(stmt.it.right)
             if lo_val is not None and hi_val is not None:
-                ctx.value_ranges[stmt.var] = Interval(lo_val, hi_val)
+                ctx.cst.value_ranges[stmt.var] = Interval(lo_val, hi_val)
             else:
                 # Try symbolic bounds
                 lo_dim = expr_to_dim_ir(stmt.it.left, env)
@@ -534,10 +534,10 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
                 lo_bound = lo_val if lo_val is not None else lo_dim
                 hi_bound = hi_val if hi_val is not None else hi_dim
                 if lo_bound is not None or hi_bound is not None:
-                    ctx.value_ranges[stmt.var] = Interval(lo_bound, hi_bound)
+                    ctx.cst.value_ranges[stmt.var] = Interval(lo_bound, hi_bound)
 
         # Fixpoint-only: accumulation refinement
-        if ctx.fixpoint:
+        if ctx.call.fixpoint:
             pre_loop_env = env.copy()
             iter_count = extract_iteration_count(stmt.it, env)
             accum_patterns = _detect_accumulation(stmt.var, stmt.body) if iter_count is not None else []
@@ -547,7 +547,7 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         _analyze_loop_body(stmt.body, env, warnings, ctx)
 
         # Fixpoint-only: refine accumulation variables
-        if ctx.fixpoint:
+        if ctx.call.fixpoint:
             for accum in accum_patterns:
                 _refine_accumulation(accum, iter_count, pre_loop_env, env, warnings, ctx)
 
@@ -563,7 +563,7 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
 
         # Snapshot constraints and value_ranges before branching
         baseline_constraints = snapshot_constraints(ctx)
-        baseline_ranges = dict(ctx.value_ranges)
+        baseline_ranges = dict(ctx.cst.value_ranges)
 
         then_env = env.copy()
         else_env = env.copy()
@@ -574,34 +574,34 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         # Apply then-branch refinements
         _apply_refinements(ctx, refinements, negate=False)
 
-        ctx.path_constraints.push(stmt.cond, True, stmt.line)
+        ctx.cst.path_constraints.push(stmt.cond, True, stmt.line)
         try:
             for s in stmt.then_body:
                 analyze_stmt_ir(s, then_env, warnings, ctx)
         except EarlyReturn:
             then_returned = True
         finally:
-            ctx.path_constraints.pop()
-        then_constraints = frozenset(ctx.constraints)
-        then_ranges = dict(ctx.value_ranges)
+            ctx.cst.path_constraints.pop()
+        then_constraints = frozenset(ctx.cst.constraints)
+        then_ranges = dict(ctx.cst.value_ranges)
 
         # Reset constraints and value_ranges to baseline for else branch
-        ctx.constraints = set(baseline_constraints)
-        ctx.value_ranges = dict(baseline_ranges)
+        ctx.cst.constraints = set(baseline_constraints)
+        ctx.cst.value_ranges = dict(baseline_ranges)
 
         # Apply else-branch refinements (negated)
         _apply_refinements(ctx, refinements, negate=True)
 
-        ctx.path_constraints.push(stmt.cond, False, stmt.line)
+        ctx.cst.path_constraints.push(stmt.cond, False, stmt.line)
         try:
             for s in stmt.else_body:
                 analyze_stmt_ir(s, else_env, warnings, ctx)
         except EarlyReturn:
             else_returned = True
         finally:
-            ctx.path_constraints.pop()
-        else_constraints = frozenset(ctx.constraints)
-        else_ranges = dict(ctx.value_ranges)
+            ctx.cst.path_constraints.pop()
+        else_constraints = frozenset(ctx.cst.constraints)
+        else_ranges = dict(ctx.cst.value_ranges)
 
         _join_branch_results(
             env, ctx, baseline_constraints, baseline_ranges,
@@ -642,7 +642,7 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
 
         # Snapshot constraints and value_ranges before branching
         baseline_constraints = snapshot_constraints(ctx)
-        baseline_ranges = dict(ctx.value_ranges)
+        baseline_ranges = dict(ctx.cst.value_ranges)
 
         # Analyze all branches, tracking which ones returned/broke/continued
         all_bodies = list(stmt.bodies) + [stmt.else_body]
@@ -653,8 +653,8 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         deferred_exception = None  # EarlyBreak or EarlyContinue to re-raise
 
         for idx, body in enumerate(all_bodies):
-            ctx.constraints = set(baseline_constraints)  # Reset to baseline (prevent cross-branch contamination)
-            ctx.value_ranges = dict(baseline_ranges)
+            ctx.cst.constraints = set(baseline_constraints)  # Reset to baseline (prevent cross-branch contamination)
+            ctx.cst.value_ranges = dict(baseline_ranges)
 
             # Apply refinements for this branch (if not else-body)
             if idx < len(all_refinements):
@@ -663,7 +663,7 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
 
             # Push path constraint for this branch
             if idx < len(stmt.conditions):
-                ctx.path_constraints.push(stmt.conditions[idx], True, stmt.line)
+                ctx.cst.path_constraints.push(stmt.conditions[idx], True, stmt.line)
             # else: else branch — no explicit condition to push
 
             branch_env = env.copy()
@@ -679,10 +679,10 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
                 deferred_exception = exc
             finally:
                 if idx < len(stmt.conditions):
-                    ctx.path_constraints.pop()
+                    ctx.cst.path_constraints.pop()
             branch_envs.append(branch_env)
-            branch_constraints.append(frozenset(ctx.constraints))
-            branch_ranges.append(dict(ctx.value_ranges))
+            branch_constraints.append(frozenset(ctx.cst.constraints))
+            branch_ranges.append(dict(ctx.cst.value_ranges))
             returned_flags.append(returned)
 
         _join_branch_results(
@@ -699,7 +699,7 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
 
         # Snapshot constraints and value_ranges before branching
         baseline_constraints = snapshot_constraints(ctx)
-        baseline_ranges = dict(ctx.value_ranges)
+        baseline_ranges = dict(ctx.cst.value_ranges)
 
         all_bodies = [body for _, body in stmt.cases] + [stmt.otherwise]
         branch_envs = []
@@ -709,14 +709,14 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         deferred_exception = None
 
         for case_idx, body in enumerate(all_bodies):
-            ctx.constraints = set(baseline_constraints)  # Reset to baseline (prevent cross-branch contamination)
-            ctx.value_ranges = dict(baseline_ranges)
+            ctx.cst.constraints = set(baseline_constraints)  # Reset to baseline (prevent cross-branch contamination)
+            ctx.cst.value_ranges = dict(baseline_ranges)
 
             # Push path constraint for each case (not for otherwise)
             is_case = case_idx < len(stmt.cases)
             if is_case:
                 case_cond_expr = stmt.cases[case_idx][0]
-                ctx.path_constraints.push(case_cond_expr, True, stmt.line)
+                ctx.cst.path_constraints.push(case_cond_expr, True, stmt.line)
 
             branch_env = env.copy()
             returned = False
@@ -730,10 +730,10 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
                 deferred_exception = exc
             finally:
                 if is_case:
-                    ctx.path_constraints.pop()
+                    ctx.cst.path_constraints.pop()
             branch_envs.append(branch_env)
-            branch_constraints.append(frozenset(ctx.constraints))
-            branch_ranges.append(dict(ctx.value_ranges))
+            branch_constraints.append(frozenset(ctx.cst.constraints))
+            branch_ranges.append(dict(ctx.cst.value_ranges))
             returned_flags.append(returned)
 
         _join_branch_results(
@@ -746,7 +746,7 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
     if isinstance(stmt, Try):
         # Snapshot constraints and value_ranges before branching
         baseline_constraints = snapshot_constraints(ctx)
-        baseline_ranges = dict(ctx.value_ranges)
+        baseline_ranges = dict(ctx.cst.value_ranges)
         pre_try_env = env.copy()
 
         # Analyze try block
@@ -761,12 +761,12 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         except (EarlyBreak, EarlyContinue) as exc:
             try_returned = True
             deferred_exception = exc
-        try_constraints = frozenset(ctx.constraints)
-        try_ranges = dict(ctx.value_ranges)
+        try_constraints = frozenset(ctx.cst.constraints)
+        try_ranges = dict(ctx.cst.value_ranges)
 
         # Reset to baseline for catch block
-        ctx.constraints = set(baseline_constraints)
-        ctx.value_ranges = dict(baseline_ranges)
+        ctx.cst.constraints = set(baseline_constraints)
+        ctx.cst.value_ranges = dict(baseline_ranges)
 
         # Analyze catch block (starts from pre-try state)
         catch_env = pre_try_env.copy()
@@ -780,8 +780,8 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
             catch_returned = True
             if not deferred_exception:
                 deferred_exception = exc
-        catch_constraints = frozenset(ctx.constraints)
-        catch_ranges = dict(ctx.value_ranges)
+        catch_constraints = frozenset(ctx.cst.constraints)
+        catch_ranges = dict(ctx.cst.value_ranges)
 
         _join_branch_results(
             env, ctx, baseline_constraints, baseline_ranges,
@@ -865,7 +865,7 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
             return env
 
         # Check function registry
-        if fname in ctx.function_registry:
+        if fname in ctx.call.function_registry:
             output_shapes = analyze_function_call(fname, stmt.expr.args, stmt.line, env, warnings, ctx)
 
             if len(stmt.targets) != len(output_shapes):
@@ -880,7 +880,7 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
             return env
 
         # Check nested function registry (scoped nested functions)
-        if fname in ctx.nested_function_registry:
+        if fname in ctx.call.nested_function_registry:
             from analysis.func_analysis import analyze_nested_function_call
             output_shapes = analyze_nested_function_call(fname, stmt.expr.args, stmt.line, env, warnings, ctx)
 
@@ -896,10 +896,10 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
             return env
 
         # Check external functions (workspace scanning — cross-file analysis)
-        if fname in ctx.external_functions:
+        if fname in ctx.ws.external_functions:
             from analysis.func_analysis import analyze_external_function_call
             output_shapes = analyze_external_function_call(
-                fname, ctx.external_functions[fname], stmt.expr.args, stmt.line, env, warnings, ctx)
+                fname, ctx.ws.external_functions[fname], stmt.expr.args, stmt.line, env, warnings, ctx)
             if len(stmt.targets) != len(output_shapes):
                 warnings.append(diag.warn_multi_assign_count_mismatch(
                     stmt.line, fname, expected=len(output_shapes), got=len(stmt.targets)

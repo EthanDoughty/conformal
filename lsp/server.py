@@ -15,7 +15,7 @@ from lsprotocol import types
 
 from frontend.matlab_parser import parse_matlab
 from analysis import analyze_program_ir, generate_witnesses
-from analysis.context import AnalysisContext
+from analysis.context import AnalysisContext, CallContext, WorkspaceContext
 from analysis.workspace import scan_workspace
 from analysis.builtins import KNOWN_BUILTINS
 from runtime.env import Env
@@ -122,20 +122,20 @@ def _validate(ls: LanguageServer, uri: str, source: str, force: bool = False) ->
         file_path = uri_to_path(uri)
         ext = scan_workspace(file_path.parent, exclude=file_path.name)
         ctx = AnalysisContext(
-            fixpoint=bool(server_settings["fixpoint"]),
-            external_functions=ext
+            call=CallContext(fixpoint=bool(server_settings["fixpoint"])),
+            ws=WorkspaceContext(external_functions=ext)
         )
 
         # Parse and analyze
         ir_prog = parse_matlab(source)
-        env, warnings = analyze_program_ir(ir_prog, fixpoint=ctx.fixpoint, ctx=ctx)
+        env, warnings = analyze_program_ir(ir_prog, fixpoint=ctx.call.fixpoint, ctx=ctx)
 
         # Filter low-confidence warnings in default mode
         if not server_settings["strict"]:
             warnings = [w for w in warnings if w.code not in STRICT_ONLY_CODES]
 
         # Generate witnesses for dimension conflict warnings
-        witnesses = generate_witnesses(ctx.conflict_sites)
+        witnesses = generate_witnesses(ctx.cst.conflict_sites)
 
         # Convert to LSP diagnostics (with witness enrichment)
         lsp_diagnostics = [
@@ -156,8 +156,8 @@ def _validate(ls: LanguageServer, uri: str, source: str, force: bool = False) ->
             source_hash=source_hash,
             settings_hash=settings_hash,
             ir_prog=ir_prog,
-            function_registry=ctx.function_registry,
-            external_functions=ctx.external_functions
+            function_registry=ctx.call.function_registry,
+            external_functions=ctx.ws.external_functions
         )
 
         elapsed = time.time() - start_time

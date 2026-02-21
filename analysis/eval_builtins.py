@@ -275,15 +275,15 @@ def _handle_reshape(fname, expr, env, warnings, ctx, evals):
                 if input_count is not None and output_count is not None:
                     if dims_definitely_conflict(input_count, output_count):
                         from analysis.witness import ConflictSite
-                        ctx.conflict_sites.append(ConflictSite(
+                        ctx.cst.conflict_sites.append(ConflictSite(
                             dim_a=input_count, dim_b=output_count,
                             line=expr.line, warning_code="W_RESHAPE_MISMATCH",
-                            constraints_snapshot=frozenset(ctx.constraints),
-                            scalar_bindings_snapshot=tuple(sorted(ctx.scalar_bindings.items())),
+                            constraints_snapshot=frozenset(ctx.cst.constraints),
+                            scalar_bindings_snapshot=tuple(sorted(ctx.cst.scalar_bindings.items())),
                             value_ranges_snapshot=tuple(sorted(
-                                (k, (v.lo, v.hi)) for k, v in ctx.value_ranges.items()
+                                (k, (v.lo, v.hi)) for k, v in ctx.cst.value_ranges.items()
                             )),
-                            path_snapshot=tuple(ctx.path_constraints.snapshot()),
+                            path_snapshot=tuple(ctx.cst.path_constraints.snapshot()),
                         ))
                         warnings.append(warn_reshape_mismatch(expr.line, input_shape, m, n))
 

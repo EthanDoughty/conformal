@@ -10,7 +10,7 @@ from typing import Dict, List, Tuple
 
 from frontend.matlab_parser import parse_matlab
 from analysis import analyze_program_ir
-from analysis.context import AnalysisContext
+from analysis.context import AnalysisContext, CallContext, WorkspaceContext
 from analysis.workspace import scan_workspace
 from analysis.diagnostics import has_unsupported
 from runtime.shapes import Shape
@@ -114,7 +114,10 @@ def run_test(path: str, fixpoint: bool = False) -> tuple[bool, bool]:
     # Scan workspace for external functions
     test_path = Path(path)
     ext = scan_workspace(test_path.parent, exclude=test_path.name)
-    ctx = AnalysisContext(fixpoint=fixpoint, external_functions=ext)
+    ctx = AnalysisContext(
+        call=CallContext(fixpoint=fixpoint),
+        ws=WorkspaceContext(external_functions=ext)
+    )
 
     # IR is the source of truth for expectations.
     env, warnings = analyze_program_ir(ir_prog, fixpoint=fixpoint, ctx=ctx)

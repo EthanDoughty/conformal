@@ -134,15 +134,15 @@ def infer_matrix_literal_shape(
                 had_definite_error = True
                 from analysis.diagnostics import Diagnostic
                 from analysis.witness import ConflictSite
-                ctx.conflict_sites.append(ConflictSite(
+                ctx.cst.conflict_sites.append(ConflictSite(
                     dim_a=height, dim_b=rr,
                     line=line, warning_code="W_HORZCAT_ROW_MISMATCH",
-                    constraints_snapshot=frozenset(ctx.constraints),
-                    scalar_bindings_snapshot=tuple(sorted(ctx.scalar_bindings.items())),
+                    constraints_snapshot=frozenset(ctx.cst.constraints),
+                    scalar_bindings_snapshot=tuple(sorted(ctx.cst.scalar_bindings.items())),
                     value_ranges_snapshot=tuple(sorted(
-                        (k, (v.lo, v.hi)) for k, v in ctx.value_ranges.items()
+                        (k, (v.lo, v.hi)) for k, v in ctx.cst.value_ranges.items()
                     )),
-                    path_snapshot=tuple(ctx.path_constraints.snapshot()),
+                    path_snapshot=tuple(ctx.cst.path_constraints.snapshot()),
                 ))
                 warnings.append(
                     Diagnostic(
@@ -174,15 +174,15 @@ def infer_matrix_literal_shape(
             had_definite_error = True
             from analysis.diagnostics import Diagnostic
             from analysis.witness import ConflictSite
-            ctx.conflict_sites.append(ConflictSite(
+            ctx.cst.conflict_sites.append(ConflictSite(
                 dim_a=common_width, dim_b=w,
                 line=line, warning_code="W_VERTCAT_COL_MISMATCH",
-                constraints_snapshot=frozenset(ctx.constraints),
-                scalar_bindings_snapshot=tuple(sorted(ctx.scalar_bindings.items())),
+                constraints_snapshot=frozenset(ctx.cst.constraints),
+                scalar_bindings_snapshot=tuple(sorted(ctx.cst.scalar_bindings.items())),
                 value_ranges_snapshot=tuple(sorted(
-                    (k, (v.lo, v.hi)) for k, v in ctx.value_ranges.items()
+                    (k, (v.lo, v.hi)) for k, v in ctx.cst.value_ranges.items()
                 )),
-                path_snapshot=tuple(ctx.path_constraints.snapshot()),
+                path_snapshot=tuple(ctx.cst.path_constraints.snapshot()),
             ))
             warnings.append(
                 Diagnostic(

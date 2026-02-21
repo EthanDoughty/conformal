@@ -343,18 +343,18 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List['Diagnostic'], ctx: Analys
     if isinstance(expr, Lambda):
         # Anonymous function: store closure and return function_handle
         # Increment lambda ID counter
-        lambda_id = ctx._next_lambda_id
-        ctx._next_lambda_id += 1
+        lambda_id = ctx.call._next_lambda_id
+        ctx.call._next_lambda_id += 1
         # Store snapshot of current environment as closure (FIX: env.copy())
-        ctx._lambda_metadata[lambda_id] = (expr.params, expr.body, env.copy())
+        ctx.call._lambda_metadata[lambda_id] = (expr.params, expr.body, env.copy())
         return Shape.function_handle(lambda_ids=frozenset({lambda_id}))
 
     if isinstance(expr, FuncHandle):
         # Named function handle: check if function exists
-        handle_id = ctx._next_lambda_id
-        ctx._next_lambda_id += 1
-        if expr.name in ctx.function_registry or expr.name in KNOWN_BUILTINS or expr.name in ctx.external_functions or expr.name in ctx.nested_function_registry:
-            ctx._handle_registry[handle_id] = expr.name
+        handle_id = ctx.call._next_lambda_id
+        ctx.call._next_lambda_id += 1
+        if expr.name in ctx.call.function_registry or expr.name in KNOWN_BUILTINS or expr.name in ctx.ws.external_functions or expr.name in ctx.call.nested_function_registry:
+            ctx.call._handle_registry[handle_id] = expr.name
             return Shape.function_handle(lambda_ids=frozenset({handle_id}))
         else:
             # Unknown function
@@ -412,9 +412,9 @@ def _eval_handle_call(base_var_name: str, base_var_shape: Shape, expr: Apply, en
     # Analyze all possible callables (lambdas + handles)
     results = []
     for callable_id in sorted(base_var_shape._lambda_ids):  # sorted for determinism
-        if callable_id in ctx._lambda_metadata:
+        if callable_id in ctx.call._lambda_metadata:
             # Lambda body analysis
-            params, body_expr, closure_env = ctx._lambda_metadata[callable_id]
+            params, body_expr, closure_env = ctx.call._lambda_metadata[callable_id]
             # Compute dimension aliases for cache key
             arg_dim_aliases = tuple(
                 (param, expr_to_dim_ir(arg.expr, env)) if isinstance(arg, IndexExpr) else (param, None)
@@ -423,14 +423,14 @@ def _eval_handle_call(base_var_name: str, base_var_shape: Shape, expr: Apply, en
             cache_key = ("lambda", callable_id, tuple(arg_shapes), arg_dim_aliases)
 
             # Cache check
-            if cache_key in ctx.analysis_cache:
-                cached_shape, cached_warnings = ctx.analysis_cache[cache_key]
+            if cache_key in ctx.call.analysis_cache:
+                cached_shape, cached_warnings = ctx.call.analysis_cache[cache_key]
                 warnings.extend(cached_warnings)
                 results.append(cached_shape)
                 continue
 
             # Recursion guard
-            if callable_id in ctx.analyzing_lambdas:
+            if callable_id in ctx.call.analyzing_lambdas:
                 warnings.append(diag.warn_recursive_lambda(line))
                 results.append(Shape.unknown())
                 continue
@@ -442,7 +442,7 @@ def _eval_handle_call(base_var_name: str, base_var_shape: Shape, expr: Apply, en
                 continue
 
             # Analyze lambda body
-            ctx.analyzing_lambdas.add(callable_id)
+            ctx.call.analyzing_lambdas.add(callable_id)
 
             try:
                 with ctx.snapshot_scope():
@@ -465,16 +465,16 @@ def _eval_handle_call(base_var_name: str, base_var_shape: Shape, expr: Apply, en
                     result = eval_expr_ir(body_expr, call_env, lambda_warnings, ctx)
 
                     # Cache result
-                    ctx.analysis_cache[cache_key] = (result, lambda_warnings)
+                    ctx.call.analysis_cache[cache_key] = (result, lambda_warnings)
                     warnings.extend(lambda_warnings)
                     results.append(result)
             finally:
-                ctx.analyzing_lambdas.discard(callable_id)
+                ctx.call.analyzing_lambdas.discard(callable_id)
 
-        elif callable_id in ctx._handle_registry:
+        elif callable_id in ctx.call._handle_registry:
             # Function handle dispatch (Phase 3)
-            func_name = ctx._handle_registry[callable_id]
-            if func_name in ctx.function_registry:
+            func_name = ctx.call._handle_registry[callable_id]
+            if func_name in ctx.call.function_registry:
                 # Dispatch to user-defined function
                 output_shapes = analyze_function_call(func_name, expr.args, line, env, warnings, ctx)
                 # Use first output (or unknown if none)
@@ -489,11 +489,11 @@ def _eval_handle_call(base_var_name: str, base_var_shape: Shape, expr: Apply, en
                 _evals = BuiltinEvalContext(eval_expr=eval_expr_ir, eval_arg=_eval_index_arg_to_shape, get_interval=_get_expr_interval)
                 builtin_result = eval_builtin_call(func_name, expr, env, warnings, ctx, _evals)
                 results.append(builtin_result)
-            elif func_name in ctx.external_functions:
+            elif func_name in ctx.ws.external_functions:
                 # External function from workspace — cross-file analysis
                 from analysis.func_analysis import analyze_external_function_call
                 ext_shapes = analyze_external_function_call(
-                    func_name, ctx.external_functions[func_name], expr.args, line, env, warnings, ctx)
+                    func_name, ctx.ws.external_functions[func_name], expr.args, line, env, warnings, ctx)
                 results.append(ext_shapes[0] if ext_shapes else Shape.unknown())
             else:
                 # Function not found (should not happen — validated at FuncHandle eval)
@@ -558,11 +558,11 @@ def _eval_apply(expr: Apply, env: Env, warnings: List['Diagnostic'], ctx: Analys
         # Priority 3-5: base name is unbound (not a local variable)
         if not env.has_local(fname):
             # Priority 3: user-defined function
-            if fname in ctx.function_registry:
+            if fname in ctx.call.function_registry:
                 output_shapes = analyze_function_call(fname, expr.args, line, env, warnings, ctx)
 
                 # Check if procedure (no return value)
-                if len(ctx.function_registry[fname].output_vars) == 0:
+                if len(ctx.call.function_registry[fname].output_vars) == 0:
                     warnings.append(diag.warn_procedure_in_expr(line, fname))
                     return Shape.unknown()
 
@@ -573,22 +573,22 @@ def _eval_apply(expr: Apply, env: Env, warnings: List['Diagnostic'], ctx: Analys
                     return output_shapes[0]
 
             # Priority 3.5: nested function (scoped to current parent function body)
-            if fname in ctx.nested_function_registry:
+            if fname in ctx.call.nested_function_registry:
                 from analysis.func_analysis import analyze_nested_function_call
                 output_shapes = analyze_nested_function_call(fname, expr.args, line, env, warnings, ctx)
 
                 # Check if procedure (no return value)
-                if len(ctx.nested_function_registry[fname].output_vars) == 0:
+                if len(ctx.call.nested_function_registry[fname].output_vars) == 0:
                     warnings.append(diag.warn_procedure_in_expr(line, fname))
                     return Shape.unknown()
 
                 return output_shapes[0] if output_shapes else Shape.unknown()
 
             # Priority 4: external function from workspace (cross-file analysis)
-            if fname in ctx.external_functions:
+            if fname in ctx.ws.external_functions:
                 from analysis.func_analysis import analyze_external_function_call
                 output_shapes = analyze_external_function_call(
-                    fname, ctx.external_functions[fname], expr.args, line, env, warnings, ctx)
+                    fname, ctx.ws.external_functions[fname], expr.args, line, env, warnings, ctx)
                 return output_shapes[0]
 
             # Priority 5: truly unknown function
@@ -794,7 +794,7 @@ def _get_concrete_dim_size(dim, ctx: AnalysisContext) -> Optional[int]:
             if len(dim._terms) == 1:
                 mono, coeff = dim._terms[0]
                 if len(mono) == 1 and mono[0] == (var_name, 1) and coeff == Fraction(1):
-                    interval = ctx.value_ranges.get(var_name)
+                    interval = ctx.cst.value_ranges.get(var_name)
                     # Guard: only extract if both bounds are concrete ints and equal
                     if interval is not None and isinstance(interval.lo, int) and isinstance(interval.hi, int) and interval.lo == interval.hi:
                         return interval.lo
@@ -828,8 +828,8 @@ def _get_expr_interval(expr: Expr, env: Env, ctx: AnalysisContext) -> Optional[I
         return None
 
     if isinstance(expr, Var):
-        # Lookup in ctx.value_ranges
-        return ctx.value_ranges.get(expr.name)
+        # Lookup in ctx.cst.value_ranges
+        return ctx.cst.value_ranges.get(expr.name)
 
     if isinstance(expr, Neg):
         # Negate the operand's interval

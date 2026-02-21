@@ -9,7 +9,7 @@ from pathlib import Path
 from frontend.matlab_parser import parse_matlab
 from analysis import analyze_program_ir, generate_witnesses
 from analysis.diagnostics import has_unsupported, STRICT_ONLY_CODES
-from analysis.context import AnalysisContext
+from analysis.context import AnalysisContext, CallContext, WorkspaceContext
 from analysis.workspace import scan_workspace
 
 
@@ -48,7 +48,10 @@ def run_file(file_path: str, strict: bool = False, fixpoint: bool = False,
     ext = scan_workspace(path.parent, exclude=path.name)
     t_scan = time.perf_counter()
 
-    ctx = AnalysisContext(fixpoint=fixpoint, external_functions=ext)
+    ctx = AnalysisContext(
+        call=CallContext(fixpoint=fixpoint),
+        ws=WorkspaceContext(external_functions=ext)
+    )
 
     # Run IR analysis
     env, warnings = analyze_program_ir(ir_prog, fixpoint=fixpoint, ctx=ctx)
@@ -61,7 +64,7 @@ def run_file(file_path: str, strict: bool = False, fixpoint: bool = False,
     # Generate witnesses if requested
     witnesses = {}
     if witness:
-        witnesses = generate_witnesses(ctx.conflict_sites)
+        witnesses = generate_witnesses(ctx.cst.conflict_sites)
 
     # Filter mode: only show warnings with witnesses
     if witness == 'filter':

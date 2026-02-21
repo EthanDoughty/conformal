@@ -98,10 +98,10 @@ def record_constraint(ctx, env: Env, dim1: Dim, dim2: Dim, line: int) -> None:
         canonical = (dim2, dim1)
 
     # Add to constraints set
-    ctx.constraints.add(canonical)
+    ctx.cst.constraints.add(canonical)
 
     # Store provenance (first-seen: keep original line, not last writer)
-    ctx.constraint_provenance.setdefault(canonical, line)
+    ctx.cst.constraint_provenance.setdefault(canonical, line)
 
 
 def snapshot_constraints(ctx) -> frozenset:
@@ -114,7 +114,7 @@ def snapshot_constraints(ctx) -> frozenset:
         Frozen copy of current constraints
     """
     from analysis.context import AnalysisContext
-    return frozenset(ctx.constraints)
+    return frozenset(ctx.cst.constraints)
 
 
 def join_constraints(baseline: frozenset, branch_sets: list) -> set:
@@ -183,7 +183,7 @@ def validate_binding(ctx, env, var_name: str, value: int, warnings: list['Diagno
     target_dim = SymDim.var(var_name)
 
     # Search all constraints for ones involving this variable
-    for dim1, dim2 in ctx.constraints:
+    for dim1, dim2 in ctx.cst.constraints:
         # Check if this constraint involves our target variable
         other_dim = None
         if dim1 == target_dim:
@@ -214,14 +214,14 @@ def validate_binding(ctx, env, var_name: str, value: int, warnings: list['Diagno
                 if len(other_vars) == 1:
                     # Simple variable — check if bound in ctx.scalar_bindings
                     other_var_name = list(other_vars)[0]
-                    if other_var_name in ctx.scalar_bindings:
-                        other_value = ctx.scalar_bindings[other_var_name]
+                    if other_var_name in ctx.cst.scalar_bindings:
+                        other_value = ctx.cst.scalar_bindings[other_var_name]
                         if other_value != value:
                             conflict_value = other_value
 
         if conflict_value is not None:
             # Emit conflict warning
-            source_line = ctx.constraint_provenance.get((dim1, dim2), 0)
+            source_line = ctx.cst.constraint_provenance.get((dim1, dim2), 0)
             warnings.append(diag.warn_constraint_conflict(
                 line, var_name, value, conflict_value, source_line
             ))

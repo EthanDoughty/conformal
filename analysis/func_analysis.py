@@ -71,11 +71,11 @@ def analyze_function_call(
     from analysis.eval_expr import eval_expr_ir, _eval_index_arg_to_shape
     from analysis.stmt_analysis import analyze_stmt_ir
 
-    if func_name not in ctx.function_registry:
+    if func_name not in ctx.call.function_registry:
         # Should not reach here (checked by caller)
         return [Shape.unknown()]
 
-    sig = ctx.function_registry[func_name]
+    sig = ctx.call.function_registry[func_name]
 
     # Check argument count
     if len(args) != len(sig.params):
@@ -85,7 +85,7 @@ def analyze_function_call(
         return [Shape.unknown()] * max(len(sig.output_vars), 1)
 
     # Recursion guard
-    if func_name in ctx.analyzing_functions:
+    if func_name in ctx.call.analyzing_functions:
         warnings.append(diag.warn_recursive_function(line, func_name))
         return [Shape.unknown()] * max(len(sig.output_vars), 1)
 
@@ -99,8 +99,8 @@ def analyze_function_call(
     cache_key = (func_name, arg_shapes, arg_dim_aliases)
 
     # Check cache
-    if cache_key in ctx.analysis_cache:
-        cached_shapes, cached_warnings = ctx.analysis_cache[cache_key]
+    if cache_key in ctx.call.analysis_cache:
+        cached_shapes, cached_warnings = ctx.call.analysis_cache[cache_key]
         # Replay warnings with current call site's dual-location formatting
         for func_warn in cached_warnings:
             formatted = _format_dual_location_warning(func_warn, func_name, line)
@@ -108,7 +108,7 @@ def analyze_function_call(
         return list(cached_shapes)  # Return copy
 
     # Mark function as currently being analyzed
-    ctx.analyzing_functions.add(func_name)
+    ctx.call.analyzing_functions.add(func_name)
 
     try:
         with ctx.snapshot_scope():
@@ -136,7 +136,7 @@ def analyze_function_call(
                         output_vars=stmt.output_vars,
                         body=stmt.body,
                     )
-                    ctx.nested_function_registry[stmt.name] = nested_sig
+                    ctx.call.nested_function_registry[stmt.name] = nested_sig
 
             # Analyze function body (inherit fixpoint setting)
             try:
@@ -159,7 +159,7 @@ def analyze_function_call(
             result = result_shapes if result_shapes else [Shape.unknown()]
 
             # Store in cache before formatting warnings
-            ctx.analysis_cache[cache_key] = (result, list(func_warnings))
+            ctx.call.analysis_cache[cache_key] = (result, list(func_warnings))
 
             # Format warnings for current call site
             for func_warn in func_warnings:
@@ -169,7 +169,7 @@ def analyze_function_call(
             return result
     finally:
         # Remove function from analyzing set
-        ctx.analyzing_functions.discard(func_name)
+        ctx.call.analyzing_functions.discard(func_name)
 
 
 def analyze_nested_function_call(
@@ -201,10 +201,10 @@ def analyze_nested_function_call(
     from analysis.eval_expr import eval_expr_ir, _eval_index_arg_to_shape
     from analysis.stmt_analysis import analyze_stmt_ir
 
-    if func_name not in ctx.nested_function_registry:
+    if func_name not in ctx.call.nested_function_registry:
         return [Shape.unknown()]
 
-    sig = ctx.nested_function_registry[func_name]
+    sig = ctx.call.nested_function_registry[func_name]
 
     # Check argument count
     if len(args) != len(sig.params):
@@ -214,7 +214,7 @@ def analyze_nested_function_call(
         return [Shape.unknown()] * max(len(sig.output_vars), 1)
 
     # Recursion guard
-    if func_name in ctx.analyzing_functions:
+    if func_name in ctx.call.analyzing_functions:
         warnings.append(diag.warn_recursive_function(line, func_name))
         return [Shape.unknown()] * max(len(sig.output_vars), 1)
 
@@ -227,14 +227,14 @@ def analyze_nested_function_call(
     cache_key = ("nested", func_name, arg_shapes, arg_dim_aliases)
 
     # Check cache
-    if cache_key in ctx.analysis_cache:
-        cached_shapes, cached_warnings = ctx.analysis_cache[cache_key]
+    if cache_key in ctx.call.analysis_cache:
+        cached_shapes, cached_warnings = ctx.call.analysis_cache[cache_key]
         for func_warn in cached_warnings:
             formatted = _format_dual_location_warning(func_warn, func_name, line)
             warnings.append(formatted)
         return list(cached_shapes)
 
-    ctx.analyzing_functions.add(func_name)
+    ctx.call.analyzing_functions.add(func_name)
 
     try:
         with ctx.snapshot_scope():
@@ -261,7 +261,7 @@ def analyze_nested_function_call(
                         output_vars=stmt.output_vars,
                         body=stmt.body,
                     )
-                    ctx.nested_function_registry[stmt.name] = nested_sig
+                    ctx.call.nested_function_registry[stmt.name] = nested_sig
 
             # Analyze function body
             try:
@@ -288,7 +288,7 @@ def analyze_nested_function_call(
 
             result = result_shapes if result_shapes else [Shape.unknown()]
 
-            ctx.analysis_cache[cache_key] = (result, list(func_warnings))
+            ctx.call.analysis_cache[cache_key] = (result, list(func_warnings))
 
             for func_warn in func_warnings:
                 formatted = _format_dual_location_warning(func_warn, func_name, line)
@@ -296,7 +296,7 @@ def analyze_nested_function_call(
 
             return result
     finally:
-        ctx.analyzing_functions.discard(func_name)
+        ctx.call.analyzing_functions.discard(func_name)
 
 
 def analyze_external_function_call(
@@ -330,7 +330,7 @@ def analyze_external_function_call(
     from analysis.workspace import load_external_function
 
     # Cross-file recursion guard
-    if fname in ctx.analyzing_external:
+    if fname in ctx.ws.analyzing_external:
         return [Shape.unknown()] * max(ext_sig.return_count, 1)
 
     # Load and parse external file
@@ -357,15 +357,15 @@ def analyze_external_function_call(
     cache_key = ("external", fname, arg_shapes, arg_dim_aliases)
 
     # Cache check (no warning replay — external warnings suppressed)
-    if cache_key in ctx.analysis_cache:
-        cached_shapes, _ = ctx.analysis_cache[cache_key]
+    if cache_key in ctx.call.analysis_cache:
+        cached_shapes, _ = ctx.call.analysis_cache[cache_key]
         return list(cached_shapes)
 
     # Registry swap + recursion guard (site-specific; saved/restored outside snapshot_scope)
-    saved_registry = ctx.function_registry
-    ctx.function_registry = dict(subfunctions)
-    ctx.analyzing_external.add(fname)
-    ctx.analyzing_functions.add(fname)  # So return statements work correctly inside external bodies
+    saved_registry = ctx.call.function_registry
+    ctx.call.function_registry = dict(subfunctions)
+    ctx.ws.analyzing_external.add(fname)
+    ctx.call.analyzing_functions.add(fname)  # So return statements work correctly inside external bodies
 
     try:
         with ctx.snapshot_scope():
@@ -394,12 +394,12 @@ def analyze_external_function_call(
                 result_shapes.append(Shape.unknown() if shape.is_bottom() else shape)
 
             result = result_shapes if result_shapes else [Shape.unknown()]
-            ctx.analysis_cache[cache_key] = (result, [])
+            ctx.call.analysis_cache[cache_key] = (result, [])
             return result
     finally:
-        ctx.function_registry = saved_registry
-        ctx.analyzing_external.discard(fname)
-        ctx.analyzing_functions.discard(fname)
+        ctx.call.function_registry = saved_registry
+        ctx.ws.analyzing_external.discard(fname)
+        ctx.call.analyzing_functions.discard(fname)
 
 
 def _analyze_loop_body(body: list, env: Env, warnings: List['Diagnostic'], ctx: AnalysisContext) -> None:
@@ -415,7 +415,7 @@ def _analyze_loop_body(body: list, env: Env, warnings: List['Diagnostic'], ctx: 
     """
     from analysis.stmt_analysis import analyze_stmt_ir
 
-    if not ctx.fixpoint:
+    if not ctx.call.fixpoint:
         try:
             for s in body:
                 analyze_stmt_ir(s, env, warnings, ctx)
