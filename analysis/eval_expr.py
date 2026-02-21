@@ -646,6 +646,12 @@ def _eval_indexing(base_shape: Shape, args, line: int, expr, env: Env, warnings:
         n = base_shape.cols
 
         if len(args) == 1:
+            arg = args[0]
+            if isinstance(arg, IndexExpr) and isinstance(arg.expr, MatrixLit):
+                # Matrix literal as linear index: result has the same shape as the index
+                # e.g. A([1 2 3]) -> matrix[1 x 3], A([1:4]) -> matrix[1 x None]
+                idx_shape = eval_expr_ir(arg.expr, env, warnings, ctx, base_shape)
+                return idx_shape
             return Shape.scalar()
 
         if len(args) == 2:
@@ -683,7 +689,14 @@ def _eval_indexing(base_shape: Shape, args, line: int, expr, env: Env, warnings:
             c_extent = index_arg_to_extent_ir(a2, env, warnings, line, ctx, container_shape=base_shape, dim_size=n)
 
             def is_allowed_unknown(a: IndexArg) -> bool:
-                return isinstance(a, (Colon, Range))
+                # Colon/Range always produce unknown extent (resolved to m/n later)
+                # IndexExpr with a MatrixLit base is a vector/matrix index: valid MATLAB,
+                # produces None extent without warning (result shape is matrix[None x None])
+                if isinstance(a, (Colon, Range)):
+                    return True
+                if isinstance(a, IndexExpr) and isinstance(a.expr, MatrixLit):
+                    return True
+                return False
 
             if (r_extent is None and not is_allowed_unknown(a1)) or (c_extent is None and not is_allowed_unknown(a2)):
                 return Shape.unknown()
@@ -769,6 +782,9 @@ def index_arg_to_extent_ir(
     if isinstance(arg, IndexExpr):
         s = eval_expr_ir(arg.expr, env, warnings, ctx, container_shape)
         if s.is_matrix():
+            if isinstance(arg.expr, MatrixLit):
+                # Matrix literal as subscript index: valid MATLAB, extent is None (unknown count)
+                return None
             warnings.append(diag.warn_non_scalar_index_arg(line, arg, s))
             return None
         return 1

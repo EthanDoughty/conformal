@@ -745,13 +745,17 @@ class MatlabParser:
         "^": 8, ".^": 8,
     }
 
-    def parse_expr(self, min_prec: int = 0, matrix_context: bool = False):
+    def parse_expr(self, min_prec: int = 0, matrix_context: bool = False, colon_visible: bool = True):
         """Expression grammar with precedence:
           prefix: NUMBER | STRING | ID | (expr) | -expr
           infix:  left op right
 
         matrix_context: when True, treat space-before-no-space-after +/- as
         end-of-expression (MATLAB matrix literal implicit separator rule).
+
+        colon_visible: when False, treat ':' as invisible to the infix loop so
+        parse_index_arg can parse start/end of a range without consuming ':'.
+        Replaces the old PRECEDENCE dict mutation hack.
         """
         tok = self.current()
 
@@ -759,15 +763,15 @@ class MatlabParser:
         if tok.value == "+":
             # Unary plus: +expr is a no-op (identity), used in matrix literal context like [1 +2]
             self.eat("+")
-            operand = self.parse_expr(self.PRECEDENCE["+"], matrix_context=matrix_context)
+            operand = self.parse_expr(self.PRECEDENCE["+"], matrix_context=matrix_context, colon_visible=colon_visible)
             left = operand  # unary + is identity
         elif tok.value == "-":
             minus_tok = self.eat("-")
-            operand = self.parse_expr(self.PRECEDENCE["-"], matrix_context=matrix_context)
+            operand = self.parse_expr(self.PRECEDENCE["-"], matrix_context=matrix_context, colon_visible=colon_visible)
             left = Neg(line=minus_tok.line, col=minus_tok.col, operand=operand)
         elif tok.value == "~":
             not_tok = self.eat("~")
-            operand = self.parse_expr(self.PRECEDENCE["+"], matrix_context=matrix_context)  # same precedence as unary -
+            operand = self.parse_expr(self.PRECEDENCE["+"], matrix_context=matrix_context, colon_visible=colon_visible)  # same precedence as unary -
             left = Not(line=not_tok.line, col=not_tok.col, operand=operand)
         elif tok.kind == "NUMBER":
             num_tok = self.eat("NUMBER")
@@ -829,6 +833,9 @@ class MatlabParser:
             op = tok.value
             if op not in self.PRECEDENCE:
                 break
+            # When colon is hidden (inside index arg), treat ':' as invisible
+            if op == ":" and not colon_visible:
+                break
             prec = self.PRECEDENCE[op]
             if prec < min_prec:
                 break
@@ -847,7 +854,7 @@ class MatlabParser:
                         break  # treat as start of next element
             op_tok = self.eat(op)
             # Right-associative: ^ and .^ use prec (not prec+1) for right operand
-            right = self.parse_expr(prec if op in ("^", ".^") else prec + 1)
+            right = self.parse_expr(prec if op in ("^", ".^") else prec + 1, colon_visible=colon_visible)
             left = BinOp(line=op_tok.line, col=op_tok.col, op=op, left=left, right=right)
         return left
 
@@ -906,12 +913,15 @@ class MatlabParser:
 
         return left
 
-    def parse_expr_rest(self, left, min_prec: int, matrix_context: bool = False):
+    def parse_expr_rest(self, left, min_prec: int, matrix_context: bool = False, colon_visible: bool = True):
         """Helper when the left side has already been parsed (parse_simple_stmt)"""
         while True:
             tok = self.current()
             op = tok.value
             if op not in self.PRECEDENCE:
+                break
+            # When colon is hidden (inside index arg), treat ':' as invisible
+            if op == ":" and not colon_visible:
                 break
             prec = self.PRECEDENCE[op]
             if prec < min_prec:
@@ -931,7 +941,7 @@ class MatlabParser:
                         break  # treat as start of next element
             op_tok = self.eat(op)
             # Right-associative: ^ and .^ use prec (not prec+1) for right operand
-            right = self.parse_expr(prec if op in ("^", ".^") else prec + 1)
+            right = self.parse_expr(prec if op in ("^", ".^") else prec + 1, colon_visible=colon_visible)
             left = BinOp(line=op_tok.line, col=op_tok.col, op=op, left=left, right=right)
         return left
 
@@ -1040,6 +1050,10 @@ class MatlabParser:
     def parse_index_arg(self):
         """Parse a single argument inside () for indexing/calls.
         Returns IndexArg: Colon, Range, or IndexExpr.
+
+        Uses colon_visible=False so that ':' is not consumed as an infix operator
+        inside the start/end sub-expressions; instead, ':' is handled explicitly
+        here to build Range nodes. This replaces the old PRECEDENCE dict mutation.
         """
         tok = self.current()
 
@@ -1048,29 +1062,18 @@ class MatlabParser:
             c_tok = self.eat(":")
             return Colon(line=c_tok.line, col=c_tok.col)
 
-        # Temporarily hide : from precedence table to prevent it being consumed
-        # Save original precedence
-        orig_colon_prec = self.PRECEDENCE.get(":")
-        if ":" in self.PRECEDENCE:
-            del self.PRECEDENCE[":"]
+        # Parse start expression with ':' hidden from the infix loop
+        start = self.parse_expr(colon_visible=False)
 
-        try:
-            # Parse start expression (: won't be consumed as infix operator)
-            start = self.parse_expr()
+        # Check if followed by ':'
+        if self.current().value == ":":
+            colon_tok = self.eat(":")
+            # Parse range endpoint (still with ':' hidden)
+            range_end = self.parse_expr(colon_visible=False)
+            return Range(line=colon_tok.line, col=colon_tok.col, start=start, end=range_end)
 
-            # Check if followed by ':'
-            if self.current().value == ":":
-                colon_tok = self.eat(":")
-                # Parse range endpoint (still with : hidden)
-                range_end = self.parse_expr()
-                return Range(line=colon_tok.line, col=colon_tok.col, start=start, end=range_end)
-
-            # Bare expression — wrap in IndexExpr
-            return IndexExpr(line=start.line, col=start.col, expr=start)
-        finally:
-            # Restore colon precedence
-            if orig_colon_prec is not None:
-                self.PRECEDENCE[":"] = orig_colon_prec
+        # Bare expression — wrap in IndexExpr
+        return IndexExpr(line=start.line, col=start.col, expr=start)
 
 
     def parse_paren_args(self) -> List:
