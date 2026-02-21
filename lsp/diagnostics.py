@@ -1,8 +1,10 @@
 """Convert Conformal Diagnostic objects to LSP Diagnostic objects."""
 from __future__ import annotations
 
+from typing import Optional
 from lsprotocol import types
 from analysis.diagnostics import Diagnostic as ConformalDiagnostic
+from analysis.witness import Witness
 
 # Codes that represent definite errors (dimension mismatches that will crash at runtime)
 ERROR_CODES = {
@@ -34,13 +36,15 @@ ERROR_CODES = {
 }
 
 
-def to_lsp_diagnostic(d: ConformalDiagnostic, source_lines: list[str], uri: str) -> types.Diagnostic:
+def to_lsp_diagnostic(d: ConformalDiagnostic, source_lines: list[str], uri: str,
+                      witness: Optional[Witness] = None) -> types.Diagnostic:
     """Convert a Conformal Diagnostic to an LSP Diagnostic.
 
     Args:
         d: Conformal diagnostic with 1-based line numbering
         source_lines: Source code split into lines (for range calculation)
         uri: Document URI for related_line locations
+        witness: Optional witness proof for this diagnostic
 
     Returns:
         LSP Diagnostic with 0-based line numbering
@@ -96,13 +100,24 @@ def to_lsp_diagnostic(d: ConformalDiagnostic, source_lines: list[str], uri: str)
         )
         related_information = [related_info]
 
+    # Enrich message with witness if available
+    message = d.message
+    if witness is not None:
+        message = f"{message}\nWitness: {witness.explanation}"
+        if witness.path:
+            path_parts = []
+            for desc, taken, ln in witness.path:
+                branch_str = "true branch" if taken else "false branch"
+                path_parts.append(f"line {ln} (if {desc}, {branch_str})")
+            message = f"{message}\nPath: {' -> '.join(path_parts)}"
+
     # Build diagnostic
     return types.Diagnostic(
         range=range_,
         severity=severity,
         code=d.code if d.code else None,
         source="conformal",
-        message=d.message,
+        message=message,
         tags=tags,
         related_information=related_information,
     )

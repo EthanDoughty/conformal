@@ -14,7 +14,7 @@ from analysis.workspace import scan_workspace
 
 
 def run_file(file_path: str, strict: bool = False, fixpoint: bool = False,
-             benchmark: bool = False, witness: bool = False) -> int:
+             benchmark: bool = False, witness: str = '') -> int:
     """Analyze a single MATLAB file.
 
     Args:
@@ -22,7 +22,7 @@ def run_file(file_path: str, strict: bool = False, fixpoint: bool = False,
         strict: If True, exit with error if unsupported constructs detected
         fixpoint: If True, use fixed-point iteration for loop analysis
         benchmark: If True, print timing breakdown
-        witness: If True, attempt to construct witnesses for warnings
+        witness: Witness mode: 'enrich', 'filter', 'tag', or '' (disabled)
 
     Returns:
         Exit code (0 for success, 1 for error)
@@ -63,14 +63,24 @@ def run_file(file_path: str, strict: bool = False, fixpoint: bool = False,
     if witness:
         witnesses = generate_witnesses(ctx.conflict_sites)
 
+    # Filter mode: only show warnings with witnesses
+    if witness == 'filter':
+        warnings = [w for w in warnings if (w.line, w.code) in witnesses]
+
     print(f"=== Analysis for {file_path} ===")
     if not warnings:
         print("No dimension warnings.")
     else:
         print("Warnings:")
         for w in warnings:
-            print("  -", w)
-            if witness:
+            # Tag mode: prefix with [confirmed] or [possible]
+            if witness == 'tag':
+                tag = "[confirmed]" if (w.line, w.code) in witnesses else "[possible]"
+                print(f"  - {tag} {w}")
+            else:
+                print("  -", w)
+            # Enrich/tag modes: show witness details below
+            if witness in ('enrich', 'tag', 'filter'):
                 key = (w.line, w.code)
                 wt = witnesses.get(key)
                 if wt is not None:
@@ -171,10 +181,24 @@ def main() -> int:
     )
     parser.add_argument(
         "--witness",
-        action="store_true",
-        help="Attempt to construct concrete witnesses proving warnings are real bugs"
+        nargs="?",
+        const="enrich",
+        default="",
+        metavar="MODE",
+        help="Witness mode: enrich (default, show witnesses below warnings), "
+             "filter (only show confirmed bugs), tag (prefix [confirmed]/[possible])"
     )
     args = parser.parse_args()
+
+    # Resolve ambiguity: --witness may consume the filename as its optional arg.
+    # If witness looks like a file path, shift it to args.file and default witness to 'enrich'.
+    witness_mode = args.witness or ''
+    if witness_mode and witness_mode not in ('enrich', 'filter', 'tag'):
+        if args.file is None:
+            args.file = witness_mode
+            witness_mode = 'enrich'
+        else:
+            parser.error(f"--witness mode must be enrich, filter, or tag (got '{witness_mode}')")
 
     if args.tests:
         return run_tests(strict=args.strict, fixpoint=args.fixpoint,
@@ -185,7 +209,7 @@ def main() -> int:
         return 1
 
     return run_file(args.file, strict=args.strict, fixpoint=args.fixpoint,
-                    benchmark=args.benchmark, witness=args.witness)
+                    benchmark=args.benchmark, witness=witness_mode)
 
 
 if __name__ == "__main__":

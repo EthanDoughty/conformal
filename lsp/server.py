@@ -14,7 +14,7 @@ from pygls.lsp.server import LanguageServer
 from lsprotocol import types
 
 from frontend.matlab_parser import parse_matlab
-from analysis import analyze_program_ir
+from analysis import analyze_program_ir, generate_witnesses
 from analysis.context import AnalysisContext
 from analysis.workspace import scan_workspace
 from analysis.builtins import KNOWN_BUILTINS
@@ -134,9 +134,14 @@ def _validate(ls: LanguageServer, uri: str, source: str, force: bool = False) ->
         if not server_settings["strict"]:
             warnings = [w for w in warnings if w.code not in STRICT_ONLY_CODES]
 
-        # Convert to LSP diagnostics
+        # Generate witnesses for dimension conflict warnings
+        witnesses = generate_witnesses(ctx.conflict_sites)
+
+        # Convert to LSP diagnostics (with witness enrichment)
         lsp_diagnostics = [
-            to_lsp_diagnostic(diag, source_lines, uri) for diag in warnings
+            to_lsp_diagnostic(diag, source_lines, uri,
+                              witness=witnesses.get((diag.line, diag.code)))
+            for diag in warnings
         ]
 
         # Publish diagnostics
