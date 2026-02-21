@@ -460,97 +460,99 @@ def widen_dim(old: Dim, new: Dim) -> Dim:
     return None
 
 
+def _traverse_shapes(s1: Shape, s2: Shape, dim_op) -> Shape:
+    """Generic shape lattice traversal parameterized by a dimension operator.
+
+    Implements the shared structure of join_shape and widen_shape:
+    bottom-as-identity, unknown-as-top, then 6 same-kind match arms
+    (scalar, matrix, string, function_handle, struct, cell), then
+    cross-kind fallback to unknown.
+
+    Args:
+        s1: First shape
+        s2: Second shape
+        dim_op: Callable(Dim, Dim) -> Dim applied to matrix/cell dimensions.
+                Use join_dim for join_shape, widen_dim for widen_shape.
+
+    Returns:
+        Result shape according to dim_op and the shared lattice rules.
+    """
+    # Bottom is identity (no information from unbound variable)
+    if s1.is_bottom():
+        return s2
+    if s2.is_bottom():
+        return s1
+
+    # Unknown is absorbing top (error/indeterminate propagates)
+    if s1.is_unknown() or s2.is_unknown():
+        return Shape.unknown()
+
+    if s1.is_scalar() and s2.is_scalar():
+        return Shape.scalar()
+
+    if s1.is_matrix() and s2.is_matrix():
+        return Shape.matrix(dim_op(s1.rows, s2.rows), dim_op(s1.cols, s2.cols))
+
+    if s1.is_string() and s2.is_string():
+        return Shape.string()
+
+    if s1.is_function_handle() and s2.is_function_handle():
+        # Union lambda_ids; None (opaque) is absorbing
+        ids1, ids2 = s1._lambda_ids, s2._lambda_ids
+        merged_ids = None if (ids1 is None or ids2 is None) else ids1 | ids2
+        return Shape.function_handle(lambda_ids=merged_ids)
+
+    if s1.is_struct() and s2.is_struct():
+        # Open structs propagate: if either is open, result is open
+        result_open = s1._open or s2._open
+        all_fields = set(s1.fields_dict.keys()) | set(s2.fields_dict.keys())
+        merged_fields = {}
+        for field_name in all_fields:
+            # Missing field in open struct → unknown; in closed struct → bottom
+            default1 = Shape.unknown() if s1._open else Shape.bottom()
+            default2 = Shape.unknown() if s2._open else Shape.bottom()
+            f1 = s1.fields_dict.get(field_name, default1)
+            f2 = s2.fields_dict.get(field_name, default2)
+            merged_fields[field_name] = _traverse_shapes(f1, f2, dim_op)
+        return Shape.struct(merged_fields, open=result_open)
+
+    if s1.is_cell() and s2.is_cell():
+        merged_rows = dim_op(s1.rows, s2.rows)
+        merged_cols = dim_op(s1.cols, s2.cols)
+        # None is absorbing: if either side has no element tracking, result has none
+        if s1._elements is None or s2._elements is None:
+            merged_elements = None
+        else:
+            dict1, dict2 = dict(s1._elements), dict(s2._elements)
+            all_indices = set(dict1.keys()) | set(dict2.keys())
+            elem_dict = {}
+            for idx in all_indices:
+                e1 = dict1.get(idx, Shape.bottom())
+                e2 = dict2.get(idx, Shape.bottom())
+                elem_dict[idx] = _traverse_shapes(e1, e2, dim_op)
+            # Remove bottom elements (internal-only, don't store)
+            elem_dict = {idx: s for idx, s in elem_dict.items() if not s.is_bottom()}
+            merged_elements = elem_dict if elem_dict else None
+        return Shape.cell(merged_rows, merged_cols, elements=merged_elements)
+
+    # Different kinds → unknown
+    return Shape.unknown()
+
+
 def widen_shape(old: Shape, new: Shape) -> Shape:
     """Widen shape pointwise. Bottom is identity, unknown is absorbing top.
 
     Used in fixpoint loop analysis for both widening and post-loop join.
-
-    Lattice semantics:
-    - bottom is identity: widen(bottom, s) = s, widen(s, bottom) = s
-    - unknown is top: widen(unknown, s) = unknown, widen(s, unknown) = unknown
-    - Same kind → same kind (pointwise for matrices)
-    - Different kinds → unknown
+    Delegates to _traverse_shapes with widen_dim as the dimension operator.
 
     Args:
         old: Shape from previous iteration or pre-loop environment
         new: Shape from current iteration
 
     Returns:
-        Widened shape with bottom-as-identity, unknown-as-top, pointwise widen_dim
+        Widened shape (stable dims preserved, conflicting dims widened to None)
     """
-    # Bottom is identity (no information from unbound variable)
-    if old.is_bottom():
-        return new
-    if new.is_bottom():
-        return old
-
-    # Unknown is absorbing top (error/indeterminate propagates)
-    if old.is_unknown() or new.is_unknown():
-        return Shape.unknown()
-
-    # Both known kinds: pointwise widening
-    if old.is_scalar() and new.is_scalar():
-        return Shape.scalar()
-    if old.is_matrix() and new.is_matrix():
-        return Shape.matrix(
-            widen_dim(old.rows, new.rows),
-            widen_dim(old.cols, new.cols),
-        )
-    if old.is_string() and new.is_string():
-        return Shape.string()
-
-    if old.is_function_handle() and new.is_function_handle():
-        # Union lambda_ids; None (opaque) is absorbing
-        ids1 = old._lambda_ids
-        ids2 = new._lambda_ids
-        if ids1 is None or ids2 is None:
-            merged_ids = None
-        else:
-            merged_ids = ids1 | ids2
-        return Shape.function_handle(lambda_ids=merged_ids)
-
-    if old.is_struct() and new.is_struct():
-        # Union-with-bottom widen: union of all field names
-        # Open structs propagate: if either is open, result is open
-        result_open = old._open or new._open
-        all_fields = set(old.fields_dict.keys()) | set(new.fields_dict.keys())
-        widened_fields = {}
-        for field_name in all_fields:
-            # Missing field in open struct → unknown (field may exist with any shape)
-            # Missing field in closed struct → bottom (field definitely absent)
-            default_old = Shape.unknown() if old._open else Shape.bottom()
-            default_new = Shape.unknown() if new._open else Shape.bottom()
-            f_old = old.fields_dict.get(field_name, default_old)
-            f_new = new.fields_dict.get(field_name, default_new)
-            widened_fields[field_name] = widen_shape(f_old, f_new)
-        return Shape.struct(widened_fields, open=result_open)
-
-    if old.is_cell() and new.is_cell():
-        # Widen dimensions
-        widened_rows = widen_dim(old.rows, new.rows)
-        widened_cols = widen_dim(old.cols, new.cols)
-
-        # Widen elements: None is absorbing (if either side has no tracking, result has no tracking)
-        if old._elements is None or new._elements is None:
-            widened_elements = None
-        else:
-            # Merge element dicts pointwise (union keys, widen values)
-            old_dict = dict(old._elements)
-            new_dict = dict(new._elements)
-            all_indices = set(old_dict.keys()) | set(new_dict.keys())
-            widened_elem_dict = {}
-            for idx in all_indices:
-                e_old = old_dict.get(idx, Shape.bottom())
-                e_new = new_dict.get(idx, Shape.bottom())
-                widened_elem_dict[idx] = widen_shape(e_old, e_new)
-            # Remove bottom elements (internal-only, don't store)
-            widened_elem_dict = {idx: s for idx, s in widened_elem_dict.items() if not s.is_bottom()}
-            widened_elements = widened_elem_dict if widened_elem_dict else None
-
-        return Shape.cell(widened_rows, widened_cols, elements=widened_elements)
-
-    # Different kinds → unknown
-    return Shape.unknown()
+    return _traverse_shapes(old, new, widen_dim)
 
 
 # Shape lattice join
@@ -558,11 +560,7 @@ def widen_shape(old: Shape, new: Shape) -> Shape:
 def join_shape(s1: Shape, s2: Shape) -> Shape:
     """Pointwise join of two shapes. Bottom is identity, unknown is absorbing top.
 
-    Lattice semantics:
-    - bottom is identity: join(bottom, s) = s, join(s, bottom) = s
-    - unknown is top: join(unknown, s) = unknown, join(s, unknown) = unknown
-    - Same kind → same kind (pointwise for matrices)
-    - Different kinds → unknown
+    Delegates to _traverse_shapes with join_dim as the dimension operator.
 
     Args:
         s1: First shape
@@ -571,80 +569,7 @@ def join_shape(s1: Shape, s2: Shape) -> Shape:
     Returns:
         Joined shape
     """
-    # Bottom is identity
-    if s1.is_bottom():
-        return s2
-    if s2.is_bottom():
-        return s1
-
-    # Unknown is absorbing top
-    if s1.is_unknown() or s2.is_unknown():
-        return Shape.unknown()
-
-    # Both known kinds: pointwise join
-    if s1.is_scalar() and s2.is_scalar():
-        return Shape.scalar()
-
-    if s1.is_matrix() and s2.is_matrix():
-        r = join_dim(s1.rows, s2.rows)
-        c = join_dim(s1.cols, s2.cols)
-        return Shape.matrix(r, c)
-
-    if s1.is_string() and s2.is_string():
-        return Shape.string()
-
-    if s1.is_function_handle() and s2.is_function_handle():
-        # Union lambda_ids; None (opaque) is absorbing
-        ids1 = s1._lambda_ids
-        ids2 = s2._lambda_ids
-        if ids1 is None or ids2 is None:
-            merged_ids = None
-        else:
-            merged_ids = ids1 | ids2
-        return Shape.function_handle(lambda_ids=merged_ids)
-
-    if s1.is_struct() and s2.is_struct():
-        # Union-with-bottom join: union of all field names
-        # Open structs propagate: if either is open, result is open
-        result_open = s1._open or s2._open
-        all_fields = set(s1.fields_dict.keys()) | set(s2.fields_dict.keys())
-        joined_fields = {}
-        for field_name in all_fields:
-            # Missing field in open struct → unknown (field may exist with any shape)
-            # Missing field in closed struct → bottom (field definitely absent)
-            default1 = Shape.unknown() if s1._open else Shape.bottom()
-            default2 = Shape.unknown() if s2._open else Shape.bottom()
-            f1 = s1.fields_dict.get(field_name, default1)
-            f2 = s2.fields_dict.get(field_name, default2)
-            joined_fields[field_name] = join_shape(f1, f2)
-        return Shape.struct(joined_fields, open=result_open)
-
-    if s1.is_cell() and s2.is_cell():
-        # Join dimensions
-        r = join_dim(s1.rows, s2.rows)
-        c = join_dim(s1.cols, s2.cols)
-
-        # Join elements: None is absorbing (if either side has no tracking, result has no tracking)
-        if s1._elements is None or s2._elements is None:
-            joined_elements = None
-        else:
-            # Merge element dicts pointwise (union keys, join values)
-            dict1 = dict(s1._elements)
-            dict2 = dict(s2._elements)
-            all_indices = set(dict1.keys()) | set(dict2.keys())
-            joined_elem_dict = {}
-            for idx in all_indices:
-                e1 = dict1.get(idx, Shape.bottom())
-                e2 = dict2.get(idx, Shape.bottom())
-                joined_elem_dict[idx] = join_shape(e1, e2)
-            # Remove bottom elements (internal-only, don't store)
-            joined_elem_dict = {idx: s for idx, s in joined_elem_dict.items() if not s.is_bottom()}
-            joined_elements = joined_elem_dict if joined_elem_dict else None
-
-        return Shape.cell(r, c, elements=joined_elements)
-
-    # Different kinds → unknown
-    return Shape.unknown()
+    return _traverse_shapes(s1, s2, join_dim)
 
 
 # Convenience functions for common patterns
