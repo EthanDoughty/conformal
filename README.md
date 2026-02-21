@@ -4,10 +4,10 @@
 
 ### Static Shape & Dimension Analysis for MATLAB
 
-[![Version](https://img.shields.io/badge/version-1.14.0-orange.svg)](#motivation-and-future-directions)
+[![Version](https://img.shields.io/badge/version-1.15.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-338%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-348%20passing-brightgreen.svg)](#test-suite)
 [![pip installable](https://img.shields.io/badge/pip-installable-green.svg)](#getting-started)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
@@ -48,7 +48,7 @@ Final environment:
 
 ## Performance
 
-Single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and cross-file workspace analysis runs in about 70ms. The full 338-test suite finishes in under 500ms, with no MATLAB runtime involved.
+Single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and cross-file workspace analysis runs in about 70ms. The full test suite (338 `.m` tests plus 10 structural Python tests) finishes in under 500ms, with no MATLAB runtime involved.
 
 The VS Code extension can analyze on every keystroke by default, with a 500ms debounce.
 
@@ -168,13 +168,13 @@ analysis/           17 focused submodules: expression eval, statements, function
 runtime/            Shape domain (shapes.py), symbolic dimensions (symdim.py), and environments
 lsp/                Language Server Protocol implementation (server.py, diagnostics.py, hover.py, code_actions.py)
 vscode-conformal/   VS Code extension (TypeScript thin client)
-tests/              Self-checking MATLAB programs (338 tests, 17 categories)
+tests/              Self-checking MATLAB programs (338 `.m` tests in 17 categories, plus 10 structural Python tests)
 tools/              Debugging utilities (AST printer)
 ```
 
 ## Test Suite
 
-The analyzer is validated by 338 self-checking test programs organized into 17 categories. Each test embeds its expected behavior as inline assertions:
+The analyzer is validated by 338 self-checking MATLAB programs organized into 17 categories, plus 10 structural Python tests in `tests/structural/` that verify Shape lattice completeness (join/widen exhaustiveness, predicate exclusivity, and subclass count). Each MATLAB test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -725,9 +725,12 @@ Incorrectness witness generation: concrete proofs that dimension conflict warnin
 ### Running the Tests
 
 ```bash
-# Run all 338 tests
+# Run all 338 .m tests
 make test
 python3 conformal.py --tests
+
+# Run the 10 structural lattice tests
+python3 tests/structural/test_shape_completeness.py
 
 # Run with fixed-point loop analysis
 python3 conformal.py --fixpoint --tests
@@ -742,7 +745,7 @@ python3 conformal.py --strict --tests
 git clone https://github.com/EthanDoughty/conformal.git
 cd conformal
 make install          # pip install -e '.[lsp]' (editable + pygls)
-conformal --tests     # verify 338 tests pass
+conformal --tests     # verify 338 .m tests pass
 ```
 
 Analyze a file:

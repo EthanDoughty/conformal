@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.15.0] - 2026-02-21
+### Added
+- **`FieldIndexAssign` IR node**: captures `s.field(n).subfield = val` patterns (chained struct-array field assignments) with full index data preserved; previously the index `(n)` was silently dropped when collapsing to `StructAssign`
+- **10 structural tests** (`tests/structural/test_shape_completeness.py`): verifies Shape lattice completeness, covering subclass count (8 frozen dataclasses), join/widen exhaustiveness for all 64 pairs, `bottom` as join identity, `unknown` as join absorbing, idempotence, cross-kind join/widen → unknown, `is_numeric()` coverage, and predicate exclusivity; fails fast when a new Shape subclass is added without updating the lattice functions
+- Total test count: 348 (338 `.m` tests unchanged, 10 new structural Python tests)
+
+### Changed
+- **`_parse_prefix` extracted** from `parse_expr` in `frontend/matlab_parser.py`: eliminates 28-line infix loop duplication; prefix parsing is now a single named helper
+- **`_join_all_elements` extracted** in `analysis/eval_expr.py`: replaces 7 identical cell element join patterns in the CurlyApply handler; one definition, no drift between sites
+- **`_traverse_shapes` extracted** in `runtime/shapes.py`: deduplicates `join_shape` and `widen_shape` by factoring out the shared traversal skeleton (~75 lines removed); `_traverse_shapes` is now the single source of truth for shape lattice traversal
+- **`BuiltinEvalContext` callback injection** in `analysis/eval_builtins.py`: replaces 37 inline `eval_expr` imports with a callback object passed in at call time; breaks the circular import between `eval_builtins` and `eval_expr` cleanly without changing any builtin's behavior
+- **`AnalysisContext` decomposed** into three focused sub-objects: `ctx.call` (`CallContext`, carries function registry, recursion guards, cache, and closure metadata), `ctx.cst` (`ConstraintContext`, carries constraints, provenance, and scalar bindings), `ctx.ws` (`WorkspaceContext`, carries workspace directory, external function registry, and cross-file cache); all 18 flat fields replaced by sub-object access (`ctx.cst.constraints`, `ctx.call.fixpoint`, `ctx.ws.external_functions`)
+
 ## [1.14.0] - 2026-02-21
 ### Added
 - **Open struct lattice element**: `StructShape` now carries `_open: bool`; when you assign a field to a variable whose current shape is `unknown` (for example, the return value of an unrecognized function), the analyzer creates an open struct (`struct{x: scalar, ...}`) rather than a closed one; open structs don't emit `W_STRUCT_FIELD_NOT_FOUND` on missing field reads (the field could exist at runtime); lattice ordering is bottom < closed struct < open struct < unknown
