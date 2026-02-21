@@ -893,6 +893,7 @@ assert not (_all_declarative & set(BUILTIN_HANDLERS)), \
     f"Overlap between declarative sets and BUILTIN_HANDLERS: {_all_declarative & set(BUILTIN_HANDLERS)}"
 
 
+
 def _eval_first_arg_shape(expr, env, warnings, ctx):
     """Evaluate first arg and return (rows, cols) or (None, None) for non-matrix."""
     from analysis.eval_expr import eval_expr_ir
@@ -1100,6 +1101,12 @@ BUILTIN_MULTI_HANDLERS = {
     'regexp': _handle_multi_regexp,
     'regexpi': _handle_multi_regexp,
 }
+
+# Verify all handled builtins are in KNOWN_BUILTINS (prevents orphan handlers)
+from analysis.builtins import KNOWN_BUILTINS as _KNOWN
+_all_handled = _all_declarative | set(BUILTIN_HANDLERS) | set(BUILTIN_MULTI_HANDLERS)
+_orphans = _all_handled - _KNOWN
+assert not _orphans, f"Builtins with handlers but not in KNOWN_BUILTINS: {_orphans}"
 
 
 def eval_builtin_call(fname: str, expr: Apply, env: Env, warnings: List['Diagnostic'], ctx: AnalysisContext) -> Shape:
