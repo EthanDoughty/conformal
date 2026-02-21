@@ -39,6 +39,17 @@ _MATLAB_CONSTANTS = {
 }
 
 
+def _join_all_elements(elem_dict: dict) -> Shape:
+    """Join all element shapes from a cell's element tracking dict.
+    Returns unknown if no elements tracked, otherwise joins all values."""
+    if not elem_dict:
+        return Shape.unknown()
+    result = Shape.bottom()
+    for elem_shape in elem_dict.values():
+        result = join_shape(result, elem_shape)
+    return result
+
+
 def _eval_index_arg_to_shape(arg: IndexArg, env: Env, warnings: List['Diagnostic'], ctx: AnalysisContext, container_shape: Optional[Shape] = None) -> Shape:
     """Evaluate an IndexArg to a Shape.
 
@@ -188,12 +199,7 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List['Diagnostic'], ctx: Analys
                 else:
                     # Symbolic/unknown dimensions: can't resolve end statically
                     # Join all elements conservatively
-                    if not elem_dict:
-                        return Shape.unknown()
-                    result = Shape.bottom()
-                    for elem_shape in elem_dict.values():
-                        result = join_shape(result, elem_shape)
-                    return result
+                    return _join_all_elements(elem_dict)
             elif isinstance(arg, IndexExpr) and isinstance(arg.expr, BinOp) and _binop_contains_end(arg.expr):
                 # c{end-1}, c{end/2}, etc. — resolve end arithmetic
                 if isinstance(base_shape.rows, int) and isinstance(base_shape.cols, int):
@@ -205,48 +211,23 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List['Diagnostic'], ctx: Analys
                         return elem_dict.get(idx_value - 1, Shape.unknown())
                     else:
                         # Out of bounds or can't resolve (contains variables) → join all elements conservatively
-                        if not elem_dict:
-                            return Shape.unknown()
-                        result = Shape.bottom()
-                        for elem_shape in elem_dict.values():
-                            result = join_shape(result, elem_shape)
-                        return result
+                        return _join_all_elements(elem_dict)
                 else:
                     # Symbolic/unknown dimensions: can't resolve end statically
                     # Join all elements conservatively
-                    if not elem_dict:
-                        return Shape.unknown()
-                    result = Shape.bottom()
-                    for elem_shape in elem_dict.values():
-                        result = join_shape(result, elem_shape)
-                    return result
+                    return _join_all_elements(elem_dict)
             elif isinstance(arg, Colon):
                 # Colon indexing: c{:} → join all elements
-                if not elem_dict:
-                    return Shape.unknown()
-                result = Shape.bottom()
-                for elem_shape in elem_dict.values():
-                    result = join_shape(result, elem_shape)
-                return result
+                return _join_all_elements(elem_dict)
             elif isinstance(arg, Range):
                 # Range indexing: c{start:end} → join subset
                 # For now, conservatively join all elements (precise range extraction deferred)
                 _ = _eval_index_arg_to_shape(arg, env, warnings, ctx, container_shape=base_shape)
-                if not elem_dict:
-                    return Shape.unknown()
-                result = Shape.bottom()
-                for elem_shape in elem_dict.values():
-                    result = join_shape(result, elem_shape)
-                return result
+                return _join_all_elements(elem_dict)
             else:
                 # Dynamic index: join all elements
                 _ = _eval_index_arg_to_shape(arg, env, warnings, ctx, container_shape=base_shape)
-                if not elem_dict:
-                    return Shape.unknown()
-                result = Shape.bottom()
-                for elem_shape in elem_dict.values():
-                    result = join_shape(result, elem_shape)
-                return result
+                return _join_all_elements(elem_dict)
 
         elif len(expr.args) == 2:
             # 2D indexing: c{i, j}
@@ -297,12 +278,7 @@ def eval_expr_ir(expr: Expr, env: Env, warnings: List['Diagnostic'], ctx: Analys
                 # Dynamic 2D index: evaluate args and join all elements
                 _ = _eval_index_arg_to_shape(arg_row, env, warnings, ctx, container_shape=base_shape)
                 _ = _eval_index_arg_to_shape(arg_col, env, warnings, ctx, container_shape=base_shape)
-                if not elem_dict:
-                    return Shape.unknown()
-                result = Shape.bottom()
-                for elem_shape in elem_dict.values():
-                    result = join_shape(result, elem_shape)
-                return result
+                return _join_all_elements(elem_dict)
 
         else:
             # Multi-dimensional indexing (>2D): evaluate args and return unknown
