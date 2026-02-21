@@ -214,6 +214,22 @@ class IndexStructAssign(Stmt):
     col: int = 0
 
 @dataclass(frozen=True)
+class FieldIndexAssign(Stmt):
+    """Struct-array field assignment: s.field(n).subfield = expr.
+
+    Represents patterns where struct fields flank an index operation.
+    The index is recorded for future precision but currently treated the
+    same as nested struct assignment (prefix_fields + suffix_fields flattened).
+    """
+    base_name: str            # "s"
+    prefix_fields: List[str]  # fields before the index (e.g. ["field"])
+    index_args: List[IndexArg]  # indexing arguments (e.g. [n])
+    index_kind: str           # "paren" or "curly"
+    suffix_fields: List[str]  # fields after the index (e.g. ["subfield"])
+    expr: 'Expr'
+    col: int = 0
+
+@dataclass(frozen=True)
 class ExprStmt(Stmt):
     """Expression statement (evaluates but doesn't assign)."""
     expr: Expr

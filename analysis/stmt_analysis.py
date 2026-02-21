@@ -15,7 +15,7 @@ from analysis.constraints import snapshot_constraints, join_constraints, validat
 
 from ir import (
     Stmt, Expr,
-    Assign, StructAssign, CellAssign, IndexAssign, IndexStructAssign, ExprStmt, While, For, If, IfChain, Switch, Try, Break, Continue,
+    Assign, StructAssign, CellAssign, IndexAssign, IndexStructAssign, FieldIndexAssign, ExprStmt, While, For, If, IfChain, Switch, Try, Break, Continue,
     OpaqueStmt, FunctionDef, AssignMulti, Return,
     Apply, Var, Const, IndexExpr, MatrixLit, BinOp, Neg, Not, Transpose, FieldAccess, Lambda, FuncHandle,
     End, CellLit, CurlyApply, StringLit,
@@ -369,6 +369,22 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         # Walk the field chain to update nested struct
         updated_shape = _update_struct_field(base_shape, stmt.fields, rhs_shape, stmt.line, warnings)
 
+        env.set(stmt.base_name, updated_shape)
+        return env
+
+    if isinstance(stmt, FieldIndexAssign):
+        # Struct-array field assignment: s.field(n).subfield = expr
+        # Treat prefix_fields + suffix_fields as a flat field chain (same as collapsed StructAssign).
+        # The index is recorded in the IR for future precision but not used here.
+        rhs_shape = eval_expr_ir(stmt.expr, env, warnings, ctx)
+
+        # Evaluate index args for side effects (variable resolution, interval tracking)
+        base_shape = env.get(stmt.base_name)
+        for arg in stmt.index_args:
+            _ = _eval_index_arg_to_shape(arg, env, warnings, ctx, container_shape=base_shape)
+
+        fields = stmt.prefix_fields + stmt.suffix_fields
+        updated_shape = _update_struct_field(base_shape, fields, rhs_shape, stmt.line, warnings)
         env.set(stmt.base_name, updated_shape)
         return env
 

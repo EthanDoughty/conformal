@@ -6,7 +6,7 @@ from frontend.lexer import Token, lex, KEYWORDS
 from ir.ir import (
     Program, Assign, StructAssign, CellAssign, IndexAssign, ExprStmt,
     While, For, IfChain, If, Switch, Try, Break, Continue, OpaqueStmt,
-    FunctionDef, AssignMulti, Return, IndexStructAssign,
+    FunctionDef, AssignMulti, Return, IndexStructAssign, FieldIndexAssign,
     Var, Const, StringLit, BinOp, Neg, Not, Transpose,
     FieldAccess, Lambda, FuncHandle, End, Apply, CurlyApply,
     MatrixLit, CellLit, Colon, Range, IndexExpr,
@@ -580,16 +580,20 @@ class MatlabParser:
                                      base_name=base, index_args=index_args,
                                      index_kind=index_kind, fields=fields, expr=rhs)
 
-        # B5 pattern: field(s), then paren/curly, then field(s) — collapse all fields
+        # B5 pattern: field(s), then paren/curly, then field(s) — emit FieldIndexAssign
         index_pos = next((i for i, (k, _) in enumerate(chain) if k in ('paren', 'curly')), None)
         if index_pos is not None:
             prefix = chain[:index_pos]
             suffix = chain[index_pos + 1:]
             if (prefix and all(k == 'field' for k, _ in prefix)
                     and suffix and all(k == 'field' for k, _ in suffix)):
-                fields = [d for _, d in prefix] + [d for _, d in suffix]
-                return StructAssign(line=eq_tok.line, col=eq_tok.col,
-                                    base_name=base, fields=fields, expr=rhs)
+                return FieldIndexAssign(line=eq_tok.line, col=eq_tok.col,
+                                        base_name=base,
+                                        prefix_fields=[d for _, d in prefix],
+                                        index_args=chain[index_pos][1],
+                                        index_kind=chain[index_pos][0],
+                                        suffix_fields=[d for _, d in suffix],
+                                        expr=rhs)
 
         # Fields followed by paren index: s.field(n) = expr
         # Evaluate RHS for side effects, preserve base struct shape
