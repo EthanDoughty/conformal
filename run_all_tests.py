@@ -150,6 +150,35 @@ def run_test(path: str, fixpoint: bool = False) -> tuple[bool, bool]:
     return passed, has_unsupported_warnings
 
 
+def _run_structural_tests() -> tuple[int, int]:
+    """Run structural Python tests and return (total, passed) counts."""
+    import importlib.util
+    structural_dir = _REPO_ROOT / "tests" / "structural"
+    test_files = sorted(structural_dir.glob("test_*.py"))
+    total = 0
+    ok = 0
+    for tf in test_files:
+        spec = importlib.util.spec_from_file_location(tf.stem, tf)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        test_fns = [
+            (name, obj)
+            for name, obj in vars(mod).items()
+            if name.startswith("test_") and callable(obj)
+        ]
+        for name, func in test_fns:
+            total += 1
+            try:
+                func()
+                print(f"===== Structural: {tf.stem}.{name}: PASS")
+                ok += 1
+            except AssertionError as e:
+                print(f"===== Structural: {tf.stem}.{name}: FAIL: {e}")
+            except Exception as e:
+                print(f"===== Structural: {tf.stem}.{name}: ERROR: {type(e).__name__}: {e}")
+    return total, ok
+
+
 def main(return_code: bool = False, strict: bool = False, fixpoint: bool = False) -> int:
     """Run all tests.
 
@@ -175,6 +204,11 @@ def main(return_code: bool = False, strict: bool = False, fixpoint: bool = False
             ok += 1
         if has_unsupported:
             any_unsupported = True
+
+    # Run structural Python tests alongside .m tests
+    structural_total, structural_ok = _run_structural_tests()
+    total += structural_total
+    ok += structural_ok
 
     print(f"===== Summary: {ok}/{total} tests passed =====")
 
