@@ -4,10 +4,10 @@
 
 ### Static Shape & Dimension Analysis for MATLAB
 
-[![Version](https://img.shields.io/badge/version-1.13.0-orange.svg)](#motivation-and-future-directions)
+[![Version](https://img.shields.io/badge/version-1.14.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-330%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-338%20passing-brightgreen.svg)](#test-suite)
 [![pip installable](https://img.shields.io/badge/pip-installable-green.svg)](#getting-started)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
@@ -48,7 +48,7 @@ Final environment:
 
 ## Performance
 
-Single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and cross-file workspace analysis runs in about 70ms. The full 330-test suite finishes in under 500ms, with no MATLAB runtime involved.
+Single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and cross-file workspace analysis runs in about 70ms. The full 338-test suite finishes in under 500ms, with no MATLAB runtime involved.
 
 The VS Code extension can analyze on every keystroke by default, with a 500ms debounce.
 
@@ -90,7 +90,7 @@ When analyzing a file, Conformal also scans sibling `.m` files in the same direc
 
 ### Data structures
 
-Structs with field assignment (`s.x = A`), field access, and chained dot notation (`s.x.y`). Missing field access emits a warning. Struct shapes join across branches by taking the union of fields.
+Structs with field assignment (`s.x = A`), field access, and chained dot notation (`s.x.y`). Missing field access on a known struct emits a warning. Struct shapes join across branches by taking the union of fields. When you assign a field to a variable whose base shape is unknown (for example, the return value of an unrecognized function), the analyzer creates an open struct, written `struct{x: matrix[1 x 3], ...}`. Open structs don't warn on missing field access, since there could be more fields the analyzer doesn't know about. Multi-return destructuring supports dotted targets, so `[s.x, s.y] = get_pair()` works and populates the struct's field map. The lattice ordering is bottom < closed struct < open struct < unknown.
 
 Cell arrays with `cell(n)` and `cell(m,n)` constructors, curly-brace indexing, and element assignment. Literal indexing `C{i}` extracts the precise shape of element `i` when available. Dynamic indexing joins all element shapes conservatively. Curly-brace indexing on a non-cell emits a warning.
 
@@ -129,7 +129,7 @@ The analyzer parses and tracks shapes through:
 | Expressions | `+`, `-`, `*`, `.*`, `./`, `^`, `.^`, `\`, `&`, `\|`, `==`, `~=`, `<`, `>`, `<=`, `>=`, `&&`, `\|\|`, `~`, `'`, `.'` |
 | Literals | `[1 2; 3 4]`, `{1, 2; 3, 4}`, `'string'`, `"string"`, `1:n` |
 | Indexing | `A(i,j)`, `A(:,j)`, `A(2:5,:)`, `C{i}`, `C{i} = x` |
-| Assignment | `x = expr`, `s.field = expr`, `C{i} = expr`, `M(i,j) = expr`, `[a, b] = f(x)`, `[~, b] = f(x)` |
+| Assignment | `x = expr`, `s.field = expr`, `C{i} = expr`, `M(i,j) = expr`, `[a, b] = f(x)`, `[~, b] = f(x)`, `[s.x, s.y] = f(x)` |
 | Functions | `function y = f(x)`, `function name` (no-arg), nested `function` blocks, `@(x) expr`, `@funcName`, 200+ recognized builtins (128 with shape rules) |
 | Control flow | `if`/`elseif`/`else`, `for`, `while`, `switch`/`case`, `try`/`catch` |
 | Statements | `break`, `continue`, `return` |
@@ -144,7 +144,7 @@ Every expression gets a shape from the abstract domain. There are 7 user-visible
 | `scalar` | `5`, `x` | Single numeric value |
 | `matrix[r x c]` | `matrix[3 x 4]`, `matrix[n x m]` | Dimensions can be concrete, symbolic, or unknown |
 | `string` | `'hello'` | Char array |
-| `struct{...}` | `struct{x: scalar, y: matrix[3 x 1]}` | Tracks fields and their shapes |
+| `struct{...}` | `struct{x: scalar, ...}` (open), `struct{x: scalar}` (closed) | Tracks fields and their shapes; open structs (from unknown bases) suppress missing-field warnings |
 | `function_handle` | `@(x) x'`, `@sin` | Tracks lambda ID for join precision |
 | `cell[r x c]` | `cell[3 x 1]` | Cell array with optional per-element shape tracking |
 | `unknown` | | Error or indeterminate; the lattice top |
@@ -168,13 +168,13 @@ analysis/           17 focused submodules: expression eval, statements, function
 runtime/            Shape domain (shapes.py), symbolic dimensions (symdim.py), and environments
 lsp/                Language Server Protocol implementation (server.py, diagnostics.py, hover.py, code_actions.py)
 vscode-conformal/   VS Code extension (TypeScript thin client)
-tests/              Self-checking MATLAB programs (330 tests, 17 categories)
+tests/              Self-checking MATLAB programs (338 tests, 17 categories)
 tools/              Debugging utilities (AST printer)
 ```
 
 ## Test Suite
 
-The analyzer is validated by 330 self-checking test programs organized into 17 categories. Each test embeds its expected behavior as inline assertions:
+The analyzer is validated by 338 self-checking test programs organized into 17 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -187,7 +187,7 @@ The test runner checks that the analyzer's output matches these expectations.
 ---
 
 <details open>
-<summary><h3>Basics (16 tests)</h3></summary>
+<summary><h3>Basics (17 tests)</h3></summary>
 
 Foundation tests for core matrix operations and dimension compatibility.
 
@@ -209,6 +209,7 @@ Foundation tests for core matrix operations and dimension compatibility.
 | `tilde_unused.m` | Tilde `[~, x] = f()` as unused output placeholder | 0 |
 | `space_destructure.m` | Space-separated destructuring `[a b] = expr` without commas | 0 |
 | `scientific_notation.m` | Scientific notation literals (`1e6`, `1.5e-3`, `1E+9`) parsed as scalars | 0 |
+| `matrix_literal_transpose.m` | Transpose of a matrix literal `[1 2; 3 4]'` parses correctly and returns transposed shape | 0 |
 
 </details>
 
@@ -231,7 +232,7 @@ Tests symbolic dimension tracking, arithmetic, and canonical polynomial represen
 </details>
 
 <details open>
-<summary><h3>Indexing (15 tests)</h3></summary>
+<summary><h3>Indexing (17 tests)</h3></summary>
 
 MATLAB-style indexing including scalar, slice, range, linear indexing, and `end` keyword arithmetic.
 
@@ -252,6 +253,8 @@ MATLAB-style indexing including scalar, slice, range, linear indexing, and `end`
 | `index_assign_bounds.m` | MATLAB auto-expands arrays on write; no `W_INDEX_OUT_OF_BOUNDS` on indexed assignment | 0 |
 | `index_assign_loop.m` | Indexed assignment inside for loop body | 0 |
 | `index_assign_in_function.m` | Indexed assignment in function body; caller sees correct return shape | 0 |
+| `matrix_literal_index.m` | Matrix literal as index argument `A([1 2 3])` returns the correct shape; colon ranges inside `[...]` index args work | 0 |
+| `colon_in_matrix_index.m` | Colon range inside a matrix literal index arg `A([1:3])` parses correctly via `colon_visible` parameter threading | 0 |
 
 </details>
 
@@ -306,7 +309,7 @@ Matrix literals, string literals, and concatenation constraints.
 </details>
 
 <details>
-<summary><h3>Builtins (22 tests)</h3></summary>
+<summary><h3>Builtins (23 tests)</h3></summary>
 
 Shape rules for 200+ recognized MATLAB builtins (128 with shape handlers: 121 single-return, 11 multi-return), call/index disambiguation, and dimension arithmetic.
 
@@ -334,6 +337,7 @@ Shape rules for 200+ recognized MATLAB builtins (128 with shape handlers: 121 si
 | `domain_builtins.m` | Domain builtins: `fft`/`ifft` (passthrough), `polyfit` (row vector), `polyval` (input shape), `ndims` (scalar) | 0 |
 | `range_args.m` | Builtins receiving colon-range arguments like `polyval(p, 1:10)` don't crash | 0 |
 | `corpus_builtins.m` | Dogfood corpus builtins recognized without `W_UNKNOWN_FUNCTION` (NaN/Inf variants, string ops, nan-ignoring reductions, I/O ops) | 0 |
+| `expanded_builtins_2.m` | File I/O builtins (`fopen`, `fgets`, `fseek`, `ftell`, `textscan`, `fclose`) recognized without warnings | 0 |
 
 >Dimension arithmetic uses canonical polynomial representation to track expressions like `zeros(n+m+1, 2*k)`.
 
@@ -379,11 +383,11 @@ Loop analysis with single-pass and fixed-point widening modes (via `--fixpoint`)
 </details>
 
 <details>
-<summary><h3>Functions (73 tests)</h3></summary>
+<summary><h3>Functions (74 tests)</h3></summary>
 
 Interprocedural analysis for user-defined functions, anonymous functions (lambdas), nested functions, and workspace-aware external function resolution.
 
-Named Functions (27 tests)
+Named Functions (28 tests)
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -414,6 +418,7 @@ Named Functions (27 tests)
 | `endless_multi.m` | Multiple end-less functions in a single file | 0 |
 | `noarg_basic.m` | No-arg procedure syntax `function name` with no parentheses | 0 |
 | `space_multi_return.m` | Space-separated multi-return `function [a b c] = f(...)` | 0 |
+| `struct_multi_return.m` | Multi-return destructuring into struct fields `[s.x, s.y] = f()` populates the field map correctly | 1 |
 
 Anonymous Functions / Lambdas (17 tests)
 
@@ -480,20 +485,23 @@ External `.m` files are fully parsed and analyzed to infer real return shapes, w
 </details>
 
 <details>
-<summary><h3>Structs (6 tests)</h3></summary>
+<summary><h3>Structs (9 tests)</h3></summary>
 
-Struct creation, field access, and control-flow joins.
+Struct creation, field access, control-flow joins, and open struct lattice behavior.
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
 | `struct_create_assign.m` | Struct creation via field assignment (`s.x = 1`) | 0 |
 | `struct_field_access.m` | Field access returns field's shape | 0 |
-| `struct_field_not_found.m` | Missing field access emits warning | 1 |
+| `struct_field_not_found.m` | Missing field access on a closed struct emits warning | 1 |
 | `struct_field_reassign.m` | Field reassignment with different shape updates field map | 0 |
 | `struct_in_control_flow.m` | Struct shape join takes union of fields from both branches | 0 |
 | `field_access_unknown.m` | Field access on `unknown` base does not warn; empty matrix promotes to struct on assignment | 0 |
+| `open_struct.m` | Field assignment on an unknown base creates an open struct (`struct{x: ..., ...}`); untracked field reads return `unknown` silently; closed+open join produces open | 5 |
+| `struct_field_index_assign.m` | Indexed assignment into a struct field `s.x(i) = val` preserves the field's shape | 0 |
+| `struct_field_cell_assign.m` | Cell element assignment into a struct field `s.c{i} = val` works correctly | 0 |
 
->Struct join uses union-with-bottom semantics. Fields present in only one branch get `bottom` in the other, then join to `unknown`.
+>Struct join uses union-with-bottom semantics for closed structs; open structs (from unknown bases) use unknown as the default for missing fields. The lattice ordering is: bottom < closed struct < open struct < unknown.
 
 </details>
 
@@ -536,7 +544,7 @@ Cell array literals, curly-brace indexing, element assignment, and per-element s
 </details>
 
 <details>
-<summary><h3>Recovery (17 tests)</h3></summary>
+<summary><h3>Recovery (18 tests)</h3></summary>
 
 Parser error recovery and unsupported construct handling (graceful degradation).
 
@@ -559,6 +567,7 @@ Parser error recovery and unsupported construct handling (graceful degradation).
 | `dynamic_field.m` | Dynamic field access `s.(expr)` parses correctly and evaluates to `unknown` | 0 |
 | `classdef_suppress.m` | `classdef` blocks consumed without spurious `W_END_OUTSIDE_INDEXING` | 0 |
 | `chained_index_struct.m` | Chained indexed struct assignment `A(i).field = val` parses without triggering recovery | 0 |
+| `chained_struct_index.m` | Chained struct-index-struct assignment `s.field(i).sub = val` parsed correctly via speculative backtrack | 0 |
 
 >Best-effort analysis. When the parser encounters unsupported syntax, it emits a `W_UNSUPPORTED_*` warning, treats the result as `unknown`, and keeps going.
 
@@ -716,7 +725,7 @@ Incorrectness witness generation: concrete proofs that dimension conflict warnin
 ### Running the Tests
 
 ```bash
-# Run all 330 tests
+# Run all 338 tests
 make test
 python3 conformal.py --tests
 
@@ -733,7 +742,7 @@ python3 conformal.py --strict --tests
 git clone https://github.com/EthanDoughty/conformal.git
 cd conformal
 make install          # pip install -e '.[lsp]' (editable + pygls)
-conformal --tests     # verify 330 tests pass
+conformal --tests     # verify 338 tests pass
 ```
 
 Analyze a file:

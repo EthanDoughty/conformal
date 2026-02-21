@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.14.0] - 2026-02-21
+### Added
+- **Open struct lattice element**: `StructShape` now carries `_open: bool`; when you assign a field to a variable whose current shape is `unknown` (for example, the return value of an unrecognized function), the analyzer creates an open struct (`struct{x: scalar, ...}`) rather than a closed one; open structs don't emit `W_STRUCT_FIELD_NOT_FOUND` on missing field reads (the field could exist at runtime); lattice ordering is bottom < closed struct < open struct < unknown
+- `join_shape` and `widen_shape` propagate `_open`: if either operand is open, the result is open; missing fields use `unknown` (not `bottom`) as the default in open structs
+- `_update_struct_field` in `analysis/eval_expr.py` creates an open struct from an unknown base instead of returning unknown
+- **Struct multi-return targets**: `[s.x, s.y] = func()` syntax now works in destructuring assignment; the `_bind` helper in the `AssignMulti` handler detects dotted targets and delegates to `_update_struct_field`; all output shapes are assigned to the correct struct fields
+- `[s.x, s.y]` as a bracket-destructure LHS is handled via `extract_targets_from_tokens` recognizing the dotted-string token pattern
+- **`parse_simple_stmt` refactor**: 229-line monolith replaced with a 22-line dispatcher delegating to four focused helpers: `_parse_bracket_stmt` (bracket LHS), `_parse_lhs_chain` (chained dot/index chain walking), `_chain_to_expr` (converts parsed chain to IR node), and `_classify_assignment` (determines which IR node to emit based on chain structure)
+- **Colon parameter threading**: `colon_visible: bool` parameter threaded through `parse_expr`/`parse_expr_rest` instead of mutating `PRECEDENCE` dict; this allows `A([1:3])` (colon range inside a matrix literal index argument) to parse correctly, because the matrix literal parser can set `colon_visible=True` for its contents while the outer context might not
+- **Matrix literal postfix parsing**: `parse_postfix` is now called after matrix and cell literals, so `[1 2; 3 4]'` (transpose of a matrix literal) and `{1, 2}{1}` (index into a cell literal) parse correctly without special-casing in the outer expression parser
+- **Indexed assignment into struct fields**: `s.field(i) = val` and `s.field{i} = val` parsed correctly; analyzer preserves struct shape
+- **`[s.x, s.y] = f()` language coverage**: added to the Assignment row in the Language Coverage table
+- 16 new test files since 1.13.0 across 5 categories: `tests/basics/matrix_literal_transpose.m`, `tests/indexing/matrix_literal_index.m`, `tests/indexing/colon_in_matrix_index.m`, `tests/builtins/expanded_builtins_2.m`, `tests/structs/open_struct.m`, `tests/structs/struct_field_index_assign.m`, `tests/structs/struct_field_cell_assign.m`, `tests/functions/struct_multi_return.m`, `tests/recovery/chained_struct_index.m`, plus additional tests in `recovery/`, `control_flow/`, `loops/` from earlier sprint phases
+- Total test count: 338 (was 270 at 1.13.0)
+
+### Changed
+- `eval_builtins.py`: builtin dispatch converted from nested if/elif to 8 declarative frozenset lookup tables (`PASSTHROUGH_BUILTINS`, `SCALAR_PREDICATE_BUILTINS`, `TYPE_CAST_BUILTINS`, `REDUCTION_BUILTINS`, `SCALAR_QUERY_BUILTINS`, `MATRIX_CONSTRUCTOR_BUILTINS`, `STRING_RETURN_BUILTINS`, `SCALAR_NARY_BUILTINS`); stereotyped builtins dispatched from frozensets; complex handlers remain as named functions
+- Parser robustness improvements from dogfood corpus: 5 new operators (`^`, `.^`, `\`, `&`, `|`), tilde `~` as expression, dot-transpose `.'`, end-less function definitions, no-arg procedures `function name`, space-separated multi-return `function [a b] = f(...)`, Latin-1 file encoding
+- Warning tiers: `STRICT_ONLY_CODES` frozenset (19 codes) suppresses low-confidence diagnostics in default mode; `W_TOO_MANY_INDICES` demoted to strict-only; `IndexAssign` OOB checking removed (MATLAB auto-expands on write); empty matrix concat identity (`[[] x]` → `x`) eliminates false mismatch warnings; dogfood corpus produces 0 warnings in default mode
+- Workspace cross-file cache converted to content-addressed MD5 keys; stale entries invalidated when file changes
+
 ## [1.13.0] - 2026-02-17
 ### Added
 - **Multi-return shape inference for 11 builtins**: `eig`, `svd`, `lu`, `qr`, `chol`, `size`, `sort`, `find`, `unique`, `min`, `max` — `[V,D] = eig(A)`, `[U,S,V] = svd(A)`, `[L,U,P] = lu(A)`, etc. now infer output shapes precisely
