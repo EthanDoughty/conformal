@@ -10,7 +10,7 @@ from analysis.context import AnalysisContext
 from analysis.end_helpers import _binop_contains_end, _eval_end_arithmetic
 from analysis.dim_extract import expr_to_dim_ir, expr_to_dim_ir_with_end, expr_to_dim_with_end
 from analysis.eval_binop import eval_binop_ir
-from analysis.eval_builtins import eval_builtin_call
+from analysis.eval_builtins import eval_builtin_call, BuiltinEvalContext
 from analysis.func_analysis import analyze_function_call
 from analysis.intervals import Interval, interval_add, interval_sub, interval_mul, interval_neg
 
@@ -486,7 +486,8 @@ def _eval_handle_call(base_var_name: str, base_var_shape: Shape, expr: Apply, en
                 # Dispatch directly to builtin call handler.
                 # eval_builtin_call only accesses expr.args and expr.line — never expr.base —
                 # so passing the original expr (whose .base is the handle variable) is safe.
-                builtin_result = eval_builtin_call(func_name, expr, env, warnings, ctx)
+                _evals = BuiltinEvalContext(eval_expr=eval_expr_ir, eval_arg=_eval_index_arg_to_shape, get_interval=_get_expr_interval)
+                builtin_result = eval_builtin_call(func_name, expr, env, warnings, ctx, _evals)
                 results.append(builtin_result)
             elif func_name in ctx.external_functions:
                 # External function from workspace — cross-file analysis
@@ -551,7 +552,8 @@ def _eval_apply(expr: Apply, env: Env, warnings: List['Diagnostic'], ctx: Analys
     if isinstance(expr.base, Var):
         fname = expr.base.name
         if fname in KNOWN_BUILTINS:
-            return eval_builtin_call(fname, expr, env, warnings, ctx)
+            _evals = BuiltinEvalContext(eval_expr=eval_expr_ir, eval_arg=_eval_index_arg_to_shape, get_interval=_get_expr_interval)
+            return eval_builtin_call(fname, expr, env, warnings, ctx, _evals)
 
         # Priority 3-5: base name is unbound (not a local variable)
         if not env.has_local(fname):

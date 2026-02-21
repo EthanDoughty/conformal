@@ -3,7 +3,8 @@
 """Builtin function shape inference via dispatch table."""
 
 from __future__ import annotations
-from typing import List, Optional, TYPE_CHECKING
+from dataclasses import dataclass
+from typing import Callable, List, Optional, TYPE_CHECKING
 
 from ir import Apply
 from analysis.context import AnalysisContext
@@ -16,16 +17,26 @@ if TYPE_CHECKING:
     from analysis.diagnostics import Diagnostic
 
 
-def _handle_zeros_ones(fname, expr, env, warnings, ctx):
+@dataclass
+class BuiltinEvalContext:
+    """Callbacks injected into builtin handlers to break the circular import.
+
+    eval_builtins -> eval_expr -> eval_builtins is avoided by passing these
+    three functions as data rather than importing them at module level.
+    """
+    eval_expr: Callable    # eval_expr_ir(expr, env, warnings, ctx, container_shape=None) -> Shape
+    eval_arg: Callable     # _eval_index_arg_to_shape(arg, env, warnings, ctx, container_shape=None) -> Shape
+    get_interval: Callable  # _get_expr_interval(expr, env, ctx) -> Optional[Interval]
+
+
+def _handle_zeros_ones(fname, expr, env, warnings, ctx, evals):
     """zeros(n), zeros(m,n), ones(n), ones(m,n)."""
-    # Import here to avoid circular dependency
-    from analysis.eval_expr import _get_expr_interval
     import analysis.diagnostics as diag
 
     if len(expr.args) == 1:
         arg = unwrap_arg(expr.args[0])
         # Check for negative dimension
-        dim_interval = _get_expr_interval(arg, env, ctx)
+        dim_interval = evals.get_interval(arg, env, ctx)
         if interval_definitely_negative(dim_interval):
             warnings.append(diag.warn_possibly_negative_dim(expr.line, dim_interval))
         try:
@@ -37,8 +48,8 @@ def _handle_zeros_ones(fname, expr, env, warnings, ctx):
         arg0 = unwrap_arg(expr.args[0])
         arg1 = unwrap_arg(expr.args[1])
         # Check for negative dimensions
-        dim0_interval = _get_expr_interval(arg0, env, ctx)
-        dim1_interval = _get_expr_interval(arg1, env, ctx)
+        dim0_interval = evals.get_interval(arg0, env, ctx)
+        dim1_interval = evals.get_interval(arg1, env, ctx)
         if interval_definitely_negative(dim0_interval):
             warnings.append(diag.warn_possibly_negative_dim(expr.line, dim0_interval))
         if interval_definitely_negative(dim1_interval):
@@ -52,10 +63,8 @@ def _handle_zeros_ones(fname, expr, env, warnings, ctx):
     return None
 
 
-def _handle_matrix_constructor(fname, expr, env, warnings, ctx):
+def _handle_matrix_constructor(fname, expr, env, warnings, ctx, evals):
     """eye, rand, randn: eye(n), eye(m,n), etc."""
-    # Import here to avoid circular dependency
-    from analysis.eval_expr import _get_expr_interval
     import analysis.diagnostics as diag
 
     if len(expr.args) <= 2:
@@ -64,7 +73,7 @@ def _handle_matrix_constructor(fname, expr, env, warnings, ctx):
         elif len(expr.args) == 1:
             arg = unwrap_arg(expr.args[0])
             # Check for negative dimension
-            dim_interval = _get_expr_interval(arg, env, ctx)
+            dim_interval = evals.get_interval(arg, env, ctx)
             if interval_definitely_negative(dim_interval):
                 warnings.append(diag.warn_possibly_negative_dim(expr.line, dim_interval))
             try:
@@ -76,8 +85,8 @@ def _handle_matrix_constructor(fname, expr, env, warnings, ctx):
             arg0 = unwrap_arg(expr.args[0])
             arg1 = unwrap_arg(expr.args[1])
             # Check for negative dimensions
-            dim0_interval = _get_expr_interval(arg0, env, ctx)
-            dim1_interval = _get_expr_interval(arg1, env, ctx)
+            dim0_interval = evals.get_interval(arg0, env, ctx)
+            dim1_interval = evals.get_interval(arg1, env, ctx)
             if interval_definitely_negative(dim0_interval):
                 warnings.append(diag.warn_possibly_negative_dim(expr.line, dim0_interval))
             if interval_definitely_negative(dim1_interval):
@@ -91,46 +100,42 @@ def _handle_matrix_constructor(fname, expr, env, warnings, ctx):
     return None
 
 
-def _handle_size(fname, expr, env, warnings, ctx):
+def _handle_size(fname, expr, env, warnings, ctx, evals):
     """size(x) -> 1x2, size(x, dim) -> scalar."""
-    from analysis.eval_expr import eval_expr_ir
     if len(expr.args) == 1:
         try:
-            eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
+            evals.eval_expr(unwrap_arg(expr.args[0]), env, warnings, ctx)
             return Shape.matrix(1, 2)
         except ValueError:
             pass
     elif len(expr.args) == 2:
         try:
-            eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
+            evals.eval_expr(unwrap_arg(expr.args[0]), env, warnings, ctx)
             return Shape.scalar()
         except ValueError:
             pass
     return None
 
 
-def _handle_scalar_predicate(fname, expr, env, warnings, ctx):
+def _handle_scalar_predicate(fname, expr, env, warnings, ctx, evals):
     """isscalar(x), iscell(x) -> scalar."""
-    from analysis.eval_expr import eval_expr_ir
     if len(expr.args) == 1:
         try:
-            eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
+            evals.eval_expr(unwrap_arg(expr.args[0]), env, warnings, ctx)
             return Shape.scalar()
         except ValueError:
             pass
     return None
 
 
-def _handle_cell_constructor(fname, expr, env, warnings, ctx):
+def _handle_cell_constructor(fname, expr, env, warnings, ctx, evals):
     """cell(n) -> cell[n x n], cell(m,n) -> cell[m x n]."""
-    # Import here to avoid circular dependency
-    from analysis.eval_expr import _get_expr_interval
     import analysis.diagnostics as diag
 
     if len(expr.args) == 1:
         arg = unwrap_arg(expr.args[0])
         # Check for negative dimension
-        dim_interval = _get_expr_interval(arg, env, ctx)
+        dim_interval = evals.get_interval(arg, env, ctx)
         if interval_definitely_negative(dim_interval):
             warnings.append(diag.warn_possibly_negative_dim(expr.line, dim_interval))
         try:
@@ -142,8 +147,8 @@ def _handle_cell_constructor(fname, expr, env, warnings, ctx):
         arg0 = unwrap_arg(expr.args[0])
         arg1 = unwrap_arg(expr.args[1])
         # Check for negative dimensions
-        dim0_interval = _get_expr_interval(arg0, env, ctx)
-        dim1_interval = _get_expr_interval(arg1, env, ctx)
+        dim0_interval = evals.get_interval(arg0, env, ctx)
+        dim1_interval = evals.get_interval(arg1, env, ctx)
         if interval_definitely_negative(dim0_interval):
             warnings.append(diag.warn_possibly_negative_dim(expr.line, dim0_interval))
         if interval_definitely_negative(dim1_interval):
@@ -217,46 +222,42 @@ assert (
 ), "Declarative builtin sets have overlapping entries"
 
 
-def _handle_passthrough(fname, expr, env, warnings, ctx):
+def _handle_passthrough(fname, expr, env, warnings, ctx, evals):
     """abs(x), sqrt(x) -> same shape as x."""
-    from analysis.eval_expr import _eval_index_arg_to_shape
     if len(expr.args) == 1:
-        return _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
+        return evals.eval_arg(expr.args[0], env, warnings, ctx)
     return None
 
 
-def _handle_transpose_fn(fname, expr, env, warnings, ctx):
+def _handle_transpose_fn(fname, expr, env, warnings, ctx, evals):
     """transpose(x) -> swap rows/cols."""
-    from analysis.eval_expr import _eval_index_arg_to_shape
     if len(expr.args) == 1:
-        arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
+        arg_shape = evals.eval_arg(expr.args[0], env, warnings, ctx)
         if arg_shape.is_matrix():
             return Shape.matrix(arg_shape.cols, arg_shape.rows)
         return arg_shape
     return None
 
 
-def _handle_scalar_query(fname, expr, env, warnings, ctx):
+def _handle_scalar_query(fname, expr, env, warnings, ctx, evals):
     """length(x), numel(x), det(x), norm(x) -> scalar."""
-    from analysis.eval_expr import _eval_index_arg_to_shape
     if len(expr.args) == 1:
-        _ = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
+        _ = evals.eval_arg(expr.args[0], env, warnings, ctx)
         return Shape.scalar()
     return None
 
 
-def _handle_scalar_nary(fname, expr, env, warnings, ctx):
+def _handle_scalar_nary(fname, expr, env, warnings, ctx, evals):
     """strcmp, strcmpi, exist, etc. -> always scalar regardless of arg count."""
     return Shape.scalar()
 
 
-def _handle_reshape(fname, expr, env, warnings, ctx):
+def _handle_reshape(fname, expr, env, warnings, ctx, evals):
     """reshape(x, m, n) -> matrix[m x n] with conformability check."""
-    from analysis.eval_expr import eval_expr_ir
     from analysis.diagnostics import warn_reshape_mismatch
     if len(expr.args) == 3:
         try:
-            input_shape = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
+            input_shape = evals.eval_expr(unwrap_arg(expr.args[0]), env, warnings, ctx)
             m = expr_to_dim_ir(unwrap_arg(expr.args[1]), env, ctx)
             n = expr_to_dim_ir(unwrap_arg(expr.args[2]), env, ctx)
 
@@ -292,12 +293,11 @@ def _handle_reshape(fname, expr, env, warnings, ctx):
     return None
 
 
-def _handle_repmat(fname, expr, env, warnings, ctx):
+def _handle_repmat(fname, expr, env, warnings, ctx, evals):
     """repmat(A, m, n) -> matrix[A_rows*m x A_cols*n]."""
-    from analysis.eval_expr import eval_expr_ir
     if len(expr.args) == 3:
         try:
-            a_shape = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
+            a_shape = evals.eval_expr(unwrap_arg(expr.args[0]), env, warnings, ctx)
             m = expr_to_dim_ir(unwrap_arg(expr.args[1]), env, ctx)
             n = expr_to_dim_ir(unwrap_arg(expr.args[2]), env, ctx)
             if a_shape.is_unknown():
@@ -312,11 +312,10 @@ def _handle_repmat(fname, expr, env, warnings, ctx):
     return None
 
 
-def _handle_diag(fname, expr, env, warnings, ctx):
+def _handle_diag(fname, expr, env, warnings, ctx, evals):
     """diag(x): vector->matrix, matrix->vector."""
-    from analysis.eval_expr import _eval_index_arg_to_shape
     if len(expr.args) == 1:
-        arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
+        arg_shape = evals.eval_arg(expr.args[0], env, warnings, ctx)
         if arg_shape.is_scalar():
             return Shape.matrix(1, 1)
         if arg_shape.is_matrix():
@@ -330,11 +329,10 @@ def _handle_diag(fname, expr, env, warnings, ctx):
     return None
 
 
-def _handle_inv(fname, expr, env, warnings, ctx):
+def _handle_inv(fname, expr, env, warnings, ctx, evals):
     """inv(x): pass-through for square matrices."""
-    from analysis.eval_expr import _eval_index_arg_to_shape
     if len(expr.args) == 1:
-        arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
+        arg_shape = evals.eval_arg(expr.args[0], env, warnings, ctx)
         if arg_shape.is_matrix():
             r, c = arg_shape.rows, arg_shape.cols
             if r == c:
@@ -344,20 +342,19 @@ def _handle_inv(fname, expr, env, warnings, ctx):
     return None
 
 
-def _handle_linspace(fname, expr, env, warnings, ctx):
+def _handle_linspace(fname, expr, env, warnings, ctx, evals):
     """linspace(a,b) -> 1x100, linspace(a,b,n) -> 1xn."""
-    from analysis.eval_expr import eval_expr_ir
     if len(expr.args) == 2:
         try:
-            _ = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
-            _ = eval_expr_ir(unwrap_arg(expr.args[1]), env, warnings, ctx)
+            _ = evals.eval_expr(unwrap_arg(expr.args[0]), env, warnings, ctx)
+            _ = evals.eval_expr(unwrap_arg(expr.args[1]), env, warnings, ctx)
             return Shape.matrix(1, 100)
         except ValueError:
             pass
     elif len(expr.args) == 3:
         try:
-            _ = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
-            _ = eval_expr_ir(unwrap_arg(expr.args[1]), env, warnings, ctx)
+            _ = evals.eval_expr(unwrap_arg(expr.args[0]), env, warnings, ctx)
+            _ = evals.eval_expr(unwrap_arg(expr.args[1]), env, warnings, ctx)
             n = expr_to_dim_ir(unwrap_arg(expr.args[2]), env, ctx)
             return Shape.matrix(1, n)
         except ValueError:
@@ -365,23 +362,22 @@ def _handle_linspace(fname, expr, env, warnings, ctx):
     return None
 
 
-def _handle_reduction(fname, expr, env, warnings, ctx):
+def _handle_reduction(fname, expr, env, warnings, ctx, evals):
     """sum, prod, mean, any, all: reduce along dimension (default dim 1).
 
     1-arg: reduce along dim 1. scalar->scalar, matrix[m x n]->matrix[1 x n].
     2-arg: reduce along specified dim (1 or 2). Non-concrete dim->unknown.
     3+ args: return None (falls through to unknown).
     """
-    from analysis.eval_expr import _eval_index_arg_to_shape
     if len(expr.args) == 1:
-        arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
+        arg_shape = evals.eval_arg(expr.args[0], env, warnings, ctx)
         if arg_shape.is_scalar():
             return Shape.scalar()
         if arg_shape.is_matrix():
             return Shape.matrix(1, arg_shape.cols)
         return Shape.unknown()
     elif len(expr.args) == 2:
-        arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
+        arg_shape = evals.eval_arg(expr.args[0], env, warnings, ctx)
         try:
             dim_val = expr_to_dim_ir(unwrap_arg(expr.args[1]), env, ctx)
             # Only handle concrete int dims 1 or 2
@@ -400,7 +396,7 @@ def _handle_reduction(fname, expr, env, warnings, ctx):
     return None
 
 
-def _handle_minmax(fname, expr, env, warnings, ctx):
+def _handle_minmax(fname, expr, env, warnings, ctx, evals):
     """min, max: dispatch by arg count.
 
     1-arg: delegate to _handle_reduction.
@@ -408,25 +404,24 @@ def _handle_minmax(fname, expr, env, warnings, ctx):
     3+ args: return None (falls through to unknown).
     """
     if len(expr.args) == 1:
-        return _handle_reduction(fname, expr, env, warnings, ctx)
+        return _handle_reduction(fname, expr, env, warnings, ctx, evals)
     elif len(expr.args) == 2:
-        return _handle_elementwise_2arg(fname, expr, env, warnings, ctx)
+        return _handle_elementwise_2arg(fname, expr, env, warnings, ctx, evals)
     return None
 
 
-def _handle_elementwise_2arg(fname, expr, env, warnings, ctx):
+def _handle_elementwise_2arg(fname, expr, env, warnings, ctx, evals):
     """mod, rem, atan2: elementwise binary operation.
 
     Requires exactly 2 args.
     Scalar broadcasting: scalar op matrix -> matrix.
     Both matrix: join dims if compatible, unknown if dims definitely conflict.
     """
-    from analysis.eval_expr import _eval_index_arg_to_shape
     if len(expr.args) != 2:
         return None
 
-    s1 = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
-    s2 = _eval_index_arg_to_shape(expr.args[1], env, warnings, ctx)
+    s1 = evals.eval_arg(expr.args[0], env, warnings, ctx)
+    s2 = evals.eval_arg(expr.args[1], env, warnings, ctx)
 
     # Scalar broadcasting
     if s1.is_scalar():
@@ -449,7 +444,7 @@ def _handle_elementwise_2arg(fname, expr, env, warnings, ctx):
     return Shape.unknown()
 
 
-def _handle_diff(fname, expr, env, warnings, ctx):
+def _handle_diff(fname, expr, env, warnings, ctx, evals):
     """diff: differentiation along dimension.
 
     1-arg only (multi-arg deferred, returns None).
@@ -457,11 +452,10 @@ def _handle_diff(fname, expr, env, warnings, ctx):
     matrix[1 x n] -> matrix[1 x (n-1)] (row vector: diff along dim 2).
     matrix[m x n] -> matrix[(m-1) x n] (general: diff along dim 1).
     """
-    from analysis.eval_expr import _eval_index_arg_to_shape
     if len(expr.args) != 1:
         return None
 
-    arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
+    arg_shape = evals.eval_arg(expr.args[0], env, warnings, ctx)
 
     if arg_shape.is_scalar():
         return Shape.scalar()
@@ -477,14 +471,13 @@ def _handle_diff(fname, expr, env, warnings, ctx):
     return Shape.unknown()
 
 
-def _handle_kron(fname, expr, env, warnings, ctx):
+def _handle_kron(fname, expr, env, warnings, ctx, evals):
     """kron(A, B) -> matrix[(m*p) x (n*q)] where A is m×n, B is p×q."""
-    from analysis.eval_expr import eval_expr_ir
     if len(expr.args) != 2:
         return None
     try:
-        s1 = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
-        s2 = eval_expr_ir(unwrap_arg(expr.args[1]), env, warnings, ctx)
+        s1 = evals.eval_expr(unwrap_arg(expr.args[0]), env, warnings, ctx)
+        s2 = evals.eval_expr(unwrap_arg(expr.args[1]), env, warnings, ctx)
     except ValueError:
         return None
 
@@ -500,16 +493,15 @@ def _handle_kron(fname, expr, env, warnings, ctx):
     return Shape.matrix(mul_dim(r1, r2), mul_dim(c1, c2))
 
 
-def _handle_blkdiag(fname, expr, env, warnings, ctx):
+def _handle_blkdiag(fname, expr, env, warnings, ctx, evals):
     """blkdiag(A, B, ...) -> matrix[sum(rows) x sum(cols)]."""
-    from analysis.eval_expr import eval_expr_ir
     if len(expr.args) == 0:
         return None
     total_rows = 0
     total_cols = 0
     for arg in expr.args:
         try:
-            s = eval_expr_ir(unwrap_arg(arg), env, warnings, ctx)
+            s = evals.eval_expr(unwrap_arg(arg), env, warnings, ctx)
         except ValueError:
             return None
         if s.is_unknown():
@@ -525,42 +517,39 @@ def _handle_blkdiag(fname, expr, env, warnings, ctx):
     return Shape.matrix(total_rows, total_cols)
 
 
-def _handle_string_return(fname, expr, env, warnings, ctx):
+def _handle_string_return(fname, expr, env, warnings, ctx, evals):
     """String conversion builtins: num2str, int2str, mat2str, char, string, sprintf.
 
     Evaluate all args for warning propagation, return Shape.string().
     """
-    from analysis.eval_expr import _eval_index_arg_to_shape
     # Evaluate all args for side effects (warning propagation)
     for arg in expr.args:
-        _ = _eval_index_arg_to_shape(arg, env, warnings, ctx)
+        _ = evals.eval_arg(arg, env, warnings, ctx)
     return Shape.string()
 
 
-def _handle_type_cast(fname, expr, env, warnings, ctx):
+def _handle_type_cast(fname, expr, env, warnings, ctx, evals):
     """Type cast builtins: double, single, int8, int16, int32, int64, uint8, uint16, uint32, uint64, logical, complex.
 
     Delegate to _handle_passthrough. Separate function for semantic clarity (future type tracking).
     """
-    return _handle_passthrough(fname, expr, env, warnings, ctx)
+    return _handle_passthrough(fname, expr, env, warnings, ctx, evals)
 
 
-def _handle_find(fname, expr, env, warnings, ctx):
+def _handle_find(fname, expr, env, warnings, ctx, evals):
     """find(x) -> matrix[1 x None] (row vector, unknown length)."""
-    from analysis.eval_expr import _eval_index_arg_to_shape
     if len(expr.args) == 1:
-        _ = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
+        _ = evals.eval_arg(expr.args[0], env, warnings, ctx)
         return Shape.matrix(1, None)
     return None
 
 
-def _handle_eig_single(fname, expr, env, warnings, ctx):
+def _handle_eig_single(fname, expr, env, warnings, ctx, evals):
     """eig(A) -> matrix[n x 1] for n x n input."""
-    from analysis.eval_expr import eval_expr_ir
     if len(expr.args) != 1:
         return None
     try:
-        s = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
+        s = evals.eval_expr(unwrap_arg(expr.args[0]), env, warnings, ctx)
     except ValueError:
         return None
     if s.is_scalar():
@@ -575,27 +564,25 @@ def _handle_eig_single(fname, expr, env, warnings, ctx):
     return Shape.unknown()
 
 
-def _handle_svd_single(fname, expr, env, warnings, ctx):
+def _handle_svd_single(fname, expr, env, warnings, ctx, evals):
     """svd(A) -> matrix[None x 1] (singular value vector)."""
-    from analysis.eval_expr import eval_expr_ir
     if len(expr.args) != 1:
         return None
     try:
-        _ = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
+        _ = evals.eval_expr(unwrap_arg(expr.args[0]), env, warnings, ctx)
     except ValueError:
         return None
     # Singular values vector length = min(m, n), not expressible
     return Shape.matrix(None, 1)
 
 
-def _handle_cat(fname, expr, env, warnings, ctx):
+def _handle_cat(fname, expr, env, warnings, ctx, evals):
     """cat(dim, A, B, ...) -> concatenation along specified dimension.
 
     cat(1, ...): rows add via add_dim, cols join via join_dim.
     cat(2, ...): rows join, cols add.
     Non-concrete dim or dim not in {1,2}: return None (falls through to unknown).
     """
-    from analysis.eval_expr import eval_expr_ir
     if len(expr.args) < 2:
         return None
 
@@ -613,7 +600,7 @@ def _handle_cat(fname, expr, env, warnings, ctx):
     shapes = []
     for arg in expr.args[1:]:
         try:
-            s = eval_expr_ir(unwrap_arg(arg), env, warnings, ctx)
+            s = evals.eval_expr(unwrap_arg(arg), env, warnings, ctx)
         except ValueError:
             return None
         if s.is_unknown():
@@ -651,7 +638,7 @@ def _handle_cat(fname, expr, env, warnings, ctx):
     return Shape.matrix(result_rows, result_cols)
 
 
-def _handle_randi(fname, expr, env, warnings, ctx):
+def _handle_randi(fname, expr, env, warnings, ctx, evals):
     """randi(imax), randi(imax, n), randi(imax, m, n).
 
     Like _handle_matrix_constructor but first arg is imax (value range), not a dimension.
@@ -659,7 +646,6 @@ def _handle_randi(fname, expr, env, warnings, ctx):
     - randi(imax, n) -> matrix[n x n]
     - randi(imax, m, n) -> matrix[m x n]
     """
-    from analysis.eval_expr import eval_expr_ir, _get_expr_interval
     import analysis.diagnostics as diag
 
     if len(expr.args) < 1:
@@ -667,7 +653,7 @@ def _handle_randi(fname, expr, env, warnings, ctx):
 
     # Evaluate first arg (imax) for warning propagation, but don't use it for shape
     try:
-        _ = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
+        _ = evals.eval_expr(unwrap_arg(expr.args[0]), env, warnings, ctx)
     except ValueError:
         return None
 
@@ -677,7 +663,7 @@ def _handle_randi(fname, expr, env, warnings, ctx):
     elif len(expr.args) == 2:
         arg = unwrap_arg(expr.args[1])
         # Check for negative dimension
-        dim_interval = _get_expr_interval(arg, env, ctx)
+        dim_interval = evals.get_interval(arg, env, ctx)
         if interval_definitely_negative(dim_interval):
             warnings.append(diag.warn_possibly_negative_dim(expr.line, dim_interval))
         try:
@@ -689,8 +675,8 @@ def _handle_randi(fname, expr, env, warnings, ctx):
         arg0 = unwrap_arg(expr.args[1])
         arg1 = unwrap_arg(expr.args[2])
         # Check for negative dimensions
-        dim0_interval = _get_expr_interval(arg0, env, ctx)
-        dim1_interval = _get_expr_interval(arg1, env, ctx)
+        dim0_interval = evals.get_interval(arg0, env, ctx)
+        dim1_interval = evals.get_interval(arg1, env, ctx)
         if interval_definitely_negative(dim0_interval):
             warnings.append(diag.warn_possibly_negative_dim(expr.line, dim0_interval))
         if interval_definitely_negative(dim1_interval):
@@ -704,19 +690,17 @@ def _handle_randi(fname, expr, env, warnings, ctx):
     return None
 
 
-def _handle_fft(fname, expr, env, warnings, ctx):
+def _handle_fft(fname, expr, env, warnings, ctx, evals):
     """fft(x), ifft(x), fft2(x), ifft2(x) — same shape as input."""
-    from analysis.eval_expr import eval_expr_ir
     if len(expr.args) >= 1:
-        s = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
+        s = evals.eval_expr(unwrap_arg(expr.args[0]), env, warnings, ctx)
         if s.is_scalar() or s.is_matrix():
             return s
     return None
 
 
-def _handle_sparse_full(fname, expr, env, warnings, ctx):
+def _handle_sparse_full(fname, expr, env, warnings, ctx, evals):
     """sparse(A) / full(A) — passthrough shape. sparse(m,n) — constructor."""
-    from analysis.eval_expr import eval_expr_ir
     # sparse(m, n) — constructor form (check before passthrough)
     if fname == "sparse" and len(expr.args) == 2:
         try:
@@ -727,27 +711,26 @@ def _handle_sparse_full(fname, expr, env, warnings, ctx):
             pass
     # sparse(A) / full(A) — passthrough
     if len(expr.args) == 1:
-        s = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
+        s = evals.eval_expr(unwrap_arg(expr.args[0]), env, warnings, ctx)
         if s.is_scalar() or s.is_matrix():
             return s
     return None
 
 
-def _handle_cross(fname, expr, env, warnings, ctx):
+def _handle_cross(fname, expr, env, warnings, ctx, evals):
     """cross(a, b) — returns vector same size as inputs (must be 3-element)."""
-    from analysis.eval_expr import eval_expr_ir
     if len(expr.args) >= 1:
-        return eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
+        return evals.eval_expr(unwrap_arg(expr.args[0]), env, warnings, ctx)
     return None
 
 
-def _handle_conv(fname, expr, env, warnings, ctx):
+def _handle_conv(fname, expr, env, warnings, ctx, evals):
     """conv(a, b) — returns vector of length len(a)+len(b)-1."""
     # Conservative: return unknown-length vector
     return Shape.matrix(None, 1)
 
 
-def _handle_polyfit(fname, expr, env, warnings, ctx):
+def _handle_polyfit(fname, expr, env, warnings, ctx, evals):
     """polyfit(x, y, n) — returns row vector of n+1 coefficients."""
     if len(expr.args) >= 3:
         try:
@@ -758,22 +741,20 @@ def _handle_polyfit(fname, expr, env, warnings, ctx):
     return Shape.matrix(1, None)
 
 
-def _handle_polyval(fname, expr, env, warnings, ctx):
+def _handle_polyval(fname, expr, env, warnings, ctx, evals):
     """polyval(p, x) — returns same shape as x."""
-    from analysis.eval_expr import eval_expr_ir
     if len(expr.args) >= 2:
-        return eval_expr_ir(unwrap_arg(expr.args[1]), env, warnings, ctx)
+        return evals.eval_expr(unwrap_arg(expr.args[1]), env, warnings, ctx)
     return None
 
 
-def _handle_meshgrid(fname, expr, env, warnings, ctx):
+def _handle_meshgrid(fname, expr, env, warnings, ctx, evals):
     """meshgrid(x, y) — returns matrix, but we don't track multi-return here."""
     return Shape.matrix(None, None)
 
 
-def _handle_struct(fname, expr, env, warnings, ctx):
+def _handle_struct(fname, expr, env, warnings, ctx, evals):
     """struct('field1', val1, 'field2', val2, ...) — infer field names and shapes."""
-    from analysis.eval_expr import eval_expr_ir
     # struct() with no args — empty struct
     if len(expr.args) == 0:
         return Shape.struct({})
@@ -786,7 +767,7 @@ def _handle_struct(fname, expr, env, warnings, ctx):
         key_expr = unwrap_arg(args[i])
         val_expr = unwrap_arg(args[i + 1])
         if isinstance(key_expr, StringLit):
-            val_shape = eval_expr_ir(val_expr, env, warnings, ctx)
+            val_shape = evals.eval_expr(val_expr, env, warnings, ctx)
             fields[key_expr.value] = val_shape
         else:
             # Non-literal field name — can't track statically
@@ -795,30 +776,28 @@ def _handle_struct(fname, expr, env, warnings, ctx):
     return Shape.struct(fields)
 
 
-def _handle_fieldnames(fname, expr, env, warnings, ctx):
+def _handle_fieldnames(fname, expr, env, warnings, ctx, evals):
     """fieldnames(s) — returns cell array of field names."""
     return Shape.cell(None, 1)
 
 
-def _handle_ndims(fname, expr, env, warnings, ctx):
+def _handle_ndims(fname, expr, env, warnings, ctx, evals):
     """ndims(A) — always returns a scalar."""
     return Shape.scalar()
 
 
-def _handle_sub2ind(fname, expr, env, warnings, ctx):
+def _handle_sub2ind(fname, expr, env, warnings, ctx, evals):
     """sub2ind(sz, i, j, ...) — returns same shape as index args."""
-    from analysis.eval_expr import eval_expr_ir
     if len(expr.args) >= 2:
-        return eval_expr_ir(unwrap_arg(expr.args[1]), env, warnings, ctx)
+        return evals.eval_expr(unwrap_arg(expr.args[1]), env, warnings, ctx)
     return Shape.scalar()
 
 
-def _handle_horzcat_vertcat(fname, expr, env, warnings, ctx):
+def _handle_horzcat_vertcat(fname, expr, env, warnings, ctx, evals):
     """horzcat(a, b, ...) / vertcat(a, b, ...) — concatenation builtins."""
-    from analysis.eval_expr import eval_expr_ir
     if len(expr.args) == 0:
         return Shape.matrix(0, 0)
-    shapes = [eval_expr_ir(unwrap_arg(a), env, warnings, ctx) for a in expr.args]
+    shapes = [evals.eval_expr(unwrap_arg(a), env, warnings, ctx) for a in expr.args]
     if fname == "horzcat":
         # Horizontal: rows must match, cols add
         r = shapes[0].rows if shapes[0].is_matrix() else (1 if shapes[0].is_scalar() else None)
@@ -894,13 +873,12 @@ assert not (_all_declarative & set(BUILTIN_HANDLERS)), \
 
 
 
-def _eval_first_arg_shape(expr, env, warnings, ctx):
+def _eval_first_arg_shape(expr, env, warnings, ctx, evals):
     """Evaluate first arg and return (rows, cols) or (None, None) for non-matrix."""
-    from analysis.eval_expr import eval_expr_ir
     if len(expr.args) < 1:
         return None, None
     try:
-        s = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
+        s = evals.eval_expr(unwrap_arg(expr.args[0]), env, warnings, ctx)
     except ValueError:
         return None, None
     if s.is_scalar():
@@ -910,11 +888,11 @@ def _eval_first_arg_shape(expr, env, warnings, ctx):
     return None, None
 
 
-def _handle_multi_eig(fname, expr, env, warnings, ctx, num_targets):
+def _handle_multi_eig(fname, expr, env, warnings, ctx, num_targets, evals):
     """[V, D] = eig(A) -> [matrix[n x n], matrix[n x n]]."""
     if num_targets != 2:
         return None
-    r, c = _eval_first_arg_shape(expr, env, warnings, ctx)
+    r, c = _eval_first_arg_shape(expr, env, warnings, ctx, evals)
     if r is None:
         return [Shape.unknown(), Shape.unknown()]
     # Use r for both dimensions (square matrix assumption)
@@ -922,19 +900,19 @@ def _handle_multi_eig(fname, expr, env, warnings, ctx, num_targets):
     return [Shape.matrix(n, n), Shape.matrix(n, n)]
 
 
-def _handle_multi_svd(fname, expr, env, warnings, ctx, num_targets):
+def _handle_multi_svd(fname, expr, env, warnings, ctx, num_targets, evals):
     """[U, S, V] = svd(A) -> [matrix[m x m], matrix[m x n], matrix[n x n]]."""
     if num_targets != 3:
         return None
-    m, n = _eval_first_arg_shape(expr, env, warnings, ctx)
+    m, n = _eval_first_arg_shape(expr, env, warnings, ctx, evals)
     if m is None:
         return [Shape.unknown(), Shape.unknown(), Shape.unknown()]
     return [Shape.matrix(m, m), Shape.matrix(m, n), Shape.matrix(n, n)]
 
 
-def _handle_multi_lu(fname, expr, env, warnings, ctx, num_targets):
+def _handle_multi_lu(fname, expr, env, warnings, ctx, num_targets, evals):
     """[L, U] = lu(A) or [L, U, P] = lu(A)."""
-    m, n = _eval_first_arg_shape(expr, env, warnings, ctx)
+    m, n = _eval_first_arg_shape(expr, env, warnings, ctx, evals)
     if m is None:
         if num_targets == 2:
             return [Shape.unknown(), Shape.unknown()]
@@ -950,21 +928,21 @@ def _handle_multi_lu(fname, expr, env, warnings, ctx, num_targets):
     return None
 
 
-def _handle_multi_qr(fname, expr, env, warnings, ctx, num_targets):
+def _handle_multi_qr(fname, expr, env, warnings, ctx, num_targets, evals):
     """[Q, R] = qr(A) -> [matrix[m x m], matrix[m x n]]."""
     if num_targets != 2:
         return None
-    m, n = _eval_first_arg_shape(expr, env, warnings, ctx)
+    m, n = _eval_first_arg_shape(expr, env, warnings, ctx, evals)
     if m is None:
         return [Shape.unknown(), Shape.unknown()]
     return [Shape.matrix(m, m), Shape.matrix(m, n)]
 
 
-def _handle_multi_chol(fname, expr, env, warnings, ctx, num_targets):
+def _handle_multi_chol(fname, expr, env, warnings, ctx, num_targets, evals):
     """[R, p] = chol(A) -> [matrix[n x n], scalar]."""
     if num_targets != 2:
         return None
-    r, c = _eval_first_arg_shape(expr, env, warnings, ctx)
+    r, c = _eval_first_arg_shape(expr, env, warnings, ctx, evals)
     if r is None:
         return [Shape.unknown(), Shape.scalar()]
     # Use r for both dimensions (square matrix assumption)
@@ -972,59 +950,57 @@ def _handle_multi_chol(fname, expr, env, warnings, ctx, num_targets):
     return [Shape.matrix(n, n), Shape.scalar()]
 
 
-def _handle_multi_size(fname, expr, env, warnings, ctx, num_targets):
+def _handle_multi_size(fname, expr, env, warnings, ctx, num_targets, evals):
     """[m, n] = size(A) -> [scalar, scalar]."""
     if num_targets != 2:
         return None
     # Evaluate first arg for warning propagation
-    _, _ = _eval_first_arg_shape(expr, env, warnings, ctx)
+    _, _ = _eval_first_arg_shape(expr, env, warnings, ctx, evals)
     return [Shape.scalar(), Shape.scalar()]
 
 
-def _handle_multi_sort(fname, expr, env, warnings, ctx, num_targets):
+def _handle_multi_sort(fname, expr, env, warnings, ctx, num_targets, evals):
     """[s, i] = sort(A) -> [shape_of(A), shape_of(A)]."""
     if num_targets != 2:
         return None
-    from analysis.eval_expr import eval_expr_ir
     if len(expr.args) < 1:
         return [Shape.unknown(), Shape.unknown()]
     try:
-        s = eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
+        s = evals.eval_expr(unwrap_arg(expr.args[0]), env, warnings, ctx)
     except ValueError:
         return [Shape.unknown(), Shape.unknown()]
     return [s, s]
 
 
-def _handle_multi_find(fname, expr, env, warnings, ctx, num_targets):
+def _handle_multi_find(fname, expr, env, warnings, ctx, num_targets, evals):
     """[row, col] = find(A) or [row, col, val] = find(A)."""
     if num_targets == 2:
-        _, _ = _eval_first_arg_shape(expr, env, warnings, ctx)
+        _, _ = _eval_first_arg_shape(expr, env, warnings, ctx, evals)
         return [Shape.matrix(1, None), Shape.matrix(1, None)]
     elif num_targets == 3:
-        _, _ = _eval_first_arg_shape(expr, env, warnings, ctx)
+        _, _ = _eval_first_arg_shape(expr, env, warnings, ctx, evals)
         return [Shape.matrix(1, None), Shape.matrix(1, None), Shape.matrix(1, None)]
     return None
 
 
-def _handle_multi_unique(fname, expr, env, warnings, ctx, num_targets):
+def _handle_multi_unique(fname, expr, env, warnings, ctx, num_targets, evals):
     """[u, ia] = unique(A) or [u, ia, ic] = unique(A)."""
     if num_targets == 2:
-        _, _ = _eval_first_arg_shape(expr, env, warnings, ctx)
+        _, _ = _eval_first_arg_shape(expr, env, warnings, ctx, evals)
         return [Shape.matrix(1, None), Shape.matrix(None, 1)]
     elif num_targets == 3:
-        _, _ = _eval_first_arg_shape(expr, env, warnings, ctx)
+        _, _ = _eval_first_arg_shape(expr, env, warnings, ctx, evals)
         return [Shape.matrix(1, None), Shape.matrix(None, 1), Shape.matrix(None, 1)]
     return None
 
 
-def _handle_multi_minmax(fname, expr, env, warnings, ctx, num_targets):
+def _handle_multi_minmax(fname, expr, env, warnings, ctx, num_targets, evals):
     """[M, I] = min(A) or [M, I] = max(A)."""
     if num_targets != 2:
         return None
-    from analysis.eval_expr import _eval_index_arg_to_shape
     if len(expr.args) < 1:
         return [Shape.unknown(), Shape.unknown()]
-    arg_shape = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
+    arg_shape = evals.eval_arg(expr.args[0], env, warnings, ctx)
     # Apply reduction logic (same as _handle_reduction for 1-arg)
     if arg_shape.is_scalar():
         return [Shape.scalar(), Shape.scalar()]
@@ -1034,38 +1010,38 @@ def _handle_multi_minmax(fname, expr, env, warnings, ctx, num_targets):
     return [Shape.unknown(), Shape.unknown()]
 
 
-def _handle_multi_fileparts(fname, expr, env, warnings, ctx, num_targets):
+def _handle_multi_fileparts(fname, expr, env, warnings, ctx, num_targets, evals):
     """[pathstr, name, ext] = fileparts(filename) — all strings."""
     if num_targets <= 3:
         return [Shape.string()] * num_targets
     return None
 
 
-def _handle_multi_fopen(fname, expr, env, warnings, ctx, num_targets):
+def _handle_multi_fopen(fname, expr, env, warnings, ctx, num_targets, evals):
     """[fid, message] = fopen(filename) — scalar + string."""
     if num_targets == 2:
         return [Shape.scalar(), Shape.string()]
     return None
 
 
-def _handle_multi_meshgrid(fname, expr, env, warnings, ctx, num_targets):
+def _handle_multi_meshgrid(fname, expr, env, warnings, ctx, num_targets, evals):
     """[X, Y] = meshgrid(x, y) or [X, Y, Z] = meshgrid(x, y, z) — matrices."""
     if num_targets in (2, 3):
         return [Shape.unknown()] * num_targets
     return None
 
 
-def _handle_multi_cellfun(fname, expr, env, warnings, ctx, num_targets):
+def _handle_multi_cellfun(fname, expr, env, warnings, ctx, num_targets, evals):
     """[out1, out2, ...] = cellfun(func, C) — all unknown."""
     return [Shape.unknown()] * num_targets
 
 
-def _handle_multi_ndgrid(fname, expr, env, warnings, ctx, num_targets):
+def _handle_multi_ndgrid(fname, expr, env, warnings, ctx, num_targets, evals):
     """[X1, X2, ...] = ndgrid(x1, x2, ...) — matrices."""
     return [Shape.unknown()] * num_targets
 
 
-def _handle_multi_regexp(fname, expr, env, warnings, ctx, num_targets):
+def _handle_multi_regexp(fname, expr, env, warnings, ctx, num_targets, evals):
     """[tok, match, ...] = regexp(str, expr, ...) — all unknown."""
     return [Shape.unknown()] * num_targets
 
@@ -1109,7 +1085,7 @@ _orphans = _all_handled - _KNOWN
 assert not _orphans, f"Builtins with handlers but not in KNOWN_BUILTINS: {_orphans}"
 
 
-def eval_builtin_call(fname: str, expr: Apply, env: Env, warnings: List['Diagnostic'], ctx: AnalysisContext) -> Shape:
+def eval_builtin_call(fname: str, expr: Apply, env: Env, warnings: List['Diagnostic'], ctx: AnalysisContext, evals: BuiltinEvalContext) -> Shape:
     """Dispatch builtin function call to appropriate handler.
 
     Args:
@@ -1118,6 +1094,7 @@ def eval_builtin_call(fname: str, expr: Apply, env: Env, warnings: List['Diagnos
         env: Current environment
         warnings: List to append warnings to
         ctx: Analysis context
+        evals: Evaluation callbacks (breaks circular import)
 
     Returns:
         Inferred shape of the result
@@ -1126,7 +1103,7 @@ def eval_builtin_call(fname: str, expr: Apply, env: Env, warnings: List['Diagnos
     handler = BUILTIN_HANDLERS.get(fname)
     if handler:
         try:
-            result = handler(fname, expr, env, warnings, ctx)
+            result = handler(fname, expr, env, warnings, ctx, evals)
         except ValueError:
             # Range/Colon args passed to builtins expecting plain Expr
             return Shape.unknown()
@@ -1134,29 +1111,26 @@ def eval_builtin_call(fname: str, expr: Apply, env: Env, warnings: List['Diagnos
             return result
 
     # Declarative dispatch for stereotyped builtins
-    # Import here to avoid circular dependency at module level
-    from analysis.eval_expr import _eval_index_arg_to_shape, eval_expr_ir
-
     if fname in PASSTHROUGH_BUILTINS or fname in TYPE_CAST_BUILTINS:
-        # Calls _eval_index_arg_to_shape (handles IndexArg/Colon/Range directly)
+        # Calls eval_arg (handles IndexArg/Colon/Range directly)
         # Only handles the 1-arg case; 2+ args fall through to unknown
         if len(expr.args) == 1:
-            return _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
+            return evals.eval_arg(expr.args[0], env, warnings, ctx)
         return Shape.unknown()
 
     if fname in SCALAR_PREDICATE_BUILTINS:
-        # Calls eval_expr_ir(unwrap_arg(...)) — unwraps first, then evaluates
+        # Calls eval_expr(unwrap_arg(...)) — unwraps first, then evaluates
         if len(expr.args) >= 1:
             try:
-                eval_expr_ir(unwrap_arg(expr.args[0]), env, warnings, ctx)
+                evals.eval_expr(unwrap_arg(expr.args[0]), env, warnings, ctx)
             except ValueError:
                 pass
         return Shape.scalar()
 
     if fname in SCALAR_QUERY_BUILTINS:
-        # Calls _eval_index_arg_to_shape (like passthrough), returns scalar
+        # Calls eval_arg (like passthrough), returns scalar
         if len(expr.args) >= 1:
-            _ = _eval_index_arg_to_shape(expr.args[0], env, warnings, ctx)
+            _ = evals.eval_arg(expr.args[0], env, warnings, ctx)
         return Shape.scalar()
 
     if fname in SCALAR_NARY_BUILTINS:
@@ -1166,16 +1140,16 @@ def eval_builtin_call(fname: str, expr: Apply, env: Env, warnings: List['Diagnos
     if fname in STRING_RETURN_BUILTINS:
         # Evaluate ALL args for warning propagation, return string
         for arg in expr.args:
-            _ = _eval_index_arg_to_shape(arg, env, warnings, ctx)
+            _ = evals.eval_arg(arg, env, warnings, ctx)
         return Shape.string()
 
     if fname in REDUCTION_BUILTINS:
         # Delegate to existing _handle_reduction logic
-        return _handle_reduction(fname, expr, env, warnings, ctx) or Shape.unknown()
+        return _handle_reduction(fname, expr, env, warnings, ctx, evals) or Shape.unknown()
 
     if fname in MATRIX_CONSTRUCTOR_BUILTINS:
         # Delegate to existing _handle_matrix_constructor logic
-        return _handle_matrix_constructor(fname, expr, env, warnings, ctx) or Shape.unknown()
+        return _handle_matrix_constructor(fname, expr, env, warnings, ctx, evals) or Shape.unknown()
 
     # Known builtin without a matching shape rule: return unknown silently
     return Shape.unknown()

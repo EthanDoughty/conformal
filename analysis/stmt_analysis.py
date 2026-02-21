@@ -808,20 +808,22 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
 
         # Check if builtin with multi-return handler
         if fname in KNOWN_BUILTINS:
-            from analysis.eval_builtins import BUILTIN_MULTI_HANDLERS, eval_builtin_call, _MULTI_SUPPORTED_FORMS
+            from analysis.eval_builtins import BUILTIN_MULTI_HANDLERS, eval_builtin_call, _MULTI_SUPPORTED_FORMS, BuiltinEvalContext
+            from analysis.eval_expr import _get_expr_interval
+            _evals = BuiltinEvalContext(eval_expr=eval_expr_ir, eval_arg=_eval_index_arg_to_shape, get_interval=_get_expr_interval)
             num_targets = len(stmt.targets)
 
             # Single-target AssignMulti: [x] = builtin(...) is equivalent to x = builtin(...)
             # Delegate to single-return path to avoid duplicating logic
             if num_targets == 1:
-                result_shape = eval_builtin_call(fname, stmt.expr, env, warnings, ctx)
+                result_shape = eval_builtin_call(fname, stmt.expr, env, warnings, ctx, _evals)
                 _bind(stmt.targets[0], result_shape)
                 return env
 
             multi_handler = BUILTIN_MULTI_HANDLERS.get(fname)
             if multi_handler is not None:
                 try:
-                    result = multi_handler(fname, stmt.expr, env, warnings, ctx, num_targets)
+                    result = multi_handler(fname, stmt.expr, env, warnings, ctx, num_targets, _evals)
                 except ValueError:
                     # Range/Colon args passed to builtins expecting plain Expr
                     for target in stmt.targets:
