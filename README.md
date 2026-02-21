@@ -7,7 +7,7 @@
 [![Version](https://img.shields.io/badge/version-1.13.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-322%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-330%20passing-brightgreen.svg)](#test-suite)
 [![pip installable](https://img.shields.io/badge/pip-installable-green.svg)](#getting-started)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
@@ -48,7 +48,7 @@ Final environment:
 
 ## Performance
 
-Single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and cross-file workspace analysis runs in about 70ms. The full 322-test suite finishes in under 500ms, with no MATLAB runtime involved.
+Single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and cross-file workspace analysis runs in about 70ms. The full 330-test suite finishes in under 500ms, with no MATLAB runtime involved.
 
 The VS Code extension can analyze on every keystroke by default, with a 500ms debounce.
 
@@ -114,6 +114,12 @@ Branch conditions narrow variable intervals inside the branch body. `if x > 0` r
 
 Non-numeric types (struct, cell, function_handle) used where numeric values are required emit type mismatch errors. Arithmetic operations (`+`, `-`, `*`, `.*`, etc.) on structs or cells emit `W_ARITHMETIC_TYPE_MISMATCH`. Transpose (`'`) on a non-numeric type emits `W_TRANSPOSE_TYPE_MISMATCH`. Negation (`-`) on a non-numeric type emits `W_NEGATE_TYPE_MISMATCH`. Mixing incompatible types in a matrix literal (e.g., `[s, A]` where `s` is a struct) emits `W_CONCAT_TYPE_MISMATCH`. All four codes map to Error severity. This also fixes a pre-existing bug where `struct + scalar` silently returned struct shape.
 
+### Witness generation
+
+For dimension conflict warnings, the analyzer can optionally produce a concrete counterexample proving the bug is real, not a false positive. A witness is a set of variable assignments (e.g., `n=3, m=5`) under which the conflicting dimensions evaluate to different integers. The solver pulls from `scalar_bindings` (variables with known concrete values), `value_ranges` (interval bounds from interval analysis), and branch path conditions to narrow the candidate space before enumerating. It bails out conservatively when dims are unknown, when symbolic terms are quadratic or higher, or when more than 8 free variables are involved.
+
+In `--witness enrich` mode (the default when `--witness` is given), the concrete assignment is printed below each warning. In `--witness filter` mode, only warnings with a verified witness are shown. In `--witness tag` mode, each warning is prefixed with `[confirmed]` or `[possible]`. The LSP server always runs witness generation and appends the witness explanation to the hover text automatically, with no extra configuration needed.
+
 ## Language Coverage
 
 The analyzer parses and tracks shapes through:
@@ -158,17 +164,17 @@ Symbolic dimensions use a frozen polynomial representation (`SymDim`) with ratio
 ```
 frontend/           Parser (lexer.py, matlab_parser.py) — emits IR dataclass nodes directly
 ir/                 Typed IR dataclass definitions
-analysis/           15 focused submodules: expression eval, statements, functions, builtins, binops, constraints, diagnostics, intervals
+analysis/           17 focused submodules: expression eval, statements, functions, builtins, binops, constraints, diagnostics, intervals, witness generation
 runtime/            Shape domain (shapes.py), symbolic dimensions (symdim.py), and environments
 lsp/                Language Server Protocol implementation (server.py, diagnostics.py, hover.py, code_actions.py)
 vscode-conformal/   VS Code extension (TypeScript thin client)
-tests/              Self-checking MATLAB programs (322 tests, 16 categories)
+tests/              Self-checking MATLAB programs (330 tests, 17 categories)
 tools/              Debugging utilities (AST printer)
 ```
 
 ## Test Suite
 
-The analyzer is validated by 322 self-checking test programs organized into 16 categories. Each test embeds its expected behavior as inline assertions:
+The analyzer is validated by 330 self-checking test programs organized into 17 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -686,12 +692,31 @@ Cross-file workspace scaling tests: chains, diamond patterns, fan-out/fan-in, po
 
 </details>
 
+<details>
+<summary><h3>Witness (7 tests)</h3></summary>
+
+Incorrectness witness generation: concrete proofs that dimension conflict warnings are real bugs, not false positives (v1.14.0).
+
+| Test | What It Validates | Warnings |
+|------|-------------------|----------|
+| `concrete_witness.m` | Trivial witness for concrete dimension mismatch: dims are ints, no symbolic vars needed | 1 |
+| `symbolic_witness.m` | Symbolic mismatch (`n` vs `n+1`) is always a conflict; witness enumerates `n` to find a satisfying assignment | 1 |
+| `elementwise_witness.m` | Witness for column conflict in element-wise multiplication | 1 |
+| `constraint_witness.m` | Witness leverages `scalar_bindings`: `n=3, m=5` are known, so `dim_a=5, dim_b=6` is grounded immediately | 1 |
+| `branch_witness.m` | Witness captures active branch path (`n > 3`, true branch) alongside the variable assignments | 1 |
+| `no_witness_unknown.m` | Unknown dims produce no warning (dims_definitely_conflict is false), so no witness either | 0 |
+| `filter_mode.m` | Confirmed inner-dim mismatch that `--witness filter` would include; tests that witness generation fires correctly | 1 |
+
+>Witness generation runs automatically in the LSP server (enriching hover and diagnostic messages) and can be enabled on the CLI with `--witness`. The `filter` mode produces zero false positives by only surfacing warnings that have a verified concrete counterexample.
+
+</details>
+
 ---
 
 ### Running the Tests
 
 ```bash
-# Run all 322 tests
+# Run all 330 tests
 make test
 python3 conformal.py --tests
 
@@ -708,7 +733,7 @@ python3 conformal.py --strict --tests
 git clone https://github.com/EthanDoughty/conformal.git
 cd conformal
 make install          # pip install -e '.[lsp]' (editable + pygls)
-conformal --tests     # verify 322 tests pass
+conformal --tests     # verify 330 tests pass
 ```
 
 Analyze a file:
@@ -762,6 +787,8 @@ python3 -m lsp
 `--strict` – show all warnings including informational and low-confidence diagnostics
 
 `--fixpoint` – use fixed-point iteration for loop analysis
+
+`--witness [MODE]` – attach incorrectness witnesses to dimension conflict warnings; MODE can be `enrich` (default, prints witness below each warning), `filter` (only show warnings with a confirmed witness), or `tag` (prefix each warning with `[confirmed]` or `[possible]`); the LSP server always runs witness generation and enriches diagnostics automatically
 
 Exit codes:
 
