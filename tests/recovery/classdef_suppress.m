@@ -3,10 +3,19 @@
 
 x = 5;
 
-classdef MyClass
-    properties
+classdef (Sealed) MyClass < handle
+    properties (SetAccess = private)
         Name
         Value
+    end
+
+    events
+        DataChanged
+    end
+
+    enumeration
+        ModeA (1)
+        ModeB (2)
     end
 
     methods
@@ -16,6 +25,10 @@ classdef MyClass
         end
 
         function result = compute(obj)
+            if obj.Value == 0
+                result = 0;
+                return;
+            end
             result = obj.Value * 2;
         end
     end

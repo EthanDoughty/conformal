@@ -520,6 +520,46 @@ class MatlabParser:
                     expr = self.parse_expr()
                     return StructAssign(line=eq_tok.line, col=eq_tok.col,
                                         base_name=id_tok.value, fields=fields, expr=expr)
+                # Check for chained index in field chain: s.field(i).field2 = expr
+                # or s.field{i}.field2 = expr
+                elif fields and self.current().value in ("(", "{"):
+                    saved = self.i
+                    bracket = self.current().value
+                    close = ")" if bracket == "(" else "}"
+                    try:
+                        self.eat(bracket)
+                        self.parse_paren_args()  # consume index args (discarded)
+                        self.eat(close)
+                        # Parse suffix field chain
+                        suffix_fields = []
+                        while self.current().kind == "DOT":
+                            self.eat("DOT")
+                            if self.current().kind == "ID":
+                                suffix_fields.append(self.eat("ID").value)
+                            elif self.current().value == "(":
+                                # Dynamic field access: .(expr)
+                                self.eat("(")
+                                self.parse_expr()
+                                self.eat(")")
+                                suffix_fields.append("<dynamic>")
+                            else:
+                                break
+                        if suffix_fields and self.current().value == "=":
+                            eq_tok = self.eat("=")
+                            expr = self.parse_expr()
+                            return StructAssign(line=eq_tok.line, col=eq_tok.col,
+                                                base_name=id_tok.value,
+                                                fields=fields + suffix_fields, expr=expr)
+                        else:
+                            self.i = saved  # backtrack: not a chained struct assign
+                    except ParseError:
+                        self.i = saved  # backtrack on any parse failure
+                    # Fall through to expression handling below
+                    base = Var(line=id_tok.line, col=id_tok.col, name=id_tok.value)
+                    for field in fields:
+                        base = FieldAccess(line=id_tok.line, col=id_tok.col, base=base, field=field)
+                    expr_tail = self.parse_expr_rest(base, 0)
+                    return ExprStmt(line=expr_tail.line, col=expr_tail.col, expr=expr_tail)
                 else:
                     # Not assignment, construct field access expression and continue
                     # Build nested field_access nodes: s.a.b -> FieldAccess(FieldAccess(Var(s), a), b)
