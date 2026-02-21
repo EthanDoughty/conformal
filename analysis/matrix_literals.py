@@ -142,6 +142,7 @@ def infer_matrix_literal_shape(
                     value_ranges_snapshot=tuple(sorted(
                         (k, (v.lo, v.hi)) for k, v in ctx.value_ranges.items()
                     )),
+                    path_snapshot=tuple(ctx.path_constraints.snapshot()),
                 ))
                 warnings.append(
                     Diagnostic(
@@ -181,6 +182,7 @@ def infer_matrix_literal_shape(
                 value_ranges_snapshot=tuple(sorted(
                     (k, (v.lo, v.hi)) for k, v in ctx.value_ranges.items()
                 )),
+                path_snapshot=tuple(ctx.path_constraints.snapshot()),
             ))
             warnings.append(
                 Diagnostic(

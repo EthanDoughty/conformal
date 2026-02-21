@@ -558,11 +558,14 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         # Apply then-branch refinements
         _apply_refinements(ctx, refinements, negate=False)
 
+        ctx.path_constraints.push(stmt.cond, True, stmt.line)
         try:
             for s in stmt.then_body:
                 analyze_stmt_ir(s, then_env, warnings, ctx)
         except EarlyReturn:
             then_returned = True
+        finally:
+            ctx.path_constraints.pop()
         then_constraints = frozenset(ctx.constraints)
         then_ranges = dict(ctx.value_ranges)
 
@@ -573,11 +576,14 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         # Apply else-branch refinements (negated)
         _apply_refinements(ctx, refinements, negate=True)
 
+        ctx.path_constraints.push(stmt.cond, False, stmt.line)
         try:
             for s in stmt.else_body:
                 analyze_stmt_ir(s, else_env, warnings, ctx)
         except EarlyReturn:
             else_returned = True
+        finally:
+            ctx.path_constraints.pop()
         else_constraints = frozenset(ctx.constraints)
         else_ranges = dict(ctx.value_ranges)
 
@@ -639,6 +645,11 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
                 _apply_refinements(ctx, all_refinements[idx], negate=False)
             # else: else-body gets no refinement (per design decision)
 
+            # Push path constraint for this branch
+            if idx < len(stmt.conditions):
+                ctx.path_constraints.push(stmt.conditions[idx], True, stmt.line)
+            # else: else branch — no explicit condition to push
+
             branch_env = env.copy()
             returned = False
             try:
@@ -650,6 +661,9 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
                 # Break/continue inside if inside loop: record and re-raise after join
                 returned = True  # Exclude from join (same as EarlyReturn)
                 deferred_exception = exc
+            finally:
+                if idx < len(stmt.conditions):
+                    ctx.path_constraints.pop()
             branch_envs.append(branch_env)
             branch_constraints.append(frozenset(ctx.constraints))
             branch_ranges.append(dict(ctx.value_ranges))
@@ -678,9 +692,16 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
         returned_flags = []
         deferred_exception = None
 
-        for body in all_bodies:
+        for case_idx, body in enumerate(all_bodies):
             ctx.constraints = set(baseline_constraints)  # Reset to baseline (prevent cross-branch contamination)
             ctx.value_ranges = dict(baseline_ranges)
+
+            # Push path constraint for each case (not for otherwise)
+            is_case = case_idx < len(stmt.cases)
+            if is_case:
+                case_cond_expr = stmt.cases[case_idx][0]
+                ctx.path_constraints.push(case_cond_expr, True, stmt.line)
+
             branch_env = env.copy()
             returned = False
             try:
@@ -691,6 +712,9 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
             except (EarlyBreak, EarlyContinue) as exc:
                 returned = True
                 deferred_exception = exc
+            finally:
+                if is_case:
+                    ctx.path_constraints.pop()
             branch_envs.append(branch_env)
             branch_constraints.append(frozenset(ctx.constraints))
             branch_ranges.append(dict(ctx.value_ranges))

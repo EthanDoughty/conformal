@@ -282,6 +282,7 @@ def _handle_reshape(fname, expr, env, warnings, ctx):
                             value_ranges_snapshot=tuple(sorted(
                                 (k, (v.lo, v.hi)) for k, v in ctx.value_ranges.items()
                             )),
+                            path_snapshot=tuple(ctx.path_constraints.snapshot()),
                         ))
                         warnings.append(warn_reshape_mismatch(expr.line, input_shape, m, n))
 

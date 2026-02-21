@@ -75,6 +75,12 @@ def run_file(file_path: str, strict: bool = False, fixpoint: bool = False,
                 wt = witnesses.get(key)
                 if wt is not None:
                     print(f"    Witness: {wt.explanation}")
+                    if wt.path:
+                        path_parts = []
+                        for desc, taken, ln in wt.path:
+                            branch_str = "true branch" if taken else "false branch"
+                            path_parts.append(f"line {ln} (if {desc}, {branch_str})")
+                        print(f"    Path: {' -> '.join(path_parts)}")
 
     print("\nFinal environment:")
     print(env)

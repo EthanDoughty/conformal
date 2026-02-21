@@ -24,6 +24,7 @@ class Witness:
     dim_a_concrete: int      # dim_a evaluated under witness
     dim_b_concrete: int      # dim_b evaluated under witness
     explanation: str         # Human-readable: "n=3, m=5 -> dims 3 != 5"
+    path: tuple = ()         # Path snapshot: ((desc, branch_taken, line), ...)
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,7 @@ class ConflictSite:
     constraints_snapshot: frozenset   # ctx.constraints at time of conflict
     scalar_bindings_snapshot: tuple   # ctx.scalar_bindings items at time of conflict
     value_ranges_snapshot: tuple      # ctx.value_ranges items at time of conflict
+    path_snapshot: tuple = ()         # Active branch conditions at conflict time
 
 
 def _collect_relevant_vars(site: ConflictSite) -> set:
@@ -94,6 +96,67 @@ def _constraints_satisfied(site: ConflictSite, bindings: dict) -> bool:
     return True
 
 
+def _path_interval_bounds(path_snapshot: tuple, var: str):
+    """Extract [lo, hi] bounds for var from path constraint conditions.
+
+    Handles simple comparisons like "n > 3" (true branch) -> lo=4,
+    "n <= 5" (true branch) -> hi=5, etc.  Returns (lo, hi) where each
+    may be None if not derivable from the path.
+    """
+    lo = None
+    hi = None
+    for desc, branch_taken, _line in path_snapshot:
+        # Parse "VAR OP VALUE" or "VALUE OP VAR" patterns
+        import re
+        m = re.match(r'^(\w+)\s*(>|>=|<|<=|==|~=)\s*(-?\d+)$', desc)
+        if m and m.group(1) == var:
+            op = m.group(2)
+            val = int(m.group(3))
+            effective_op = op if branch_taken else _negate_op(op)
+            bound_lo, bound_hi = _op_to_bounds(effective_op, val)
+            if bound_lo is not None:
+                lo = max(lo, bound_lo) if lo is not None else bound_lo
+            if bound_hi is not None:
+                hi = min(hi, bound_hi) if hi is not None else bound_hi
+            continue
+        # Try "VALUE OP VAR" (flipped)
+        m2 = re.match(r'^(-?\d+)\s*(>|>=|<|<=|==|~=)\s*(\w+)$', desc)
+        if m2 and m2.group(3) == var:
+            op = m2.group(2)
+            val = int(m2.group(1))
+            # "val OP var" -> flip to "var flipped_op val"
+            effective_op = _flip_op(op) if branch_taken else _negate_op(_flip_op(op))
+            bound_lo, bound_hi = _op_to_bounds(effective_op, val)
+            if bound_lo is not None:
+                lo = max(lo, bound_lo) if lo is not None else bound_lo
+            if bound_hi is not None:
+                hi = min(hi, bound_hi) if hi is not None else bound_hi
+    return lo, hi
+
+
+def _negate_op(op: str) -> str:
+    return {">": "<=", ">=": "<", "<": ">=", "<=": ">", "==": "~=", "~=": "=="}.get(op, op)
+
+
+def _flip_op(op: str) -> str:
+    return {">": "<", ">=": "<=", "<": ">", "<=": ">=", "==": "==", "~=": "~="}.get(op, op)
+
+
+def _op_to_bounds(op: str, val: int):
+    """Return (lo, hi) implied by 'var OP val'. None means unbounded on that side."""
+    if op == ">":
+        return (val + 1, None)
+    if op == ">=":
+        return (val, None)
+    if op == "<":
+        return (None, val - 1)
+    if op == "<=":
+        return (None, val)
+    if op == "==":
+        return (val, val)
+    return (None, None)
+
+
 def _find_satisfying_assignment(
     site: ConflictSite,
     relevant_vars: set,
@@ -104,7 +167,7 @@ def _find_satisfying_assignment(
     Strategy:
     1. Pre-fill from scalar_bindings (concrete known values).
     2. For remaining free vars, use interval bounds from value_ranges_snapshot
-       or default [0..10], clamped to 20 values max.
+       and path_snapshot conditions, or default [0..10], clamped to 20 values max.
     3. Enumerate all combinations, verify constraints + mismatch.
     """
     # Build value_ranges dict from snapshot
@@ -122,19 +185,24 @@ def _find_satisfying_assignment(
 
     # Build candidate value ranges for each free var
     def candidate_range(var: str) -> List[int]:
+        lo = 0
+        hi = 10
         if var in value_ranges:
             iv = value_ranges[var]
-            lo = iv[0]
-            hi = iv[1]
-            # lo/hi may be int or SymDim; only use concrete int bounds
-            if not isinstance(lo, int):
-                lo = 0
-            if not isinstance(hi, int):
-                hi = 10
-            lo = max(0, lo)
-            hi = min(hi, lo + 20)
-            return list(range(lo, hi + 1))
-        return list(range(0, 11))
+            iv_lo = iv[0]
+            iv_hi = iv[1]
+            if isinstance(iv_lo, int):
+                lo = max(0, iv_lo)
+            if isinstance(iv_hi, int):
+                hi = iv_hi
+        # Narrow further using path conditions
+        path_lo, path_hi = _path_interval_bounds(site.path_snapshot, var)
+        if path_lo is not None:
+            lo = max(lo, path_lo)
+        if path_hi is not None:
+            hi = min(hi, path_hi)
+        hi = min(hi, lo + 20)
+        return list(range(lo, hi + 1))
 
     candidates = [candidate_range(v) for v in free_vars]
 
@@ -173,6 +241,7 @@ def _find_satisfying_assignment(
             dim_a_concrete=a,
             dim_b_concrete=b,
             explanation=explanation,
+            path=site.path_snapshot,
         )
 
     return None
@@ -214,6 +283,7 @@ def attempt_witness(site: ConflictSite) -> Optional[Witness]:
             dim_a_concrete=dim_a,
             dim_b_concrete=dim_b,
             explanation=f"dims {dim_a} != {dim_b}",
+            path=site.path_snapshot,
         )
 
     # Case 2: Symbolic dims — enumerate
@@ -241,6 +311,7 @@ def attempt_witness(site: ConflictSite) -> Optional[Witness]:
                 dim_a_concrete=a,
                 dim_b_concrete=b,
                 explanation=explanation,
+                path=site.path_snapshot,
             )
 
     return _find_satisfying_assignment(site, relevant_vars, scalar_bindings)

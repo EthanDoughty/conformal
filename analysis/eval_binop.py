@@ -96,6 +96,7 @@ def eval_binop_ir(
                     value_ranges_snapshot=tuple(sorted(
                         (k, (v.lo, v.hi)) for k, v in ctx.value_ranges.items()
                     )),
+                    path_snapshot=tuple(ctx.path_constraints.snapshot()),
                 ))
                 warnings.append(diag.warn_matrix_power_non_square(line, left_expr, left))
                 return Shape.unknown()
@@ -127,6 +128,7 @@ def eval_binop_ir(
                     value_ranges_snapshot=tuple(sorted(
                         (k, (v.lo, v.hi)) for k, v in ctx.value_ranges.items()
                     )),
+                    path_snapshot=tuple(ctx.path_constraints.snapshot()),
                 ))
                 warnings.append(diag.warn_mldivide_dim_mismatch(line, left_expr, right_expr, left, right))
                 return Shape.unknown()
@@ -173,6 +175,7 @@ def eval_binop_ir(
                     value_ranges_snapshot=tuple(sorted(
                         (k, (v.lo, v.hi)) for k, v in ctx.value_ranges.items()
                     )),
+                    path_snapshot=tuple(ctx.path_constraints.snapshot()),
                 ))
                 warnings.append(diag.warn_elementwise_mismatch(line, op, left_expr, right_expr, left, right)
                 )
@@ -206,6 +209,7 @@ def eval_binop_ir(
                     value_ranges_snapshot=tuple(sorted(
                         (k, (v.lo, v.hi)) for k, v in ctx.value_ranges.items()
                     )),
+                    path_snapshot=tuple(ctx.path_constraints.snapshot()),
                 ))
                 suggest = (
                     not dims_definitely_conflict(left.rows, right.rows)
@@ -245,6 +249,7 @@ def eval_binop_ir(
                     value_ranges_snapshot=tuple(sorted(
                         (k, (v.lo, v.hi)) for k, v in ctx.value_ranges.items()
                     )),
+                    path_snapshot=tuple(ctx.path_constraints.snapshot()),
                 ))
                 warnings.append(diag.warn_elementwise_mismatch(line, op, left_expr, right_expr, left, right))
                 return Shape.unknown()
