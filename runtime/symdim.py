@@ -136,6 +136,50 @@ class SymDim:
                 var_set.add(var_name)
         return var_set
 
+    def substitute(self, bindings: dict) -> "SymDim":
+        """Replace bound variables with concrete values; keep free vars symbolic.
+
+        Args:
+            bindings: {var_name: int} mapping variables to concrete values.
+
+        Returns:
+            New SymDim with bound vars replaced. Free vars remain symbolic.
+        """
+        result = SymDim.zero()
+        for mono, coeff in self._terms:
+            # Start with the coefficient as a constant SymDim
+            term_value = SymDim.const(1) if coeff == 1 else SymDim(_terms=(((), coeff),))
+            for var_name, exp in mono:
+                if var_name in bindings:
+                    # Substitute concrete value: multiply term by bindings[var]^exp
+                    concrete = Fraction(bindings[var_name]) ** exp
+                    term_value = SymDim(_terms=tuple(
+                        (m, c * concrete) for m, c in term_value._terms
+                    ))
+                else:
+                    # Keep free variable symbolic: var_factor = SymDim.var(var_name)
+                    var_factor = SymDim.var(var_name)
+                    # Raise to exp by repeated multiplication
+                    factor = SymDim.const(1)
+                    for _ in range(exp):
+                        factor = factor * var_factor
+                    term_value = term_value * factor
+            result = result + term_value
+        return result
+
+    def evaluate(self, bindings: dict) -> Optional[int]:
+        """Evaluate to int if all variables are bound after substitution.
+
+        Args:
+            bindings: {var_name: int} mapping variables to concrete values.
+
+        Returns:
+            Integer value if fully ground, None if free variables remain or
+            result is non-integer (e.g., n/2 with n=3 gives 3/2).
+        """
+        result = self.substitute(bindings)
+        return result.const_value()
+
     def __str__(self) -> str:
         """Format polynomial with degree-descending, alphabetical display."""
         if len(self._terms) == 0:

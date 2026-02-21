@@ -7,14 +7,14 @@ import time
 from pathlib import Path
 
 from frontend.matlab_parser import parse_matlab
-from analysis import analyze_program_ir
+from analysis import analyze_program_ir, generate_witnesses
 from analysis.diagnostics import has_unsupported, STRICT_ONLY_CODES
 from analysis.context import AnalysisContext
 from analysis.workspace import scan_workspace
 
 
 def run_file(file_path: str, strict: bool = False, fixpoint: bool = False,
-             benchmark: bool = False) -> int:
+             benchmark: bool = False, witness: bool = False) -> int:
     """Analyze a single MATLAB file.
 
     Args:
@@ -22,6 +22,7 @@ def run_file(file_path: str, strict: bool = False, fixpoint: bool = False,
         strict: If True, exit with error if unsupported constructs detected
         fixpoint: If True, use fixed-point iteration for loop analysis
         benchmark: If True, print timing breakdown
+        witness: If True, attempt to construct witnesses for warnings
 
     Returns:
         Exit code (0 for success, 1 for error)
@@ -57,13 +58,23 @@ def run_file(file_path: str, strict: bool = False, fixpoint: bool = False,
     if not strict:
         warnings = [w for w in warnings if w.code not in STRICT_ONLY_CODES]
 
+    # Generate witnesses if requested
+    witnesses = {}
+    if witness:
+        witnesses = generate_witnesses(ctx.conflict_sites)
+
     print(f"=== Analysis for {file_path} ===")
     if not warnings:
         print("No dimension warnings.")
     else:
         print("Warnings:")
-        for warning in warnings:
-            print("  -", warning)
+        for w in warnings:
+            print("  -", w)
+            if witness:
+                key = (w.line, w.code)
+                wt = witnesses.get(key)
+                if wt is not None:
+                    print(f"    Witness: {wt.explanation}")
 
     print("\nFinal environment:")
     print(env)
@@ -152,6 +163,11 @@ def main() -> int:
         action="store_true",
         help="Print timing breakdown for analysis phases"
     )
+    parser.add_argument(
+        "--witness",
+        action="store_true",
+        help="Attempt to construct concrete witnesses proving warnings are real bugs"
+    )
     args = parser.parse_args()
 
     if args.tests:
@@ -163,7 +179,7 @@ def main() -> int:
         return 1
 
     return run_file(args.file, strict=args.strict, fixpoint=args.fixpoint,
-                    benchmark=args.benchmark)
+                    benchmark=args.benchmark, witness=args.witness)
 
 
 if __name__ == "__main__":

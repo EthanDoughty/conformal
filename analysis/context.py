@@ -45,6 +45,8 @@ class AnalysisContext:
     _handle_registry: Dict[int, str] = field(default_factory=dict)  # handle_id -> function_name
     analyzing_lambdas: Set[int] = field(default_factory=set)
     _next_lambda_id: int = 0
+    conflict_sites: list = field(default_factory=list)  # List[ConflictSite] accumulated globally
+    dim_provenance: dict = field(default_factory=dict)  # (var_name, "rows"|"cols") -> Dim
     constraints: set = field(default_factory=set)  # Set of (dim1, dim2) tuples (canonicalized)
     constraint_provenance: dict = field(default_factory=dict)  # (dim1, dim2) -> source_line
     scalar_bindings: Dict[str, int] = field(default_factory=dict)  # var_name -> concrete_value (for constraint validation)

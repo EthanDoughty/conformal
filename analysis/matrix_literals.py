@@ -133,6 +133,16 @@ def infer_matrix_literal_shape(
             if dims_definitely_conflict(height, rr):
                 had_definite_error = True
                 from analysis.diagnostics import Diagnostic
+                from analysis.witness import ConflictSite
+                ctx.conflict_sites.append(ConflictSite(
+                    dim_a=height, dim_b=rr,
+                    line=line, warning_code="W_HORZCAT_ROW_MISMATCH",
+                    constraints_snapshot=frozenset(ctx.constraints),
+                    scalar_bindings_snapshot=tuple(sorted(ctx.scalar_bindings.items())),
+                    value_ranges_snapshot=tuple(sorted(
+                        (k, (v.lo, v.hi)) for k, v in ctx.value_ranges.items()
+                    )),
+                ))
                 warnings.append(
                     Diagnostic(
                         line=line,
@@ -162,6 +172,16 @@ def infer_matrix_literal_shape(
         if dims_definitely_conflict(common_width, w):
             had_definite_error = True
             from analysis.diagnostics import Diagnostic
+            from analysis.witness import ConflictSite
+            ctx.conflict_sites.append(ConflictSite(
+                dim_a=common_width, dim_b=w,
+                line=line, warning_code="W_VERTCAT_COL_MISMATCH",
+                constraints_snapshot=frozenset(ctx.constraints),
+                scalar_bindings_snapshot=tuple(sorted(ctx.scalar_bindings.items())),
+                value_ranges_snapshot=tuple(sorted(
+                    (k, (v.lo, v.hi)) for k, v in ctx.value_ranges.items()
+                )),
+            ))
             warnings.append(
                 Diagnostic(
                     line=line,

@@ -9,6 +9,7 @@ from legacy.analysis_legacy import analyze_program as analyze_program_legacy
 
 from analysis.context import FunctionSignature, EarlyReturn, EarlyBreak, EarlyContinue, AnalysisContext
 from analysis.stmt_analysis import analyze_stmt_ir
+from analysis.witness import generate_witnesses
 from ir import Program, FunctionDef
 from runtime.env import Env
 
@@ -65,4 +66,4 @@ def analyze_program_ir(program: Program, fixpoint: bool = False, ctx: AnalysisCo
 # Default to legacy analyzer for backwards compatibility
 analyze_program = analyze_program_legacy
 
-__all__ = ["analyze_program", "analyze_program_ir", "analyze_program_legacy"]
+__all__ = ["analyze_program", "analyze_program_ir", "analyze_program_legacy", "generate_witnesses"]
