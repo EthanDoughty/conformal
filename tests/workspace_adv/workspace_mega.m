@@ -240,3 +240,25 @@ cont_result = ws_continued(zeros(3, 3), ones(3, 3));
 % Tilde param in external function
 tilde_result = ws_tilde_param(999, zeros(3, 4));
 % EXPECT: tilde_result = matrix[3 x 3]
+
+% ==========================================================================
+% SECTION 13: Struct Multi-Return Targets (0 warnings)
+% ==========================================================================
+
+% size() builtin returns two scalars -> struct fields
+M = zeros(5, 7);
+[sz.rows, sz.cols] = size(M);
+% EXPECT: sz = struct{cols: scalar, rows: scalar}
+
+% Multi-return from workspace function -> struct fields
+[sr.a, sr.b] = ws_kalman_predict(F, x0, P0, Q);
+% EXPECT: sr = struct{a: matrix[4 x 1], b: matrix[4 x 4]}
+
+% Mixed: plain target and struct target
+[plain_r, ms.second] = ws_kalman_predict(F, x0, P0, Q);
+% EXPECT: plain_r = matrix[4 x 1]
+% EXPECT: ms = struct{second: matrix[4 x 4]}
+
+% Tilde placeholder with struct target
+[~, tilde_s.cols] = size(M);
+% EXPECT: tilde_s = struct{cols: scalar}

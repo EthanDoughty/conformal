@@ -784,8 +784,18 @@ def analyze_stmt_ir(stmt: Stmt, env: Env, warnings: List['Diagnostic'], ctx: Ana
     if isinstance(stmt, AssignMulti):
         # Destructuring assignment: [a, b] = expr
         # Helper: bind target=shape, skipping "~" placeholders
+        # Dotted targets like "s.x" or "s.a.b" update struct fields.
         def _bind(target: str, shape: Shape) -> None:
-            if target != "~":
+            if target == "~":
+                return
+            if "." in target:
+                parts = target.split(".")
+                base = parts[0]
+                fields = parts[1:]
+                base_shape = env.get(base)
+                updated = _update_struct_field(base_shape, fields, shape, stmt.line, warnings)
+                env.set(base, updated)
+            else:
                 env.set(target, shape)
 
         if not isinstance(stmt.expr, Apply) or not isinstance(stmt.expr.base, Var):

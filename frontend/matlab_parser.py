@@ -473,7 +473,12 @@ class MatlabParser:
                 if self.current().value == "~":
                     self.eat("~")
                     return "~"
-                return self.eat("ID").value
+                name = self.eat("ID").value
+                # Consume .field chain for struct targets: s.x, s.a.b, etc.
+                while self.current().kind == "DOT":
+                    self.eat("DOT")
+                    name += "." + self.eat("ID").value
+                return name
 
             targets = [_eat_target()]
             while self.current().value == "," or self.current().kind == "ID" or self.current().value == "~":
