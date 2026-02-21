@@ -775,21 +775,14 @@ class MatlabParser:
         "^": 8, ".^": 8,
     }
 
-    def parse_expr(self, min_prec: int = 0, matrix_context: bool = False, colon_visible: bool = True):
-        """Expression grammar with precedence:
-          prefix: NUMBER | STRING | ID | (expr) | -expr
-          infix:  left op right
+    def _parse_prefix(self, matrix_context: bool = False, colon_visible: bool = True):
+        """Parse the prefix (primary) part of an expression.
 
-        matrix_context: when True, treat space-before-no-space-after +/- as
-        end-of-expression (MATLAB matrix literal implicit separator rule).
-
-        colon_visible: when False, treat ':' as invisible to the infix loop so
-        parse_index_arg can parse start/end of a range without consuming ':'.
-        Replaces the old PRECEDENCE dict mutation hack.
+        Handles: unary +/-, ~, NUMBER, STRING, ID (with postfix), parenthesized
+        expression, matrix literal, cell literal, @ (lambda/handle), end keyword.
         """
         tok = self.current()
 
-        # prefix
         if tok.value == "+":
             # Unary plus: +expr is a no-op (identity), used in matrix literal context like [1 +2]
             self.eat("+")
@@ -857,36 +850,22 @@ class MatlabParser:
                 f"Unexpected token {tok.kind} {tok.value!r} in expression at {tok.pos}"
             )
 
-        # infix
-        while True:
-            tok = self.current()
-            op = tok.value
-            if op not in self.PRECEDENCE:
-                break
-            # When colon is hidden (inside index arg), treat ':' as invisible
-            if op == ":" and not colon_visible:
-                break
-            prec = self.PRECEDENCE[op]
-            if prec < min_prec:
-                break
-            # Matrix literal spacing rule: space before +/- but no space after
-            # means this is a unary sign starting a new element, not binary op.
-            if matrix_context and op in ("+", "-") and self.i >= 1:
-                prev_tok = self.tokens[self.i - 1]
-                prev_end = prev_tok.pos + len(prev_tok.value)
-                op_start = tok.pos
-                space_before = op_start > prev_end
-                if space_before and self.i + 1 < len(self.tokens):
-                    next_tok = self.tokens[self.i + 1]
-                    op_end = op_start + len(tok.value)
-                    space_after = next_tok.pos > op_end
-                    if not space_after:
-                        break  # treat as start of next element
-            op_tok = self.eat(op)
-            # Right-associative: ^ and .^ use prec (not prec+1) for right operand
-            right = self.parse_expr(prec if op in ("^", ".^") else prec + 1, colon_visible=colon_visible)
-            left = BinOp(line=op_tok.line, col=op_tok.col, op=op, left=left, right=right)
         return left
+
+    def parse_expr(self, min_prec: int = 0, matrix_context: bool = False, colon_visible: bool = True):
+        """Expression grammar with precedence:
+          prefix: NUMBER | STRING | ID | (expr) | -expr
+          infix:  left op right
+
+        matrix_context: when True, treat space-before-no-space-after +/- as
+        end-of-expression (MATLAB matrix literal implicit separator rule).
+
+        colon_visible: when False, treat ':' as invisible to the infix loop so
+        parse_index_arg can parse start/end of a range without consuming ':'.
+        Replaces the old PRECEDENCE dict mutation hack.
+        """
+        left = self._parse_prefix(matrix_context, colon_visible)
+        return self.parse_expr_rest(left, min_prec, matrix_context, colon_visible)
 
     def parse_postfix(self, left):
         """Postfix constructs after a primary.
