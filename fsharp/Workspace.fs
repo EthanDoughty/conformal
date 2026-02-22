@@ -160,10 +160,13 @@ let buildIrFromSource (source: string) : (FunctionSignature * Map<string, Functi
 
 
 #if FABLE_COMPILER
-/// loadExternalFunction: Fable stub — no filesystem access.
-/// Cross-file body analysis is handled by the TS host pre-providing content.
-let loadExternalFunction (_sig: ExternalSignature) : (FunctionSignature * Map<string, FunctionSignature>) option =
-    None
+/// loadExternalFunction: Fable path — uses pre-parsed body from Interop.
+let loadExternalFunction (sig_: ExternalSignature) : (FunctionSignature * Map<string, FunctionSignature>) option =
+    match sig_.body with
+    | Some body ->
+        let primary = { name = sig_.filename; parms = sig_.parmNames; outputVars = sig_.outputNames; body = body }
+        Some (primary, Map.empty)
+    | None -> None
 #else
 /// loadExternalFunction: load and parse an external .m file.
 /// Returns (primary_FunctionSignature, subfunctions_dict) or None on error.

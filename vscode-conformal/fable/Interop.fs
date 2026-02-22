@@ -38,30 +38,6 @@ type AnalysisResult = {
 // Workspace injection: the TS host provides file content, not System.IO.
 // ---------------------------------------------------------------------------
 
-/// Register external function signatures from pre-read files.
-/// The TS host reads sibling .m files and passes (filename, content) pairs.
-let private buildExternalMap
-    (externalFiles: (string * string) array)
-    : Map<string, ExternalSignature> =
-
-    let result = System.Collections.Generic.Dictionary<string, ExternalSignature>()
-    for (fileName, content) in externalFiles do
-        let key = if fileName.EndsWith(".m") then fileName.[..fileName.Length-3] else fileName
-        match Workspace.extractFunctionSignature content with
-        | None -> ()
-        | Some (funcName, paramCount, returnCount) ->
-            result.[key] <- {
-                filename    = funcName
-                paramCount  = paramCount
-                returnCount = returnCount
-                sourcePath  = ""  // No filesystem path in browser/Fable context
-                body        = None
-                parmNames   = []
-                outputNames = []
-            }
-    result |> Seq.map (fun kv -> (kv.Key, kv.Value)) |> Map.ofSeq
-
-
 /// Parse MATLAB source and try to load a function body for cross-file analysis.
 let private tryParseExternalBody (source: string) : (FunctionSignature * Map<string, FunctionSignature>) option =
     try
@@ -79,6 +55,35 @@ let private tryParseExternalBody (source: string) : (FunctionSignature * Map<str
             let subfunctions = rest |> List.map (fun s -> (s.name, s)) |> Map.ofList
             Some (primary, subfunctions)
     with _ -> None
+
+/// Register external function signatures from pre-read files.
+/// The TS host reads sibling .m files and passes (filename, content) pairs.
+let private buildExternalMap
+    (externalFiles: (string * string) array)
+    : Map<string, ExternalSignature> =
+
+    let result = System.Collections.Generic.Dictionary<string, ExternalSignature>()
+    for (fileName, content) in externalFiles do
+        let key = if fileName.EndsWith(".m") then fileName.[..fileName.Length-3] else fileName
+        match Workspace.extractFunctionSignature content with
+        | None -> ()
+        | Some (funcName, paramCount, returnCount) ->
+            // Try to parse the full body for cross-file analysis
+            let bodyOpt = tryParseExternalBody content
+            let (body, parmNames, outputNames) =
+                match bodyOpt with
+                | Some (primary, _) -> (Some primary.body, primary.parms, primary.outputVars)
+                | None -> (None, [], [])
+            result.[key] <- {
+                filename    = funcName
+                paramCount  = paramCount
+                returnCount = returnCount
+                sourcePath  = ""
+                body        = body
+                parmNames   = parmNames
+                outputNames = outputNames
+            }
+    result |> Seq.map (fun kv -> (kv.Key, kv.Value)) |> Map.ofSeq
 
 // ---------------------------------------------------------------------------
 // Main entry point: called from TypeScript server.
