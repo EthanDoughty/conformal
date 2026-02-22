@@ -4,11 +4,10 @@
 
 ### Static Shape & Dimension Analysis for MATLAB
 
-[![Version](https://img.shields.io/badge/version-1.15.0-orange.svg)](#motivation-and-future-directions)
+[![Version](https://img.shields.io/badge/version-2.0.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Tests](https://img.shields.io/badge/tests-348%20passing-brightgreen.svg)](#test-suite)
-[![pip installable](https://img.shields.io/badge/pip-installable-green.svg)](#getting-started)
+[![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4.svg)](https://dotnet.microsoft.com/download)
+[![Tests](https://img.shields.io/badge/tests-338%20passing-brightgreen.svg)](#test-suite)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
 *Matrices must be **conformable** before they can perform. Conformal makes sure they are.*
@@ -27,8 +26,6 @@ D = [A; B];
 ```
 
 ```
-$ conformal example.m
-
 Warnings:
   - Line 3: Dimension mismatch in expression (A * B):
     inner dims 4 vs 5 (shapes matrix[3 x 4] and matrix[5 x 2])
@@ -41,16 +38,15 @@ Final environment:
 
 ## Requirements
 
-- Python 3.10+
-- `pip install -e '.[lsp]'` installs everything (or `make install`)
+- [.NET 8.0 SDK](https://dotnet.microsoft.com/download) or later
 - Tested on Linux
 - No MATLAB installation required
 
 ## Performance
 
-Single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and cross-file workspace analysis runs in about 70ms. The full test suite (338 `.m` tests plus 10 structural Python tests) finishes in under 500ms, with no MATLAB runtime involved.
+Single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and cross-file workspace analysis runs in about 70ms. The full test suite (338 `.m` tests) finishes in about one second, with no MATLAB runtime involved.
 
-The VS Code extension can analyze on every keystroke by default, with a 500ms debounce.
+The VS Code extension runs the analyzer in-process (compiled to JavaScript via Fable), so there is no subprocess startup cost and analysis can run on every keystroke with a 500ms debounce.
 
 ## What the Analysis Detects
 
@@ -73,8 +69,8 @@ Parenthesized indexing `A(i,j)`, slice indexing `A(:,j)` and `A(i,:)`, range ind
 ### Functions
 
 Over 200 MATLAB builtins are recognized (so calls to them don't produce spurious `W_UNKNOWN_FUNCTION` warnings), and around 128 of those have explicit shape rules across 10 handler categories:
-- **Matrix constructors**: `zeros`, `ones`, `eye`, `rand`, `randn`, `true`, `false`, `nan`, `inf` (0-arg→scalar, 1-arg→n×n, 2-arg→m×n)
-- **Shape transformations**: `reshape` (with conformability check), `repmat`, `diag`, `transpose`, `horzcat`, `vertcat`, `kron` (Kronecker product: `kron(A[m×n], B[p×q])` → `matrix[(m*p) × (n*q)]`), `blkdiag` (variadic block diagonal: `blkdiag(A[m×n], B[p×q])` → `matrix[(m+p) × (n+q)]`)
+- **Matrix constructors**: `zeros`, `ones`, `eye`, `rand`, `randn`, `true`, `false`, `nan`, `inf` (0-arg->scalar, 1-arg->n x n, 2-arg->m x n)
+- **Shape transformations**: `reshape` (with conformability check), `repmat`, `diag`, `transpose`, `horzcat`, `vertcat`, `kron` (Kronecker product: `kron(A[m x n], B[p x q])` -> `matrix[(m*p) x (n*q)]`), `blkdiag` (variadic block diagonal: `blkdiag(A[m x n], B[p x q])` -> `matrix[(m+p) x (n+q)]`)
 - **Element-wise math**: `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `exp`, `log`, `sqrt`, `abs`, `ceil`, `floor`, `round`, `sign`, `real`, `imag`, `cumsum`, `cumprod`, and more
 - **Reductions**: `sum`, `prod`, `mean`, `any`, `all`, `min`, `max`, `diff` (with optional dimension argument)
 - **Type predicates**: `isscalar`, `iscell`, `isempty`, `isnumeric`, `islogical`, `ischar`, `isnan`, `isinf`, `isfinite`, `issymmetric`
@@ -86,7 +82,7 @@ Dimension arithmetic works inside builtin arguments, so `zeros(n+1, 2*m)` is tra
 
 User-defined functions are analyzed at each call site with the caller's argument shapes. Three forms: single return (`function y = f(x)`), multi-return (`function [a, b] = f(x)`), and procedures (including no-arg `function name` syntax). Nested `function...end` blocks inside another function body are also supported, with read/write access to the parent workspace via scope chains and forward-reference visibility between siblings. The parser also handles pre-2016 end-less function definitions (files where `end` is omitted), and space-separated multi-return syntax (`function [a b c] = f(...)` without commas). Anonymous functions `@(x) expr` are analyzed the same way, with by-value closure capture at definition time. Function handles `@funcName` dispatch to their targets. Results are cached per argument shape tuple so the same function called with the same shapes isn't re-analyzed.
 
-When analyzing a file, Conformal also scans sibling `.m` files in the same directory and fully analyzes their bodies (parse → analyze) to infer real return shapes. Dimension aliasing works across file boundaries, subfunctions in external files are supported, and cross-file cycles (A→B→A) are detected and handled gracefully. Unparseable external files emit `W_EXTERNAL_PARSE_ERROR`.
+When analyzing a file, Conformal also scans sibling `.m` files in the same directory and fully analyzes their bodies (parse -> analyze) to infer real return shapes. Dimension aliasing works across file boundaries, subfunctions in external files are supported, and cross-file cycles (A->B->A) are detected and handled gracefully. Unparseable external files emit `W_EXTERNAL_PARSE_ERROR`.
 
 ### Data structures
 
@@ -96,7 +92,7 @@ Cell arrays with `cell(n)` and `cell(m,n)` constructors, curly-brace indexing, a
 
 ### Control flow
 
-`if`/`elseif`/`else`, `for`, `while`, `switch`/`case`/`otherwise`, `try`/`catch`, `break`, `continue`, `return`. When branches assign different shapes to the same variable, the analyzer joins them conservatively. Loops use a single pass by default, or widening-based fixed-point iteration via `--fixpoint` for guaranteed convergence (≤2 iterations). In `--fixpoint` mode, for-loop accumulation patterns (`A = [A; delta]`, `A = [A, delta]`) are detected and refined algebraically: the iteration count is extracted from the range (`(b-a)+1`), and the widened `None` dimension is replaced with `init_dim + iter_count * delta_dim`.
+`if`/`elseif`/`else`, `for`, `while`, `switch`/`case`/`otherwise`, `try`/`catch`, `break`, `continue`, `return`. When branches assign different shapes to the same variable, the analyzer joins them conservatively. Loops use a single pass by default, or widening-based fixed-point iteration via `--fixpoint` for guaranteed convergence (at most 2 iterations). In `--fixpoint` mode, for-loop accumulation patterns (`A = [A; delta]`, `A = [A, delta]`) are detected and refined algebraically: the iteration count is extracted from the range (`(b-a)+1`), and the widened `None` dimension is replaced with `init_dim + iter_count * delta_dim`.
 
 ### Symbolic dimensions
 
@@ -106,7 +102,7 @@ Variables with unknown concrete size get symbolic names like `n`, `m`, `k`. Thes
 
 Scalar integer variables are tracked through an integer interval domain `[lo, hi]` in parallel with shape inference. This enables three additional checks: `W_DIVISION_BY_ZERO` when the divisor is provably zero, `W_INDEX_OUT_OF_BOUNDS` when an index is provably outside the matrix dimensions, and `W_POSSIBLY_NEGATIVE_DIM` when a dimension expression is provably non-positive.
 
-For-loop variables are automatically bound to their range interval (`for i = 1:n` binds `i` to `[1, n]`). Interval bounds accept symbolic values, so `for i = 1:n` records `i ∈ [1, n]` with a symbolic upper bound. Comparisons against symbolic bounds fall back soundly. Intervals join conservatively across control-flow branches.
+For-loop variables are automatically bound to their range interval (`for i = 1:n` binds `i` to `[1, n]`). Interval bounds accept symbolic values, so `for i = 1:n` records `i` in `[1, n]` with a symbolic upper bound. Comparisons against symbolic bounds fall back soundly. Intervals join conservatively across control-flow branches.
 
 Branch conditions narrow variable intervals inside the branch body. `if x > 0` refines `x` to `[1, +inf]` for the true branch, eliminating false-positive OOB and negative-dim warnings when guards prove safety. Supports `>`, `>=`, `<`, `<=`, `==`, `~=`, compound `&&` conditions, and operator flipping (`5 >= x`).
 
@@ -149,7 +145,7 @@ Every expression gets a shape from the abstract domain. There are 7 user-visible
 | `cell[r x c]` | `cell[3 x 1]` | Cell array with optional per-element shape tracking |
 | `unknown` | | Error or indeterminate; the lattice top |
 
-Each kind is a frozen dataclass subclass of `Shape`, so the domain is extensible and hash-safe. The `bottom` shape is the lattice identity (used internally for unbound variables, never surfaced in output).
+The shape domain is implemented as a discriminated union in F# (`Shapes.fs`), with the `bottom` shape serving as the lattice identity (used internally for unbound variables, never surfaced in output).
 
 Dimensions in `matrix[r x c]` can be:
 - Concrete integers: `3`, `100`
@@ -157,24 +153,22 @@ Dimensions in `matrix[r x c]` can be:
 - Symbolic expressions: `n+m`, `2*k`, `n+1`
 - Unknown: `None` (no information available)
 
-Symbolic dimensions use a frozen polynomial representation (`SymDim`) with rational coefficients. Canonicalization handles commutativity (`n+m` = `m+n`), like-term collection (`n+n` = `2*n`), and constant-offset conflict detection. When control flow branches assign conflicting dimensions to the same variable, the analyzer joins them to `None` (unknown). In loops with `--fixpoint`, conflicting dimensions get widened to `None` while stable dimensions are preserved.
+Symbolic dimensions use a polynomial representation (`SymDim`) with rational coefficients. Canonicalization handles commutativity (`n+m` = `m+n`), like-term collection (`n+n` = `2*n`), and constant-offset conflict detection. When control flow branches assign conflicting dimensions to the same variable, the analyzer joins them to `None` (unknown). In loops with `--fixpoint`, conflicting dimensions get widened to `None` while stable dimensions are preserved.
 
 ## Project Structure
 
 ```
-frontend/           Parser (lexer.py, matlab_parser.py) — emits IR dataclass nodes directly
-ir/                 Typed IR dataclass definitions
-analysis/           17 focused submodules: expression eval, statements, functions, builtins, binops, constraints, diagnostics, intervals, witness generation
-runtime/            Shape domain (shapes.py), symbolic dimensions (symdim.py), and environments
-lsp/                Language Server Protocol implementation (server.py, diagnostics.py, hover.py, code_actions.py)
-vscode-conformal/   VS Code extension (TypeScript thin client)
-tests/              Self-checking MATLAB programs (338 `.m` tests in 17 categories, plus 10 structural Python tests)
-tools/              Debugging utilities (AST printer)
+src/                    F# analyzer (lexer, parser, shape inference, builtins, diagnostics, LSP server)
+vscode-conformal/       VS Code extension (TypeScript client + Fable-compiled analyzer)
+  fable/                Fable compilation project (F# to JavaScript, shares src/*.fs files)
+  src/                  TypeScript extension and LSP server code
+tests/                  338 self-checking MATLAB programs in 17 categories
+.github/                CI workflow (build, test, compile Fable, package VSIX)
 ```
 
 ## Test Suite
 
-The analyzer is validated by 338 self-checking MATLAB programs organized into 17 categories, plus 10 structural Python tests in `tests/structural/` that verify Shape lattice completeness (join/widen exhaustiveness, predicate exclusivity, and subclass count). Each MATLAB test embeds its expected behavior as inline assertions:
+The analyzer is validated by 338 self-checking MATLAB programs organized into 17 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -216,7 +210,7 @@ Foundation tests for core matrix operations and dimension compatibility.
 <details open>
 <summary><h3>Symbolic Dimensions (6 tests)</h3></summary>
 
-Tests symbolic dimension tracking, arithmetic, and canonical polynomial representation introduced in v0.13.
+Tests symbolic dimension tracking, arithmetic, and canonical polynomial representation.
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -227,7 +221,7 @@ Tests symbolic dimension tracking, arithmetic, and canonical polynomial represen
 | `like_terms.m` | Like-term collection: `(n+n)` canonicalizes to `(2*n)` | 0 |
 | `rational_dimensions.m` | Rational coefficients in symbolic dimensions (e.g., `n/2`) | 0 |
 
->Symbolic dimensions are represented as frozen polynomial dataclasses (`SymDim`) with canonical equality and rational coefficients, enabling precise tracking of parametric shapes across function boundaries.
+>Symbolic dimensions are represented as canonical polynomials with rational coefficients, enabling precise tracking of parametric shapes across function boundaries.
 
 </details>
 
@@ -246,9 +240,9 @@ MATLAB-style indexing including scalar, slice, range, linear indexing, and `end`
 | `invalid_col_index.m` | Constant-range column indexing edge cases | 0 |
 | `invalid_linear_index.m` | Non-scalar index argument flagged | 1 |
 | `end_arithmetic_matrix.m` | `end` keyword arithmetic in array indexing (`end-1`, `end-2:end`) | 0 |
-| `symbolic_range.m` | Symbolic range indexing: variable endpoint `A(1:k,:)` → `k x c` extent | 0 |
+| `symbolic_range.m` | Symbolic range indexing: variable endpoint `A(1:k,:)` -> `k x c` extent | 0 |
 | `end_position.m` | `end` resolves to column dimension in column position (non-square matrix) | 0 |
-| `symbolic_end_range.m` | `end` on symbolic matrices: `A(1:end,:)` → `n x m`, `A(1:end-1,:)` → `(n-1) x m` | 0 |
+| `symbolic_end_range.m` | `end` on symbolic matrices: `A(1:end,:)` -> `n x m`, `A(1:end-1,:)` -> `(n-1) x m` | 0 |
 | `index_assign.m` | Basic indexed assignment `M(i,j) = expr` preserves matrix dimensions | 0 |
 | `index_assign_bounds.m` | MATLAB auto-expands arrays on write; no `W_INDEX_OUT_OF_BOUNDS` on indexed assignment | 0 |
 | `index_assign_loop.m` | Indexed assignment inside for loop body | 0 |
@@ -296,14 +290,14 @@ Matrix literals, string literals, and concatenation constraints.
 |------|-------------------|----------|
 | `matrix_literal.m` | Basic matrix literals `[1 2; 3 4]` parsed and shaped correctly | 0 |
 | `horzcat_vertcat.m` | Horizontal/vertical concatenation dimension constraints | 1 |
-| `symbolic_concat.m` | Symbolic dimension addition in concatenation (e.g., `[A B]` → `n x (k+m)`) | 0 |
+| `symbolic_concat.m` | Symbolic dimension addition in concatenation (e.g., `[A B]` -> `n x (k+m)`) | 0 |
 | `string_literal.m` | String literals with both quote styles (`'foo'`, `"bar"`) | 0 |
 | `string_horzcat.m` | String concatenation via horizontal concatenation | 0 |
 | `string_matrix_error.m` | String-matrix arithmetic operations flagged | 1 |
 | `string_in_control_flow.m` | String/scalar shape joins across branches | 0 |
 | `matrix_spacing.m` | Matrix literal spacing: `[1 -2]` is two elements (not subtraction) | 0 |
 | `cell_spacing.m` | Cell literal spacing disambiguation (`{1 -2}` is two elements) | 0 |
-| `empty_concat.m` | `[]` is identity for concatenation: `[[] x]` → `x`, `[[] ; x]` → `x` | 1 |
+| `empty_concat.m` | `[]` is identity for concatenation: `[[] x]` -> `x`, `[[] ; x]` -> `x` | 1 |
 | `negative_matrix_elements.m` | Matrix literals with negative elements: `[-1 -2]` is `1x2`, not a scalar | 0 |
 
 </details>
@@ -359,8 +353,8 @@ Loop analysis with single-pass and fixed-point widening modes (via `--fixpoint`)
 | `loop_exit_join.m` | Variables unmodified in loop preserve pre-loop state | 0 |
 | `loop_may_not_execute.m` | Post-loop join accounts for zero-iteration case | 1 |
 | `warning_dedup.m` | Warnings deduplicated inside loops | 1 |
-| `fixpoint_convergence.m` | Fixed-point iteration converges in ≤2 iterations | 1 |
-| `widen_col_grows.m` | Column grows, row stable → row preserved, column widened | 1 |
+| `fixpoint_convergence.m` | Fixed-point iteration converges in at most 2 iterations | 1 |
+| `widen_col_grows.m` | Column grows, row stable: row preserved, column widened | 1 |
 | `widen_multiple_vars.m` | Multiple variables with independent stability patterns | 1 |
 | `widen_self_reference.m` | Self-referencing updates (`A = A + A`) trigger widening | 1 |
 | `widen_while_growth.m` | While loop with matrix growth | 1 |
@@ -372,13 +366,13 @@ Loop analysis with single-pass and fixed-point widening modes (via `--fixpoint`)
 | `widen_stable_overwrite.m` | Stable dimension overwrite in loop | 1 |
 | `widen_unknown_false_positive.m` | Unknown function doesn't spuriously widen unrelated vars | 1 |
 | `widen_unknown_in_body.m` | Unknown function result overwrites variable | 1 |
-| `for_iter_count.m` | Iteration count extraction: concrete (`1:5`→5) and symbolic (`1:n`→n) ranges | 2 |
-| `for_accum_vertcat.m` | Vertcat accumulation refined: `A=[A;delta]` for 10 iters → concrete row count | 1 |
-| `for_accum_horzcat.m` | Horzcat accumulation refined: `D=[D,delta]` for symbolic `k` iters → `matrix[5 x (k+2)]` | 1 |
+| `for_iter_count.m` | Iteration count extraction: concrete (`1:5` gives 5) and symbolic (`1:n` gives n) ranges | 2 |
+| `for_accum_vertcat.m` | Vertcat accumulation refined: `A=[A;delta]` for 10 iters gives concrete row count | 1 |
+| `for_accum_horzcat.m` | Horzcat accumulation refined: `D=[D,delta]` for symbolic `k` iters gives `matrix[5 x (k+2)]` | 1 |
 | `for_accum_symbolic.m` | Symbolic range `a:b` accumulation: iteration count `(b-a+1)` used algebraically | 1 |
 | `for_accum_no_match.m` | Conservative bailout for self-referencing delta, stepped range, conditional accumulation | 0 |
 
->Principled widening-based loop analysis (v0.9.2) uses a 3-phase algorithm (discover, stabilize, post-loop join) that guarantees convergence in ≤2 iterations by widening conflicting dimensions to `None` while preserving stable dimensions.
+>Principled widening-based loop analysis uses a 3-phase algorithm (discover, stabilize, post-loop join) that guarantees convergence in at most 2 iterations by widening conflicting dimensions to `None` while preserving stable dimensions.
 
 </details>
 
@@ -399,8 +393,8 @@ Named Functions (28 tests)
 | `function_then_script.m` | Function definitions before script statements | 0 |
 | `call_with_mismatch.m` | Call with incompatible argument shape | 1 |
 | `recursion.m` | Recursive function detected (guard prevents infinite loop) | 1 |
-| `cache_hit.m` | Polymorphic cache hit (same args → reuse result) | 0 |
-| `cache_miss.m` | Polymorphic cache miss (different args → re-analyze) | 1 |
+| `cache_hit.m` | Polymorphic cache hit (same args reuse result) | 0 |
+| `cache_miss.m` | Polymorphic cache miss (different args re-analyze) | 1 |
 | `cache_hit_with_warning.m` | Warnings replayed on cache hit | 2 |
 | `cache_symbolic_args.m` | Polymorphic caching with symbolic dimension arguments | 0 |
 | `cache_warning_replay.m` | Warning replay preserves both call-site and body line numbers | 2 |
@@ -454,15 +448,15 @@ Workspace Awareness (17 tests)
 | `workspace_dim_aliasing.m` | Dimension aliasing across file boundaries (symbolic dims propagate) | 0 |
 | `workspace_return.m` | External function with return statement infers correct shape | 0 |
 | `workspace_subfunctions.m` | Subfunctions inside external file work correctly | 0 |
-| `workspace_cycle_test.m` | Cross-file cycle A→B→A detected; returns unknown gracefully | 0 |
+| `workspace_cycle_test.m` | Cross-file cycle A->B->A detected; returns unknown gracefully | 0 |
 | `workspace_parse_error.m` | Unparseable external file handled gracefully (no caller-visible warning) | 0 |
-| `workspace_helper.m` | Helper file for workspace tests (single-return function) | — |
-| `workspace_multi_helper.m` | Helper file for workspace tests (multi-return function) | — |
-| `workspace_return_helper.m` | Helper file: function with return statement | — |
-| `workspace_subfunctions_helper.m` | Helper file: external file with subfunctions | — |
-| `workspace_cycle_a.m` | Helper file for cycle test (calls cycle_b) | — |
-| `workspace_cycle_b.m` | Helper file for cycle test (calls cycle_a) | — |
-| `workspace_parse_error_helper.m` | Helper file with recoverable parse error | — |
+| `workspace_helper.m` | Helper file for workspace tests (single-return function) | - |
+| `workspace_multi_helper.m` | Helper file for workspace tests (multi-return function) | - |
+| `workspace_return_helper.m` | Helper file: function with return statement | - |
+| `workspace_subfunctions_helper.m` | Helper file: external file with subfunctions | - |
+| `workspace_cycle_a.m` | Helper file for cycle test (calls cycle_b) | - |
+| `workspace_cycle_b.m` | Helper file for cycle test (calls cycle_a) | - |
+| `workspace_parse_error_helper.m` | Helper file with recoverable parse error | - |
 
 Nested Functions (7 tests)
 
@@ -478,9 +472,9 @@ Nested Functions (7 tests)
 
 Functions are analyzed at each call site with the caller's argument shapes, and results are cached per argument shape tuple so the same function called with the same shapes isn't re-analyzed. Symbolic dimension names can propagate across function boundaries, so `f(n)` where `f = @(k) zeros(k,k)` infers `matrix[n x n]`. Lambdas capture their environment by-value at definition time, matching MATLAB semantics. When branches assign different lambdas, both bodies are analyzed and the results are joined at the call site.
 
-Nested functions have read access to the parent scope via scope chains, can write back to the parent workspace after returning, and can call sibling nested functions via forward references. A nested function's parameters shadow parent variables without any write-back. The scope chain uses `ScopedEnv` parent pointers, so `get()` walks up to find variables defined in any enclosing scope.
+Nested functions have read access to the parent scope via scope chains, can write back to the parent workspace after returning, and can call sibling nested functions via forward references. A nested function's parameters shadow parent variables without any write-back. The scope chain uses parent pointers, so `get()` walks up to find variables defined in any enclosing scope.
 
-External `.m` files are fully parsed and analyzed to infer real return shapes, with cross-file cycles (A→B→A) handled gracefully. Local functions defined inside external files are accessible during cross-file analysis.
+External `.m` files are fully parsed and analyzed to infer real return shapes, with cross-file cycles (A->B->A) handled gracefully. Local functions defined inside external files are accessible during cross-file analysis.
 
 </details>
 
@@ -508,7 +502,7 @@ Struct creation, field access, control-flow joins, and open struct lattice behav
 <details>
 <summary><h3>Cells (26 tests)</h3></summary>
 
-Cell array literals, curly-brace indexing, element assignment, and per-element shape tracking (v0.12.2-0.14.1).
+Cell array literals, curly-brace indexing, element assignment, and per-element shape tracking.
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -576,7 +570,7 @@ Parser error recovery and unsupported construct handling (graceful degradation).
 <details>
 <summary><h3>Constraints (13 tests)</h3></summary>
 
-Dimension constraint solving: equality constraints recorded during operations, validated on concrete bindings, and joined path-sensitively across control flow (v0.15.0).
+Dimension constraint solving: equality constraints recorded during operations, validated on concrete bindings, and joined path-sensitively across control flow.
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -601,7 +595,7 @@ Dimension constraint solving: equality constraints recorded during operations, v
 <details>
 <summary><h3>Intervals (19 tests)</h3></summary>
 
-Integer interval domain tracking scalar value ranges for division-by-zero, out-of-bounds indexing, and negative-dimension checks (v1.7.0). Conditional interval refinement and symbolic interval bounds added in v1.8.0.
+Integer interval domain tracking scalar value ranges for division-by-zero, out-of-bounds indexing, and negative-dimension checks. Conditional interval refinement and symbolic interval bounds.
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -617,13 +611,13 @@ Integer interval domain tracking scalar value ranges for division-by-zero, out-o
 | `conditional_refine_basic.m` | `if x > 0` narrows `x` interval in true branch; no false OOB warning | 0 |
 | `conditional_refine_compound.m` | Compound `&&` conditions apply both refinements simultaneously | 0 |
 | `conditional_refine_eliminates_warning.m` | Guard condition proves index safety, eliminating false-positive OOB | 0 |
-| `conditional_refine_else.m` | Condition flipped for else branch (`if x > 3` → else refines `x` to `(-inf, 3]`) | 0 |
+| `conditional_refine_else.m` | Condition flipped for else branch (`if x > 3` refines else `x` to `(-inf, 3]`) | 0 |
 | `conditional_refine_flipped.m` | Operator flipping: `5 >= x` refines `x` correctly | 0 |
 | `conditional_refine_neq.m` | `~=` comparison: no refinement (can't exclude a point from interval) | 0 |
 | `conditional_refine_symbolic.m` | Symbolic condition `if n > 0`: refinement with symbolic bounds | 0 |
 | `conditional_refine_while.m` | While loop condition refines interval in loop body | 0 |
-| `symbolic_interval_for_loop.m` | Symbolic upper bound `for i = 1:n` → `i ∈ [1, n]`; no false OOB on `A(i,:)` | 0 |
-| `scalar_propagation.m` | Concrete scalar values propagate into dimension constructors (`m = 3; zeros(m,m)` → `matrix[3 x 3]`) | 0 |
+| `symbolic_interval_for_loop.m` | Symbolic upper bound `for i = 1:n` gives `i` in `[1, n]`; no false OOB on `A(i,:)` | 0 |
+| `scalar_propagation.m` | Concrete scalar values propagate into dimension constructors (`m = 3; zeros(m,m)` gives `matrix[3 x 3]`) | 0 |
 
 >Interval analysis runs in parallel with shape inference. `W_INDEX_OUT_OF_BOUNDS` and `W_DIVISION_BY_ZERO` have Error severity (definite runtime errors). Conditional refinement eliminates false positives when branch guards prove safety; symbolic bounds fall back soundly.
 
@@ -636,27 +630,27 @@ Adversarial cross-file analysis scenarios: error propagation, struct/cell return
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
-| `workspace_mega.m` | Comprehensive cross-file stress test exercising all workspace analysis features | — |
-| `ws_accumulate.m` | Helper: for-loop accumulation in external function | — |
-| `ws_builtin_chain.m` | Helper: chain of builtin operations across file boundary | — |
-| `ws_conditional_shape.m` | Helper: conditional shape join (if/else returning different shapes) | — |
-| `ws_covariance.m` | Helper: covariance matrix computation (domain-authentic pattern) | — |
-| `ws_gradient_step.m` | Helper: gradient descent step (domain-authentic pattern) | — |
-| `ws_kalman_predict.m` | Helper: Kalman filter prediction (domain-authentic pattern) | — |
-| `ws_make_cell_pair.m` | Helper: function returning cell array across file boundary | — |
-| `ws_make_result.m` | Helper: struct return across file boundary | — |
-| `ws_normalize_cols.m` | Helper: column normalization across file boundary | — |
-| `ws_procedure_only.m` | Helper: procedure (no return values) across file boundary | — |
-| `ws_residual.m` | Helper: residual computation across file boundary | — |
-| `ws_return_unknown.m` | Helper: function that returns unknown shape | — |
-| `ws_state_update.m` | Helper: state update function across file boundary | — |
-| `ws_two_args.m` | Helper: two-argument function across file boundary | — |
-| `ws_with_loop.m` | Helper: function with loop body across file boundary | — |
-| `ws_with_subfunc.m` | Helper: function with subfunctions across file boundary | — |
-| `ws_fill_diag.m` | Helper: function using indexed assignment to fill diagonal; caller infers correct shape | — |
-| `sum.m` | Helper: builtin shadowing test (shadows built-in `sum`) | — |
-| `ws_continued.m` | Helper: function signature with `...` line continuation across parameters | — |
-| `ws_tilde_param.m` | Helper: function with tilde `~` as unused parameter in definition | — |
+| `workspace_mega.m` | Comprehensive cross-file stress test exercising all workspace analysis features | - |
+| `ws_accumulate.m` | Helper: for-loop accumulation in external function | - |
+| `ws_builtin_chain.m` | Helper: chain of builtin operations across file boundary | - |
+| `ws_conditional_shape.m` | Helper: conditional shape join (if/else returning different shapes) | - |
+| `ws_covariance.m` | Helper: covariance matrix computation (domain-authentic pattern) | - |
+| `ws_gradient_step.m` | Helper: gradient descent step (domain-authentic pattern) | - |
+| `ws_kalman_predict.m` | Helper: Kalman filter prediction (domain-authentic pattern) | - |
+| `ws_make_cell_pair.m` | Helper: function returning cell array across file boundary | - |
+| `ws_make_result.m` | Helper: struct return across file boundary | - |
+| `ws_normalize_cols.m` | Helper: column normalization across file boundary | - |
+| `ws_procedure_only.m` | Helper: procedure (no return values) across file boundary | - |
+| `ws_residual.m` | Helper: residual computation across file boundary | - |
+| `ws_return_unknown.m` | Helper: function that returns unknown shape | - |
+| `ws_state_update.m` | Helper: state update function across file boundary | - |
+| `ws_two_args.m` | Helper: two-argument function across file boundary | - |
+| `ws_with_loop.m` | Helper: function with loop body across file boundary | - |
+| `ws_with_subfunc.m` | Helper: function with subfunctions across file boundary | - |
+| `ws_fill_diag.m` | Helper: function using indexed assignment to fill diagonal; caller infers correct shape | - |
+| `sum.m` | Helper: builtin shadowing test (shadows built-in `sum`) | - |
+| `ws_continued.m` | Helper: function signature with `...` line continuation across parameters | - |
+| `ws_tilde_param.m` | Helper: function with tilde `~` as unused parameter in definition | - |
 
 >These tests exercise cross-file error propagation, struct and cell returns, builtin shadowing, and domain-authentic patterns like Kalman filters and gradient descent.
 
@@ -670,32 +664,32 @@ Cross-file workspace scaling tests: chains, diamond patterns, fan-out/fan-in, po
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
 | `workspace_scaling.m` | Comprehensive cross-file stress test across all 26 helpers (chains, diamonds, fan-out, linear algebra patterns, cycle detection) | 0 |
-| `ws_add_matrices.m` | Helper: element-wise matrix addition across file boundary | — |
-| `ws_chain_add.m` | Helper: chained cross-file call (depth 2) | — |
-| `ws_compose.m` | Helper: function composition across file boundary | — |
-| `ws_deep_chain.m` | Helper: chain of depth 5 across files | — |
-| `ws_diamond_left.m` | Helper: left branch of diamond dependency pattern | — |
-| `ws_diamond_right.m` | Helper: right branch of diamond dependency pattern | — |
-| `ws_diamond_top.m` | Helper: top of diamond (calls left and right) | — |
-| `ws_fan_out.m` | Helper: fan-out to multiple sibling files | — |
-| `ws_gram.m` | Helper: Gram matrix computation (A'*A) | — |
-| `ws_kron_pair.m` | Helper: Kronecker product across file boundary | — |
-| `ws_make_rect.m` | Helper: construct rectangular matrix | — |
-| `ws_make_sym.m` | Helper: symmetrize a matrix | — |
-| `ws_mega_pipeline.m` | Helper: multi-stage pipeline across files | — |
-| `ws_normalize.m` | Helper: column normalization | — |
-| `ws_outer_product.m` | Helper: outer product computation | — |
-| `ws_pipeline.m` | Helper: two-stage pipeline | — |
-| `ws_project.m` | Helper: orthogonal projection | — |
-| `ws_recursive_a.m` | Helper: cross-file cycle participant (calls recursive_b) | — |
-| `ws_recursive_b.m` | Helper: cross-file cycle participant (calls recursive_a) | — |
-| `ws_reduce.m` | Helper: reduction to scalar | — |
-| `ws_reshape_safe.m` | Helper: safe reshape across file boundary | — |
-| `ws_scale.m` | Helper: scalar multiplication across file boundary | — |
-| `ws_solve.m` | Helper: linear solve via backslash | — |
-| `ws_stack_cols.m` | Helper: horizontal concatenation across file boundary | — |
-| `ws_stack_rows.m` | Helper: vertical concatenation across file boundary | — |
-| `ws_transform.m` | Helper: affine transformation | — |
+| `ws_add_matrices.m` | Helper: element-wise matrix addition across file boundary | - |
+| `ws_chain_add.m` | Helper: chained cross-file call (depth 2) | - |
+| `ws_compose.m` | Helper: function composition across file boundary | - |
+| `ws_deep_chain.m` | Helper: chain of depth 5 across files | - |
+| `ws_diamond_left.m` | Helper: left branch of diamond dependency pattern | - |
+| `ws_diamond_right.m` | Helper: right branch of diamond dependency pattern | - |
+| `ws_diamond_top.m` | Helper: top of diamond (calls left and right) | - |
+| `ws_fan_out.m` | Helper: fan-out to multiple sibling files | - |
+| `ws_gram.m` | Helper: Gram matrix computation (A'*A) | - |
+| `ws_kron_pair.m` | Helper: Kronecker product across file boundary | - |
+| `ws_make_rect.m` | Helper: construct rectangular matrix | - |
+| `ws_make_sym.m` | Helper: symmetrize a matrix | - |
+| `ws_mega_pipeline.m` | Helper: multi-stage pipeline across files | - |
+| `ws_normalize.m` | Helper: column normalization | - |
+| `ws_outer_product.m` | Helper: outer product computation | - |
+| `ws_pipeline.m` | Helper: two-stage pipeline | - |
+| `ws_project.m` | Helper: orthogonal projection | - |
+| `ws_recursive_a.m` | Helper: cross-file cycle participant (calls recursive_b) | - |
+| `ws_recursive_b.m` | Helper: cross-file cycle participant (calls recursive_a) | - |
+| `ws_reduce.m` | Helper: reduction to scalar | - |
+| `ws_reshape_safe.m` | Helper: safe reshape across file boundary | - |
+| `ws_scale.m` | Helper: scalar multiplication across file boundary | - |
+| `ws_solve.m` | Helper: linear solve via backslash | - |
+| `ws_stack_cols.m` | Helper: horizontal concatenation across file boundary | - |
+| `ws_stack_rows.m` | Helper: vertical concatenation across file boundary | - |
+| `ws_transform.m` | Helper: affine transformation | - |
 
 >These tests cover the scaling behavior of cross-file analysis, including chains up to depth 5, diamond dependency patterns, and cross-file cycle detection, all with symbolic dimension propagation.
 
@@ -704,7 +698,7 @@ Cross-file workspace scaling tests: chains, diamond patterns, fan-out/fan-in, po
 <details>
 <summary><h3>Witness (7 tests)</h3></summary>
 
-Incorrectness witness generation: concrete proofs that dimension conflict warnings are real bugs, not false positives (v1.14.0).
+Incorrectness witness generation: concrete proofs that dimension conflict warnings are real bugs, not false positives.
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -726,17 +720,13 @@ Incorrectness witness generation: concrete proofs that dimension conflict warnin
 
 ```bash
 # Run all 338 .m tests
-make test
-python3 conformal.py --tests
-
-# Run the 10 structural lattice tests
-python3 tests/structural/test_shape_completeness.py
+cd src && dotnet run -- --tests
 
 # Run with fixed-point loop analysis
-python3 conformal.py --fixpoint --tests
+cd src && dotnet run -- --fixpoint --tests
 
 # Run strict mode (show all warnings including informational and low-confidence diagnostics)
-python3 conformal.py --strict --tests
+cd src && dotnet run -- --strict --tests
 ```
 
 ## Getting Started
@@ -744,13 +734,12 @@ python3 conformal.py --strict --tests
 ```bash
 git clone https://github.com/EthanDoughty/conformal.git
 cd conformal
-make install          # pip install -e '.[lsp]' (editable + pygls)
-conformal --tests     # verify 338 .m tests pass
+dotnet run --project src/ConformalParse.fsproj -- --tests   # verify 338 tests pass
 ```
 
 Analyze a file:
 ```bash
-conformal tests/basics/inner_dim_mismatch.m
+dotnet run --project src/ConformalParse.fsproj -- tests/basics/inner_dim_mismatch.m
 ```
 
 ## IDE Integration
@@ -764,6 +753,8 @@ Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/item
 code --install-extension EthanDoughty.conformal
 ```
 
+The extension runs the analyzer in-process by compiling the F# codebase to JavaScript via Fable. There is no external runtime dependency: no Python, no .NET, no subprocess. The compiled analyzer is bundled directly into the extension at 181KB.
+
 Diagnostics appear as underlines as you type, with a configurable 500ms debounce. You can hover any variable to see its inferred shape, including function signatures for user-defined and external functions. There are quick-fix suggestions for common mistakes like `*` to `.*`, `&&` to `&`, and `||` to `|`. Function definitions show in the sidebar via document symbols, and the status bar tracks warning and error counts along with active modes.
 
 When you save a `.m` file, the server re-analyzes all open files in the same directory, since they could depend on each other. If the server crashes, it auto-restarts up to 3 times. `W_UNSUPPORTED_*` diagnostics render as faded text so they're visually distinct from real errors, and diagnostics with a conflict site link to the original line. Parse errors show as diagnostics rather than crashing the analysis.
@@ -773,48 +764,35 @@ The extension includes built-in MATLAB syntax highlighting, so you don't need th
 **Configuration Settings**:
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `conformal.pythonPath` | `python3` | Python interpreter (leave as default for auto-setup) |
-| `conformal.serverPath` | _(empty)_ | Analyzer source path (for development only) |
 | `conformal.fixpoint` | `false` | Enable fixed-point loop analysis (iterative convergence) |
 | `conformal.strict` | `false` | Show all warnings including informational and low-confidence diagnostics |
 | `conformal.analyzeOnChange` | `true` | Analyze as you type (500ms debounce) |
 
-The extension spawns `python3 -m lsp` as a subprocess over stdio. The LSP server runs the analyzer on document open, save, and change events. Diagnostics are published to the editor, and hover requests return shapes from the last successful analysis.
-
-**Manual LSP Server Usage**:
+**Native .NET LSP Server**:
 ```bash
-# Start LSP server (stdio mode for editor integration)
-python3 -m lsp
-
-# The server expects LSP JSON-RPC messages on stdin
-# and writes responses to stdout
+# Start native .NET LSP server (for editors that can launch a .NET process)
+cd src && dotnet run -- --lsp
 ```
 
 ## CLI Options
 
-`conformal file.m` – analyze a file (IR-based)
+`dotnet run --project src/ConformalParse.fsproj -- file.m` - analyze a file
 
-`--tests` – run full test suite
+`--tests` - run full test suite
 
-`--strict` – show all warnings including informational and low-confidence diagnostics
+`--strict` - show all warnings including informational and low-confidence diagnostics
 
-`--fixpoint` – use fixed-point iteration for loop analysis
+`--fixpoint` - use fixed-point iteration for loop analysis
 
-`--witness [MODE]` – attach incorrectness witnesses to dimension conflict warnings; MODE can be `enrich` (default, prints witness below each warning), `filter` (only show warnings with a confirmed witness), or `tag` (prefix each warning with `[confirmed]` or `[possible]`); the LSP server always runs witness generation and enriches diagnostics automatically
+`--witness [MODE]` - attach incorrectness witnesses to dimension conflict warnings; MODE can be `enrich` (default, prints witness below each warning), `filter` (only show warnings with a confirmed witness), or `tag` (prefix each warning with `[confirmed]` or `[possible]`); the LSP server always runs witness generation and enriches diagnostics automatically
+
+`--lsp` - start the native .NET Language Server Protocol server
 
 Exit codes:
 
-`0` – success
+`0` - success
 
-`1` – parse error, analyzer mismatch, or test failure
-
-## Why Python?
-
-Most of the work in this project is tree manipulation: walking ASTs, matching patterns on IR nodes, joining lattice elements, and tracking dictionaries of variable shapes. Python is well-suited for this. Dataclasses make clean IR nodes, dicts are first-class, and there's no compile step slowing down iteration. The entire analyzer ships as a single codebase with zero dependencies.
-
-The obvious downside is speed. For CLI use and files up to a few hundred lines, it's plenty fast. For IDE integration (the 1.0 goal), latency will matter more. The plan there is incremental analysis and per-function caching, not a full rewrite. The pipeline is cleanly layered (parser emits IR directly → analysis), so if profiling reveals a bottleneck, it can be addressed without rearchitecting.
-
-For adoption, the distribution story matters more than the language. A VS Code extension that bundles everything and just works will get more users than a fast binary that requires manual setup.
+`1` - parse error, analyzer mismatch, or test failure
 
 ## Real-World Compatibility
 

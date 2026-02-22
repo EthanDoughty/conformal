@@ -1,29 +1,3 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-
-# Distribution / packaging
-build/
-dist/
-*.egg-info/
-*.egg
-
-# Virtual environments
-venv/
-.venv/
-env/
-ENV/
-
-# Testing
-.pytest_cache/
-.tox/
-.coverage
-htmlcov/
-*.cover
-
 # IDEs
 .vscode/
 .idea/
@@ -48,11 +22,6 @@ CLAUDE.md
 AGENTS.md
 TASK.md
 FINDINGS-*.md
-tools/ai_local.py
-tools/ask
-tools/chat
-ask
-chat
 
 # Dogfood corpus (third-party MATLAB files for testing)
 dogfood/

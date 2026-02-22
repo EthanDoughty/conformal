@@ -23,17 +23,17 @@ jobs:
           node-version: '20'
 
       - name: Restore F# dependencies
-        run: dotnet restore fsharp/ConformalParse.fsproj
+        run: dotnet restore src/ConformalParse.fsproj
 
       - name: Build F# analyzer
-        run: dotnet build fsharp/ConformalParse.fsproj --no-restore
+        run: dotnet build src/ConformalParse.fsproj --no-restore
 
       - name: Run F# tests
-        run: dotnet run --project fsharp/ConformalParse.fsproj -- --tests
+        run: dotnet run --project src/ConformalParse.fsproj -- --tests
 
       - name: Install Fable
         run: |
-          cd fsharp
+          cd src
           dotnet tool restore
 
       - name: Restore Fable project dependencies
@@ -41,7 +41,7 @@ jobs:
 
       - name: Compile Fable (F# to JavaScript)
         run: |
-          cd fsharp
+          cd src
           dotnet fable ../vscode-conformal/fable/ConformalFable.fsproj --outDir ../vscode-conformal/src/fable-out
 
       - name: Install extension dependencies

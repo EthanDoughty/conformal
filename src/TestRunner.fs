@@ -200,7 +200,7 @@ let run (strict: bool) (fixpoint: bool) : int =
         let candidate = Path.Combine(cwd, "tests")
         if Directory.Exists candidate then candidate
         else
-            // Try parent of fsharp/ directory
+            // Try parent of src/ directory
             let parent = Path.GetDirectoryName(cwd)
             Path.Combine(parent, "tests")
 
