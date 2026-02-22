@@ -27,6 +27,11 @@
     <Compile Include="MatrixLiterals.fs" />
     <Compile Include="EvalBinop.fs" />
     <Compile Include="EvalExpr.fs" />
+    <Compile Include="Workspace.fs" />
+    <Compile Include="EvalBuiltins.fs" />
+    <Compile Include="StmtFuncAnalysis.fs" />
+    <Compile Include="Witness.fs" />
+    <Compile Include="Analysis.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 </Project>

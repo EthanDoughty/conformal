@@ -9,6 +9,8 @@ open Builtins
 open Context
 open Intervals
 open EvalExpr
+open EvalBuiltins
+open Analysis
 
 // ---------------------------------------------------------------------------
 // Smoke test for Phase 1: SymDim + Shapes + Env
@@ -361,6 +363,123 @@ let runPhase3Test () : int =
         1
 
 
+// ---------------------------------------------------------------------------
+// Smoke test for Phase 4: EvalBuiltins + StmtFuncAnalysis + Analysis
+// ---------------------------------------------------------------------------
+
+let runPhase4Test () : int =
+    let mutable failures = 0
+
+    let check (label: string) (expected: string) (actual: string) =
+        if expected = actual then
+            Console.WriteLine("  PASS  " + label + " => " + actual)
+        else
+            Console.Error.WriteLine("  FAIL  " + label + ": expected \"" + expected + "\" got \"" + actual + "\"")
+            failures <- failures + 1
+
+    let checkBool (label: string) (expected: bool) (actual: bool) =
+        check label (string expected) (string actual)
+
+    // --- EvalBuiltins: builtin dispatch sets ---
+    Console.WriteLine("=== Phase 4: EvalBuiltins dispatch sets ===")
+    checkBool "zeros in PASSTHROUGH"         false (Set.contains "zeros"  PASSTHROUGH_BUILTINS)
+    checkBool "abs in PASSTHROUGH"           true  (Set.contains "abs"    PASSTHROUGH_BUILTINS)
+    checkBool "sum in REDUCTION"             true  (Set.contains "sum"    REDUCTION_BUILTINS)
+    checkBool "isscalar in SCALAR_PREDICATE" true  (Set.contains "isscalar" SCALAR_PREDICATE_BUILTINS)
+    checkBool "double in TYPE_CAST"          true  (Set.contains "double"  TYPE_CAST_BUILTINS)
+    checkBool "length in SCALAR_QUERY"       true  (Set.contains "length"  SCALAR_QUERY_BUILTINS)
+    checkBool "eye in MATRIX_CONSTRUCTOR"     true  (Set.contains "eye"     MATRIX_CONSTRUCTOR_BUILTINS)
+
+    // --- EvalBuiltins: zeros(3,4) -> matrix[3 x 4] ---
+    Console.WriteLine("=== Phase 4: evalBuiltinCall zeros(3,4) ===")
+    let env0 = Env.Env.create ()
+    let warnRef = ref []
+    let ctx0 = AnalysisContext()
+
+    let stubEval (e: Ir.Expr) (_env: Env.Env) (_w: Diagnostic list ref) (_ctx: AnalysisContext) : Shape =
+        match e with
+        | Ir.Const(_, _, v) -> Scalar
+        | _ -> UnknownShape
+
+    let stubGetInterval (_e: Ir.Expr) (_env: Env.Env) (_ctx: AnalysisContext) : Intervals.Interval option =
+        None
+
+    let zerosArgs = [ Ir.IndexExpr(1, 0, Ir.Const(1, 0, 3.0)); Ir.IndexExpr(1, 0, Ir.Const(1, 0, 4.0)) ]
+    let zerosResult = evalBuiltinCall "zeros" 1 zerosArgs env0 warnRef ctx0 stubEval stubGetInterval
+    check "zeros(3,4)" "matrix[3 x 4]" (shapeToString zerosResult)
+    checkBool "zeros(3,4) no warnings" true warnRef.Value.IsEmpty
+
+    // --- EvalBuiltins: size(A) -> scalar ---
+    Console.WriteLine("=== Phase 4: evalBuiltinCall size(A) ===")
+    Env.Env.set env0 "A" (Matrix(Concrete 3, Concrete 4))
+    let sizeArgs = [ Ir.IndexExpr(1, 0, Ir.Var(1, 0, "A")) ]
+    let sizeEval (e: Ir.Expr) (_env: Env.Env) (_w: Diagnostic list ref) (_ctx: AnalysisContext) : Shape =
+        match e with
+        | Ir.Var(_, _, "A") -> Matrix(Concrete 3, Concrete 4)
+        | _ -> UnknownShape
+    let sizeResult = evalBuiltinCall "size" 1 sizeArgs env0 warnRef ctx0 sizeEval stubGetInterval
+    // size(A) with 1 arg returns matrix[1 x 2]
+    check "size(A) 1-arg" "matrix[1 x 2]" (shapeToString sizeResult)
+
+    // --- analyzeProgramIr: simple assignment ---
+    Console.WriteLine("=== Phase 4: analyzeProgramIr simple assignment ===")
+    let simpleProgram : Ir.Program = {
+        body = [ Ir.Assign(1, 0, "x", Ir.Const(1, 0, 5.0)) ]
+    }
+    let ctx1 = AnalysisContext()
+    let (env1, diags1) = analyzeProgramIr simpleProgram ctx1
+    check "x = 5 -> scalar" "scalar" (shapeToString (Env.Env.get env1 "x"))
+    checkBool "no diagnostics" true diags1.IsEmpty
+
+    // --- analyzeProgramIr: matrix assignment ---
+    Console.WriteLine("=== Phase 4: analyzeProgramIr zeros builtin ===")
+    let zerosProgram : Ir.Program = {
+        body = [
+            Ir.Assign(1, 0, "A",
+                Ir.Apply(1, 0,
+                    Ir.Var(1, 0, "zeros"),
+                    [ Ir.IndexExpr(1, 0, Ir.Const(1, 0, 3.0))
+                      Ir.IndexExpr(1, 0, Ir.Const(1, 0, 4.0)) ]))
+        ]
+    }
+    let ctx2 = AnalysisContext()
+    let (env2, diags2) = analyzeProgramIr zerosProgram ctx2
+    check "A = zeros(3,4) -> matrix[3 x 4]" "matrix[3 x 4]" (shapeToString (Env.Env.get env2 "A"))
+
+    // --- analyzeProgramIr: function definition + call ---
+    Console.WriteLine("=== Phase 4: analyzeProgramIr function call ===")
+    let funcProgram : Ir.Program = {
+        body = [
+            Ir.FunctionDef(1, 0, "makeVec",
+                ["n"],
+                ["v"],
+                [ Ir.Assign(2, 0, "v",
+                      Ir.Apply(2, 0, Ir.Var(2, 0, "zeros"),
+                          [ Ir.IndexExpr(2, 0, Ir.Var(2, 0, "n"))
+                            Ir.IndexExpr(2, 0, Ir.Const(2, 0, 1.0)) ])) ])
+            Ir.Assign(5, 0, "result",
+                Ir.Apply(5, 0, Ir.Var(5, 0, "makeVec"),
+                    [ Ir.IndexExpr(5, 0, Ir.Const(5, 0, 5.0)) ]))
+        ]
+    }
+    let ctx3 = AnalysisContext()
+    let (env3, _diags3) = analyzeProgramIr funcProgram ctx3
+    check "makeVec(5) -> matrix[5 x 1]" "matrix[5 x 1]" (shapeToString (Env.Env.get env3 "result"))
+
+    // --- MULTI_SUPPORTED_FORMS exists ---
+    Console.WriteLine("=== Phase 4: MULTI_SUPPORTED_FORMS ===")
+    checkBool "size in MULTI_SUPPORTED_FORMS" true (Map.containsKey "size" MULTI_SUPPORTED_FORMS)
+    checkBool "eig in MULTI_SUPPORTED_FORMS"  true (Map.containsKey "eig"  MULTI_SUPPORTED_FORMS)
+
+    Console.WriteLine("")
+    if failures = 0 then
+        Console.WriteLine("All Phase 4 smoke tests PASSED")
+        0
+    else
+        Console.Error.WriteLine(string failures + " Phase 4 smoke test(s) FAILED")
+        1
+
+
 [<EntryPoint>]
 let main argv =
     if argv.Length >= 1 && argv.[0] = "--test-shapes" then
@@ -369,6 +488,8 @@ let main argv =
         runPhase2Test ()
     elif argv.Length >= 1 && argv.[0] = "--test-phase3" then
         runPhase3Test ()
+    elif argv.Length >= 1 && argv.[0] = "--test-phase4" then
+        runPhase4Test ()
     elif argv.Length < 1 then
         Console.Error.WriteLine("Usage: conformal-parse <file.m>")
         1

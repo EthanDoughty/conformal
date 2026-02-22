@@ -1,5 +1,6 @@
 module Constraints
 
+open Ir
 open Shapes
 open Env
 open SymDim
@@ -9,6 +10,14 @@ open Context
 // Constraint tracking and path-sensitive joins for dimension equality.
 // Port of analysis/constraints.py
 // ---------------------------------------------------------------------------
+
+/// tryExtractConstValue: extract integer value from a Const expression, or None.
+/// Port of analysis/constraints.py try_extract_const_value().
+let tryExtractConstValue (expr: Expr) : int option =
+    match expr with
+    | Const(_, _, v) when v = System.Math.Floor v -> Some (int v)
+    | _ -> None
+
 
 /// dimKey: structural sort key for canonicalizing constraint pairs.
 let private dimKey (d: Dim) : int * string =
