@@ -48,8 +48,8 @@ let private masterPattern =
         """(?<NUMBER>\d+(?:\.\d*)?(?:[eE][+-]?\d+)?|(?<=\s|^|[+\-*/<>=,;:\[\]({~&|])\.\d+(?:[eE][+-]?\d+)?)"""
         """(?<ID>[A-Za-z_]\w*)"""
         """(?<CONTINUATION>\.\.\.[^\n]*\n?)"""
-        """(?<DOTOP>\.\*|\./|\.\^|\.\')"""
-        """(?<OP>==|~=|<=|>=|&&|\|\||[+\-*/<>()\[\]=,:\;@\\^&|~])"""
+        """(?<DOTOP>\.\*|\./|\.\^|\.')"""
+        """(?<OP>==|~=|<=|>=|&&|\|\||[+\-*/<>()\[\]=,:;@\\^&|~])"""
         """(?<DOT>\.)"""
         """(?<NEWLINE>\n)"""
         """(?<SKIP>[ \t]+)"""
@@ -74,8 +74,8 @@ let private masterPatternSimple =
         """(?<NUMBER>\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)"""
         """(?<ID>[A-Za-z_]\w*)"""
         """(?<CONTINUATION>\.\.\.[^\n]*\n?)"""
-        """(?<DOTOP>\.\*|\./|\.\^|\.\')"""
-        """(?<OP>==|~=|<=|>=|&&|\|\||[+\-*/<>()\[\]=,:\;@\\^&|~])"""
+        """(?<DOTOP>\.\*|\./|\.\^|\.')"""
+        """(?<OP>==|~=|<=|>=|&&|\|\||[+\-*/<>()\[\]=,:;@\\^&|~])"""
         """(?<DOT>\.)"""
         """(?<NEWLINE>\n)"""
         """(?<SKIP>[ \t]+)"""
@@ -85,8 +85,11 @@ let private masterPatternSimple =
         """(?<MISMATCH>.)"""
     ]
 
-let private masterRe =
-    Regex(masterPatternSimple, RegexOptions.Compiled)
+#if FABLE_COMPILER
+let private masterRe = Regex(masterPatternSimple)
+#else
+let private masterRe = Regex(masterPatternSimple, RegexOptions.Compiled)
+#endif
 
 // ---------------------------------------------------------------------------
 // lex : string -> Token list
@@ -113,7 +116,11 @@ let lex (src: string) : Token list =
         { kind = kind; value = value; pos = startPos; line = line; col = startPos - lastNewlinePos }
 
     while pos < src.Length do
+#if FABLE_COMPILER
+        let m = masterRe.Match(src, pos)
+#else
         let m = masterRe.Match(src, pos, src.Length - pos)
+#endif
         if not m.Success then
             raise (LexError("Unexpected character '" + string src.[pos] + "' at position " + string pos))
 
@@ -191,7 +198,7 @@ let lex (src: string) : Token list =
 
         | "CONTINUATION" ->
             // Line continuation: ... (rest of line). Count the newline if present.
-            if value.Contains('\n') then
+            if value.Contains("\n") then
                 line <- line + 1
                 let nlIdx = startPos + value.LastIndexOf('\n')
                 lastNewlinePos <- nlIdx

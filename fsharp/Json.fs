@@ -41,7 +41,7 @@ let private jFloat (v: float) : string =
                   .Replace("E+", "e+").Replace("E-", "e-")
                   .Replace("E", "e")
         // If no decimal point or exponent, add ".0" (Python keeps "5.0" not "5")
-        if s.Contains('.') || s.Contains('e') || s.Contains('n') then s
+        if s.Contains(".") || s.Contains("e") || s.Contains("n") then s
         else s + ".0"
 
 // ---------------------------------------------------------------------------

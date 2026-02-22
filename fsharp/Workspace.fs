@@ -1,7 +1,9 @@
 module Workspace
 
 open System
+#if !FABLE_COMPILER
 open System.IO
+#endif
 open System.Text.RegularExpressions
 open Context
 
@@ -59,6 +61,7 @@ let extractFunctionSignature (source: string) : (string * int * int) option =
         Some (funcName, paramCount, returnCount)
 
 
+#if !FABLE_COMPILER
 /// scanWorkspace: scan a directory for .m files and extract function signatures.
 let scanWorkspace (dirPath: string) (excludeFile: string) : Map<string, ExternalSignature> =
     let result = System.Collections.Generic.Dictionary<string, ExternalSignature>()
@@ -87,6 +90,7 @@ let scanWorkspace (dirPath: string) (excludeFile: string) : Map<string, External
                 with _ -> ()  // File read failed; skip silently
 
         result |> Seq.map (fun kv -> (kv.Key, kv.Value)) |> Map.ofSeq
+#endif
 
 
 // ---------------------------------------------------------------------------
@@ -102,6 +106,7 @@ let clearParseCache () =
     parsedCache.Clear()
 
 
+#if !FABLE_COMPILER
 /// contentHash: compute MD5 hash of a string.
 let private contentHash (content: string) : string =
     use md5 = System.Security.Cryptography.MD5.Create()
@@ -130,11 +135,12 @@ let loadExternalFunctionFromPath
                 parsedCache.[sourcePath] <- (hash, result)
                 Some result
     with _ -> None
+#endif
 
 
 /// buildIrFromSource: parse MATLAB source and extract function signatures.
 /// Returns (primary_FunctionSignature, subfunctions_dict) or None if no function found.
-let private buildIrFromSource (source: string) : (FunctionSignature * Map<string, FunctionSignature>) option =
+let buildIrFromSource (source: string) : (FunctionSignature * Map<string, FunctionSignature>) option =
     try
         let program = Parser.parseMATLAB source
         let funcDefs =
@@ -153,8 +159,15 @@ let private buildIrFromSource (source: string) : (FunctionSignature * Map<string
     with _ -> None
 
 
+#if FABLE_COMPILER
+/// loadExternalFunction: Fable stub — no filesystem access.
+/// Cross-file body analysis is handled by the TS host pre-providing content.
+let loadExternalFunction (_sig: ExternalSignature) : (FunctionSignature * Map<string, FunctionSignature>) option =
+    None
+#else
 /// loadExternalFunction: load and parse an external .m file.
 /// Returns (primary_FunctionSignature, subfunctions_dict) or None on error.
 let loadExternalFunction (sig_: ExternalSignature) : (FunctionSignature * Map<string, FunctionSignature>) option =
     if sig_.sourcePath = "" then None
     else loadExternalFunctionFromPath sig_.sourcePath buildIrFromSource
+#endif

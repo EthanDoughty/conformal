@@ -1,6 +1,11 @@
 src/**
+fable/**
 tsconfig.json
+esbuild.mjs
 .vscode/**
+.claude/**
 scripts/**
-bundled/**/__pycache__/**
-bundled/**/*.pyc
+bundled/**
+*.vsix
+node_modules/**
+out/*.map
