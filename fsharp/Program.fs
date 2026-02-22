@@ -7,6 +7,8 @@ open SymDim
 open Diagnostics
 open Builtins
 open Context
+open Intervals
+open EvalExpr
 
 // ---------------------------------------------------------------------------
 // Smoke test for Phase 1: SymDim + Shapes + Env
@@ -215,12 +217,158 @@ let runPhase2Test () : int =
         Console.Error.WriteLine(string failures + " Phase 2 smoke test(s) FAILED")
         1
 
+// ---------------------------------------------------------------------------
+// Smoke test for Phase 3: AnalysisCore + DimExtract + Intervals + Constraints
+//                         + MatrixLiterals + EvalBinop + EvalExpr
+// ---------------------------------------------------------------------------
+
+let runPhase3Test () : int =
+    let mutable failures = 0
+
+    let check (label: string) (expected: string) (actual: string) =
+        if expected = actual then
+            Console.WriteLine("  PASS  " + label + " => " + actual)
+        else
+            Console.Error.WriteLine("  FAIL  " + label + ": expected \"" + expected + "\" got \"" + actual + "\"")
+            failures <- failures + 1
+
+    let checkBool (label: string) (expected: bool) (actual: bool) =
+        check label (string expected) (string actual)
+
+    // Stub builtinDispatch: returns unknown for all builtins
+    let stubDispatch : BuiltinDispatch =
+        fun _fname _line _base _args _env _warnings _ctx -> UnknownShape
+
+    Console.WriteLine("=== Phase 3: DimExtract ===")
+    let env0 = Env.Env.create ()
+    let constExpr5  = Ir.Const(1, 0, 5.0)
+    let varNExpr    = Ir.Var(1, 0, "n")
+
+    let dim5 = DimExtract.exprToDimIr constExpr5 env0
+    check "exprToDimIr Const(5)" "Concrete 5"
+        (match dim5 with Concrete n -> "Concrete " + string n | Symbolic _ -> "Symbolic" | Unknown -> "Unknown")
+
+    let dimN = DimExtract.exprToDimIr varNExpr env0
+    check "exprToDimIr Var(n)" "Symbolic n"
+        (match dimN with Concrete n -> "Concrete " + string n | Symbolic s -> "Symbolic " + SymDim.toString s | Unknown -> "Unknown")
+
+    Console.WriteLine("=== Phase 3: Interval arithmetic ===")
+    let iv13 = Some { lo = Finite 1; hi = Finite 3 }
+    let iv25 = Some { lo = Finite 2; hi = Finite 5 }
+    let iv_neg = Some { lo = Finite -5; hi = Finite -1 }
+
+    let boundStr b = match b with Finite n -> string n | Unbounded -> "inf" | SymBound _ -> "sym"
+    let ivStr iv = match iv with Some i -> "[" + boundStr i.lo + "," + boundStr i.hi + "]" | None -> "None"
+
+    let ivAdd = intervalAdd iv13 iv25
+    check "intervalAdd [1,3]+[2,5]" "[3,8]" (ivStr ivAdd)
+
+    let ivSub = intervalSub iv25 iv13
+    check "intervalSub [2,5]-[1,3]" "[-1,4]" (ivStr ivSub)
+
+    let ivMul = intervalMul iv13 iv13
+    check "intervalMul [1,3]*[1,3]" "[1,9]" (ivStr ivMul)
+
+    let ivJoin = joinInterval iv13 iv25
+    check "joinInterval [1,3] [2,5]" "[1,5]" (ivStr ivJoin)
+
+    let ivMeet = meetInterval { lo = Finite 1; hi = Finite 5 } { lo = Finite 3; hi = Finite 8 }
+    check "meetInterval [1,5] [3,8]" "Some [3,5]"
+        (match ivMeet with Some i -> "Some [" + boundStr i.lo + "," + boundStr i.hi + "]" | None -> "None")
+
+    checkBool "intervalDefinitelyNegative neg"      true  (intervalDefinitelyNegative  iv_neg)
+    checkBool "intervalDefinitelyNegative pos"      false (intervalDefinitelyNegative  iv25)
+    checkBool "intervalDefinitelyPositive pos"      true  (intervalDefinitelyPositive  iv25)
+    checkBool "intervalDefinitelyPositive neg"      false (intervalDefinitelyPositive  iv_neg)
+    checkBool "intervalIsExactlyZero zero"          true  (intervalIsExactlyZero (Some { lo = Finite 0; hi = Finite 0 }))
+    checkBool "intervalIsExactlyZero nonzero"       false (intervalIsExactlyZero iv13)
+
+    Console.WriteLine("=== Phase 3: EvalBinop ===")
+    let ctx0 = AnalysisContext()
+    let env1 = Env.Env.create ()
+    let warnRef = ref []
+    let dummyExpr = Ir.Const(1, 0, 1.0)
+    let noIv _ = None
+
+    // matmul 3x4 * 4x2 -> 3x2
+    let leftM  = Matrix(Concrete 3, Concrete 4)
+    let rightM = Matrix(Concrete 4, Concrete 2)
+    let result = EvalBinop.evalBinopIr "*" leftM rightM warnRef dummyExpr dummyExpr 1 ctx0 env1 noIv
+    check "matmul 3x4 * 4x2 -> 3x2" "matrix[3 x 2]" (shapeToString result)
+    checkBool "matmul no warnings" true warnRef.Value.IsEmpty
+
+    warnRef.Value <- []
+    // matmul dimension mismatch: 3x4 * 5x2 should produce unknown + warning
+    let rightMbad = Matrix(Concrete 5, Concrete 2)
+    let resultBad = EvalBinop.evalBinopIr "*" leftM rightMbad warnRef dummyExpr dummyExpr 1 ctx0 env1 noIv
+    check "matmul mismatch -> unknown" "unknown" (shapeToString resultBad)
+    checkBool "matmul mismatch has warning" true (warnRef.Value |> List.exists (fun d -> d.code = "W_INNER_DIM_MISMATCH"))
+
+    warnRef.Value <- []
+    // elementwise: 3x4 .* 3x4 -> 3x4
+    let ewResult = EvalBinop.evalBinopIr ".*" leftM leftM warnRef dummyExpr dummyExpr 1 ctx0 env1 noIv
+    check "elementwise 3x4 .* 3x4 -> 3x4" "matrix[3 x 4]" (shapeToString ewResult)
+
+    Console.WriteLine("=== Phase 3: MatrixLiterals ===")
+    let warnRef2 = ref []
+    let ctx1 = AnalysisContext()
+    let env2 = Env.Env.create ()
+
+    // Empty literal []
+    let emptyShape = MatrixLiterals.inferMatrixLiteralShape [] 1 warnRef2 ctx1 env2
+    check "empty literal -> matrix[0 x 0]" "matrix[0 x 0]" (shapeToString emptyShape)
+
+    // Row vector [a b]: 1 row of [scalar, scalar] -> matrix[1 x 2]
+    let rowShape = MatrixLiterals.inferMatrixLiteralShape [[Scalar; Scalar]] 1 warnRef2 ctx1 env2
+    check "row [scalar scalar] -> matrix[1 x 2]" "matrix[1 x 2]" (shapeToString rowShape)
+
+    // Column vector [a; b]: 2 rows of [scalar] each -> matrix[2 x 1]
+    let colShape = MatrixLiterals.inferMatrixLiteralShape [[Scalar]; [Scalar]] 1 warnRef2 ctx1 env2
+    check "col [scalar; scalar] -> matrix[2 x 1]" "matrix[2 x 1]" (shapeToString colShape)
+
+    Console.WriteLine("=== Phase 3: evalExprIr ===")
+    let warnRef3 = ref []
+    let ctx2 = AnalysisContext()
+    let env3 = Env.Env.create ()
+
+    // Const -> Scalar
+    let constResult = evalExprIr (Ir.Const(1, 0, 3.14)) env3 warnRef3 ctx2 None stubDispatch
+    check "evalExprIr Const -> scalar" "scalar" (shapeToString constResult)
+
+    // Var bound to matrix
+    Env.Env.set env3 "A" (Matrix(Concrete 3, Concrete 4))
+    let varResult = evalExprIr (Ir.Var(1, 0, "A")) env3 warnRef3 ctx2 None stubDispatch
+    check "evalExprIr Var(A) -> matrix[3 x 4]" "matrix[3 x 4]" (shapeToString varResult)
+
+    // Var unbound -> unknown
+    let varUndef = evalExprIr (Ir.Var(1, 0, "undefined_var")) env3 warnRef3 ctx2 None stubDispatch
+    check "evalExprIr unbound Var -> unknown" "unknown" (shapeToString varUndef)
+
+    // MATLAB constant pi -> scalar
+    let piResult = evalExprIr (Ir.Var(1, 0, "pi")) env3 warnRef3 ctx2 None stubDispatch
+    check "evalExprIr pi -> scalar" "scalar" (shapeToString piResult)
+
+    // StringLit -> string
+    let strResult = evalExprIr (Ir.StringLit(1, 0, "hello")) env3 warnRef3 ctx2 None stubDispatch
+    check "evalExprIr StringLit -> string" "string" (shapeToString strResult)
+
+    Console.WriteLine("")
+    if failures = 0 then
+        Console.WriteLine("All Phase 3 smoke tests PASSED")
+        0
+    else
+        Console.Error.WriteLine(string failures + " Phase 3 smoke test(s) FAILED")
+        1
+
+
 [<EntryPoint>]
 let main argv =
     if argv.Length >= 1 && argv.[0] = "--test-shapes" then
         runShapesTest ()
     elif argv.Length >= 1 && argv.[0] = "--test-phase2" then
         runPhase2Test ()
+    elif argv.Length >= 1 && argv.[0] = "--test-phase3" then
+        runPhase3Test ()
     elif argv.Length < 1 then
         Console.Error.WriteLine("Usage: conformal-parse <file.m>")
         1

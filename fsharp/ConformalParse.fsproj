@@ -19,6 +19,14 @@
     <Compile Include="Builtins.fs" />
     <Compile Include="PathConstraints.fs" />
     <Compile Include="Context.fs" />
+    <Compile Include="AnalysisCore.fs" />
+    <Compile Include="EndHelpers.fs" />
+    <Compile Include="Intervals.fs" />
+    <Compile Include="DimExtract.fs" />
+    <Compile Include="Constraints.fs" />
+    <Compile Include="MatrixLiterals.fs" />
+    <Compile Include="EvalBinop.fs" />
+    <Compile Include="EvalExpr.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 </Project>
