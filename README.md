@@ -733,13 +733,14 @@ cd src && dotnet run -- --strict --tests
 
 ```bash
 git clone https://github.com/EthanDoughty/conformal.git
-cd conformal
-dotnet run --project src/ConformalParse.fsproj -- --tests   # verify 338 tests pass
+cd conformal/src
+dotnet build                    # build the analyzer
+dotnet run -- --tests           # verify 338 tests pass
 ```
 
 Analyze a file:
 ```bash
-dotnet run --project src/ConformalParse.fsproj -- tests/basics/inner_dim_mismatch.m
+dotnet run -- ../tests/basics/inner_dim_mismatch.m
 ```
 
 ## IDE Integration
