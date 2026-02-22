@@ -482,6 +482,7 @@ let runPhase4Test () : int =
 
 [<EntryPoint>]
 let main argv =
+    // Smoke tests handled here (Program.fs is last in compilation order)
     if argv.Length >= 1 && argv.[0] = "--test-shapes" then
         runShapesTest ()
     elif argv.Length >= 1 && argv.[0] = "--test-phase2" then
@@ -490,28 +491,6 @@ let main argv =
         runPhase3Test ()
     elif argv.Length >= 1 && argv.[0] = "--test-phase4" then
         runPhase4Test ()
-    elif argv.Length < 1 then
-        Console.Error.WriteLine("Usage: conformal-parse <file.m>")
-        1
     else
-        let filePath = argv.[0]
-        if not (File.Exists filePath) then
-            Console.Error.WriteLine("File not found: " + filePath)
-            1
-        else
-            try
-                let src = File.ReadAllText(filePath)
-                let program = Parser.parseMATLAB src
-                let json = Json.programToJson program
-                Console.WriteLine(json)
-                0
-            with
-            | Parser.ParseError msg ->
-                Console.Error.WriteLine("ParseError: " + msg)
-                2
-            | Lexer.LexError msg ->
-                Console.Error.WriteLine("LexError: " + msg)
-                2
-            | ex ->
-                Console.Error.WriteLine("Error: " + ex.Message)
-                3
+        // All other dispatch goes through Cli.run
+        Cli.run argv

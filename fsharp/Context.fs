@@ -104,6 +104,9 @@ type WorkspaceContext() =
                                    = System.Collections.Generic.Dictionary<string, ExternalSignature>() with get, set
     /// Working directory for workspace scanning
     member val workspaceDir : string = "" with get, set
+    /// Set of external function names currently being analyzed (cross-file cycle guard)
+    member val analyzingExternal   : System.Collections.Generic.HashSet<string>
+                                     = System.Collections.Generic.HashSet<string>() with get, set
 
 // ---------------------------------------------------------------------------
 // AnalysisContext: root container for all analysis state

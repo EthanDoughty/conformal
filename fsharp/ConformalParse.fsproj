@@ -32,6 +32,8 @@
     <Compile Include="StmtFuncAnalysis.fs" />
     <Compile Include="Witness.fs" />
     <Compile Include="Analysis.fs" />
+    <Compile Include="TestRunner.fs" />
+    <Compile Include="Cli.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 </Project>
