@@ -106,7 +106,11 @@ def run_test(path: str, fixpoint: bool = False) -> tuple[bool, bool]:
     expected_shapes, expected_warning_count = parse_expectations(src, fixpoint=fixpoint)
 
     try:
-        ir_prog = parse_matlab(src)
+        if os.environ.get('CONFORMAL_PARSER') == 'fsharp':
+            from frontend.parse_fsharp import parse_matlab_fsharp
+            ir_prog = parse_matlab_fsharp(src, filepath=path)
+        else:
+            ir_prog = parse_matlab(src)
     except Exception as e:
         print(f"Error while parsing {path}: {e}\n")
         return False, False

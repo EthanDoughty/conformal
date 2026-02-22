@@ -3,6 +3,7 @@
 """Command-line interface for Conformal — MATLAB shape analyzer."""
 
 import argparse
+import os
 import time
 from pathlib import Path
 
@@ -37,7 +38,11 @@ def run_file(file_path: str, strict: bool = False, fixpoint: bool = False,
     try:
         src = path.read_text(errors='replace')
         t_read = time.perf_counter()
-        ir_prog = parse_matlab(src)
+        if os.environ.get('CONFORMAL_PARSER') == 'fsharp':
+            from frontend.parse_fsharp import parse_matlab_fsharp
+            ir_prog = parse_matlab_fsharp(src, filepath=str(path))
+        else:
+            ir_prog = parse_matlab(src)
     except Exception as e:
         print(f"Error while parsing {file_path}: {e}")
         return 1
