@@ -151,7 +151,7 @@ type MatlabParser(tokenList: Token list) =
     member private _.Eat(expected: string) : Token =
         let tok = tokens.[pos]
         if tok.kind <> expected && tok.value <> expected then
-            raise (ParseError(sprintf "Expected %s at pos %d, found %s %A" expected tok.pos tok.kind tok.value))
+            raise (ParseError("Expected " + expected + " at pos " + string tok.pos + ", found " + tok.kind + " '" + tok.value + "'"))
         pos <- pos + 1
         tok
 
@@ -280,7 +280,7 @@ type MatlabParser(tokenList: Token list) =
                 name <- this.Eat("ID").value
                 hasParens <- false
             else
-                raise (ParseError(sprintf "Expected '=' or '(' after function name at %d" (this.Current().pos)))
+                raise (ParseError("Expected '=' or '(' after function name at " + string (this.Current().pos)))
         elif this.Current().value = "[" then
             // Multiple outputs: function [a, b] = name(args)
             this.Eat("[") |> ignore
@@ -297,7 +297,7 @@ type MatlabParser(tokenList: Token list) =
             if this.Current().value = "(" then this.Eat("(") |> ignore
             else hasParens <- false
         else
-            raise (ParseError(sprintf "Expected function output or name at %d" (this.Current().pos)))
+            raise (ParseError("Expected function output or name at " + string (this.Current().pos)))
 
         // Parameters
         let mutable parms: string list = []
@@ -656,7 +656,7 @@ type MatlabParser(tokenList: Token list) =
                 let name = this.Eat("ID").value
                 FuncHandle(atTok.line, atTok.col, name)
             else
-                raise (ParseError(sprintf "Expected '(' or function name after '@' at %d" next.pos))
+                raise (ParseError("Expected '(' or function name after '@' at " + string next.pos))
 
         | "[" ->
             let ml = this.ParseMatrixLiteral()
@@ -696,7 +696,7 @@ type MatlabParser(tokenList: Token list) =
                 End(endTok.line, endTok.col)
 
             | _ ->
-                raise (ParseError(sprintf "Unexpected token %s %A in expression at %d" tok.kind tok.value tok.pos))
+                raise (ParseError("Unexpected token " + tok.kind + " '" + tok.value + "' in expression at " + string tok.pos))
 
     member private this.ParsePostfix(initial: Expr) : Expr =
         let mutable left = initial
@@ -739,7 +739,7 @@ type MatlabParser(tokenList: Token list) =
                     this.Eat(")") |> ignore
                     left <- FieldAccess(dotTok.line, dotTok.col, left, "<dynamic>")
                 else
-                    raise (ParseError(sprintf "Expected field name after '.' at %d" tok.pos))
+                    raise (ParseError("Expected field name after '.' at " + string tok.pos))
 
             else
                 stop <- true
@@ -823,7 +823,7 @@ type MatlabParser(tokenList: Token list) =
                     if this.Current().value = endToken then outerStop <- true
                 else
                     let tok = this.Current()
-                    raise (ParseError(sprintf "Unexpected token %s %A in literal at %d" tok.kind tok.value tok.pos))
+                    raise (ParseError("Unexpected token " + tok.kind + " '" + tok.value + "' in literal at " + string tok.pos))
             (line, col, rows |> Seq.toList)
 
     member private this.ParseMatrixLiteral() : Expr =

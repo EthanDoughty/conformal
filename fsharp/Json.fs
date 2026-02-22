@@ -19,11 +19,11 @@ let private escape (s: string) : string =
         | '\r' -> sb.Append("\\r")  |> ignore
         | '\t' -> sb.Append("\\t")  |> ignore
         | c when int c < 32 ->
-            sb.Append(sprintf "\\u%04x" (int c)) |> ignore
+            sb.Append("\\u" + (int c).ToString("x4")) |> ignore
         | c -> sb.Append(c) |> ignore
     sb.ToString()
 
-let private jStr (s: string) = sprintf "\"%s\"" (escape s)
+let private jStr (s: string) = "\"" + escape s + "\""
 
 // Format a float the way Python's json module does:
 //  - Uses shortest round-trip representation (Python's repr behavior)

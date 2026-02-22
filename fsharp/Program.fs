@@ -6,12 +6,12 @@ open System.IO
 [<EntryPoint>]
 let main argv =
     if argv.Length < 1 then
-        eprintfn "Usage: conformal-parse <file.m>"
+        Console.Error.WriteLine("Usage: conformal-parse <file.m>")
         1
     else
         let filePath = argv.[0]
         if not (File.Exists filePath) then
-            eprintfn "File not found: %s" filePath
+            Console.Error.WriteLine("File not found: " + filePath)
             1
         else
             try
@@ -22,11 +22,11 @@ let main argv =
                 0
             with
             | Parser.ParseError msg ->
-                eprintfn "ParseError: %s" msg
+                Console.Error.WriteLine("ParseError: " + msg)
                 2
             | Lexer.LexError msg ->
-                eprintfn "LexError: %s" msg
+                Console.Error.WriteLine("LexError: " + msg)
                 2
             | ex ->
-                eprintfn "Error: %s" ex.Message
+                Console.Error.WriteLine("Error: " + ex.Message)
                 3

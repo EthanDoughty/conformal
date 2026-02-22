@@ -115,7 +115,7 @@ let lex (src: string) : Token list =
     while pos < src.Length do
         let m = masterRe.Match(src, pos, src.Length - pos)
         if not m.Success then
-            raise (LexError(sprintf "Unexpected character %A at position %d" src.[pos] pos))
+            raise (LexError("Unexpected character '" + string src.[pos] + "' at position " + string pos))
 
         // Which named group matched?
         let kind =
@@ -139,7 +139,7 @@ let lex (src: string) : Token list =
         // Guard: the match must start exactly at pos (not further ahead).
         // Regex.Match with startAt can find a match after pos; we must enforce anchoring.
         if m.Index <> pos then
-            raise (LexError(sprintf "Unexpected character %A at position %d" src.[pos] pos))
+            raise (LexError("Unexpected character '" + string src.[pos] + "' at position " + string pos))
 
         match kind with
         | "DQSTRING" ->
@@ -223,11 +223,11 @@ let lex (src: string) : Token list =
                     if src.[endPos] = '\'' then
                         found <- true
                     elif src.[endPos] = '\n' then
-                        raise (LexError(sprintf "Unterminated string at line %d, pos %d" line startPos))
+                        raise (LexError("Unterminated string at line " + string line + ", pos " + string startPos))
                     else
                         endPos <- endPos + 1
                 if not found then
-                    raise (LexError(sprintf "Unterminated string at line %d, pos %d" line startPos))
+                    raise (LexError("Unterminated string at line " + string line + ", pos " + string startPos))
                 let content = src.[startPos + 1 .. endPos - 1]
                 tokens.Add(makeToken "STRING" content startPos)
                 prevKind <- "STRING"
@@ -256,7 +256,7 @@ let lex (src: string) : Token list =
             // Do NOT update prevKind for whitespace/comments.
 
         | "MISMATCH" ->
-            raise (LexError(sprintf "Unexpected character %A at %d" value startPos))
+            raise (LexError("Unexpected character '" + value + "' at " + string startPos))
 
         | _ ->
             pos <- m.Index + m.Length
