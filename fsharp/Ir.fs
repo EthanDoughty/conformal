@@ -21,6 +21,24 @@ type Expr =
     | MatrixLit   of line: int * col: int * rows: Expr list list
     | CellLit     of line: int * col: int * rows: Expr list list
 
+    member this.Line =
+        match this with
+        | Var(l,_,_) | Const(l,_,_) | StringLit(l,_,_)
+        | Neg(l,_,_) | Not(l,_,_) | BinOp(l,_,_,_,_)
+        | Transpose(l,_,_) | FieldAccess(l,_,_,_)
+        | Lambda(l,_,_,_) | FuncHandle(l,_,_) | End(l,_)
+        | Apply(l,_,_,_) | CurlyApply(l,_,_,_)
+        | MatrixLit(l,_,_) | CellLit(l,_,_) -> l
+
+    member this.Col =
+        match this with
+        | Var(_,c,_) | Const(_,c,_) | StringLit(_,c,_)
+        | Neg(_,c,_) | Not(_,c,_) | BinOp(_,c,_,_,_)
+        | Transpose(_,c,_) | FieldAccess(_,c,_,_)
+        | Lambda(_,c,_,_) | FuncHandle(_,c,_) | End(_,c)
+        | Apply(_,c,_,_) | CurlyApply(_,c,_,_)
+        | MatrixLit(_,c,_) | CellLit(_,c,_) -> c
+
 and IndexArg =
     | Colon     of line: int * col: int
     | Range     of line: int * col: int * start: Expr * end_: Expr
@@ -49,5 +67,23 @@ type Stmt =
     | FunctionDef      of line: int * col: int * name: string * parms: string list
                           * outputVars: string list * body: Stmt list
     | AssignMulti      of line: int * col: int * targets: string list * expr: Expr
+
+    member this.Line =
+        match this with
+        | Assign(l,_,_,_) | StructAssign(l,_,_,_,_) | CellAssign(l,_,_,_,_)
+        | IndexAssign(l,_,_,_,_) | IndexStructAssign(l,_,_,_,_,_,_)
+        | FieldIndexAssign(l,_,_,_,_,_,_,_) | ExprStmt(l,_,_)
+        | If(l,_,_,_,_) | IfChain(l,_,_,_,_) | While(l,_,_,_) | For(l,_,_,_,_)
+        | Switch(l,_,_,_,_) | Try(l,_,_,_) | Break(l,_) | Continue(l,_) | Return(l,_)
+        | OpaqueStmt(l,_,_,_) | FunctionDef(l,_,_,_,_,_) | AssignMulti(l,_,_,_) -> l
+
+    member this.Col =
+        match this with
+        | Assign(_,c,_,_) | StructAssign(_,c,_,_,_) | CellAssign(_,c,_,_,_)
+        | IndexAssign(_,c,_,_,_) | IndexStructAssign(_,c,_,_,_,_,_)
+        | FieldIndexAssign(_,c,_,_,_,_,_,_) | ExprStmt(_,c,_)
+        | If(_,c,_,_,_) | IfChain(_,c,_,_,_) | While(_,c,_,_) | For(_,c,_,_,_)
+        | Switch(_,c,_,_,_) | Try(_,c,_,_) | Break(_,c) | Continue(_,c) | Return(_,c)
+        | OpaqueStmt(_,c,_,_) | FunctionDef(_,c,_,_,_,_) | AssignMulti(_,c,_,_) -> c
 
 type Program = { body: Stmt list }

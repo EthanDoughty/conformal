@@ -10,6 +10,8 @@
   <ItemGroup>
     <Compile Include="Ir.fs" />
     <Compile Include="Lexer.fs" />
+    <Compile Include="Parser.fs" />
+    <Compile Include="Json.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 </Project>
