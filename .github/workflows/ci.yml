@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Restore F# dependencies
+        run: dotnet restore fsharp/ConformalParse.fsproj
+
+      - name: Build F# analyzer
+        run: dotnet build fsharp/ConformalParse.fsproj --no-restore
+
+      - name: Run F# tests
+        run: dotnet run --project fsharp/ConformalParse.fsproj -- --tests
+
+      - name: Install Fable
+        run: |
+          cd fsharp
+          dotnet tool restore
+
+      - name: Restore Fable project dependencies
+        run: dotnet restore vscode-conformal/fable/ConformalFable.fsproj
+
+      - name: Compile Fable (F# to JavaScript)
+        run: |
+          cd fsharp
+          dotnet fable ../vscode-conformal/fable/ConformalFable.fsproj --outDir ../vscode-conformal/src/fable-out
+
+      - name: Install extension dependencies
+        run: |
+          cd vscode-conformal
+          npm ci
+
+      - name: Build extension
+        run: |
+          cd vscode-conformal
+          node esbuild.mjs --minify
+
+      - name: Package VSIX
+        run: |
+          cd vscode-conformal
+          npx @vscode/vsce package --allow-missing-repository
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformal-vsix
+          path: vscode-conformal/*.vsix
+          retention-days: 14
