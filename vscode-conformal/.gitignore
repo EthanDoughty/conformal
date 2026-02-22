@@ -3,4 +3,6 @@ node_modules/
 *.vsix
 bundled/
 fable/.tools/
+fable/bin/
+fable/obj/
 src/fable-out/
