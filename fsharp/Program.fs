@@ -491,6 +491,9 @@ let main argv =
         runPhase3Test ()
     elif argv.Length >= 1 && argv.[0] = "--test-phase4" then
         runPhase4Test ()
+    elif argv |> Array.contains "--lsp" then
+        // Start F# LSP server (JSON-RPC over stdio)
+        LspServer.startLsp ()
     else
         // All other dispatch goes through Cli.run
         Cli.run argv

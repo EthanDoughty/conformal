@@ -34,6 +34,14 @@
     <Compile Include="Analysis.fs" />
     <Compile Include="TestRunner.fs" />
     <Compile Include="Cli.fs" />
+    <Compile Include="LspDiagnostics.fs" />
+    <Compile Include="LspHover.fs" />
+    <Compile Include="LspSymbols.fs" />
+    <Compile Include="LspCodeActions.fs" />
+    <Compile Include="LspServer.fs" />
     <Compile Include="Program.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Ionide.LanguageServerProtocol" Version="0.7.0" />
   </ItemGroup>
 </Project>
