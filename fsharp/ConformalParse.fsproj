@@ -15,6 +15,10 @@
     <Compile Include="SymDim.fs" />
     <Compile Include="Shapes.fs" />
     <Compile Include="Env.fs" />
+    <Compile Include="Diagnostics.fs" />
+    <Compile Include="Builtins.fs" />
+    <Compile Include="PathConstraints.fs" />
+    <Compile Include="Context.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 </Project>
