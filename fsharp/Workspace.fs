@@ -79,6 +79,7 @@ let scanWorkspace (dirPath: string) (excludeFile: string) : Map<string, External
                             filename    = funcName
                             paramCount  = paramCount
                             returnCount = returnCount
+                            sourcePath  = filePath
                             body        = None
                             parmNames   = []
                             outputNames = []
@@ -109,30 +110,6 @@ let private contentHash (content: string) : string =
     hash |> Array.map (fun b -> b.ToString("x2")) |> String.concat ""
 
 
-/// loadExternalFunction: load and parse an external .m file.
-/// Returns (primary_FunctionSignature, subfunctions_dict) or None on error.
-let loadExternalFunction (sig_: ExternalSignature) : (FunctionSignature * Map<string, FunctionSignature>) option =
-    // We need the file path to load from. ExternalSignature.filename contains the function name.
-    // The source_path equivalent is stored in filename for the F# port.
-    // However ExternalSignature.filename is the function name, not the path.
-    // We use a workaround: look up the actual file path from the workspace scan context.
-    // For Phase 4, we derive the path from the workspace dir + fname + ".m".
-    // Since ExternalSignature doesn't have source_path in this F# port (unlike Python),
-    // we store the full path in the filename field during scanWorkspace.
-    // Actually the Python version has source_path; F# ExternalSignature has filename (func name) only.
-    // We need to thread the path through. Use outputNames field to store path as workaround,
-    // OR: use a separate module-level dict. For now, use the parmNames.[0] as file path if it starts with '/'.
-    //
-    // Better approach: the caller should pass the file path. We'll store it in ExternalSignature.filename
-    // but scan uses key = stem, value has filename = funcName. We need the actual file path.
-    // Let's store the actual source path in parmNames.[0] as a sentinel during scanning.
-    // This is a temporary bridge approach.
-
-    // For now, use a simple approach: the parmNames is used to store the path if set by the richer scan.
-    // Fall back to None if we can't locate the file.
-    None  // Stub: full implementation requires Parser integration (Phase 5)
-
-
 /// loadExternalFunctionFromPath: load and parse an external .m file given its full path.
 /// This is the real implementation; called from analysis when we have the path.
 let loadExternalFunctionFromPath
@@ -153,3 +130,31 @@ let loadExternalFunctionFromPath
                 parsedCache.[sourcePath] <- (hash, result)
                 Some result
     with _ -> None
+
+
+/// buildIrFromSource: parse MATLAB source and extract function signatures.
+/// Returns (primary_FunctionSignature, subfunctions_dict) or None if no function found.
+let private buildIrFromSource (source: string) : (FunctionSignature * Map<string, FunctionSignature>) option =
+    try
+        let program = Parser.parseMATLAB source
+        let funcDefs =
+            program.body
+            |> List.choose (fun stmt ->
+                match stmt with
+                | Ir.FunctionDef(_, _, name, parms, outputVars, body) ->
+                    Some { name = name; parms = parms; outputVars = outputVars; body = body }
+                | _ -> None)
+        match funcDefs with
+        | [] -> None
+        | primary :: rest ->
+            let subfunctions =
+                rest |> List.map (fun s -> (s.name, s)) |> Map.ofList
+            Some (primary, subfunctions)
+    with _ -> None
+
+
+/// loadExternalFunction: load and parse an external .m file.
+/// Returns (primary_FunctionSignature, subfunctions_dict) or None on error.
+let loadExternalFunction (sig_: ExternalSignature) : (FunctionSignature * Map<string, FunctionSignature>) option =
+    if sig_.sourcePath = "" then None
+    else loadExternalFunctionFromPath sig_.sourcePath buildIrFromSource

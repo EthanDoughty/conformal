@@ -131,18 +131,16 @@ let private handleZerosOnes
         | None -> None
         | Some arg ->
             checkNegativeDimArg arg env warnings ctx line getIntervalFn
-            let d = exprToDimIr arg env
-            if d = Unknown then None
-            else Some (Matrix(d, d))
+            let d = exprToDimIrCtx arg env (Some ctx)
+            Some (Matrix(d, d))
     elif args.Length = 2 then
         match unwrapArg args.[0], unwrapArg args.[1] with
         | Some arg0, Some arg1 ->
             checkNegativeDimArg arg0 env warnings ctx line getIntervalFn
             checkNegativeDimArg arg1 env warnings ctx line getIntervalFn
-            let r = exprToDimIr arg0 env
-            let c = exprToDimIr arg1 env
-            if r = Unknown || c = Unknown then None
-            else Some (Matrix(r, c))
+            let r = exprToDimIrCtx arg0 env (Some ctx)
+            let c = exprToDimIrCtx arg1 env (Some ctx)
+            Some (Matrix(r, c))
         | _ -> None
     else None
 
@@ -163,17 +161,16 @@ let private handleMatrixConstructor
         | None -> None
         | Some arg ->
             checkNegativeDimArg arg env warnings ctx line getIntervalFn
-            let d = exprToDimIr arg env
-            if d = Unknown then None else Some (Matrix(d, d))
+            let d = exprToDimIrCtx arg env (Some ctx)
+            Some (Matrix(d, d))
     elif args.Length = 2 then
         match unwrapArg args.[0], unwrapArg args.[1] with
         | Some arg0, Some arg1 ->
             checkNegativeDimArg arg0 env warnings ctx line getIntervalFn
             checkNegativeDimArg arg1 env warnings ctx line getIntervalFn
-            let r = exprToDimIr arg0 env
-            let c = exprToDimIr arg1 env
-            if r = Unknown || c = Unknown then None
-            else Some (Matrix(r, c))
+            let r = exprToDimIrCtx arg0 env (Some ctx)
+            let c = exprToDimIrCtx arg1 env (Some ctx)
+            Some (Matrix(r, c))
         | _ -> None
     else None
 
@@ -214,18 +211,16 @@ let private handleCellConstructor
         | None -> None
         | Some arg ->
             checkNegativeDimArg arg env warnings ctx line getIntervalFn
-            let d = exprToDimIr arg env
-            if d = Unknown then None
-            else Some (Cell(d, d, None))
+            let d = exprToDimIrCtx arg env (Some ctx)
+            Some (Cell(d, d, None))
     elif args.Length = 2 then
         match unwrapArg args.[0], unwrapArg args.[1] with
         | Some arg0, Some arg1 ->
             checkNegativeDimArg arg0 env warnings ctx line getIntervalFn
             checkNegativeDimArg arg1 env warnings ctx line getIntervalFn
-            let r = exprToDimIr arg0 env
-            let c = exprToDimIr arg1 env
-            if r = Unknown || c = Unknown then None
-            else Some (Cell(r, c, None))
+            let r = exprToDimIrCtx arg0 env (Some ctx)
+            let c = exprToDimIrCtx arg1 env (Some ctx)
+            Some (Cell(r, c, None))
         | _ -> None
     else None
 
@@ -282,8 +277,8 @@ let private handleReshape
         match unwrapArg args.[0], unwrapArg args.[1], unwrapArg args.[2] with
         | Some a0, Some a1, Some a2 ->
             let inputShape = evalExprFn a0 env warnings ctx
-            let m = exprToDimIr a1 env
-            let n = exprToDimIr a2 env
+            let m = exprToDimIrCtx a1 env (Some ctx)
+            let n = exprToDimIrCtx a2 env (Some ctx)
             // Conformability check
             if not (isUnknown inputShape) then
                 let inputCount =
@@ -318,8 +313,8 @@ let private handleRepmat
         match unwrapArg args.[0], unwrapArg args.[1], unwrapArg args.[2] with
         | Some a0, Some a1, Some a2 ->
             let aShape = evalExprFn a0 env warnings ctx
-            let m = exprToDimIr a1 env
-            let n = exprToDimIr a2 env
+            let m = exprToDimIrCtx a1 env (Some ctx)
+            let n = exprToDimIrCtx a2 env (Some ctx)
             if isUnknown aShape then Some UnknownShape
             else
                 let aRows, aCols =
@@ -385,7 +380,7 @@ let private handleLinspace
         | Some a0, Some a1, Some a2 ->
             evalExprFn a0 env warnings ctx |> ignore
             evalExprFn a1 env warnings ctx |> ignore
-            let n = exprToDimIr a2 env
+            let n = exprToDimIrCtx a2 env (Some ctx)
             Some (Matrix(Concrete 1, n))
         | _ -> None
     else None
@@ -410,7 +405,7 @@ let private handleReduction
         let argShape = evalArgShape args.[0] env warnings ctx evalExprFn
         match unwrapArg args.[1] with
         | Some dimExpr ->
-            let dimVal = exprToDimIr dimExpr env
+            let dimVal = exprToDimIrCtx dimExpr env (Some ctx)
             match dimVal with
             | Concrete 1 ->
                 if isMatrix argShape then
@@ -629,7 +624,7 @@ let private handleCat
         match unwrapArg args.[0] with
         | None -> None
         | Some dimExpr ->
-            let dimVal = exprToDimIr dimExpr env
+            let dimVal = exprToDimIrCtx dimExpr env (Some ctx)
             match dimVal with
             | Concrete 1 | Concrete 2 ->
                 let restArgs = args |> List.tail
@@ -682,17 +677,16 @@ let private handleRandi
                 | None -> None
                 | Some arg ->
                     checkNegativeDimArg arg env warnings ctx line getIntervalFn
-                    let d = exprToDimIr arg env
-                    if d = Unknown then None else Some (Matrix(d, d))
+                    let d = exprToDimIrCtx arg env (Some ctx)
+                    Some (Matrix(d, d))
             elif args.Length = 3 then
                 match unwrapArg args.[1], unwrapArg args.[2] with
                 | Some arg0, Some arg1 ->
                     checkNegativeDimArg arg0 env warnings ctx line getIntervalFn
                     checkNegativeDimArg arg1 env warnings ctx line getIntervalFn
-                    let r = exprToDimIr arg0 env
-                    let c = exprToDimIr arg1 env
-                    if r = Unknown || c = Unknown then None
-                    else Some (Matrix(r, c))
+                    let r = exprToDimIrCtx arg0 env (Some ctx)
+                    let c = exprToDimIrCtx arg1 env (Some ctx)
+                    Some (Matrix(r, c))
                 | _ -> None
             else None
 
@@ -725,10 +719,9 @@ let private handleSparseFull
     if fname = "sparse" && args.Length = 2 then
         match unwrapArg args.[0], unwrapArg args.[1] with
         | Some a0, Some a1 ->
-            let r = exprToDimIr a0 env
-            let c = exprToDimIr a1 env
-            if r = Unknown || c = Unknown then None
-            else Some (Matrix(r, c))
+            let r = exprToDimIrCtx a0 env (Some ctx)
+            let c = exprToDimIrCtx a1 env (Some ctx)
+            Some (Matrix(r, c))
         | _ -> None
     elif args.Length = 1 then
         match unwrapArg args.[0] with
@@ -760,13 +753,14 @@ let private handleConv (_args: IndexArg list) (_env: Env) (_warnings: Diagnostic
 let private handlePolyfit
     (args: IndexArg list)
     (env: Env)
+    (ctx: AnalysisContext)
     (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
     : Shape option =
     ignore evalExprFn
     if args.Length >= 3 then
         match unwrapArg args.[2] with
         | Some a2 ->
-            let nDim = exprToDimIr a2 env
+            let nDim = exprToDimIrCtx a2 env (Some ctx)
             Some (Matrix(Concrete 1, addDim nDim (Concrete 1)))
         | None -> Some (Matrix(Concrete 1, Unknown))
     else Some (Matrix(Concrete 1, Unknown))
@@ -1141,7 +1135,7 @@ let evalBuiltinCall
         | "conv" | "deconv" ->
             ignore (evalExprFn, getIntervalFn, env, warnings, ctx)
             handleConv args env warnings ctx evalExprFn
-        | "polyfit"        -> handlePolyfit args env evalExprFn
+        | "polyfit"        -> handlePolyfit args env ctx evalExprFn
         | "polyval" | "interp1" -> handlePolyval args env warnings ctx evalExprFn
         | "meshgrid"       -> handleMeshgrid args env warnings ctx evalExprFn
         | "struct"         -> handleStruct args env warnings ctx evalExprFn

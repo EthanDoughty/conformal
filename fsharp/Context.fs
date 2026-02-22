@@ -21,6 +21,8 @@ type ExternalSignature = {
     filename:    string
     paramCount:  int
     returnCount: int
+    /// Full path to the source .m file (used by loadExternalFunction)
+    sourcePath:  string
     /// Parsed body (None if not yet parsed or parse failed)
     body:        Stmt list option
     /// Names of parameters

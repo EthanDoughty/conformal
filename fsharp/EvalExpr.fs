@@ -161,8 +161,8 @@ let indexArgToExtentIr
             Unknown
         | _ ->
             // Try to extract dimension values from endpoints
-            let mutable a = exprToDimIr startExpr env
-            let mutable b = exprToDimIr endExpr env
+            let mutable a = exprToDimIrCtx startExpr env (Some ctx)
+            let mutable b = exprToDimIrCtx endExpr env (Some ctx)
 
             // If endpoints need End substitution
             if a = Unknown then a <- exprToDimWithEnd startExpr env dimSize
@@ -481,15 +481,11 @@ and private evalApply
             builtinDispatch baseVarName line baseExpr args env warnings ctx
         elif not (Env.hasLocal env baseVarName) then
             // Priority 3-5: unbound — user function, nested, external, or unknown
-            if ctx.call.functionRegistry.ContainsKey(baseVarName) then
-                // STUB for Phase 4: user-defined function call
-                UnknownShape
-            elif ctx.call.nestedFunctionRegistry.ContainsKey(baseVarName) then
-                // STUB for Phase 4: nested function call
-                UnknownShape
-            elif ctx.ws.externalFunctions.ContainsKey(baseVarName) then
-                // STUB for Phase 4: external workspace function call
-                UnknownShape
+            if ctx.call.functionRegistry.ContainsKey(baseVarName) ||
+               ctx.call.nestedFunctionRegistry.ContainsKey(baseVarName) ||
+               ctx.ws.externalFunctions.ContainsKey(baseVarName) then
+                // Route through callback which has real dispatch in StmtFuncAnalysis
+                builtinDispatch baseVarName line baseExpr args env warnings ctx
             else
                 warnings.Value <- warnings.Value @ [ warnUnknownFunction line baseVarName ]
                 UnknownShape
@@ -535,13 +531,13 @@ and private evalHandleCall
             | true, (:? (string list * Expr * Env) as lambdaMeta) ->
                 let (parms, bodyExpr, closureEnv) = lambdaMeta
 
-                // Cache key
+                // Cache key — truncate to min length to avoid List.mapi2 crash on mismatch
+                let minLen = min parms.Length args.Length
                 let argDimAliases =
                     List.mapi2 (fun i param arg ->
                         match arg with
                         | IndexExpr(_, _, e) -> (param, exprToDimIr e env)
-                        | _ -> (param, Unknown)) parms args
-                    |> List.take (min parms.Length args.Length)
+                        | _ -> (param, Unknown)) (List.take minLen parms) (List.take minLen args)
 
                 let cacheKey =
                     "lambda:" + string callableId + ":" +
@@ -600,18 +596,14 @@ and private evalHandleCall
                 // Not in lambdaMetadata; check handle registry
                 match ctx.call.handleRegistry.TryGetValue(callableId) with
                 | true, funcName ->
-                    if ctx.call.functionRegistry.ContainsKey(funcName) then
-                        // STUB for Phase 4: user-defined function via handle
-                        results.Add(UnknownShape)
-                    elif Set.contains funcName KNOWN_BUILTINS then
-                        // Dispatch to builtin via callback
-                        let fakeApplyLine = line
+                    if ctx.call.functionRegistry.ContainsKey(funcName) ||
+                       Set.contains funcName KNOWN_BUILTINS ||
+                       ctx.ws.externalFunctions.ContainsKey(funcName) ||
+                       ctx.call.nestedFunctionRegistry.ContainsKey(funcName) then
+                        // Route through callback which has real dispatch in StmtFuncAnalysis
                         let fakeBase = Ir.Var(line, 0, funcName)
-                        let builtinResult = builtinDispatch funcName fakeApplyLine fakeBase args env warnings ctx
-                        results.Add(builtinResult)
-                    elif ctx.ws.externalFunctions.ContainsKey(funcName) then
-                        // STUB for Phase 4: external function via handle
-                        results.Add(UnknownShape)
+                        let result = builtinDispatch funcName line fakeBase args env warnings ctx
+                        results.Add(result)
                     else
                         results.Add(UnknownShape)
                 | _ -> results.Add(UnknownShape)

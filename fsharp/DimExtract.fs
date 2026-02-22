@@ -63,6 +63,7 @@ and exprToDimIrCtx (expr: Expr) (env: Env) (ctx: Context.AnalysisContext option)
                     | _ -> Symbolic (SymDim.SymDim.var name)
                 | _ -> Symbolic (SymDim.SymDim.var name)
             | None -> Symbolic (SymDim.SymDim.var name)
+    | Neg _ -> Unknown   // Negative literal in dim context: treat as Unknown (mirrors Python)
     | BinOp(_, _, op, left, right) ->
         let l = exprToDimIrCtx left env ctx
         let r = exprToDimIrCtx right env ctx
@@ -80,15 +81,15 @@ and exprToDimIrCtx (expr: Expr) (env: Env) (ctx: Context.AnalysisContext option)
 /// extractIterationCount: extract iteration count from a for-loop iterator expression.
 /// Handles BinOp(":", start, end) -> (end - start) + 1.
 /// Returns Unknown for stepped ranges, non-range iterators, or unresolvable.
-let extractIterationCount (itExpr: Expr) (env: Env) : Dim =
+let extractIterationCount (itExpr: Expr) (env: Env) (ctx: Context.AnalysisContext option) : Dim =
     match itExpr with
     | BinOp(_, _, ":", left, right) ->
         // Stepped range: BinOp(":", BinOp(":", start, step), end)
         match left with
         | BinOp(_, _, ":", _, _) -> Unknown  // stepped range
         | _ ->
-            let a = exprToDimIr left env
-            let b = exprToDimIr right env
+            let a = exprToDimIrCtx left env ctx
+            let b = exprToDimIrCtx right env ctx
             match a, b with
             | Unknown, _ | _, Unknown -> Unknown
             | Concrete a', Concrete b' -> Concrete (max 0 ((b' - a') + 1))

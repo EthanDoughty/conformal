@@ -266,8 +266,8 @@ let rec private updateStructField
             let newMap = Map.add fieldName rhsShape fmap
             Struct(newMap |> Map.toList, isOpen)
         | UnknownShape ->
-            // Can't track fields on unknown base
-            UnknownShape
+            // Unknown base: create open struct (has at least this field, may have others)
+            Struct([ (fieldName, rhsShape) ], true)
         | _ ->
             // Non-struct: create new struct with just this field
             Struct([ (fieldName, rhsShape) ], false)
@@ -278,7 +278,7 @@ let rec private updateStructField
                 let fmap = Map.ofList existingFields
                 defaultArg (Map.tryFind firstField fmap) Bottom
             | Bottom -> Bottom
-            | _ -> UnknownShape
+            | _ -> Bottom  // Unknown base: treat inner as Bottom so chain builds correctly
         let updatedInner = updateStructField innerShape rest rhsShape line warnings
         match baseShape with
         | Struct(existingFields, isOpen) ->
@@ -287,6 +287,8 @@ let rec private updateStructField
             Struct(newMap |> Map.toList, isOpen)
         | Bottom ->
             Struct([ (firstField, updatedInner) ], false)
+        | UnknownShape ->
+            Struct([ (firstField, updatedInner) ], true)  // open: may have other fields
         | _ ->
             Struct([ (firstField, updatedInner) ], false)
 
@@ -314,7 +316,28 @@ and private wiredBuiltinDispatch
     (ctx: AnalysisContext)
     : Shape =
     ignore baseExpr
-    evalBuiltinCall fname line args env warnings ctx wiredEvalExpr wiredGetInterval
+    if Set.contains fname KNOWN_BUILTINS then
+        evalBuiltinCall fname line args env warnings ctx wiredEvalExprFull wiredGetInterval
+    elif ctx.call.functionRegistry.ContainsKey(fname) then
+        let sig_ = ctx.call.functionRegistry.[fname]
+        if sig_.outputVars.IsEmpty then
+            warnings.Value <- warnings.Value @ [ warnProcedureInExpr line fname ]
+        let outputShapes = analyzeFunctionCall fname args line env warnings ctx
+        if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
+    elif ctx.call.nestedFunctionRegistry.ContainsKey(fname) then
+        let sig_ = ctx.call.nestedFunctionRegistry.[fname]
+        if sig_.outputVars.IsEmpty then
+            warnings.Value <- warnings.Value @ [ warnProcedureInExpr line fname ]
+        let outputShapes = analyzeNestedFunctionCall fname args line env warnings ctx
+        if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
+    elif ctx.ws.externalFunctions.ContainsKey(fname) then
+        // External functions: no W_PROCEDURE_IN_EXPR (only applies to same-file functions)
+        let extSig = ctx.ws.externalFunctions.[fname]
+        let outputShapes = analyzeExternalFunctionCall fname extSig args line env warnings ctx
+        if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
+    else
+        warnings.Value <- warnings.Value @ [ warnUnknownFunction line fname ]
+        UnknownShape
 
 and private wiredGetInterval
     (expr: Expr)
@@ -347,12 +370,19 @@ and private wiredEvalExprFull
         elif not (Env.hasLocal env fname) then
             // Priority 3-5: unbound — user function, nested, external, or unknown
             if ctx.call.functionRegistry.ContainsKey(fname) then
+                let sig_ = ctx.call.functionRegistry.[fname]
+                if sig_.outputVars.IsEmpty then
+                    warnings.Value <- warnings.Value @ [ warnProcedureInExpr line fname ]
                 let outputShapes = analyzeFunctionCall fname args line env warnings ctx
                 if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
             elif ctx.call.nestedFunctionRegistry.ContainsKey(fname) then
+                let sig_ = ctx.call.nestedFunctionRegistry.[fname]
+                if sig_.outputVars.IsEmpty then
+                    warnings.Value <- warnings.Value @ [ warnProcedureInExpr line fname ]
                 let outputShapes = analyzeNestedFunctionCall fname args line env warnings ctx
                 if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
             elif ctx.ws.externalFunctions.ContainsKey(fname) then
+                // External functions: no W_PROCEDURE_IN_EXPR (only applies to same-file functions)
                 let extSig = ctx.ws.externalFunctions.[fname]
                 let outputShapes = analyzeExternalFunctionCall fname extSig args line env warnings ctx
                 if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
@@ -506,7 +536,7 @@ and analyzeStmtIr
         let (preLoopEnv, iterCount, accumPatterns) =
             if ctx.call.fixpoint then
                 let pre = Env.copy env
-                let ic = extractIterationCount it env
+                let ic = extractIterationCount it env (Some ctx)
                 let accum = if ic <> Unknown then detectAccumulation var_ body else []
                 (pre, ic, accum)
             else
