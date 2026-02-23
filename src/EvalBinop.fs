@@ -5,6 +5,7 @@ open Shapes
 open Env
 open Context
 open Diagnostics
+open SharedTypes
 
 // ---------------------------------------------------------------------------
 // Binary operation shape inference.
@@ -17,24 +18,22 @@ let evalBinopIr
     (op: string)
     (left: Shape)
     (right: Shape)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (leftExpr: Expr)
     (rightExpr: Expr)
     (line: int)
     (ctx: AnalysisContext)
     (env: Env)
-    (getDivisorInterval: Expr -> Intervals.Interval option)
+    (getDivisorInterval: Expr -> Interval option)
     : Shape =
 
     // Comparison operators: always return scalar
     if Set.contains op (Set.ofList ["=="; "~="; "<"; "<="; ">"; ">="]) then
         match left, right with
         | Matrix _, Scalar | Scalar, Matrix _ ->
-            warnings.Value <- warnings.Value @
-                [ warnSuspiciousComparisonMatrixScalar line op leftExpr rightExpr left right ]
+            warnings.Add(warnSuspiciousComparisonMatrixScalar line op leftExpr rightExpr left right)
         | Matrix _, Matrix _ ->
-            warnings.Value <- warnings.Value @
-                [ warnMatrixToMatrixComparison line op leftExpr rightExpr left right ]
+            warnings.Add(warnMatrixToMatrixComparison line op leftExpr rightExpr left right)
         | _ -> ()
         Scalar
 
@@ -42,8 +41,7 @@ let evalBinopIr
     elif op = "&&" || op = "||" then
         match left, right with
         | Matrix _, _ | _, Matrix _ ->
-            warnings.Value <- warnings.Value @
-                [ warnLogicalOpNonScalar line op leftExpr rightExpr left right ]
+            warnings.Add(warnLogicalOpNonScalar line op leftExpr rightExpr left right)
         | _ -> ()
         Scalar
 
@@ -59,8 +57,7 @@ let evalBinopIr
     elif Set.contains op (Set.ofList ["+"; "-"; "*"; ".*"; "/"; "./"; ".^"; "\\"; "^"]) &&
          (isString left || isString right) then
         if not (isString left && isString right && op = "+") then
-            warnings.Value <- warnings.Value @
-                [ warnStringArithmetic line op left right ]
+            warnings.Add(warnStringArithmetic line op left right)
             UnknownShape
         else
             Matrix(Concrete 1, Unknown)   // fallthrough for string+string
@@ -69,8 +66,7 @@ let evalBinopIr
     elif not (isUnknown left || isUnknown right) &&
          Set.contains op (Set.ofList ["+"; "-"; "*"; ".*"; "/"; "./"; ".^"; "\\"; "^"; "&"; "|"]) &&
          (not (isNumeric left) || not (isNumeric right)) then
-        warnings.Value <- warnings.Value @
-            [ warnArithmeticTypeMismatch line op leftExpr rightExpr left right ]
+        warnings.Add(warnArithmeticTypeMismatch line op leftExpr rightExpr left right)
         UnknownShape
 
     // Matrix power: A^n
@@ -80,8 +76,7 @@ let evalBinopIr
         | Scalar, _ | _, Matrix _ -> UnknownShape
         | Matrix(r, c), Scalar ->
             if dimsDefinitelyConflict r c then
-                warnings.Value <- warnings.Value @
-                    [ warnMatrixPowerNonSquare line leftExpr left ]
+                warnings.Add(warnMatrixPowerNonSquare line leftExpr left)
                 UnknownShape
             else left
         | _ -> UnknownShape
@@ -96,8 +91,7 @@ let evalBinopIr
         | Matrix(lr, lc), Matrix(rr, rc) ->
             Constraints.recordConstraint ctx env lr rr line
             if dimsDefinitelyConflict lr rr then
-                warnings.Value <- warnings.Value @
-                    [ warnMldivideDimMismatch line leftExpr rightExpr left right ]
+                warnings.Add(warnMldivideDimMismatch line leftExpr rightExpr left right)
                 UnknownShape
             else Matrix(lc, rc)
         | _ -> UnknownShape
@@ -115,8 +109,7 @@ let evalBinopIr
             if op = "/" || op = "./" then
                 let divisorIv = getDivisorInterval rightExpr
                 if Intervals.intervalIsExactlyZero divisorIv then
-                    warnings.Value <- warnings.Value @
-                        [ warnDivisionByZero line leftExpr rightExpr ]
+                    warnings.Add(warnDivisionByZero line leftExpr rightExpr)
             Scalar
         | Matrix(r1, c1), Matrix(r2, c2) ->
             Constraints.recordConstraint ctx env r1 r2 line
@@ -124,8 +117,7 @@ let evalBinopIr
             let rConflict = dimsDefinitelyConflict r1 r2
             let cConflict = dimsDefinitelyConflict c1 c2
             if rConflict || cConflict then
-                warnings.Value <- warnings.Value @
-                    [ warnElementwiseMismatch line op leftExpr rightExpr left right ]
+                warnings.Add(warnElementwiseMismatch line op leftExpr rightExpr left right)
                 UnknownShape
             else Matrix(joinDim r1 r2, joinDim c1 c2)
         | _ -> UnknownShape
@@ -142,8 +134,7 @@ let evalBinopIr
                 let suggest =
                     not (dimsDefinitelyConflict r1 r2) &&
                     not (dimsDefinitelyConflict c1 c2)
-                warnings.Value <- warnings.Value @
-                    [ warnMatmulMismatch line leftExpr rightExpr left right suggest ]
+                warnings.Add(warnMatmulMismatch line leftExpr rightExpr left right suggest)
                 UnknownShape
             else Matrix(r1, c2)
         | _ -> UnknownShape
@@ -161,8 +152,7 @@ let evalBinopIr
             let rConflict = dimsDefinitelyConflict r1 r2
             let cConflict = dimsDefinitelyConflict c1 c2
             if rConflict || cConflict then
-                warnings.Value <- warnings.Value @
-                    [ warnElementwiseMismatch line op leftExpr rightExpr left right ]
+                warnings.Add(warnElementwiseMismatch line op leftExpr rightExpr left right)
                 UnknownShape
             else Matrix(joinDim r1 r2, joinDim c1 c2)
         | _ -> UnknownShape

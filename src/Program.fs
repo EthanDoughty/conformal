@@ -8,6 +8,7 @@ open Diagnostics
 open Builtins
 open Context
 open Intervals
+open SharedTypes
 open EvalExpr
 open EvalBuiltins
 open Analysis
@@ -288,7 +289,7 @@ let runPhase3Test () : int =
     Console.WriteLine("=== Phase 3: EvalBinop ===")
     let ctx0 = AnalysisContext()
     let env1 = Env.Env.create ()
-    let warnRef = ref []
+    let warnRef = ResizeArray<Diagnostic>()
     let dummyExpr = Ir.Const(1, 0, 1.0)
     let noIv _ = None
 
@@ -297,22 +298,22 @@ let runPhase3Test () : int =
     let rightM = Matrix(Concrete 4, Concrete 2)
     let result = EvalBinop.evalBinopIr "*" leftM rightM warnRef dummyExpr dummyExpr 1 ctx0 env1 noIv
     check "matmul 3x4 * 4x2 -> 3x2" "matrix[3 x 2]" (shapeToString result)
-    checkBool "matmul no warnings" true warnRef.Value.IsEmpty
+    checkBool "matmul no warnings" true (warnRef.Count = 0)
 
-    warnRef.Value <- []
+    warnRef.Clear()
     // matmul dimension mismatch: 3x4 * 5x2 should produce unknown + warning
     let rightMbad = Matrix(Concrete 5, Concrete 2)
     let resultBad = EvalBinop.evalBinopIr "*" leftM rightMbad warnRef dummyExpr dummyExpr 1 ctx0 env1 noIv
     check "matmul mismatch -> unknown" "unknown" (shapeToString resultBad)
-    checkBool "matmul mismatch has warning" true (warnRef.Value |> List.exists (fun d -> d.code = "W_INNER_DIM_MISMATCH"))
+    checkBool "matmul mismatch has warning" true (warnRef |> Seq.exists (fun d -> d.code = "W_INNER_DIM_MISMATCH"))
 
-    warnRef.Value <- []
+    warnRef.Clear()
     // elementwise: 3x4 .* 3x4 -> 3x4
     let ewResult = EvalBinop.evalBinopIr ".*" leftM leftM warnRef dummyExpr dummyExpr 1 ctx0 env1 noIv
     check "elementwise 3x4 .* 3x4 -> 3x4" "matrix[3 x 4]" (shapeToString ewResult)
 
     Console.WriteLine("=== Phase 3: MatrixLiterals ===")
-    let warnRef2 = ref []
+    let warnRef2 = ResizeArray<Diagnostic>()
     let ctx1 = AnalysisContext()
     let env2 = Env.Env.create ()
 
@@ -329,7 +330,7 @@ let runPhase3Test () : int =
     check "col [scalar; scalar] -> matrix[2 x 1]" "matrix[2 x 1]" (shapeToString colShape)
 
     Console.WriteLine("=== Phase 3: evalExprIr ===")
-    let warnRef3 = ref []
+    let warnRef3 = ResizeArray<Diagnostic>()
     let ctx2 = AnalysisContext()
     let env3 = Env.Env.create ()
 
@@ -393,27 +394,27 @@ let runPhase4Test () : int =
     // --- EvalBuiltins: zeros(3,4) -> matrix[3 x 4] ---
     Console.WriteLine("=== Phase 4: evalBuiltinCall zeros(3,4) ===")
     let env0 = Env.Env.create ()
-    let warnRef = ref []
+    let warnRef = ResizeArray<Diagnostic>()
     let ctx0 = AnalysisContext()
 
-    let stubEval (e: Ir.Expr) (_env: Env.Env) (_w: Diagnostic list ref) (_ctx: AnalysisContext) : Shape =
+    let stubEval (e: Ir.Expr) (_env: Env.Env) (_w: ResizeArray<Diagnostic>) (_ctx: AnalysisContext) : Shape =
         match e with
         | Ir.Const(_, _, v) -> Scalar
         | _ -> UnknownShape
 
-    let stubGetInterval (_e: Ir.Expr) (_env: Env.Env) (_ctx: AnalysisContext) : Intervals.Interval option =
+    let stubGetInterval (_e: Ir.Expr) (_env: Env.Env) (_ctx: AnalysisContext) : Interval option =
         None
 
     let zerosArgs = [ Ir.IndexExpr(1, 0, Ir.Const(1, 0, 3.0)); Ir.IndexExpr(1, 0, Ir.Const(1, 0, 4.0)) ]
     let zerosResult = evalBuiltinCall "zeros" 1 zerosArgs env0 warnRef ctx0 stubEval stubGetInterval
     check "zeros(3,4)" "matrix[3 x 4]" (shapeToString zerosResult)
-    checkBool "zeros(3,4) no warnings" true warnRef.Value.IsEmpty
+    checkBool "zeros(3,4) no warnings" true (warnRef.Count = 0)
 
     // --- EvalBuiltins: size(A) -> scalar ---
     Console.WriteLine("=== Phase 4: evalBuiltinCall size(A) ===")
     Env.Env.set env0 "A" (Matrix(Concrete 3, Concrete 4))
     let sizeArgs = [ Ir.IndexExpr(1, 0, Ir.Var(1, 0, "A")) ]
-    let sizeEval (e: Ir.Expr) (_env: Env.Env) (_w: Diagnostic list ref) (_ctx: AnalysisContext) : Shape =
+    let sizeEval (e: Ir.Expr) (_env: Env.Env) (_w: ResizeArray<Diagnostic>) (_ctx: AnalysisContext) : Shape =
         match e with
         | Ir.Var(_, _, "A") -> Matrix(Concrete 3, Concrete 4)
         | _ -> UnknownShape

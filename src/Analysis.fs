@@ -25,14 +25,14 @@ let analyzeProgramIr
     : Env * Diagnostic list =
 
     let env = Env.create ()
-    let warnings = ref []
+    let warnings = ResizeArray<Diagnostic>()
 
     // Pass 1: register function definitions
     for item in program.body do
         match item with
-        | FunctionDef(_, _, name, parms, outputVars, body) ->
+        | FunctionDef(line, col, name, parms, outputVars, body) ->
             ctx.call.functionRegistry.[name] <-
-                { name = name; parms = parms; outputVars = outputVars; body = body }
+                { name = name; parms = parms; outputVars = outputVars; body = body; defLine = line; defCol = col }
         | _ -> ()
 
     // Pass 2: analyze script statements (non-function bodies)
@@ -47,5 +47,5 @@ let analyzeProgramIr
     | :? EarlyContinue   -> ()
 
     // Deduplicate warnings while preserving order
-    let deduped = warnings.Value |> List.distinctBy id
+    let deduped = Seq.toList warnings |> List.distinctBy id
     (env, deduped)

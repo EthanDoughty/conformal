@@ -8,6 +8,7 @@ open Diagnostics
 open Builtins
 open DimExtract
 open Intervals
+open SharedTypes
 open Constraints
 open EvalExpr
 open EvalBuiltins
@@ -131,9 +132,9 @@ let private refineAccumulation
     (iterCount: Dim)
     (preLoopEnv: Env)
     (postLoopEnv: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (wiredEvalExpr: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (wiredEvalExpr: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : unit =
     if iterCount = Unknown then ()
     else
@@ -150,7 +151,7 @@ let private refineAccumulation
                             exprMentionsVar elem accum.varName || exprMentionsVar elem accum.loopVar))
                 if selfRef then ()
                 else
-                    let deltaWarnings = ref []
+                    let deltaWarnings = ResizeArray<Diagnostic>()
                     let deltaRows =
                         accum.deltaExprs |> List.map (fun row ->
                             row |> List.map (fun elem -> wiredEvalExpr elem preLoopEnv deltaWarnings ctx))
@@ -186,10 +187,10 @@ let private joinBranchResults
     (env: Env)
     (ctx: AnalysisContext)
     (baselineConstraints: System.Collections.Generic.HashSet<string * string>)
-    (baselineRanges: System.Collections.Generic.Dictionary<string, obj>)
+    (baselineRanges: System.Collections.Generic.Dictionary<string, SharedTypes.Interval>)
     (branchEnvs: Env list)
     (branchConstraints: System.Collections.Generic.HashSet<string * string> list)
-    (branchRanges: System.Collections.Generic.Dictionary<string, obj> list)
+    (branchRanges: System.Collections.Generic.Dictionary<string, SharedTypes.Interval> list)
     (returnedFlags: bool list)
     (deferredExc: System.Exception option)
     : unit =
@@ -252,7 +253,7 @@ let rec private updateStructField
     (fields: string list)
     (rhsShape: Shape)
     (line: int)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     : Shape =
     match fields with
     | [] -> rhsShape
@@ -301,7 +302,7 @@ let rec private updateStructField
 let rec wiredEvalExpr
     (expr: Expr)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     : Shape =
     evalExprIr expr env warnings ctx None wiredBuiltinDispatch
@@ -312,7 +313,7 @@ and private wiredBuiltinDispatch
     (baseExpr: Expr)
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     : Shape =
     ignore baseExpr
@@ -321,13 +322,13 @@ and private wiredBuiltinDispatch
     elif ctx.call.functionRegistry.ContainsKey(fname) then
         let sig_ = ctx.call.functionRegistry.[fname]
         if sig_.outputVars.IsEmpty then
-            warnings.Value <- warnings.Value @ [ warnProcedureInExpr line fname ]
+            warnings.Add(warnProcedureInExpr line fname)
         let outputShapes = analyzeFunctionCall fname args line env warnings ctx
         if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
     elif ctx.call.nestedFunctionRegistry.ContainsKey(fname) then
         let sig_ = ctx.call.nestedFunctionRegistry.[fname]
         if sig_.outputVars.IsEmpty then
-            warnings.Value <- warnings.Value @ [ warnProcedureInExpr line fname ]
+            warnings.Add(warnProcedureInExpr line fname)
         let outputShapes = analyzeNestedFunctionCall fname args line env warnings ctx
         if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
     elif ctx.ws.externalFunctions.ContainsKey(fname) then
@@ -336,7 +337,7 @@ and private wiredBuiltinDispatch
         let outputShapes = analyzeExternalFunctionCall fname extSig args line env warnings ctx
         if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
     else
-        warnings.Value <- warnings.Value @ [ warnUnknownFunction line fname ]
+        warnings.Add(warnUnknownFunction line fname)
         UnknownShape
 
 and private wiredGetInterval
@@ -354,7 +355,7 @@ and private wiredGetInterval
 and private wiredEvalExprFull
     (expr: Expr)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     : Shape =
     match expr with
@@ -372,13 +373,13 @@ and private wiredEvalExprFull
             if ctx.call.functionRegistry.ContainsKey(fname) then
                 let sig_ = ctx.call.functionRegistry.[fname]
                 if sig_.outputVars.IsEmpty then
-                    warnings.Value <- warnings.Value @ [ warnProcedureInExpr line fname ]
+                    warnings.Add(warnProcedureInExpr line fname)
                 let outputShapes = analyzeFunctionCall fname args line env warnings ctx
                 if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
             elif ctx.call.nestedFunctionRegistry.ContainsKey(fname) then
                 let sig_ = ctx.call.nestedFunctionRegistry.[fname]
                 if sig_.outputVars.IsEmpty then
-                    warnings.Value <- warnings.Value @ [ warnProcedureInExpr line fname ]
+                    warnings.Add(warnProcedureInExpr line fname)
                 let outputShapes = analyzeNestedFunctionCall fname args line env warnings ctx
                 if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
             elif ctx.ws.externalFunctions.ContainsKey(fname) then
@@ -387,7 +388,7 @@ and private wiredEvalExprFull
                 let outputShapes = analyzeExternalFunctionCall fname extSig args line env warnings ctx
                 if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
             else
-                warnings.Value <- warnings.Value @ [ warnUnknownFunction line fname ]
+                warnings.Add(warnUnknownFunction line fname)
                 UnknownShape
         else
             // Priority 6: bound non-handle variable — treat as indexing
@@ -403,7 +404,7 @@ and private wiredEvalExprFull
 and analyzeStmtIr
     (stmt: Stmt)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     : unit =
 
@@ -413,7 +414,7 @@ and analyzeStmtIr
         let newShape = wiredEvalExprFull expr env warnings ctx
 
         if Env.hasLocal env name && AnalysisCore.shapesDefinitelyIncompatible oldShape newShape then
-            warnings.Value <- warnings.Value @ [ warnReassignIncompatible line name newShape oldShape ]
+            warnings.Add(warnReassignIncompatible line name newShape oldShape)
 
         Env.set env name newShape
 
@@ -430,7 +431,7 @@ and analyzeStmtIr
         if isScalar newShape then
             let iv = getExprInterval expr env ctx
             match iv with
-            | Some i -> ctx.cst.valueRanges.[name] <- box i
+            | Some i -> ctx.cst.valueRanges.[name] <- i
             | None ->
                 if ctx.cst.valueRanges.ContainsKey(name) then
                     ctx.cst.valueRanges.Remove(name) |> ignore
@@ -467,7 +468,7 @@ and analyzeStmtIr
             else
                 for arg in args do evalArgShapeHelper arg env warnings ctx baseShape |> ignore
                 if not (isUnknown baseShape) then
-                    warnings.Value <- warnings.Value @ [ warnCellAssignNonCell line baseName baseShape ]
+                    warnings.Add(warnCellAssignNonCell line baseName baseShape)
         else
             analyzeCellAssignArgs baseName args env warnings ctx rhsShape
 
@@ -482,8 +483,7 @@ and analyzeStmtIr
                 isMatrix baseShape || isUnknown baseShape || isScalar baseShape ||
                 isStruct baseShape || isEmptyMatrix baseShape
             if not isIndexable then
-                warnings.Value <- warnings.Value @
-                    [ warnIndexAssignTypeMismatch (stmt.Line) baseName baseShape ]
+                warnings.Add(warnIndexAssignTypeMismatch (stmt.Line) baseName baseShape)
         // No OOB checking: MATLAB auto-expands on indexed assign
 
     | IndexStructAssign(_, _, baseName, _, _, _, expr) ->
@@ -497,7 +497,7 @@ and analyzeStmtIr
     | While(line, _, cond, body) ->
         wiredEvalExprFull cond env warnings ctx |> ignore
 
-        let baselineRanges = System.Collections.Generic.Dictionary<string, obj>(ctx.cst.valueRanges)
+        let baselineRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
         let refinements = extractConditionRefinements cond env ctx
         applyRefinements ctx refinements false
 
@@ -517,7 +517,7 @@ and analyzeStmtIr
             let hiConst = tryExtractConstValue right
             match loConst, hiConst with
             | Some lo, Some hi ->
-                ctx.cst.valueRanges.[var_] <- box { lo = Finite lo; hi = Finite hi }
+                ctx.cst.valueRanges.[var_] <- { lo = Finite lo; hi = Finite hi }
             | _ ->
                 let loDim = exprToDimIr left env
                 let hiDim = exprToDimIr right env
@@ -529,7 +529,7 @@ and analyzeStmtIr
                     match hiConst with
                     | Some v -> Finite v
                     | None -> match hiDim with Concrete n -> Finite n | Symbolic s -> SymBound s | Unknown -> Unbounded
-                ctx.cst.valueRanges.[var_] <- box { lo = loBound; hi = hiBound }
+                ctx.cst.valueRanges.[var_] <- { lo = loBound; hi = hiBound }
         | _ -> ()
 
         // Fixpoint-only: accumulation refinement
@@ -553,7 +553,7 @@ and analyzeStmtIr
 
         let refinements = extractConditionRefinements cond env ctx
         let baselineConstraints = snapshotConstraints ctx
-        let baselineRanges = System.Collections.Generic.Dictionary<string, obj>(ctx.cst.valueRanges)
+        let baselineRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
 
         let thenEnv = Env.copy env
         let elseEnv = Env.copy env
@@ -572,7 +572,7 @@ and analyzeStmtIr
         | :? EarlyContinue as e -> thenReturned <- true; ctx.cst.pathConstraints.Pop(); reraise ()
         ctx.cst.pathConstraints.Pop()
         let thenConstraints = snapshotConstraints ctx
-        let thenRanges = System.Collections.Generic.Dictionary<string, obj>(ctx.cst.valueRanges)
+        let thenRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
 
         // Reset to baseline for else branch
         ctx.cst.constraints.Clear()
@@ -591,7 +591,7 @@ and analyzeStmtIr
         | :? EarlyContinue as e -> elseReturned <- true; ctx.cst.pathConstraints.Pop(); reraise ()
         ctx.cst.pathConstraints.Pop()
         let elseConstraints = snapshotConstraints ctx
-        let elseRanges = System.Collections.Generic.Dictionary<string, obj>(ctx.cst.valueRanges)
+        let elseRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
 
         joinBranchResults
             env ctx baselineConstraints baselineRanges
@@ -603,12 +603,12 @@ and analyzeStmtIr
 
         let allRefinements = conditions |> List.map (fun cond -> extractConditionRefinements cond env ctx)
         let baselineConstraints = snapshotConstraints ctx
-        let baselineRanges = System.Collections.Generic.Dictionary<string, obj>(ctx.cst.valueRanges)
+        let baselineRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
 
         let allBodies = bodies @ [ elseBody ]
         let mutable branchEnvs : Env list = []
         let mutable branchConstraints : System.Collections.Generic.HashSet<string * string> list = []
-        let mutable branchRanges : System.Collections.Generic.Dictionary<string, obj> list = []
+        let mutable branchRanges : System.Collections.Generic.Dictionary<string, SharedTypes.Interval> list = []
         let mutable returnedFlags : bool list = []
         let mutable deferredExc : System.Exception option = None
 
@@ -638,7 +638,7 @@ and analyzeStmtIr
 
             branchEnvs <- branchEnvs @ [branchEnv]
             branchConstraints <- branchConstraints @ [ snapshotConstraints ctx ]
-            branchRanges <- branchRanges @ [ System.Collections.Generic.Dictionary<string, obj>(ctx.cst.valueRanges) ]
+            branchRanges <- branchRanges @ [ System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges) ]
             returnedFlags <- returnedFlags @ [returned]
 
         joinBranchResults
@@ -650,12 +650,12 @@ and analyzeStmtIr
         for (caseVal, _) in cases do wiredEvalExprFull caseVal env warnings ctx |> ignore
 
         let baselineConstraints = snapshotConstraints ctx
-        let baselineRanges = System.Collections.Generic.Dictionary<string, obj>(ctx.cst.valueRanges)
+        let baselineRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
 
         let allBodies = (cases |> List.map snd) @ [ otherwise ]
         let mutable branchEnvs : Env list = []
         let mutable branchConstraints : System.Collections.Generic.HashSet<string * string> list = []
-        let mutable branchRanges : System.Collections.Generic.Dictionary<string, obj> list = []
+        let mutable branchRanges : System.Collections.Generic.Dictionary<string, SharedTypes.Interval> list = []
         let mutable returnedFlags : bool list = []
         let mutable deferredExc : System.Exception option = None
 
@@ -686,7 +686,7 @@ and analyzeStmtIr
 
             branchEnvs <- branchEnvs @ [branchEnv]
             branchConstraints <- branchConstraints @ [ snapshotConstraints ctx ]
-            branchRanges <- branchRanges @ [ System.Collections.Generic.Dictionary<string, obj>(ctx.cst.valueRanges) ]
+            branchRanges <- branchRanges @ [ System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges) ]
             returnedFlags <- returnedFlags @ [returned]
 
         joinBranchResults
@@ -695,7 +695,7 @@ and analyzeStmtIr
 
     | Try(_, _, tryBody, catchBody) ->
         let baselineConstraints = snapshotConstraints ctx
-        let baselineRanges = System.Collections.Generic.Dictionary<string, obj>(ctx.cst.valueRanges)
+        let baselineRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
         let preTryEnv = Env.copy env
 
         let tryEnv = Env.copy env
@@ -708,7 +708,7 @@ and analyzeStmtIr
         | :? EarlyBreak as e -> tryReturned <- true; deferredExc <- Some (e :> System.Exception)
         | :? EarlyContinue as e -> tryReturned <- true; deferredExc <- Some (e :> System.Exception)
         let tryConstraints = snapshotConstraints ctx
-        let tryRanges = System.Collections.Generic.Dictionary<string, obj>(ctx.cst.valueRanges)
+        let tryRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
 
         ctx.cst.constraints.Clear()
         for c in baselineConstraints do ctx.cst.constraints.Add(c) |> ignore
@@ -728,7 +728,7 @@ and analyzeStmtIr
             catchReturned <- true
             if deferredExc.IsNone then deferredExc <- Some (e :> System.Exception)
         let catchConstraints = snapshotConstraints ctx
-        let catchRanges = System.Collections.Generic.Dictionary<string, obj>(ctx.cst.valueRanges)
+        let catchRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
 
         joinBranchResults
             env ctx baselineConstraints baselineRanges
@@ -738,7 +738,7 @@ and analyzeStmtIr
     | OpaqueStmt(line, _, targets, raw) ->
         let firstWord = if raw.Trim() = "" then "" else raw.Trim().Split([| ' '; '\t' |]).[0]
         if not (Set.contains firstWord SUPPRESSED_CMD_STMTS) then
-            warnings.Value <- warnings.Value @ [ warnUnsupportedStmt line raw targets ]
+            warnings.Add(warnUnsupportedStmt line raw targets)
         for targetName in targets do Env.set env targetName UnknownShape
 
     | Return _ -> raise EarlyReturn
@@ -760,7 +760,7 @@ and analyzeStmtIr
 and private evalArgShapeHelper
     (arg: IndexArg)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     (containerShape: Shape)
     : Shape =
@@ -771,7 +771,7 @@ and private analyzeCellAssignArgs
     (baseName: string)
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     (rhsShape: Shape)
     : unit =
@@ -805,7 +805,7 @@ and private analyzeAssignMulti
     (targets: string list)
     (expr: Expr)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     : unit =
 
@@ -834,14 +834,13 @@ and private analyzeAssignMulti
                     for (target, shape) in List.zip targets shapes do bindTarget target shape
                 | None ->
                     let supported = defaultArg (Map.tryFind fname MULTI_SUPPORTED_FORMS) "unknown"
-                    warnings.Value <- warnings.Value @ [ warnMultiReturnCount line fname supported numTargets ]
+                    warnings.Add(warnMultiReturnCount line fname supported numTargets)
                     for target in targets do bindTarget target UnknownShape
 
         elif ctx.call.functionRegistry.ContainsKey(fname) then
             let outputShapes = analyzeFunctionCall fname args line env warnings ctx
             if targets.Length <> outputShapes.Length then
-                warnings.Value <- warnings.Value @
-                    [ warnMultiAssignCountMismatch line fname outputShapes.Length targets.Length ]
+                warnings.Add(warnMultiAssignCountMismatch line fname outputShapes.Length targets.Length)
                 for target in targets do bindTarget target UnknownShape
             else
                 for (target, shape) in List.zip targets outputShapes do bindTarget target shape
@@ -849,8 +848,7 @@ and private analyzeAssignMulti
         elif ctx.call.nestedFunctionRegistry.ContainsKey(fname) then
             let outputShapes = analyzeNestedFunctionCall fname args line env warnings ctx
             if targets.Length <> outputShapes.Length then
-                warnings.Value <- warnings.Value @
-                    [ warnMultiAssignCountMismatch line fname outputShapes.Length targets.Length ]
+                warnings.Add(warnMultiAssignCountMismatch line fname outputShapes.Length targets.Length)
                 for target in targets do bindTarget target UnknownShape
             else
                 for (target, shape) in List.zip targets outputShapes do bindTarget target shape
@@ -859,18 +857,17 @@ and private analyzeAssignMulti
             let extSig = ctx.ws.externalFunctions.[fname]
             let outputShapes = analyzeExternalFunctionCall fname extSig args line env warnings ctx
             if targets.Length <> outputShapes.Length then
-                warnings.Value <- warnings.Value @
-                    [ warnMultiAssignCountMismatch line fname outputShapes.Length targets.Length ]
+                warnings.Add(warnMultiAssignCountMismatch line fname outputShapes.Length targets.Length)
                 for target in targets do bindTarget target UnknownShape
             else
                 for (target, shape) in List.zip targets outputShapes do bindTarget target shape
 
         else
-            warnings.Value <- warnings.Value @ [ warnUnknownFunction line fname ]
+            warnings.Add(warnUnknownFunction line fname)
             for target in targets do bindTarget target UnknownShape
 
     | _ ->
-        warnings.Value <- warnings.Value @ [ warnMultiAssignNonCall line ]
+        warnings.Add(warnMultiAssignNonCall line)
         for target in targets do bindTarget target UnknownShape
 
 
@@ -881,7 +878,7 @@ and private analyzeAssignMulti
 and analyzeLoopBody
     (body: Stmt list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     : unit =
 
@@ -923,7 +920,7 @@ and analyzeFunctionCall
     (args: IndexArg list)
     (line: int)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     : Shape list =
 
@@ -933,14 +930,13 @@ and analyzeFunctionCall
 
         // Check argument count
         if args.Length <> sig_.parms.Length then
-            warnings.Value <- warnings.Value @
-                [ warnFunctionArgCountMismatch line funcName sig_.parms.Length args.Length ]
+            warnings.Add(warnFunctionArgCountMismatch line funcName sig_.parms.Length args.Length)
             List.replicate (max sig_.outputVars.Length 1) UnknownShape
         else
 
         // Recursion guard
         if ctx.call.analyzingFunctions.Contains(funcName) then
-            warnings.Value <- warnings.Value @ [ warnRecursiveFunction line funcName ]
+            warnings.Add(warnRecursiveFunction line funcName)
             List.replicate (max sig_.outputVars.Length 1) UnknownShape
         else
 
@@ -966,14 +962,14 @@ and analyzeFunctionCall
         | true, (:? (Shape list * Diagnostic list) as cached) ->
             let (cachedShapes, cachedWarn) = cached
             for fw in cachedWarn do
-                warnings.Value <- warnings.Value @ [ formatDualLocationWarning fw funcName line ]
+                warnings.Add(formatDualLocationWarning fw funcName line)
             List.ofSeq cachedShapes
         | _ ->
             ctx.call.analyzingFunctions.Add(funcName) |> ignore
             try
                 ctx.SnapshotScope(fun () ->
                     let funcEnv = Env.create ()
-                    let funcWarnings = ref []
+                    let funcWarnings = ResizeArray<Diagnostic>()
 
                     // Bind parameters
                     for (param, arg, argShape) in List.zip3 sig_.parms args argShapes do
@@ -988,9 +984,9 @@ and analyzeFunctionCall
                     // Pre-scan body for nested FunctionDefs
                     for s in sig_.body do
                         match s with
-                        | FunctionDef(_, _, nestedName, nestedParms, nestedOuts, nestedBody) ->
+                        | FunctionDef(nLine, nCol, nestedName, nestedParms, nestedOuts, nestedBody) ->
                             ctx.call.nestedFunctionRegistry.[nestedName] <-
-                                { name = nestedName; parms = nestedParms; outputVars = nestedOuts; body = nestedBody }
+                                { name = nestedName; parms = nestedParms; outputVars = nestedOuts; body = nestedBody; defLine = nLine; defCol = nCol }
                         | _ -> ()
 
                     // Analyze function body
@@ -1006,10 +1002,10 @@ and analyzeFunctionCall
                             if isBottom shape then UnknownShape else shape)
                     let result = if resultShapes.IsEmpty then [ UnknownShape ] else resultShapes
 
-                    ctx.call.analysisCache.[cacheKey] <- box (result, funcWarnings.Value)
+                    ctx.call.analysisCache.[cacheKey] <- box (result, Seq.toList funcWarnings)
 
-                    for fw in funcWarnings.Value do
-                        warnings.Value <- warnings.Value @ [ formatDualLocationWarning fw funcName line ]
+                    for fw in funcWarnings do
+                        warnings.Add(formatDualLocationWarning fw funcName line)
 
                     result)
             finally
@@ -1025,7 +1021,7 @@ and analyzeNestedFunctionCall
     (args: IndexArg list)
     (line: int)
     (parentEnv: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     : Shape list =
 
@@ -1034,13 +1030,12 @@ and analyzeNestedFunctionCall
         let sig_ = ctx.call.nestedFunctionRegistry.[funcName]
 
         if args.Length <> sig_.parms.Length then
-            warnings.Value <- warnings.Value @
-                [ warnFunctionArgCountMismatch line funcName sig_.parms.Length args.Length ]
+            warnings.Add(warnFunctionArgCountMismatch line funcName sig_.parms.Length args.Length)
             List.replicate (max sig_.outputVars.Length 1) UnknownShape
         else
 
         if ctx.call.analyzingFunctions.Contains(funcName) then
-            warnings.Value <- warnings.Value @ [ warnRecursiveFunction line funcName ]
+            warnings.Add(warnRecursiveFunction line funcName)
             List.replicate (max sig_.outputVars.Length 1) UnknownShape
         else
 
@@ -1065,14 +1060,14 @@ and analyzeNestedFunctionCall
         | true, (:? (Shape list * Diagnostic list) as cached) ->
             let (cachedShapes, cachedWarn) = cached
             for fw in cachedWarn do
-                warnings.Value <- warnings.Value @ [ formatDualLocationWarning fw funcName line ]
+                warnings.Add(formatDualLocationWarning fw funcName line)
             List.ofSeq cachedShapes
         | _ ->
             ctx.call.analyzingFunctions.Add(funcName) |> ignore
             try
                 ctx.SnapshotScope(fun () ->
                     let funcEnv = Env.createWithParent parentEnv
-                    let funcWarnings = ref []
+                    let funcWarnings = ResizeArray<Diagnostic>()
 
                     for (param, arg, argShape) in List.zip3 sig_.parms args argShapes do
                         Env.set funcEnv param argShape
@@ -1085,9 +1080,9 @@ and analyzeNestedFunctionCall
 
                     for s in sig_.body do
                         match s with
-                        | FunctionDef(_, _, nestedName, nestedParms, nestedOuts, nestedBody) ->
+                        | FunctionDef(nLine, nCol, nestedName, nestedParms, nestedOuts, nestedBody) ->
                             ctx.call.nestedFunctionRegistry.[nestedName] <-
-                                { name = nestedName; parms = nestedParms; outputVars = nestedOuts; body = nestedBody }
+                                { name = nestedName; parms = nestedParms; outputVars = nestedOuts; body = nestedBody; defLine = nLine; defCol = nCol }
                         | _ -> ()
 
                     try
@@ -1107,10 +1102,10 @@ and analyzeNestedFunctionCall
                             if isBottom shape then UnknownShape else shape)
                     let result = if resultShapes.IsEmpty then [ UnknownShape ] else resultShapes
 
-                    ctx.call.analysisCache.[cacheKey] <- box (result, funcWarnings.Value)
+                    ctx.call.analysisCache.[cacheKey] <- box (result, Seq.toList funcWarnings)
 
-                    for fw in funcWarnings.Value do
-                        warnings.Value <- warnings.Value @ [ formatDualLocationWarning fw funcName line ]
+                    for fw in funcWarnings do
+                        warnings.Add(formatDualLocationWarning fw funcName line)
 
                     result)
             finally
@@ -1127,7 +1122,7 @@ and analyzeExternalFunctionCall
     (args: IndexArg list)
     (line: int)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     : Shape list =
 
@@ -1140,14 +1135,13 @@ and analyzeExternalFunctionCall
     let loaded = Workspace.loadExternalFunction extSig
     match loaded with
     | None ->
-        warnings.Value <- warnings.Value @ [ warnExternalParseError line fname extSig.filename ]
+        warnings.Add(warnExternalParseError line fname extSig.filename)
         List.replicate (max extSig.returnCount 1) UnknownShape
     | Some (primarySig, (subfunctions : Map<string, FunctionSignature>)) ->
 
     // Arg count check
     if args.Length <> primarySig.parms.Length then
-        warnings.Value <- warnings.Value @
-            [ warnFunctionArgCountMismatch line fname primarySig.parms.Length args.Length ]
+        warnings.Add(warnFunctionArgCountMismatch line fname primarySig.parms.Length args.Length)
         List.replicate (max primarySig.outputVars.Length 1) UnknownShape
     else
 
@@ -1183,7 +1177,7 @@ and analyzeExternalFunctionCall
         try
             ctx.SnapshotScope(fun () ->
                 let funcEnv = Env.create ()
-                let funcWarnings = ref []  // Suppressed
+                let funcWarnings = ResizeArray<Diagnostic>()  // Suppressed
 
                 for (param, arg, argShape) in List.zip3 primarySig.parms args argShapes do
                     Env.set funcEnv param argShape

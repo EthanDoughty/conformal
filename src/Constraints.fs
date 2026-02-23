@@ -105,7 +105,7 @@ let validateBinding
     (env: Env)
     (varName: string)
     (value: int)
-    (warnings: Diagnostics.Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostics.Diagnostic>)
     (line: int)
     : unit =
 
@@ -130,8 +130,7 @@ let validateBinding
                         match ctx.cst.constraintProvenance.TryGetValue((d1, d2)) with
                         | true, l -> l
                         | _ -> 0
-                    warnings.Value <- warnings.Value @
-                        [ Diagnostics.warnConstraintConflict line varName value other sourceLine ]
+                    warnings.Add(Diagnostics.warnConstraintConflict line varName value other sourceLine)
             | _ ->
                 // Check if other dim is in scalar_bindings
                 match ctx.cst.scalarBindings.TryGetValue(other) with
@@ -140,6 +139,5 @@ let validateBinding
                         match ctx.cst.constraintProvenance.TryGetValue((d1, d2)) with
                         | true, l -> l
                         | _ -> 0
-                    warnings.Value <- warnings.Value @
-                        [ Diagnostics.warnConstraintConflict line varName value other sourceLine ]
+                    warnings.Add(Diagnostics.warnConstraintConflict line varName value other sourceLine)
                 | _ -> ()

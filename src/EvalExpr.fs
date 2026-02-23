@@ -8,6 +8,7 @@ open Diagnostics
 open Builtins
 open EndHelpers
 open DimExtract
+open SharedTypes
 
 // ---------------------------------------------------------------------------
 // EvalExpr: core expression evaluator.
@@ -22,7 +23,7 @@ open DimExtract
 
 /// BuiltinDispatch: callback type for builtin function dispatch.
 /// Signature: fname -> line -> baseExpr -> args -> env -> warnings ref -> ctx -> Shape
-type BuiltinDispatch = string -> int -> Expr -> IndexArg list -> Env -> Diagnostics.Diagnostic list ref -> AnalysisContext -> Shape
+type BuiltinDispatch = string -> int -> Expr -> IndexArg list -> Env -> ResizeArray<Diagnostics.Diagnostic> -> AnalysisContext -> Shape
 
 // ---------------------------------------------------------------------------
 // MATLAB predefined constants
@@ -44,18 +45,18 @@ let private matlabConstants : Map<string, Shape> =
 // ---------------------------------------------------------------------------
 
 /// getExprInterval: compute integer interval for an expression.
-let rec getExprInterval (expr: Expr) (env: Env) (ctx: AnalysisContext) : Intervals.Interval option =
+let rec getExprInterval (expr: Expr) (env: Env) (ctx: AnalysisContext) : Interval option =
     match expr with
     | Const(_, _, v) ->
         // Integer constants only
         if v = System.Math.Floor v && not (System.Double.IsInfinity v) then
             let iv = int v
-            Some { Intervals.lo = Intervals.Finite iv; Intervals.hi = Intervals.Finite iv }
+            Some { lo = Finite iv; hi = Finite iv }
         else None
     | Var(_, _, name) ->
         match ctx.cst.valueRanges.TryGetValue(name) with
-        | true, (:? Intervals.Interval as iv) -> Some iv
-        | _ -> None
+        | true, iv -> Some iv
+        | false, _ -> None
     | Neg(_, _, operand) ->
         let operandIv = getExprInterval operand env ctx
         Intervals.intervalNeg operandIv
@@ -71,7 +72,7 @@ let rec getExprInterval (expr: Expr) (env: Env) (ctx: AnalysisContext) : Interva
             match lIv, rIv with
             | Some la, Some ra ->
                 match la.lo, la.hi, ra.lo, ra.hi with
-                | Intervals.Finite ll, Intervals.Finite lh, Intervals.Finite rl, Intervals.Finite rh
+                | Finite ll, Finite lh, Finite rl, Finite rh
                     when rl = rh && rl >= 0 ->
                     let exp = rl
                     let corners = [ pown ll exp; pown lh exp ]
@@ -79,8 +80,8 @@ let rec getExprInterval (expr: Expr) (env: Env) (ctx: AnalysisContext) : Interva
                         if ll < 0 && 0 < lh && exp % 2 = 0 then corners @ [0]
                         else corners
                     try
-                        Some { Intervals.lo = Intervals.Finite (List.min corners)
-                               Intervals.hi = Intervals.Finite (List.max corners) }
+                        Some { lo = Finite (List.min corners)
+                               hi = Finite (List.max corners) }
                     with _ -> None
                 | _ -> None
             | _ -> None
@@ -97,11 +98,11 @@ let getConcreteDimSize (dim: Dim) (ctx: AnalysisContext) : int option =
         match s._terms with
         | [([varName, 1], coeff)] when coeff = SymDim.Rational.One ->
             match ctx.cst.valueRanges.TryGetValue(varName) with
-            | true, (:? Intervals.Interval as iv) ->
+            | true, iv ->
                 match iv.lo, iv.hi with
-                | Intervals.Finite lo, Intervals.Finite hi when lo = hi -> Some lo
+                | Finite lo, Finite hi when lo = hi -> Some lo
                 | _ -> None
-            | _ -> None
+            | false, _ -> None
         | _ -> None
     | Unknown -> None
 
@@ -121,10 +122,10 @@ let private joinAllElements (elemMap: Map<int, Shape>) : Shape =
 let evalIndexArgToShape
     (arg: IndexArg)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     (containerShape: Shape option)
-    (evalFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape option -> Shape)
+    (evalFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape option -> Shape)
     : Shape =
     match arg with
     | IndexExpr(_, _, expr) -> evalFn expr env warnings ctx containerShape
@@ -140,12 +141,12 @@ let evalIndexArgToShape
 let indexArgToExtentIr
     (arg: IndexArg)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (line: int)
     (ctx: AnalysisContext)
     (containerShape: Shape option)
     (dimSize: Dim)
-    (evalFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape option -> Shape)
+    (evalFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape option -> Shape)
     : Dim =
     match arg with
     | Colon _ -> Unknown
@@ -156,8 +157,7 @@ let indexArgToExtentIr
 
         match startShape, endShape with
         | Matrix _, _ | _, Matrix _ ->
-            warnings.Value <- warnings.Value @
-                [ warnRangeEndpointsMustBeScalar line arg startShape endShape ]
+            warnings.Add(warnRangeEndpointsMustBeScalar line arg startShape endShape)
             Unknown
         | _ ->
             // Try to extract dimension values from endpoints
@@ -172,8 +172,7 @@ let indexArgToExtentIr
             | Unknown, _ | _, Unknown -> Unknown
             | Concrete a', Concrete b' ->
                 if b' < a' then
-                    warnings.Value <- warnings.Value @
-                        [ warnInvalidRangeEndLtStart line arg ]
+                    warnings.Add(warnInvalidRangeEndLtStart line arg)
                     Unknown
                 else Concrete ((b' - a') + 1)
             | _ -> addDim (subDim b a) (Concrete 1)   // (b-a)+1 symbolic
@@ -185,8 +184,7 @@ let indexArgToExtentIr
             match expr with
             | MatrixLit _ -> Unknown   // matrix literal as subscript: valid MATLAB
             | _ ->
-                warnings.Value <- warnings.Value @
-                    [ warnNonScalarIndexArg line arg s ]
+                warnings.Add(warnNonScalarIndexArg line arg s)
                 Unknown
         | _ -> Concrete 1
 
@@ -197,7 +195,7 @@ let indexArgToExtentIr
 let rec evalExprIr
     (expr: Expr)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     (containerShape: Shape option)
     (builtinDispatch: BuiltinDispatch)
@@ -222,7 +220,7 @@ let rec evalExprIr
     | End(line, _) ->
         match containerShape with
         | None ->
-            warnings.Value <- warnings.Value @ [ warnEndOutsideIndexing line ]
+            warnings.Add(warnEndOutsideIndexing line)
             UnknownShape
         | Some _ -> Scalar   // End resolves to scalar index
 
@@ -274,8 +272,7 @@ let rec evalExprIr
                 evalIndexArgToShape arg env warnings ctx (Some baseShape) (fun e en w c cs -> evalExprIr e en w c cs builtinDispatch)
                 |> ignore
             if not (isUnknown baseShape) && not (isEmptyMatrix baseShape) then
-                warnings.Value <- warnings.Value @
-                    [ warnCurlyIndexingNonCell line baseShape ]
+                warnings.Add(warnCurlyIndexingNonCell line baseShape)
             UnknownShape
         else
             match baseShape with
@@ -372,7 +369,7 @@ let rec evalExprIr
     | Transpose(line, _, operand) ->
         let inner = evalExprIr operand env warnings ctx None builtinDispatch
         if not (isNumeric inner) && not (isUnknown inner) then
-            warnings.Value <- warnings.Value @ [ warnTransposeTypeMismatch line inner ]
+            warnings.Add(warnTransposeTypeMismatch line inner)
             UnknownShape
         else
             match inner with
@@ -385,14 +382,14 @@ let rec evalExprIr
     | Neg(line, _, operand) ->
         let s = evalExprIr operand env warnings ctx None builtinDispatch
         if not (isNumeric s) && not (isUnknown s) then
-            warnings.Value <- warnings.Value @ [ warnNegateTypeMismatch line s ]
+            warnings.Add(warnNegateTypeMismatch line s)
             UnknownShape
         else s
 
     | Not(line, _, operand) ->
         let s = evalExprIr operand env warnings ctx None builtinDispatch
         if not (isNumeric s) && not (isUnknown s) then
-            warnings.Value <- warnings.Value @ [ warnNotTypeMismatch line s ]
+            warnings.Add(warnNotTypeMismatch line s)
             UnknownShape
         else s
 
@@ -411,16 +408,14 @@ let rec evalExprIr
                 | None ->
                     if isOpen then UnknownShape  // open struct: might exist
                     else
-                        warnings.Value <- warnings.Value @
-                            [ warnStructFieldNotFound line field baseShape ]
+                        warnings.Add(warnStructFieldNotFound line field baseShape)
                         UnknownShape
                 | Some fs ->
                     if fs = Bottom then UnknownShape else fs
             | UnknownShape -> UnknownShape
             | _ ->
                 if not (isEmptyMatrix baseShape) then
-                    warnings.Value <- warnings.Value @
-                        [ warnFieldAccessNonStruct line baseShape ]
+                    warnings.Add(warnFieldAccessNonStruct line baseShape)
                 UnknownShape
 
     // ------------------------------------------------------------------
@@ -430,7 +425,7 @@ let rec evalExprIr
         let lambdaId = ctx.call.nextLambdaId
         ctx.call.nextLambdaId <- lambdaId + 1
         // Store snapshot of current env as closure
-        ctx.call.lambdaMetadata.[lambdaId] <- box (parms, body, Env.copy env)
+        ctx.call.lambdaMetadata.[lambdaId] <- (parms, body, Env.copy env)
         FunctionHandle(Some (Set.singleton lambdaId))
 
     // ------------------------------------------------------------------
@@ -446,7 +441,7 @@ let rec evalExprIr
             ctx.call.handleRegistry.[handleId] <- name
             FunctionHandle(Some (Set.singleton handleId))
         else
-            warnings.Value <- warnings.Value @ [ warnUnknownFunction line name ]
+            warnings.Add(warnUnknownFunction line name)
             FunctionHandle None   // opaque
 
     // ------------------------------------------------------------------
@@ -465,7 +460,7 @@ and private evalApply
     (baseExpr: Expr)
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     (builtinDispatch: BuiltinDispatch)
     : Shape =
@@ -487,7 +482,7 @@ and private evalApply
                 // Route through callback which has real dispatch in StmtFuncAnalysis
                 builtinDispatch baseVarName line baseExpr args env warnings ctx
             else
-                warnings.Value <- warnings.Value @ [ warnUnknownFunction line baseVarName ]
+                warnings.Add(warnUnknownFunction line baseVarName)
                 UnknownShape
         else
             // Priority 6: bound non-handle variable — treat as indexing
@@ -506,7 +501,7 @@ and private evalHandleCall
     (line: int)
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     (builtinDispatch: BuiltinDispatch)
     : Shape =
@@ -514,7 +509,7 @@ and private evalHandleCall
     match baseVarShape with
     | FunctionHandle None ->
         // Opaque handle (no IDs)
-        warnings.Value <- warnings.Value @ [ warnLambdaCallApproximate line baseVarName ]
+        warnings.Add(warnLambdaCallApproximate line baseVarName)
         UnknownShape
     | FunctionHandle(Some lambdaIds) ->
         // Evaluate argument shapes
@@ -528,7 +523,7 @@ and private evalHandleCall
 
         for callableId in lambdaIds |> Set.toList |> List.sort do
             match ctx.call.lambdaMetadata.TryGetValue(callableId) with
-            | true, (:? (string list * Expr * Env) as lambdaMeta) ->
+            | true, lambdaMeta ->
                 let (parms, bodyExpr, closureEnv) = lambdaMeta
 
                 // Cache key — truncate to min length to avoid List.mapi2 crash on mismatch
@@ -545,20 +540,19 @@ and private evalHandleCall
                     (argDimAliases |> List.map (fun (p, d) -> p + "=" + dimStr d) |> String.concat ",")
 
                 match ctx.call.analysisCache.TryGetValue(cacheKey) with
-                | true, (:? (Shape * Diagnostic list) as cached) ->
+                | true, (:? (Shape * Diagnostic list) as cached) ->  // analysisCache stays obj-typed
                     let (cachedShape, cachedWarnings) = cached
-                    warnings.Value <- warnings.Value @ cachedWarnings
+                    warnings.AddRange(cachedWarnings)
                     results.Add(cachedShape)
                 | _ ->
                     // Recursion guard
                     if ctx.call.analyzingLambdas.Contains(callableId) then
-                        warnings.Value <- warnings.Value @ [ warnRecursiveLambda line ]
+                        warnings.Add(warnRecursiveLambda line)
                         results.Add(UnknownShape)
                     else
                         // Check arg count
                         if argShapes.Length <> parms.Length then
-                            warnings.Value <- warnings.Value @
-                                [ warnLambdaArgCountMismatch line parms.Length argShapes.Length ]
+                            warnings.Add(warnLambdaArgCountMismatch line parms.Length argShapes.Length)
                             results.Add(UnknownShape)
                         else
                             ctx.call.analyzingLambdas.Add(callableId) |> ignore
@@ -579,19 +573,16 @@ and private evalHandleCall
                                             | _ -> ()
 
                                     // Analyze body
-                                    let lambdaWarnings = ref []
+                                    let lambdaWarnings = ResizeArray<Diagnostic>()
                                     let result = evalExprIr bodyExpr callEnv lambdaWarnings ctx None builtinDispatch
 
                                     // Cache result
-                                    ctx.call.analysisCache.[cacheKey] <- box (result, lambdaWarnings.Value)
-                                    warnings.Value <- warnings.Value @ lambdaWarnings.Value
+                                    ctx.call.analysisCache.[cacheKey] <- box (result, Seq.toList lambdaWarnings)  // analysisCache stays obj-typed
+                                    warnings.AddRange(lambdaWarnings)
                                     results.Add(result)) |> ignore
                             finally
                                 ctx.call.analyzingLambdas.Remove(callableId) |> ignore
 
-            | true, _ ->
-                // lambdaMetadata doesn't match expected type (shouldn't happen)
-                results.Add(UnknownShape)
             | false, _ ->
                 // Not in lambdaMetadata; check handle registry
                 match ctx.call.handleRegistry.TryGetValue(callableId) with
@@ -610,7 +601,7 @@ and private evalHandleCall
 
         // Join all results
         if results.Count = 0 then
-            warnings.Value <- warnings.Value @ [ warnLambdaCallApproximate line baseVarName ]
+            warnings.Add(warnLambdaCallApproximate line baseVarName)
             UnknownShape
         else
             let resultList = results |> Seq.toList
@@ -624,7 +615,7 @@ and private evalIndexing
     (args: IndexArg list)
     (line: int)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     (builtinDispatch: BuiltinDispatch)
     : Shape =
@@ -658,18 +649,14 @@ and private evalIndexing
                     let fmt = "[" + string iv.lo + ", " + string iv.hi + "]"
                     let dimStr = string ms
                     match iv.lo, iv.hi with
-                    | Intervals.Finite lo, _ when lo > ms ->
-                        warnings.Value <- warnings.Value @
-                            [ warnIndexOutOfBounds line fmt dimStr true ]
-                    | _, Intervals.Finite hi when hi < 1 ->
-                        warnings.Value <- warnings.Value @
-                            [ warnIndexOutOfBounds line fmt dimStr true ]
-                    | _, Intervals.Finite hi when hi > ms ->
-                        warnings.Value <- warnings.Value @
-                            [ warnIndexOutOfBounds line fmt dimStr false ]
-                    | Intervals.Finite lo, _ when lo < 1 ->
-                        warnings.Value <- warnings.Value @
-                            [ warnIndexOutOfBounds line fmt dimStr false ]
+                    | Finite lo, _ when lo > ms ->
+                        warnings.Add(warnIndexOutOfBounds line fmt dimStr true)
+                    | _, Finite hi when hi < 1 ->
+                        warnings.Add(warnIndexOutOfBounds line fmt dimStr true)
+                    | _, Finite hi when hi > ms ->
+                        warnings.Add(warnIndexOutOfBounds line fmt dimStr false)
+                    | Finite lo, _ when lo < 1 ->
+                        warnings.Add(warnIndexOutOfBounds line fmt dimStr false)
                     | _ -> ()
                 | None -> ()
             | _ -> ()
@@ -682,23 +669,19 @@ and private evalIndexing
                     let fmt = "[" + string iv.lo + ", " + string iv.hi + "]"
                     let dimStr = string ns
                     match iv.lo, iv.hi with
-                    | Intervals.Finite lo, _ when lo > ns ->
-                        warnings.Value <- warnings.Value @
-                            [ warnIndexOutOfBounds line fmt dimStr true ]
-                    | _, Intervals.Finite hi when hi < 1 ->
-                        warnings.Value <- warnings.Value @
-                            [ warnIndexOutOfBounds line fmt dimStr true ]
-                    | _, Intervals.Finite hi when hi > ns ->
-                        warnings.Value <- warnings.Value @
-                            [ warnIndexOutOfBounds line fmt dimStr false ]
-                    | Intervals.Finite lo, _ when lo < 1 ->
-                        warnings.Value <- warnings.Value @
-                            [ warnIndexOutOfBounds line fmt dimStr false ]
+                    | Finite lo, _ when lo > ns ->
+                        warnings.Add(warnIndexOutOfBounds line fmt dimStr true)
+                    | _, Finite hi when hi < 1 ->
+                        warnings.Add(warnIndexOutOfBounds line fmt dimStr true)
+                    | _, Finite hi when hi > ns ->
+                        warnings.Add(warnIndexOutOfBounds line fmt dimStr false)
+                    | Finite lo, _ when lo < 1 ->
+                        warnings.Add(warnIndexOutOfBounds line fmt dimStr false)
                     | _ -> ()
                 | None -> ()
             | _ -> ()
 
-            let evalFn (e: Expr) (en: Env) (w: Diagnostic list ref) (c: AnalysisContext) (cs: Shape option) =
+            let evalFn (e: Expr) (en: Env) (w: ResizeArray<Diagnostic>) (c: AnalysisContext) (cs: Shape option) =
                 evalExprIr e en w c cs builtinDispatch
 
             let rExtent = indexArgToExtentIr a1 env warnings line ctx (Some baseShape) m evalFn
@@ -727,8 +710,7 @@ and private evalIndexing
                 | _ -> Matrix(rExtentFinal, cExtentFinal)
 
         | c when c > 2 ->
-            warnings.Value <- warnings.Value @
-                [ warnTooManyIndices line (Apply(line, 0, Var(line, 0, "?"), args)) ]
+            warnings.Add(warnTooManyIndices line (Apply(line, 0, Var(line, 0, "?"), args)))
             UnknownShape
         | _ -> UnknownShape
     | _ -> UnknownShape

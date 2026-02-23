@@ -8,6 +8,7 @@ open Diagnostics
 open Builtins
 open DimExtract
 open Intervals
+open SharedTypes
 
 // ---------------------------------------------------------------------------
 // EvalBuiltins: builtin function shape inference via dispatch table.
@@ -88,9 +89,9 @@ let private unwrapArg (arg: IndexArg) : Expr option =
 let private evalArgShape
     (arg: IndexArg)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape =
     match arg with
     | IndexExpr(_, _, e) -> evalExprFn e env warnings ctx
@@ -101,7 +102,7 @@ let private evalArgShape
 let private checkNegativeDimArg
     (arg: Expr)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     (line: int)
     (getIntervalFn: Expr -> Env -> AnalysisContext -> Interval option)
@@ -109,7 +110,7 @@ let private checkNegativeDimArg
     let iv = getIntervalFn arg env ctx
     if intervalDefinitelyNegative (iv |> Option.map id) then
         let ivStr = match iv with Some i -> "[" + string i.lo + "," + string i.hi + "]" | None -> "?"
-        warnings.Value <- warnings.Value @ [ warnPossiblyNegativeDim line ivStr ]
+        warnings.Add(warnPossiblyNegativeDim line ivStr)
 
 
 // ---------------------------------------------------------------------------
@@ -121,9 +122,9 @@ let private handleZerosOnes
     (line: int)
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     (getIntervalFn: Expr -> Env -> AnalysisContext -> Interval option)
     : Shape option =
     if args.Length = 1 then
@@ -150,9 +151,9 @@ let private handleMatrixConstructor
     (line: int)
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     (getIntervalFn: Expr -> Env -> AnalysisContext -> Interval option)
     : Shape option =
     if args.Length = 0 then Some Scalar
@@ -179,9 +180,9 @@ let private handleSize
     (line: int)
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
     if args.Length = 1 then
         match unwrapArg args.[0] with
@@ -202,7 +203,7 @@ let private handleCellConstructor
     (line: int)
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     (getIntervalFn: Expr -> Env -> AnalysisContext -> Interval option)
     : Shape option =
@@ -228,9 +229,9 @@ let private handleCellConstructor
 let private handlePassthrough
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
     if args.Length = 1 then
         Some (evalArgShape args.[0] env warnings ctx evalExprFn)
@@ -240,9 +241,9 @@ let private handlePassthrough
 let private handleTransposeFn
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
     if args.Length = 1 then
         let argShape = evalArgShape args.[0] env warnings ctx evalExprFn
@@ -255,9 +256,9 @@ let private handleTransposeFn
 let private handleScalarQuery
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
     if args.Length >= 1 then
         evalArgShape args.[0] env warnings ctx evalExprFn |> ignore
@@ -269,9 +270,9 @@ let private handleReshape
     (line: int)
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
     if args.Length = 3 then
         match unwrapArg args.[0], unwrapArg args.[1], unwrapArg args.[2] with
@@ -294,7 +295,7 @@ let private handleReshape
                     if dimsDefinitelyConflict ic outputCount then
                         let mStr = dimStr m
                         let nStr = dimStr n
-                        warnings.Value <- warnings.Value @ [ warnReshapeMismatch line inputShape mStr nStr ]
+                        warnings.Add(warnReshapeMismatch line inputShape mStr nStr)
                 | _ -> ()
             if m = Unknown || n = Unknown then None
             else Some (Matrix(m, n))
@@ -305,9 +306,9 @@ let private handleReshape
 let private handleRepmat
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
     if args.Length = 3 then
         match unwrapArg args.[0], unwrapArg args.[1], unwrapArg args.[2] with
@@ -329,9 +330,9 @@ let private handleRepmat
 let private handleDiag
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
     if args.Length = 1 then
         let argShape = evalArgShape args.[0] env warnings ctx evalExprFn
@@ -348,9 +349,9 @@ let private handleDiag
 let private handleInv
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
     if args.Length = 1 then
         let argShape = evalArgShape args.[0] env warnings ctx evalExprFn
@@ -364,9 +365,9 @@ let private handleInv
 let private handleLinspace
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
     if args.Length = 2 then
         match unwrapArg args.[0], unwrapArg args.[1] with
@@ -389,9 +390,9 @@ let private handleLinspace
 let private handleReduction
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
     if args.Length = 1 then
         let argShape = evalArgShape args.[0] env warnings ctx evalExprFn
@@ -427,9 +428,9 @@ let private handleReduction
 let private handleMinmax
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
     if args.Length = 1 then
         handleReduction args env warnings ctx evalExprFn
@@ -452,9 +453,9 @@ let private handleMinmax
 let private handleElementwise2arg
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
     if args.Length <> 2 then None
     else
@@ -474,9 +475,9 @@ let private handleElementwise2arg
 let private handleDiff
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
     if args.Length <> 1 then None
     else
@@ -494,9 +495,9 @@ let private handleDiff
 let private handleKron
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
     if args.Length <> 2 then None
     else
@@ -522,9 +523,9 @@ let private handleKron
 let private handleBlkdiag
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
     if args.IsEmpty then None
     else
@@ -552,9 +553,9 @@ let private handleBlkdiag
 let private handleStringReturn
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
     for arg in args do
         evalArgShape arg env warnings ctx evalExprFn |> ignore
@@ -564,9 +565,9 @@ let private handleStringReturn
 let private handleFind
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
     if args.Length = 1 then
         evalArgShape args.[0] env warnings ctx evalExprFn |> ignore
@@ -577,9 +578,9 @@ let private handleFind
 let private handleEigSingle
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
     if args.Length <> 1 then None
     else
@@ -599,9 +600,9 @@ let private handleEigSingle
 let private handleSvdSingle
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
     if args.Length <> 1 then None
     else
@@ -615,9 +616,9 @@ let private handleSvdSingle
 let private handleCat
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
     if args.Length < 2 then None
     else
@@ -659,9 +660,9 @@ let private handleRandi
     (line: int)
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     (getIntervalFn: Expr -> Env -> AnalysisContext -> Interval option)
     : Shape option =
     if args.Length < 1 then None
@@ -694,9 +695,9 @@ let private handleRandi
 let private handleFft
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
     if args.Length >= 1 then
         match unwrapArg args.[0] with
@@ -711,9 +712,9 @@ let private handleSparseFull
     (fname: string)
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
     // sparse(m, n) — constructor form
     if fname = "sparse" && args.Length = 2 then
@@ -735,9 +736,9 @@ let private handleSparseFull
 let private handleCross
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
     if args.Length >= 1 then
         match unwrapArg args.[0] with
@@ -746,7 +747,7 @@ let private handleCross
     else None
 
 
-let private handleConv (_args: IndexArg list) (_env: Env) (_warnings: Diagnostic list ref) (_ctx: AnalysisContext) (_eval: _) : Shape option =
+let private handleConv (_args: IndexArg list) (_env: Env) (_warnings: ResizeArray<Diagnostic>) (_ctx: AnalysisContext) (_eval: _) : Shape option =
     Some (Matrix(Unknown, Concrete 1))
 
 
@@ -754,7 +755,7 @@ let private handlePolyfit
     (args: IndexArg list)
     (env: Env)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
     ignore evalExprFn
     if args.Length >= 3 then
@@ -769,9 +770,9 @@ let private handlePolyfit
 let private handlePolyval
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
     if args.Length >= 2 then
         match unwrapArg args.[1] with
@@ -787,9 +788,9 @@ let private handleMeshgrid (_args: IndexArg list) (_env: Env) (_w: _) (_ctx: _) 
 let private handleStruct
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
     if args.IsEmpty then Some (Struct([], false))
     else
@@ -821,9 +822,9 @@ let private handleNdims (_args: IndexArg list) : Shape option =
 let private handleSub2ind
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
     if args.Length >= 2 then
         match unwrapArg args.[1] with
@@ -836,9 +837,9 @@ let private handleHorzcatVertcat
     (fname: string)
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
     if args.IsEmpty then Some (Matrix(Concrete 0, Concrete 0))
     else
@@ -877,9 +878,9 @@ let private handleHorzcatVertcat
 let private evalFirstArgShape
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : (Dim * Dim) option =
     if args.IsEmpty then None
     else
@@ -896,10 +897,10 @@ let private evalFirstArgShape
 let private handleMultiEig
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     (numTargets: int)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape list option =
     if numTargets <> 2 then None
     else
@@ -913,10 +914,10 @@ let private handleMultiEig
 let private handleMultiSvd
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     (numTargets: int)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape list option =
     if numTargets <> 3 then None
     else
@@ -928,10 +929,10 @@ let private handleMultiSvd
 let private handleMultiLu
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     (numTargets: int)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape list option =
     match evalFirstArgShape args env warnings ctx evalExprFn with
     | None ->
@@ -947,10 +948,10 @@ let private handleMultiLu
 let private handleMultiQr
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     (numTargets: int)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape list option =
     if numTargets <> 2 then None
     else
@@ -962,10 +963,10 @@ let private handleMultiQr
 let private handleMultiChol
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     (numTargets: int)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape list option =
     if numTargets <> 2 then None
     else
@@ -979,10 +980,10 @@ let private handleMultiChol
 let private handleMultiSize
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     (numTargets: int)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape list option =
     if numTargets <> 2 then None
     else
@@ -993,10 +994,10 @@ let private handleMultiSize
 let private handleMultiSort
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     (numTargets: int)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape list option =
     if numTargets <> 2 then None
     else
@@ -1012,10 +1013,10 @@ let private handleMultiSort
 let private handleMultiFind
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     (numTargets: int)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape list option =
     evalFirstArgShape args env warnings ctx evalExprFn |> ignore
     if numTargets = 2 then Some [ Matrix(Concrete 1, Unknown); Matrix(Concrete 1, Unknown) ]
@@ -1026,10 +1027,10 @@ let private handleMultiFind
 let private handleMultiUnique
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     (numTargets: int)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape list option =
     evalFirstArgShape args env warnings ctx evalExprFn |> ignore
     if numTargets = 2 then Some [ Matrix(Concrete 1, Unknown); Matrix(Unknown, Concrete 1) ]
@@ -1040,10 +1041,10 @@ let private handleMultiUnique
 let private handleMultiMinmax
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     (numTargets: int)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape list option =
     if numTargets <> 2 then None
     else
@@ -1101,9 +1102,9 @@ let evalBuiltinCall
     (line: int)
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     (getIntervalFn: Expr -> Env -> AnalysisContext -> Interval option)
     : Shape =
 
@@ -1181,9 +1182,9 @@ let evalMultiBuiltinCall
     (numTargets: int)
     (args: IndexArg list)
     (env: Env)
-    (warnings: Diagnostic list ref)
+    (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (evalExprFn: Expr -> Env -> Diagnostic list ref -> AnalysisContext -> Shape)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     (getIntervalFn: Expr -> Env -> AnalysisContext -> Interval option)
     : Shape list option =
 
