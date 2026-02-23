@@ -4,6 +4,7 @@ open Ir
 open Shapes
 open Env
 open PathConstraints
+open SharedTypes
 
 // ---------------------------------------------------------------------------
 // Function signatures
@@ -14,6 +15,8 @@ type FunctionSignature = {
     parms:      string list
     outputVars: string list
     body:       Stmt list
+    defLine:    int
+    defCol:     int
 }
 
 /// Signature extracted from an external .m file.
@@ -63,8 +66,8 @@ type CallContext() =
     member val analysisCache          : System.Collections.Generic.Dictionary<string, obj>
                                         = System.Collections.Generic.Dictionary<string, obj>() with get, set
     /// Lambda metadata: lambda_id -> (params, body_expr, closure_env)
-    member val lambdaMetadata         : System.Collections.Generic.Dictionary<int, obj>
-                                        = System.Collections.Generic.Dictionary<int, obj>() with get, set
+    member val lambdaMetadata         : System.Collections.Generic.Dictionary<int, string list * Expr * Env>
+                                        = System.Collections.Generic.Dictionary<int, string list * Expr * Env>() with get, set
     /// Handle registry: handle_id -> function_name
     member val handleRegistry         : System.Collections.Generic.Dictionary<int, string>
                                         = System.Collections.Generic.Dictionary<int, string>() with get, set
@@ -85,11 +88,11 @@ type ConstraintContext() =
     /// Concrete bindings: var_name -> concrete_value
     member val scalarBindings      : System.Collections.Generic.Dictionary<string, int>
                                      = System.Collections.Generic.Dictionary<string, int>() with get, set
-    /// Value ranges: var_name -> interval (stored as obj until Intervals.fs is defined)
-    member val valueRanges         : System.Collections.Generic.Dictionary<string, obj>
-                                     = System.Collections.Generic.Dictionary<string, obj>() with get, set
-    /// Conflict sites accumulated globally (stored as obj list until Witness.fs is defined)
-    member val conflictSites : obj list = [] with get, set
+    /// Value ranges: var_name -> interval
+    member val valueRanges         : System.Collections.Generic.Dictionary<string, Interval>
+                                     = System.Collections.Generic.Dictionary<string, Interval>() with get, set
+    /// Conflict sites accumulated globally
+    member val conflictSites : ConflictSite list = [] with get, set
     /// Dim provenance: (var_name, "rows"|"cols") -> Dim
     member val dimProvenance       : System.Collections.Generic.Dictionary<string * string, Dim>
                                      = System.Collections.Generic.Dictionary<string * string, Dim>() with get, set
@@ -129,7 +132,7 @@ type AnalysisContext() =
         let savedConstraints  = System.Collections.Generic.HashSet<string * string>(this.cst.constraints)
         let savedProvenance   = System.Collections.Generic.Dictionary<string * string, int>(this.cst.constraintProvenance)
         let savedScalars      = System.Collections.Generic.Dictionary<string, int>(this.cst.scalarBindings)
-        let savedRanges       = System.Collections.Generic.Dictionary<string, obj>(this.cst.valueRanges)
+        let savedRanges       = System.Collections.Generic.Dictionary<string, Interval>(this.cst.valueRanges)
         let savedNested       = System.Collections.Generic.Dictionary<string, FunctionSignature>(this.call.nestedFunctionRegistry)
         try
             body ()
@@ -158,8 +161,8 @@ type BuiltinEvalContext = {
     exprToDimIr        : Expr -> Env -> Shapes.Dim
     /// exprToDimWithEnd: Expr -> Env -> Dim -> Dim  (End substitution)
     exprToDimWithEnd   : Expr -> Env -> Shapes.Dim -> Shapes.Dim
-    /// getExprInterval: Expr -> Env -> AnalysisContext -> obj option
-    getExprInterval    : Expr -> Env -> AnalysisContext -> obj option
+    /// getExprInterval: Expr -> Env -> AnalysisContext -> Interval option
+    getExprInterval    : Expr -> Env -> AnalysisContext -> Interval option
     /// getConcreteDimSize: Dim -> AnalysisContext -> int option
     getConcreteDimSize : Shapes.Dim -> AnalysisContext -> int option
     /// unwrapArg: IndexArg -> Expr option  (extract scalar expr from IndexExpr)

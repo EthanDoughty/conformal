@@ -2,23 +2,14 @@ module Witness
 
 open Shapes
 open SymDim
+open SharedTypes
 
 // ---------------------------------------------------------------------------
 // Witness generation for dimension conflict sites.
 // Port of analysis/witness.py
 // ---------------------------------------------------------------------------
 
-/// ConflictSite: recorded dimension conflict at a warning emission point.
-type ConflictSite = {
-    dimA:                  Dim
-    dimB:                  Dim
-    line:                  int
-    warningCode:           string
-    constraintsSnapshot:   Set<string * string>
-    scalarBindingsSnapshot: (string * int) list
-    valueRangesSnapshot:   (string * (int * int)) list
-    pathSnapshot:          (string * bool * int) list
-}
+// ConflictSite type is defined in SharedTypes.fs
 
 /// Witness: concrete proof that a warning is a real bug.
 type Witness = {

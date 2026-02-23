@@ -18,6 +18,7 @@
     <Compile Include="Diagnostics.fs" />
     <Compile Include="Builtins.fs" />
     <Compile Include="PathConstraints.fs" />
+    <Compile Include="SharedTypes.fs" />
     <Compile Include="Context.fs" />
     <Compile Include="AnalysisCore.fs" />
     <Compile Include="EndHelpers.fs" />
@@ -38,6 +39,7 @@
     <Compile Include="LspHover.fs" />
     <Compile Include="LspSymbols.fs" />
     <Compile Include="LspCodeActions.fs" />
+    <Compile Include="LspDefinition.fs" />
     <Compile Include="LspServer.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

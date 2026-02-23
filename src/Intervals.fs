@@ -1,27 +1,14 @@
 module Intervals
 
 open SymDim
+open SharedTypes
 
 // ---------------------------------------------------------------------------
 // Integer interval abstract domain for value range analysis.
 // Port of analysis/intervals.py
 // ---------------------------------------------------------------------------
 
-/// IntervalBound: concrete int, symbolic SymDim, or unbounded (None)
-type IntervalBound =
-    | Finite    of int
-    | SymBound  of SymDim
-    | Unbounded   // represents -infinity (lo) or +infinity (hi)
-
-
-/// Interval: [lo, hi] with optional symbolic bounds.
-/// lo=Unbounded means -infinity, hi=Unbounded means +infinity.
-/// Invariant: if both concrete (Finite), lo <= hi.
-[<Struct>]
-type Interval = {
-    lo: IntervalBound
-    hi: IntervalBound
-}
+// IntervalBound, Interval types are defined in SharedTypes.fs
 
 let makeInterval (lo: IntervalBound) (hi: IntervalBound) : Interval =
     // Guard: only validate if both concrete ints
@@ -255,29 +242,29 @@ let intervalDefinitelyNegative (iv: Interval option) : bool =
 
 /// joinValueRanges: join value_ranges dicts across branches (convex hull per variable).
 let joinValueRanges
-    (baseline: System.Collections.Generic.Dictionary<string, obj>)
-    (branchRanges: System.Collections.Generic.Dictionary<string, obj> list)
-    : System.Collections.Generic.Dictionary<string, obj> =
+    (baseline: System.Collections.Generic.Dictionary<string, Interval>)
+    (branchRanges: System.Collections.Generic.Dictionary<string, Interval> list)
+    : System.Collections.Generic.Dictionary<string, Interval> =
 
     let allVars = System.Collections.Generic.HashSet<string>()
     for br in branchRanges do
         for kv in br do allVars.Add(kv.Key) |> ignore
 
-    let result = System.Collections.Generic.Dictionary<string, obj>()
+    let result = System.Collections.Generic.Dictionary<string, Interval>()
     for var in allVars do
         let intervals =
             branchRanges
             |> List.choose (fun br ->
                 match br.TryGetValue(var) with
-                | true, (:? Interval as iv) -> Some (Some iv)
-                | _ -> None)
+                | true, iv -> Some (Some iv)
+                | false, _ -> None)
         match intervals with
         | [] -> ()
         | first :: rest ->
             let joined =
                 List.fold (fun acc iv -> joinInterval acc iv) first rest
             match joined with
-            | Some iv -> result.[var] <- box iv
+            | Some iv -> result.[var] <- iv
             | None -> ()
     result
 
@@ -331,14 +318,14 @@ let private simpleExprToDim (expr: Ir.Expr) (env: Env.Env) (ctx: Context.Analysi
     | Ir.Var(_, _, name) ->
         // Check exact interval in value_ranges
         match ctx.cst.valueRanges.TryGetValue(name) with
-        | true, (:? Interval as iv) ->
+        | true, iv ->
             match iv.lo, iv.hi with
             | Finite lo, Finite hi when lo = hi -> Shapes.Concrete lo
             | _ ->
                 match Map.tryFind name env.dimAliases with
                 | Some d -> d
                 | None   -> Shapes.Symbolic (SymDim.SymDim.var name)
-        | _ ->
+        | false, _ ->
             match Map.tryFind name env.dimAliases with
             | Some d -> d
             | None   -> Shapes.Symbolic (SymDim.SymDim.var name)
@@ -400,8 +387,8 @@ let applyRefinements
     for (varName, op, bound) in refinements do
         let baseIv =
             match ctx.cst.valueRanges.TryGetValue(varName) with
-            | true, (:? Interval as iv) -> iv
-            | _ -> { lo = Unbounded; hi = Unbounded }
+            | true, iv -> iv
+            | false, _ -> { lo = Unbounded; hi = Unbounded }
 
         let actualOp = if negate then negateComparisonOp op else op
         let guardOpt = intervalFromComparison actualOp bound
@@ -411,8 +398,8 @@ let applyRefinements
         | Some guard ->
             let refined = meetInterval baseIv guard
             match refined with
-            | Some r -> ctx.cst.valueRanges.[varName] <- box r
+            | Some r -> ctx.cst.valueRanges.[varName] <- r
             | None ->
                 // Meet is empty: branch is dead code. Use guard interval to
                 // prevent false positives inside unreachable branches.
-                ctx.cst.valueRanges.[varName] <- box guard
+                ctx.cst.valueRanges.[varName] <- guard

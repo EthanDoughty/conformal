@@ -14,6 +14,7 @@
     <Compile Include="../../src/Diagnostics.fs" />
     <Compile Include="../../src/Builtins.fs" />
     <Compile Include="../../src/PathConstraints.fs" />
+    <Compile Include="../../src/SharedTypes.fs" />
     <Compile Include="../../src/Context.fs" />
     <Compile Include="../../src/AnalysisCore.fs" />
     <Compile Include="../../src/EndHelpers.fs" />

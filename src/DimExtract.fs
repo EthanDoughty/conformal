@@ -4,6 +4,7 @@ open Ir
 open Shapes
 open Env
 open EndHelpers
+open SharedTypes
 
 // ---------------------------------------------------------------------------
 // Dimension extraction from IR expressions.
@@ -57,11 +58,11 @@ and exprToDimIrCtx (expr: Expr) (env: Env) (ctx: Context.AnalysisContext option)
             match ctx with
             | Some c ->
                 match c.cst.valueRanges.TryGetValue(name) with
-                | true, (:? Intervals.Interval as iv) ->
+                | true, iv ->
                     match iv.lo, iv.hi with
-                    | Intervals.Finite lo, Intervals.Finite hi when lo = hi -> Concrete lo
+                    | Finite lo, Finite hi when lo = hi -> Concrete lo
                     | _ -> Symbolic (SymDim.SymDim.var name)
-                | _ -> Symbolic (SymDim.SymDim.var name)
+                | false, _ -> Symbolic (SymDim.SymDim.var name)
             | None -> Symbolic (SymDim.SymDim.var name)
     | Neg _ -> Unknown   // Negative literal in dim context: treat as Unknown (mirrors Python)
     | BinOp(_, _, op, left, right) ->

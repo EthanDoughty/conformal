@@ -149,12 +149,8 @@ type ConformalLspServer(client: ConformalClient) =
                 if settings.strict then warnings
                 else warnings |> List.filter (fun w -> not (Set.contains w.code STRICT_ONLY_CODES))
 
-            // Generate witnesses from conflict sites (stored as obj list, cast to ConflictSite list)
-            let conflictSites =
-                ctx.cst.conflictSites
-                |> List.choose (fun o ->
-                    try Some (o :?> ConflictSite) with _ -> None)
-            let witnesses = generateWitnesses conflictSites
+            // Generate witnesses from conflict sites
+            let witnesses = generateWitnesses ctx.cst.conflictSites
 
             // Convert to LSP diagnostics
             let lspDiags =
@@ -262,7 +258,7 @@ type ConformalLspServer(client: ConformalClient) =
             })
             CompletionProvider        = None
             SignatureHelpProvider      = None
-            DefinitionProvider        = None
+            DefinitionProvider        = Some (U2.C1 true)
             ReferencesProvider        = None
             DocumentHighlightProvider = None
             DocumentFormattingProvider = None
@@ -405,6 +401,34 @@ type ConformalLspServer(client: ConformalClient) =
                     cached.externalFunctions
 
             return Ok hover
+    }
+
+    override _.TextDocumentDefinition(p: DefinitionParams) = async {
+        let uri = p.TextDocument.Uri
+        match analysisCache.TryGetValue(uri) with
+        | false, _ -> return Ok None
+        | true, cached ->
+            let source =
+                try
+                    let filePath = uriToPath uri
+                    if File.Exists(filePath) then File.ReadAllText(filePath) else ""
+                with _ -> ""
+
+            if source = "" then return Ok None
+            else
+
+            let defn =
+                LspDefinition.getDefinition
+                    source
+                    (int p.Position.Line)
+                    (int p.Position.Character)
+                    uri
+                    cached.functionRegistry
+                    cached.externalFunctions
+
+            match defn with
+            | Some loc -> return Ok (Some (U2.C1 (U2.C1 loc)))
+            | None     -> return Ok None
     }
 
     override _.TextDocumentCodeAction(p: CodeActionParams) = async {
