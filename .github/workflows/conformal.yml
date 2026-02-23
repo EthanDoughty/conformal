@@ -1,0 +1,15 @@
+name: MATLAB Shape Check
+on:
+  pull_request:
+    paths: ['**/*.m']
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  conformal:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EthanDoughty/conformal-action@v1
