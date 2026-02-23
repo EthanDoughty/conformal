@@ -46,8 +46,8 @@ let private tryParseExternalBody (source: string) : (FunctionSignature * Map<str
             program.body
             |> List.choose (fun stmt ->
                 match stmt with
-                | FunctionDef(_, _, name, parms, outputVars, body) ->
-                    Some { name = name; parms = parms; outputVars = outputVars; body = body }
+                | FunctionDef(line, col, name, parms, outputVars, body) ->
+                    Some { name = name; parms = parms; outputVars = outputVars; body = body; defLine = line; defCol = col }
                 | _ -> None)
         match funcDefs with
         | [] -> None

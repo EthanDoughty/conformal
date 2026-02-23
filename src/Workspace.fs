@@ -147,8 +147,8 @@ let buildIrFromSource (source: string) : (FunctionSignature * Map<string, Functi
             program.body
             |> List.choose (fun stmt ->
                 match stmt with
-                | Ir.FunctionDef(_, _, name, parms, outputVars, body) ->
-                    Some { name = name; parms = parms; outputVars = outputVars; body = body }
+                | Ir.FunctionDef(line, col, name, parms, outputVars, body) ->
+                    Some { name = name; parms = parms; outputVars = outputVars; body = body; defLine = line; defCol = col }
                 | _ -> None)
         match funcDefs with
         | [] -> None
@@ -164,7 +164,7 @@ let buildIrFromSource (source: string) : (FunctionSignature * Map<string, Functi
 let loadExternalFunction (sig_: ExternalSignature) : (FunctionSignature * Map<string, FunctionSignature>) option =
     match sig_.body with
     | Some body ->
-        let primary = { name = sig_.filename; parms = sig_.parmNames; outputVars = sig_.outputNames; body = body }
+        let primary = { name = sig_.filename; parms = sig_.parmNames; outputVars = sig_.outputNames; body = body; defLine = 1; defCol = 0 }
         Some (primary, Map.empty)
     | None -> None
 #else
