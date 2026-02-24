@@ -15,7 +15,7 @@ open Context
 /// Port of analysis/constraints.py try_extract_const_value().
 let tryExtractConstValue (expr: Expr) : int option =
     match expr with
-    | Const(_, _, v) when v = System.Math.Floor v -> Some (int v)
+    | Const(_, v) when v = System.Math.Floor(v : float) -> Some (int v)
     | _ -> None
 
 

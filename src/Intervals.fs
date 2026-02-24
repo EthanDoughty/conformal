@@ -269,6 +269,24 @@ let joinValueRanges
     result
 
 
+/// widenValueRanges: widen intervals that moved between baseline and current state.
+/// Variables whose interval did not change are preserved.
+/// Variables new in current (not in baseline) are kept as-is.
+/// The loop iteration variable (if any) is excluded from widening.
+let widenValueRanges
+    (baseline: System.Collections.Generic.Dictionary<string, Interval>)
+    (current: System.Collections.Generic.Dictionary<string, Interval>)
+    (exclude: string option)
+    : unit =
+    for kv in current do
+        if Some kv.Key <> exclude then
+            match baseline.TryGetValue(kv.Key) with
+            | true, oldIv ->
+                if oldIv <> kv.Value then
+                    current.[kv.Key] <- widenInterval oldIv kv.Value
+            | false, _ -> ()  // new variable introduced in loop body, keep as-is
+
+
 // ---------------------------------------------------------------------------
 // Conditional interval refinement (v1.8.0)
 // ---------------------------------------------------------------------------
@@ -312,10 +330,10 @@ let intervalFromComparison (op: string) (bound: Shapes.Dim) : Interval option =
 /// Handles only Const and Var — does not support BinOp (too complex for here).
 let private simpleExprToDim (expr: Ir.Expr) (env: Env.Env) (ctx: Context.AnalysisContext) : Shapes.Dim =
     match expr with
-    | Ir.Const(_, _, v) ->
-        if v = System.Math.Floor v && not (System.Double.IsInfinity v) then Shapes.Concrete (int v)
+    | Ir.Const(_, v) ->
+        if v = System.Math.Floor(v : float) && not (System.Double.IsInfinity v) then Shapes.Concrete (int v)
         else Shapes.Unknown
-    | Ir.Var(_, _, name) ->
+    | Ir.Var(_, name) ->
         // Check exact interval in value_ranges
         match ctx.cst.valueRanges.TryGetValue(name) with
         | true, iv ->
@@ -341,7 +359,7 @@ let rec extractConditionRefinements
     : (string * string * Shapes.Dim) list =
 
     match cond with
-    | Ir.BinOp(_, _, op, left, right) ->
+    | Ir.BinOp(_, op, left, right) ->
         match op with
         | "&&" | "&" ->
             // Conjunction: merge refinements from both sides
@@ -354,12 +372,12 @@ let rec extractConditionRefinements
                 simpleExprToDim e env ctx
 
             match left, right with
-            | Ir.Var(_, _, varName), _ ->
+            | Ir.Var(_, varName), _ ->
                 let bound = getExprBound right
                 match bound with
                 | Shapes.Unknown -> []
                 | _              -> [ (varName, op, bound) ]
-            | _, Ir.Var(_, _, varName) ->
+            | _, Ir.Var(_, varName) ->
                 let bound = getExprBound left
                 match bound with
                 | Shapes.Unknown -> []

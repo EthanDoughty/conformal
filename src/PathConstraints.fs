@@ -8,18 +8,18 @@ open Ir
 
 let private formatSimple (expr: Expr) : string option =
     match expr with
-    | Var(_, _, name)  -> Some name
-    | Const(_, _, v)   ->
-        if v = System.Math.Floor v then Some (string (int64 v))
+    | Var(_, name)  -> Some name
+    | Const(_, v)   ->
+        if v = System.Math.Floor(v : float) then Some (string (int64 v))
         else Some (string v)
-    | Neg(_, _, Const(_, _, v)) ->
-        if v = System.Math.Floor v then Some (string -(int64 v))
+    | Neg(_, Const(_, v)) ->
+        if v = System.Math.Floor(v : float) then Some (string -(int64 v))
         else Some (string -v)
     | _ -> None
 
 let private formatConditionExpr (expr: Expr) : string =
     match expr with
-    | BinOp(_, _, op, left, right)
+    | BinOp(_, op, left, right)
         when Set.contains op (Set.ofList [">"; ">="; "<"; "<="; "=="; "~="]) ->
         match formatSimple left, formatSimple right with
         | Some l, Some r -> l + " " + op + " " + r

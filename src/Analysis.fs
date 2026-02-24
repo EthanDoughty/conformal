@@ -30,7 +30,7 @@ let analyzeProgramIr
     // Pass 1: register function definitions
     for item in program.body do
         match item with
-        | FunctionDef(line, col, name, parms, outputVars, body) ->
+        | FunctionDef({ line = line; col = col }, name, parms, outputVars, body) ->
             ctx.call.functionRegistry.[name] <-
                 { name = name; parms = parms; outputVars = outputVars; body = body; defLine = line; defCol = col }
         | _ -> ()

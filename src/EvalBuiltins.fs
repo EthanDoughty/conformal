@@ -80,7 +80,7 @@ let SCALAR_NARY_BUILTINS : Set<string> =
 
 let private unwrapArg (arg: IndexArg) : Expr option =
     match arg with
-    | IndexExpr(_, _, e) -> Some e
+    | IndexExpr(_, e) -> Some e
     | _ -> None
 
 
@@ -97,7 +97,7 @@ let private evalArgShape
     (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape =
     match arg with
-    | IndexExpr(_, _, e) -> evalExprFn e env warnings ctx
+    | IndexExpr(_, e) -> evalExprFn e env warnings ctx
     | _ -> UnknownShape
 
 
@@ -949,7 +949,7 @@ let private handleStruct
             match unwrapArg args.[i], unwrapArg args.[i + 1] with
             | Some keyExpr, Some valExpr ->
                 match keyExpr with
-                | StringLit(_, _, fieldName) ->
+                | StringLit(_, fieldName) ->
                     let valShape = evalExprFn valExpr env warnings ctx
                     fields <- fields @ [ (fieldName, valShape) ]
                 | _ -> ok <- false

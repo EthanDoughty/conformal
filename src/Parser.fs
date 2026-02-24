@@ -190,7 +190,7 @@ type MatlabParser(tokenList: Token list) =
                 pos <- pos + 1
         let rawText = consumed |> Seq.map (fun t -> t.value) |> String.concat " "
         let targets = extractTargetsFromTokens (consumed |> Seq.toList)
-        OpaqueStmt(startLine, startCol, targets, rawText)
+        OpaqueStmt(loc startLine startCol, targets, rawText)
 
     // Classdef consumer
     member private this.ConsumeClassdef() : Stmt =
@@ -220,7 +220,7 @@ type MatlabParser(tokenList: Token list) =
                     depth <- depth + 1
         while not (this.AtEnd()) && (this.Current().kind = "NEWLINE" || this.Current().kind = ";" || this.Current().value = ";") do
             pos <- pos + 1
-        OpaqueStmt(line, col, [], "classdef")
+        OpaqueStmt(loc line col, [], "classdef")
 
     // -------------------------------------------------------------------
     // Top-level program
@@ -325,7 +325,7 @@ type MatlabParser(tokenList: Token list) =
                 this.Eat("END") |> ignore
                 b
 
-        FunctionDef(line, col, name, parms, outputVars, body)
+        FunctionDef(loc line col, name, parms, outputVars, body)
 
     // -------------------------------------------------------------------
     // Statements
@@ -345,13 +345,13 @@ type MatlabParser(tokenList: Token list) =
             | "IF"     -> this.ParseIf()
             | "SWITCH" -> this.ParseSwitch()
             | "TRY"    -> this.ParseTry()
-            | "BREAK"  -> let t = this.Eat("BREAK") in Break(t.line, t.col)
-            | "CONTINUE" -> let t = this.Eat("CONTINUE") in Continue(t.line, t.col)
-            | "RETURN" -> let t = this.Eat("RETURN") in Return(t.line, t.col)
+            | "BREAK"  -> let t = this.Eat("BREAK") in Break(loc t.line t.col)
+            | "CONTINUE" -> let t = this.Eat("CONTINUE") in Continue(loc t.line t.col)
+            | "RETURN" -> let t = this.Eat("RETURN") in Return(loc t.line t.col)
             | "FUNCTION" -> this.ParseFunctionDef()
             | "NEWLINE" ->
                 this.Eat("NEWLINE") |> ignore
-                ExprStmt(0, 0, Const(0, 0, 0.0))
+                ExprStmt(loc 0 0, Const(loc 0 0, 0.0))
             | _ ->
                 let node = this.ParseSimpleStmt()
                 let curKind = this.Current().kind
@@ -390,16 +390,16 @@ type MatlabParser(tokenList: Token list) =
             if this.Current().value = "=" then
                 let eqTok = this.Eat("=")
                 let expr = this.ParseExpr(0, false, true)
-                AssignMulti(eqTok.line, eqTok.col, targets, expr)
+                AssignMulti(loc eqTok.line eqTok.col, targets, expr)
             else
                 pos <- savedPos
                 let expr = this.ParseExpr(0, false, true)
-                ExprStmt(expr.Line, expr.Col, expr)
+                ExprStmt(loc expr.Line expr.Col, expr)
         with
         | :? ParseError ->
             pos <- savedPos
             let expr = this.ParseExpr(0, false, true)
-            ExprStmt(expr.Line, expr.Col, expr)
+            ExprStmt(loc expr.Line expr.Col, expr)
 
     // Greedy LHS accessor chain after an ID.
     // Returns list of kind+data: kind is "field"|"paren"|"curly", data is string|IndexArg list
@@ -434,12 +434,12 @@ type MatlabParser(tokenList: Token list) =
         chain |> Seq.toList
 
     member private _.ChainToExpr(idTok: Token, chain: (string * obj) list) : Expr =
-        let mutable expr: Expr = Var(idTok.line, idTok.col, idTok.value)
+        let mutable expr: Expr = Var(loc idTok.line idTok.col, idTok.value)
         for (kind, data) in chain do
             match kind with
-            | "field" -> expr <- FieldAccess(idTok.line, idTok.col, expr, data :?> string)
-            | "paren" -> expr <- Apply(idTok.line, idTok.col, expr, data :?> IndexArg list)
-            | "curly" -> expr <- CurlyApply(idTok.line, idTok.col, expr, data :?> IndexArg list)
+            | "field" -> expr <- FieldAccess(loc idTok.line idTok.col, expr, data :?> string)
+            | "paren" -> expr <- Apply(loc idTok.line idTok.col, expr, data :?> IndexArg list)
+            | "curly" -> expr <- CurlyApply(loc idTok.line idTok.col, expr, data :?> IndexArg list)
             | _       -> ()
         expr
 
@@ -447,24 +447,24 @@ type MatlabParser(tokenList: Token list) =
         let baseName = idTok.value
 
         if chain.IsEmpty then
-            Assign(idTok.line, idTok.col, baseName, rhs)
+            Assign(loc idTok.line idTok.col, baseName, rhs)
 
         elif chain |> List.forall (fun (k,_) -> k = "field") then
             let fields = chain |> List.map (fun (_,d) -> d :?> string)
-            StructAssign(eqTok.line, eqTok.col, baseName, fields, rhs)
+            StructAssign(loc eqTok.line eqTok.col, baseName, fields, rhs)
 
         elif chain.Length = 1 && fst chain.[0] = "paren" then
-            IndexAssign(eqTok.line, eqTok.col, baseName, snd chain.[0] :?> IndexArg list, rhs)
+            IndexAssign(loc eqTok.line eqTok.col, baseName, snd chain.[0] :?> IndexArg list, rhs)
 
         elif chain.Length = 1 && fst chain.[0] = "curly" then
-            CellAssign(eqTok.line, eqTok.col, baseName, snd chain.[0] :?> IndexArg list, rhs)
+            CellAssign(loc eqTok.line eqTok.col, baseName, snd chain.[0] :?> IndexArg list, rhs)
 
         elif (fst chain.[0] = "paren" || fst chain.[0] = "curly") && chain.Length > 1 &&
              chain.[1..] |> List.forall (fun (k,_) -> k = "field") then
             let indexKind = fst chain.[0]
             let indexArgs = snd chain.[0] :?> IndexArg list
             let fields = chain.[1..] |> List.map (fun (_,d) -> d :?> string)
-            IndexStructAssign(eqTok.line, eqTok.col, baseName, indexArgs, indexKind, fields, rhs)
+            IndexStructAssign(loc eqTok.line eqTok.col, baseName, indexArgs, indexKind, fields, rhs)
 
         else
             let indexPos = chain |> List.tryFindIndex (fun (k,_) -> k = "paren" || k = "curly")
@@ -475,7 +475,7 @@ type MatlabParser(tokenList: Token list) =
                 if not prefix.IsEmpty && prefix |> List.forall (fun (k,_) -> k = "field") &&
                    not suffix.IsEmpty && suffix |> List.forall (fun (k,_) -> k = "field") then
                     FieldIndexAssign(
-                        eqTok.line, eqTok.col, baseName,
+                        loc eqTok.line eqTok.col, baseName,
                         prefix |> List.map (fun (_,d) -> d :?> string),
                         snd chain.[ip] :?> IndexArg list,
                         fst chain.[ip],
@@ -483,14 +483,14 @@ type MatlabParser(tokenList: Token list) =
                         rhs)
                 elif chain.Length >= 2 && fst chain.[chain.Length-1] = "paren" &&
                      chain.[..chain.Length-2] |> List.forall (fun (k,_) -> k = "field") then
-                    ExprStmt(eqTok.line, eqTok.col, rhs)
+                    ExprStmt(loc eqTok.line eqTok.col, rhs)
                 elif chain.Length >= 2 && fst chain.[chain.Length-1] = "curly" &&
                      chain.[..chain.Length-2] |> List.forall (fun (k,_) -> k = "field") then
-                    ExprStmt(eqTok.line, eqTok.col, rhs)
+                    ExprStmt(loc eqTok.line eqTok.col, rhs)
                 else
-                    OpaqueStmt(eqTok.line, eqTok.col, [baseName], "")
+                    OpaqueStmt(loc eqTok.line eqTok.col, [baseName], "")
             | None ->
-                OpaqueStmt(eqTok.line, eqTok.col, [baseName], "")
+                OpaqueStmt(loc eqTok.line eqTok.col, [baseName], "")
 
     member private this.ParseSimpleStmt() : Stmt =
         if this.Current().value = "[" then
@@ -506,10 +506,10 @@ type MatlabParser(tokenList: Token list) =
                 let mutable expr = this.ChainToExpr(idTok, chain)
                 expr <- this.ParsePostfix(expr)
                 expr <- this.ParseExprRest(expr, 0, false, true)
-                ExprStmt(expr.Line, expr.Col, expr)
+                ExprStmt(loc expr.Line expr.Col, expr)
         else
             let expr = this.ParseExpr(0, false, true)
-            ExprStmt(expr.Line, expr.Col, expr)
+            ExprStmt(loc expr.Line expr.Col, expr)
 
     // -------------------------------------------------------------------
     // Control flow
@@ -522,7 +522,7 @@ type MatlabParser(tokenList: Token list) =
         let it = this.ParseExpr(0, false, true)
         let body = this.ParseBlock([| "END" |])
         this.Eat("END") |> ignore
-        For(it.Line, it.Col, varTok.value, it, body)
+        For(loc it.Line it.Col, varTok.value, it, body)
 
     member private this.ParseGlobal() : Stmt =
         let kwTok = tokens.[pos]
@@ -531,14 +531,14 @@ type MatlabParser(tokenList: Token list) =
         while this.Current().kind = "ID" do
             varNames <- varNames @ [this.Eat("ID").value]
         let rawText = "global " + String.concat " " varNames
-        OpaqueStmt(kwTok.line, kwTok.col, varNames, rawText)
+        OpaqueStmt(loc kwTok.line kwTok.col, varNames, rawText)
 
     member private this.ParseWhile() : Stmt =
         this.Eat("WHILE") |> ignore
         let cond = this.ParseExpr(0, false, true)
         let body = this.ParseBlock([| "END" |])
         this.Eat("END") |> ignore
-        While(cond.Line, cond.Col, cond, body)
+        While(loc cond.Line cond.Col, cond, body)
 
     member private this.ParseIf() : Stmt =
         this.Eat("IF") |> ignore
@@ -550,18 +550,18 @@ type MatlabParser(tokenList: Token list) =
             let elifCond = this.ParseExpr(0, false, true)
             let elifBody = this.ParseBlock([| "ELSE"; "ELSEIF"; "END" |])
             elseifs <- elseifs @ [(elifCond, elifBody)]
-        let skipStmt = ExprStmt(0, 0, Const(0, 0, 0.0))
+        let skipStmt = ExprStmt(loc 0 0, Const(loc 0 0, 0.0))
         let mutable elseBody = [skipStmt]
         if this.Current().kind = "ELSE" then
             this.Eat("ELSE") |> ignore
             elseBody <- this.ParseBlock([| "END" |])
         this.Eat("END") |> ignore
         if elseifs.IsEmpty then
-            If(cond.Line, cond.Col, cond, thenBody, elseBody)
+            If(loc cond.Line cond.Col, cond, thenBody, elseBody)
         else
             let conditions = cond :: (elseifs |> List.map fst)
             let bodies = thenBody :: (elseifs |> List.map snd)
-            IfChain(cond.Line, cond.Col, conditions, bodies, elseBody)
+            IfChain(loc cond.Line cond.Col, conditions, bodies, elseBody)
 
     member private this.ParseSwitch() : Stmt =
         this.Eat("SWITCH") |> ignore
@@ -573,29 +573,29 @@ type MatlabParser(tokenList: Token list) =
             let caseVal = this.ParseExpr(0, false, true)
             let caseBody = this.ParseBlock([| "CASE"; "OTHERWISE"; "END" |])
             cases <- cases @ [(caseVal, caseBody)]
-        let skipStmt = ExprStmt(0, 0, Const(0, 0, 0.0))
+        let skipStmt = ExprStmt(loc 0 0, Const(loc 0 0, 0.0))
         let mutable otherwiseBody = [skipStmt]
         if this.Current().kind = "OTHERWISE" then
             this.Eat("OTHERWISE") |> ignore
             otherwiseBody <- this.ParseBlock([| "END" |])
         this.Eat("END") |> ignore
-        Switch(expr.Line, expr.Col, expr, cases, otherwiseBody)
+        Switch(loc expr.Line expr.Col, expr, cases, otherwiseBody)
 
     member private this.ParseTry() : Stmt =
         this.Eat("TRY") |> ignore
         let tryBody = this.ParseBlock([| "CATCH"; "END" |])
-        let skipStmt = ExprStmt(0, 0, Const(0, 0, 0.0))
+        let skipStmt = ExprStmt(loc 0 0, Const(loc 0 0, 0.0))
         let mutable catchBody = [skipStmt]
         if this.Current().kind = "CATCH" then
             this.Eat("CATCH") |> ignore
             if this.Current().kind = "ID" then this.Eat("ID") |> ignore
             catchBody <- this.ParseBlock([| "END" |])
         this.Eat("END") |> ignore
-        let line, col =
+        let l, c =
             match tryBody with
             | h :: _ -> h.Line, h.Col
             | [] -> 0, 0
-        Try(line, col, tryBody, catchBody)
+        Try(loc l c, tryBody, catchBody)
 
     member private this.ParseBlock(untilKinds: string[]) : Stmt list =
         if this.Current().kind = "NEWLINE" then this.Eat("NEWLINE") |> ignore
@@ -605,7 +605,7 @@ type MatlabParser(tokenList: Token list) =
             stmts.Add(this.ParseStmt())
             if pos = savedPos then pos <- pos + 1
         if stmts.Count = 0 then
-            [ExprStmt(0, 0, Const(0, 0, 0.0))]
+            [ExprStmt(loc 0 0, Const(loc 0 0, 0.0))]
         else
             stmts |> Seq.toList
 
@@ -629,13 +629,13 @@ type MatlabParser(tokenList: Token list) =
             let minusTok = tokens.[pos]
             pos <- pos + 1
             let operand = this.ParseExpr(precedenceTable.["-"], matrixContext, colonVisible)
-            Neg(minusTok.line, minusTok.col, operand)
+            Neg(loc minusTok.line minusTok.col, operand)
 
         | "~" ->
             let notTok = tokens.[pos]
             pos <- pos + 1
             let operand = this.ParseExpr(precedenceTable.["+"], matrixContext, colonVisible)
-            Not(notTok.line, notTok.col, operand)
+            Not(loc notTok.line notTok.col, operand)
 
         | "@" ->
             let atTok = tokens.[pos]
@@ -651,10 +651,10 @@ type MatlabParser(tokenList: Token list) =
                         parms <- parms @ [this.Eat("ID").value]
                 this.Eat(")") |> ignore
                 let body = this.ParseExpr(0, false, true)
-                Lambda(atTok.line, atTok.col, parms, body)
+                Lambda(loc atTok.line atTok.col, parms, body)
             elif next.kind = "ID" then
                 let name = this.Eat("ID").value
-                FuncHandle(atTok.line, atTok.col, name)
+                FuncHandle(loc atTok.line atTok.col, name)
             else
                 raise (ParseError("Expected '(' or function name after '@' at " + string next.pos))
 
@@ -677,23 +677,23 @@ type MatlabParser(tokenList: Token list) =
             | "NUMBER" ->
                 let numTok = tokens.[pos]
                 pos <- pos + 1
-                Const(numTok.line, numTok.col, float numTok.value)
+                Const(loc numTok.line numTok.col, float numTok.value)
 
             | "STRING" ->
                 let strTok = tokens.[pos]
                 pos <- pos + 1
-                StringLit(strTok.line, strTok.col, strTok.value)
+                StringLit(loc strTok.line strTok.col, strTok.value)
 
             | "ID" ->
                 let idTok = tokens.[pos]
                 pos <- pos + 1
-                let left: Expr = Var(idTok.line, idTok.col, idTok.value)
+                let left: Expr = Var(loc idTok.line idTok.col, idTok.value)
                 this.ParsePostfix(left)
 
             | "END" ->
                 let endTok = tokens.[pos]
                 pos <- pos + 1
-                End(endTok.line, endTok.col)
+                End(loc endTok.line endTok.col)
 
             | _ ->
                 raise (ParseError("Unexpected token " + tok.kind + " '" + tok.value + "' in expression at " + string tok.pos))
@@ -708,36 +708,36 @@ type MatlabParser(tokenList: Token list) =
                 pos <- pos + 1
                 let args = this.ParseParenArgs()
                 this.Eat(")") |> ignore
-                left <- Apply(lparenTok.line, lparenTok.col, left, args)
+                left <- Apply(loc lparenTok.line lparenTok.col, left, args)
 
             elif tok.value = "{" then
                 let lcurlyTok = tokens.[pos]
                 pos <- pos + 1
                 let args = this.ParseParenArgs()
                 this.Eat("}") |> ignore
-                left <- CurlyApply(lcurlyTok.line, lcurlyTok.col, left, args)
+                left <- CurlyApply(loc lcurlyTok.line lcurlyTok.col, left, args)
 
             elif tok.kind = "TRANSPOSE" then
                 let tTok = tokens.[pos]
                 pos <- pos + 1
-                left <- Transpose(tTok.line, tTok.col, left)
+                left <- Transpose(loc tTok.line tTok.col, left)
 
             elif tok.kind = "DOTOP" && tok.value = ".'" then
                 let tTok = tokens.[pos]
                 pos <- pos + 1
-                left <- Transpose(tTok.line, tTok.col, left)
+                left <- Transpose(loc tTok.line tTok.col, left)
 
             elif tok.kind = "DOT" then
                 let dotTok = tokens.[pos]
                 pos <- pos + 1
                 if this.Current().kind = "ID" then
                     let fieldName = this.Eat("ID").value
-                    left <- FieldAccess(dotTok.line, dotTok.col, left, fieldName)
+                    left <- FieldAccess(loc dotTok.line dotTok.col, left, fieldName)
                 elif this.Current().value = "(" then
                     this.Eat("(") |> ignore
                     this.ParseExpr(0, false, true) |> ignore
                     this.Eat(")") |> ignore
-                    left <- FieldAccess(dotTok.line, dotTok.col, left, "<dynamic>")
+                    left <- FieldAccess(loc dotTok.line dotTok.col, left, "<dynamic>")
                 else
                     raise (ParseError("Expected field name after '.' at " + string tok.pos))
 
@@ -779,7 +779,7 @@ type MatlabParser(tokenList: Token list) =
                     pos <- pos + 1
                     let rightPrec = if op = "^" || op = ".^" then prec else prec + 1
                     let right = this.ParseExpr(rightPrec, false, colonVisible)
-                    left <- BinOp(opTok.line, opTok.col, op, left, right)
+                    left <- BinOp(loc opTok.line opTok.col, op, left, right)
         left
 
     // -------------------------------------------------------------------
@@ -831,14 +831,14 @@ type MatlabParser(tokenList: Token list) =
         let line, col, rows = this.ParseDelimitedRows("]")
         this.Eat("]") |> ignore
         let l, c = if rows.IsEmpty then lbrack.line, lbrack.col else line, col
-        MatrixLit(l, c, rows)
+        MatrixLit(loc l c, rows)
 
     member private this.ParseCellLiteral() : Expr =
         let lcurly = this.Eat("{")
         let line, col, rows = this.ParseDelimitedRows("}")
         this.Eat("}") |> ignore
         let l, c = if rows.IsEmpty then lcurly.line, lcurly.col else line, col
-        CellLit(l, c, rows)
+        CellLit(loc l c, rows)
 
     // -------------------------------------------------------------------
     // Index args
@@ -848,16 +848,16 @@ type MatlabParser(tokenList: Token list) =
         if this.Current().value = ":" then
             let cTok = tokens.[pos]
             pos <- pos + 1
-            Colon(cTok.line, cTok.col)
+            Colon(loc cTok.line cTok.col)
         else
             let startExpr = this.ParseExpr(0, false, false)  // colon hidden
             if this.Current().value = ":" then
                 let colonTok = tokens.[pos]
                 pos <- pos + 1
                 let rangeEnd = this.ParseExpr(0, false, false)
-                Range(colonTok.line, colonTok.col, startExpr, rangeEnd)
+                Range(loc colonTok.line colonTok.col, startExpr, rangeEnd)
             else
-                IndexExpr(startExpr.Line, startExpr.Col, startExpr)
+                IndexExpr(loc startExpr.Line startExpr.Col, startExpr)
 
     member private this.ParseParenArgs() : IndexArg list =
         let args = System.Collections.Generic.List<IndexArg>()

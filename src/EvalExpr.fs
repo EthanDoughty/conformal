@@ -47,20 +47,20 @@ let private matlabConstants : Map<string, Shape> =
 /// getExprInterval: compute integer interval for an expression.
 let rec getExprInterval (expr: Expr) (env: Env) (ctx: AnalysisContext) : Interval option =
     match expr with
-    | Const(_, _, v) ->
+    | Const(_, v) ->
         // Integer constants only
-        if v = System.Math.Floor v && not (System.Double.IsInfinity v) then
+        if v = System.Math.Floor(v : float) && not (System.Double.IsInfinity v) then
             let iv = int v
             Some { lo = Finite iv; hi = Finite iv }
         else None
-    | Var(_, _, name) ->
+    | Var(_, name) ->
         match ctx.cst.valueRanges.TryGetValue(name) with
         | true, iv -> Some iv
         | false, _ -> None
-    | Neg(_, _, operand) ->
+    | Neg(_, operand) ->
         let operandIv = getExprInterval operand env ctx
         Intervals.intervalNeg operandIv
-    | BinOp(_, _, op, left, right) ->
+    | BinOp(_, op, left, right) ->
         let lIv = getExprInterval left env ctx
         let rIv = getExprInterval right env ctx
         match op with
@@ -107,6 +107,8 @@ let getConcreteDimSize (dim: Dim) (ctx: AnalysisContext) : int option =
     | Unknown -> None
 
 
+
+
 // ---------------------------------------------------------------------------
 // Main expression evaluator
 // ---------------------------------------------------------------------------
@@ -128,8 +130,8 @@ let evalIndexArgToShape
     (evalFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape option -> Shape)
     : Shape =
     match arg with
-    | IndexExpr(_, _, expr) -> evalFn expr env warnings ctx containerShape
-    | Range(_, _, startExpr, endExpr) ->
+    | IndexExpr(_, expr) -> evalFn expr env warnings ctx containerShape
+    | Range(_, startExpr, endExpr) ->
         // Evaluate start/end for side effects
         evalFn startExpr env warnings ctx containerShape |> ignore
         evalFn endExpr   env warnings ctx containerShape |> ignore
@@ -151,7 +153,7 @@ let indexArgToExtentIr
     match arg with
     | Colon _ -> Unknown
 
-    | Range(_, _, startExpr, endExpr) ->
+    | Range(_, startExpr, endExpr) ->
         let startShape = evalFn startExpr env warnings ctx containerShape
         let endShape   = evalFn endExpr   env warnings ctx containerShape
 
@@ -177,7 +179,7 @@ let indexArgToExtentIr
                 else Concrete ((b' - a') + 1)
             | _ -> addDim (subDim b a) (Concrete 1)   // (b-a)+1 symbolic
 
-    | IndexExpr(_, _, expr) ->
+    | IndexExpr(_, expr) ->
         let s = evalFn expr env warnings ctx containerShape
         match s with
         | Matrix _ ->
@@ -205,7 +207,7 @@ let rec evalExprIr
     // ------------------------------------------------------------------
     // Variables / constants
     // ------------------------------------------------------------------
-    | Var(_, _, name) ->
+    | Var(_, name) ->
         let shape = Env.get env name
         if shape = Bottom then
             match Map.tryFind name matlabConstants with
@@ -217,7 +219,7 @@ let rec evalExprIr
 
     | StringLit _ -> StringShape
 
-    | End(line, _) ->
+    | End { line = line } ->
         match containerShape with
         | None ->
             warnings.Add(warnEndOutsideIndexing line)
@@ -227,7 +229,7 @@ let rec evalExprIr
     // ------------------------------------------------------------------
     // Matrix literal
     // ------------------------------------------------------------------
-    | MatrixLit(line, _, rows) ->
+    | MatrixLit({ line = line }, rows) ->
         let shapeRows =
             rows |> List.map (fun row ->
                 row |> List.map (fun e -> evalExprIr e env warnings ctx None builtinDispatch))
@@ -237,7 +239,7 @@ let rec evalExprIr
     // ------------------------------------------------------------------
     // Cell literal
     // ------------------------------------------------------------------
-    | CellLit(_, _, rows) ->
+    | CellLit(_, rows) ->
         if rows.IsEmpty then
             Cell(Concrete 0, Concrete 0, Some Map.empty)
         else
@@ -264,7 +266,7 @@ let rec evalExprIr
     // ------------------------------------------------------------------
     // Curly indexing: c{i} or c{i,j}
     // ------------------------------------------------------------------
-    | CurlyApply(line, _, baseExpr, args) ->
+    | CurlyApply({ line = line }, baseExpr, args) ->
         let baseShape = evalExprIr baseExpr env warnings ctx None builtinDispatch
 
         if not (isCell baseShape) then
@@ -285,13 +287,13 @@ let rec evalExprIr
                 if args.Length = 1 then
                     let arg = args.[0]
                     match arg with
-                    | IndexExpr(_, _, Const(_, _, v)) ->
+                    | IndexExpr(_, Const(_, v)) ->
                         // Literal 1D index
                         let idx0 = int v - 1
                         match Map.tryFind idx0 elemMap with
                         | Some s -> s
                         | None   -> UnknownShape
-                    | IndexExpr(_, _, End _) ->
+                    | IndexExpr(_, End _) ->
                         match rows, cols with
                         | Concrete nr, Concrete nc ->
                             let total = nr * nc
@@ -299,7 +301,7 @@ let rec evalExprIr
                             | Some s -> s
                             | None   -> UnknownShape
                         | _ -> joinAllElements elemMap
-                    | IndexExpr(_, _, (BinOp(_, _, _, _, _) as binOpExpr))
+                    | IndexExpr(_, (BinOp(_, _, _, _) as binOpExpr))
                         when binopContainsEnd binOpExpr ->
                         match rows, cols with
                         | Concrete nr, Concrete nc ->
@@ -328,15 +330,15 @@ let rec evalExprIr
 
                     let tryGetRowIdx () =
                         match argRow with
-                        | IndexExpr(_, _, Const(_, _, v)) -> Some (int v - 1)
-                        | IndexExpr(_, _, End _) ->
+                        | IndexExpr(_, Const(_, v)) -> Some (int v - 1)
+                        | IndexExpr(_, End _) ->
                             match rows with Concrete nr -> Some (nr - 1) | _ -> None
                         | _ -> None
 
                     let tryGetColIdx () =
                         match argCol with
-                        | IndexExpr(_, _, Const(_, _, v)) -> Some (int v - 1)
-                        | IndexExpr(_, _, End _) ->
+                        | IndexExpr(_, Const(_, v)) -> Some (int v - 1)
+                        | IndexExpr(_, End _) ->
                             match cols with Concrete nc -> Some (nc - 1) | _ -> None
                         | _ -> None
 
@@ -360,13 +362,13 @@ let rec evalExprIr
     // ------------------------------------------------------------------
     // Apply: function call or array indexing
     // ------------------------------------------------------------------
-    | Apply(line, _, baseExpr, args) ->
+    | Apply({ line = line }, baseExpr, args) ->
         evalApply line baseExpr args env warnings ctx builtinDispatch
 
     // ------------------------------------------------------------------
     // Transpose
     // ------------------------------------------------------------------
-    | Transpose(line, _, operand) ->
+    | Transpose({ line = line }, operand) ->
         let inner = evalExprIr operand env warnings ctx None builtinDispatch
         if not (isNumeric inner) && not (isUnknown inner) then
             warnings.Add(warnTransposeTypeMismatch line inner)
@@ -379,14 +381,14 @@ let rec evalExprIr
     // ------------------------------------------------------------------
     // Negation / logical Not
     // ------------------------------------------------------------------
-    | Neg(line, _, operand) ->
+    | Neg({ line = line }, operand) ->
         let s = evalExprIr operand env warnings ctx None builtinDispatch
         if not (isNumeric s) && not (isUnknown s) then
             warnings.Add(warnNegateTypeMismatch line s)
             UnknownShape
         else s
 
-    | Not(line, _, operand) ->
+    | Not({ line = line }, operand) ->
         let s = evalExprIr operand env warnings ctx None builtinDispatch
         if not (isNumeric s) && not (isUnknown s) then
             warnings.Add(warnNotTypeMismatch line s)
@@ -396,7 +398,7 @@ let rec evalExprIr
     // ------------------------------------------------------------------
     // Field access: s.field
     // ------------------------------------------------------------------
-    | FieldAccess(line, _, baseExpr, field) ->
+    | FieldAccess({ line = line }, baseExpr, field) ->
         let baseShape = evalExprIr baseExpr env warnings ctx None builtinDispatch
         if field = "<dynamic>" then
             UnknownShape  // dynamic field access: conservative
@@ -421,7 +423,7 @@ let rec evalExprIr
     // ------------------------------------------------------------------
     // Lambda: @(params) body
     // ------------------------------------------------------------------
-    | Lambda(_, _, parms, body) ->
+    | Lambda(_, parms, body) ->
         let lambdaId = ctx.call.nextLambdaId
         ctx.call.nextLambdaId <- lambdaId + 1
         // Store snapshot of current env as closure
@@ -431,7 +433,7 @@ let rec evalExprIr
     // ------------------------------------------------------------------
     // Function handle: @funcName
     // ------------------------------------------------------------------
-    | FuncHandle(line, _, name) ->
+    | FuncHandle({ line = line }, name) ->
         let handleId = ctx.call.nextLambdaId
         ctx.call.nextLambdaId <- handleId + 1
         if ctx.call.functionRegistry.ContainsKey(name) ||
@@ -447,7 +449,7 @@ let rec evalExprIr
     // ------------------------------------------------------------------
     // BinOp
     // ------------------------------------------------------------------
-    | BinOp(line, _, op, left, right) ->
+    | BinOp({ line = line }, op, left, right) ->
         let leftShape  = evalExprIr left  env warnings ctx containerShape builtinDispatch
         let rightShape = evalExprIr right env warnings ctx containerShape builtinDispatch
         let getDivisorIv e = getExprInterval e env ctx
@@ -467,7 +469,7 @@ and private evalApply
 
     // Priority 1: base variable is a function handle (shadows builtins)
     match baseExpr with
-    | Var(_, _, baseVarName) ->
+    | Var(_, baseVarName) ->
         let baseVarShape = Env.get env baseVarName
         if isFunctionHandle baseVarShape then
             evalHandleCall baseVarName baseVarShape line args env warnings ctx builtinDispatch
@@ -517,7 +519,7 @@ and private evalHandleCall
             args |> List.map (fun arg ->
                 match arg with
                 | Colon _ | Range _ -> UnknownShape
-                | IndexExpr(_, _, e) -> evalExprIr e env warnings ctx None builtinDispatch)
+                | IndexExpr(_, e) -> evalExprIr e env warnings ctx None builtinDispatch)
 
         let results = System.Collections.Generic.List<Shape>()
 
@@ -531,7 +533,7 @@ and private evalHandleCall
                 let argDimAliases =
                     List.mapi2 (fun i param arg ->
                         match arg with
-                        | IndexExpr(_, _, e) -> (param, exprToDimIr e env)
+                        | IndexExpr(_, e) -> (param, exprToDimIr e env)
                         | _ -> (param, Unknown)) (List.take minLen parms) (List.take minLen args)
 
                 let cacheKey =
@@ -566,7 +568,7 @@ and private evalHandleCall
                                         Env.set callEnv param argShape
                                         if i < args.Length then
                                             match args.[i] with
-                                            | IndexExpr(_, _, e) ->
+                                            | IndexExpr(_, e) ->
                                                 let callerDim = exprToDimIr e env
                                                 if callerDim <> Unknown then
                                                     callEnv.dimAliases <- Map.add param callerDim callEnv.dimAliases
@@ -592,7 +594,7 @@ and private evalHandleCall
                        ctx.ws.externalFunctions.ContainsKey(funcName) ||
                        ctx.call.nestedFunctionRegistry.ContainsKey(funcName) then
                         // Route through callback which has real dispatch in StmtFuncAnalysis
-                        let fakeBase = Ir.Var(line, 0, funcName)
+                        let fakeBase = Ir.Var(loc line 0, funcName)
                         let result = builtinDispatch funcName line fakeBase args env warnings ctx
                         results.Add(result)
                     else
@@ -628,7 +630,7 @@ and private evalIndexing
         | 1 ->
             let arg = args.[0]
             match arg with
-            | IndexExpr(_, _, (MatrixLit _ as matLitExpr)) ->
+            | IndexExpr(_, (MatrixLit _ as matLitExpr)) ->
                 // Matrix literal as linear index: result has the same shape as the index
                 evalExprIr matLitExpr env warnings ctx (Some baseShape) builtinDispatch
             | _ -> Scalar
@@ -642,7 +644,7 @@ and private evalIndexing
             let nSize = getConcreteDimSize n ctx
 
             match a1, mSize with
-            | IndexExpr(_, _, idxExpr), Some ms ->
+            | IndexExpr(_, idxExpr), Some ms ->
                 let idxIv = getExprInterval idxExpr env ctx
                 match idxIv with
                 | Some iv ->
@@ -662,7 +664,7 @@ and private evalIndexing
             | _ -> ()
 
             match a2, nSize with
-            | IndexExpr(_, _, idxExpr), Some ns ->
+            | IndexExpr(_, idxExpr), Some ns ->
                 let idxIv = getExprInterval idxExpr env ctx
                 match idxIv with
                 | Some iv ->
@@ -690,7 +692,7 @@ and private evalIndexing
             let isAllowedUnknown (a: IndexArg) =
                 match a with
                 | Colon _ | Range _ -> true
-                | IndexExpr(_, _, MatrixLit _) -> true
+                | IndexExpr(_, MatrixLit _) -> true
                 | _ -> false
 
             let rExtentFinal =
@@ -710,7 +712,7 @@ and private evalIndexing
                 | _ -> Matrix(rExtentFinal, cExtentFinal)
 
         | c when c > 2 ->
-            warnings.Add(warnTooManyIndices line (Apply(line, 0, Var(line, 0, "?"), args)))
+            warnings.Add(warnTooManyIndices line (Apply(loc line 0, Var(loc line 0, "?"), args)))
             UnknownShape
         | _ -> UnknownShape
     | _ -> UnknownShape

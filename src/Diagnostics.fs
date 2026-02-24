@@ -55,50 +55,50 @@ let diagnosticToString (d: Diagnostic) : string =
 
 let rec prettyExprIr (expr: Expr) : string =
     match expr with
-    | Var(_, _, name)        -> name
-    | Const(_, _, v)         ->
-        if v = System.Math.Floor v && not (System.Double.IsInfinity v) then
+    | Var(_, name)        -> name
+    | Const(_, v)         ->
+        if v = System.Math.Floor(v : float) && not (System.Double.IsInfinity v) then
             string (int64 v)
         else
             string v
-    | StringLit(_, _, s)     -> "'" + s + "'"
-    | Neg(_, _, operand)     -> "(-" + prettyExprIr operand + ")"
-    | Not(_, _, operand)     -> "(~" + prettyExprIr operand + ")"
-    | Transpose(_, _, operand) -> prettyExprIr operand + "'"
-    | Lambda(_, _, parms, _) ->
+    | StringLit(_, s)     -> "'" + s + "'"
+    | Neg(_, operand)     -> "(-" + prettyExprIr operand + ")"
+    | Not(_, operand)     -> "(~" + prettyExprIr operand + ")"
+    | Transpose(_, operand) -> prettyExprIr operand + "'"
+    | Lambda(_, parms, _) ->
         let ps = parms |> String.concat ", "
         "@(" + ps + ") <body>"
-    | FuncHandle(_, _, name) -> "@" + name
-    | Apply(_, _, base_, args) ->
+    | FuncHandle(_, name) -> "@" + name
+    | Apply(_, base_, args) ->
         let baseName =
             match base_ with
-            | Var(_, _, n) -> n
-            | _            -> "<expr>"
+            | Var(_, n) -> n
+            | _         -> "<expr>"
         let argsStr = args |> List.map prettyIndexArgIr |> String.concat ", "
         baseName + "(" + argsStr + ")"
-    | CurlyApply(_, _, base_, args) ->
+    | CurlyApply(_, base_, args) ->
         let baseName =
             match base_ with
-            | Var(_, _, n) -> n
-            | _            -> "<expr>"
+            | Var(_, n) -> n
+            | _         -> "<expr>"
         let argsStr = args |> List.map prettyIndexArgIr |> String.concat ", "
         baseName + "{" + argsStr + "}"
     | MatrixLit _            -> "[matrix]"
     | CellLit _              -> "{cell}"
-    | BinOp(_, _, op, left, right) ->
+    | BinOp(_, op, left, right) ->
         if op = ":" then
             prettyExprIr left + ":" + prettyExprIr right
         else
             "(" + prettyExprIr left + " " + op + " " + prettyExprIr right + ")"
-    | FieldAccess(_, _, base_, field) ->
+    | FieldAccess(_, base_, field) ->
         prettyExprIr base_ + "." + field
     | End _ -> "end"
 
 and prettyIndexArgIr (arg: IndexArg) : string =
     match arg with
-    | Colon _            -> ":"
-    | Range(_, _, s, e)  -> prettyExprIr s + ":" + prettyExprIr e
-    | IndexExpr(_, _, e) -> prettyExprIr e
+    | Colon _           -> ":"
+    | Range(_, s, e)    -> prettyExprIr s + ":" + prettyExprIr e
+    | IndexExpr(_, e)   -> prettyExprIr e
 
 // ---------------------------------------------------------------------------
 // Warning message builders

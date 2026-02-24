@@ -99,42 +99,42 @@ type private Writer(sb: StringBuilder) =
 
 let rec private writeExpr (w: Writer) (expr: Expr) : unit =
     match expr with
-    | Var(line, col, name) ->
+    | Var({ line = line; col = col }, name) ->
         w.WriteObject [
             "type",  fun () -> w.WriteStr "Var"
             "line",  fun () -> w.WriteInt line
             "col",   fun () -> w.WriteInt col
             "name",  fun () -> w.WriteStr name
         ]
-    | Const(line, col, value) ->
+    | Const({ line = line; col = col }, value) ->
         w.WriteObject [
             "type",  fun () -> w.WriteStr "Const"
             "line",  fun () -> w.WriteInt line
             "col",   fun () -> w.WriteInt col
             "value", fun () -> w.WriteFloat value
         ]
-    | StringLit(line, col, value) ->
+    | StringLit({ line = line; col = col }, value) ->
         w.WriteObject [
             "type",  fun () -> w.WriteStr "StringLit"
             "line",  fun () -> w.WriteInt line
             "col",   fun () -> w.WriteInt col
             "value", fun () -> w.WriteStr value
         ]
-    | Neg(line, col, operand) ->
+    | Neg({ line = line; col = col }, operand) ->
         w.WriteObject [
             "type",    fun () -> w.WriteStr "Neg"
             "line",    fun () -> w.WriteInt line
             "col",     fun () -> w.WriteInt col
             "operand", fun () -> writeExpr w operand
         ]
-    | Not(line, col, operand) ->
+    | Not({ line = line; col = col }, operand) ->
         w.WriteObject [
             "type",    fun () -> w.WriteStr "Not"
             "line",    fun () -> w.WriteInt line
             "col",     fun () -> w.WriteInt col
             "operand", fun () -> writeExpr w operand
         ]
-    | BinOp(line, col, op, left, right) ->
+    | BinOp({ line = line; col = col }, op, left, right) ->
         w.WriteObject [
             "type",  fun () -> w.WriteStr "BinOp"
             "line",  fun () -> w.WriteInt line
@@ -143,14 +143,14 @@ let rec private writeExpr (w: Writer) (expr: Expr) : unit =
             "left",  fun () -> writeExpr w left
             "right", fun () -> writeExpr w right
         ]
-    | Transpose(line, col, operand) ->
+    | Transpose({ line = line; col = col }, operand) ->
         w.WriteObject [
             "type",    fun () -> w.WriteStr "Transpose"
             "line",    fun () -> w.WriteInt line
             "col",     fun () -> w.WriteInt col
             "operand", fun () -> writeExpr w operand
         ]
-    | FieldAccess(line, col, base_, field) ->
+    | FieldAccess({ line = line; col = col }, base_, field) ->
         w.WriteObject [
             "type",  fun () -> w.WriteStr "FieldAccess"
             "line",  fun () -> w.WriteInt line
@@ -158,7 +158,7 @@ let rec private writeExpr (w: Writer) (expr: Expr) : unit =
             "base",  fun () -> writeExpr w base_
             "field", fun () -> w.WriteStr field
         ]
-    | Lambda(line, col, parms, body) ->
+    | Lambda({ line = line; col = col }, parms, body) ->
         w.WriteObject [
             "type",   fun () -> w.WriteStr "Lambda"
             "line",   fun () -> w.WriteInt line
@@ -166,20 +166,20 @@ let rec private writeExpr (w: Writer) (expr: Expr) : unit =
             "params", fun () -> w.WriteStringList parms
             "body",   fun () -> writeExpr w body
         ]
-    | FuncHandle(line, col, name) ->
+    | FuncHandle({ line = line; col = col }, name) ->
         w.WriteObject [
             "type", fun () -> w.WriteStr "FuncHandle"
             "line", fun () -> w.WriteInt line
             "col",  fun () -> w.WriteInt col
             "name", fun () -> w.WriteStr name
         ]
-    | End(line, col) ->
+    | End { line = line; col = col } ->
         w.WriteObject [
             "type", fun () -> w.WriteStr "End"
             "line", fun () -> w.WriteInt line
             "col",  fun () -> w.WriteInt col
         ]
-    | Apply(line, col, base_, args) ->
+    | Apply({ line = line; col = col }, base_, args) ->
         w.WriteObject [
             "type", fun () -> w.WriteStr "Apply"
             "line", fun () -> w.WriteInt line
@@ -187,7 +187,7 @@ let rec private writeExpr (w: Writer) (expr: Expr) : unit =
             "base", fun () -> writeExpr w base_
             "args", fun () -> w.WriteArray(args |> List.map (fun a -> fun () -> writeIndexArg w a))
         ]
-    | CurlyApply(line, col, base_, args) ->
+    | CurlyApply({ line = line; col = col }, base_, args) ->
         w.WriteObject [
             "type", fun () -> w.WriteStr "CurlyApply"
             "line", fun () -> w.WriteInt line
@@ -195,14 +195,14 @@ let rec private writeExpr (w: Writer) (expr: Expr) : unit =
             "base", fun () -> writeExpr w base_
             "args", fun () -> w.WriteArray(args |> List.map (fun a -> fun () -> writeIndexArg w a))
         ]
-    | MatrixLit(line, col, rows) ->
+    | MatrixLit({ line = line; col = col }, rows) ->
         w.WriteObject [
             "type", fun () -> w.WriteStr "MatrixLit"
             "line", fun () -> w.WriteInt line
             "col",  fun () -> w.WriteInt col
             "rows", fun () -> writeRows w rows
         ]
-    | CellLit(line, col, rows) ->
+    | CellLit({ line = line; col = col }, rows) ->
         w.WriteObject [
             "type", fun () -> w.WriteStr "CellLit"
             "line", fun () -> w.WriteInt line
@@ -217,13 +217,13 @@ and private writeRows (w: Writer) (rows: Expr list list) : unit =
 
 and private writeIndexArg (w: Writer) (arg: IndexArg) : unit =
     match arg with
-    | Colon(line, col) ->
+    | Colon { line = line; col = col } ->
         w.WriteObject [
             "type", fun () -> w.WriteStr "Colon"
             "line", fun () -> w.WriteInt line
             "col",  fun () -> w.WriteInt col
         ]
-    | Range(line, col, start, end_) ->
+    | Range({ line = line; col = col }, start, end_) ->
         w.WriteObject [
             "type",  fun () -> w.WriteStr "Range"
             "line",  fun () -> w.WriteInt line
@@ -231,7 +231,7 @@ and private writeIndexArg (w: Writer) (arg: IndexArg) : unit =
             "start", fun () -> writeExpr w start
             "end",   fun () -> writeExpr w end_
         ]
-    | IndexExpr(line, col, expr) ->
+    | IndexExpr({ line = line; col = col }, expr) ->
         w.WriteObject [
             "type", fun () -> w.WriteStr "IndexExpr"
             "line", fun () -> w.WriteInt line
@@ -244,7 +244,7 @@ and private writeBody (w: Writer) (stmts: Stmt list) : unit =
 
 and private writeStmt (w: Writer) (stmt: Stmt) : unit =
     match stmt with
-    | Assign(line, col, name, expr) ->
+    | Assign({ line = line; col = col }, name, expr) ->
         w.WriteObject [
             "type", fun () -> w.WriteStr "Assign"
             "line", fun () -> w.WriteInt line
@@ -252,7 +252,7 @@ and private writeStmt (w: Writer) (stmt: Stmt) : unit =
             "name", fun () -> w.WriteStr name
             "expr", fun () -> writeExpr w expr
         ]
-    | StructAssign(line, col, baseName, fields, expr) ->
+    | StructAssign({ line = line; col = col }, baseName, fields, expr) ->
         w.WriteObject [
             "type",      fun () -> w.WriteStr "StructAssign"
             "line",      fun () -> w.WriteInt line
@@ -261,7 +261,7 @@ and private writeStmt (w: Writer) (stmt: Stmt) : unit =
             "fields",    fun () -> w.WriteStringList fields
             "expr",      fun () -> writeExpr w expr
         ]
-    | CellAssign(line, col, baseName, args, expr) ->
+    | CellAssign({ line = line; col = col }, baseName, args, expr) ->
         w.WriteObject [
             "type",      fun () -> w.WriteStr "CellAssign"
             "line",      fun () -> w.WriteInt line
@@ -270,7 +270,7 @@ and private writeStmt (w: Writer) (stmt: Stmt) : unit =
             "args",      fun () -> w.WriteArray(args |> List.map (fun a -> fun () -> writeIndexArg w a))
             "expr",      fun () -> writeExpr w expr
         ]
-    | IndexAssign(line, col, baseName, args, expr) ->
+    | IndexAssign({ line = line; col = col }, baseName, args, expr) ->
         w.WriteObject [
             "type",      fun () -> w.WriteStr "IndexAssign"
             "line",      fun () -> w.WriteInt line
@@ -279,7 +279,7 @@ and private writeStmt (w: Writer) (stmt: Stmt) : unit =
             "args",      fun () -> w.WriteArray(args |> List.map (fun a -> fun () -> writeIndexArg w a))
             "expr",      fun () -> writeExpr w expr
         ]
-    | IndexStructAssign(line, col, baseName, indexArgs, indexKind, fields, expr) ->
+    | IndexStructAssign({ line = line; col = col }, baseName, indexArgs, indexKind, fields, expr) ->
         w.WriteObject [
             "type",        fun () -> w.WriteStr "IndexStructAssign"
             "line",        fun () -> w.WriteInt line
@@ -290,7 +290,7 @@ and private writeStmt (w: Writer) (stmt: Stmt) : unit =
             "fields",      fun () -> w.WriteStringList fields
             "expr",        fun () -> writeExpr w expr
         ]
-    | FieldIndexAssign(line, col, baseName, prefixFields, indexArgs, indexKind, suffixFields, expr) ->
+    | FieldIndexAssign({ line = line; col = col }, baseName, prefixFields, indexArgs, indexKind, suffixFields, expr) ->
         w.WriteObject [
             "type",          fun () -> w.WriteStr "FieldIndexAssign"
             "line",          fun () -> w.WriteInt line
@@ -302,14 +302,14 @@ and private writeStmt (w: Writer) (stmt: Stmt) : unit =
             "suffix_fields", fun () -> w.WriteStringList suffixFields
             "expr",          fun () -> writeExpr w expr
         ]
-    | ExprStmt(line, col, expr) ->
+    | ExprStmt({ line = line; col = col }, expr) ->
         w.WriteObject [
             "type", fun () -> w.WriteStr "ExprStmt"
             "line", fun () -> w.WriteInt line
             "col",  fun () -> w.WriteInt col
             "expr", fun () -> writeExpr w expr
         ]
-    | If(line, col, cond, thenBody, elseBody) ->
+    | If({ line = line; col = col }, cond, thenBody, elseBody) ->
         w.WriteObject [
             "type",      fun () -> w.WriteStr "If"
             "line",      fun () -> w.WriteInt line
@@ -318,7 +318,7 @@ and private writeStmt (w: Writer) (stmt: Stmt) : unit =
             "then_body", fun () -> writeBody w thenBody
             "else_body", fun () -> writeBody w elseBody
         ]
-    | IfChain(line, col, conditions, bodies, elseBody) ->
+    | IfChain({ line = line; col = col }, conditions, bodies, elseBody) ->
         w.WriteObject [
             "type",       fun () -> w.WriteStr "IfChain"
             "line",       fun () -> w.WriteInt line
@@ -327,7 +327,7 @@ and private writeStmt (w: Writer) (stmt: Stmt) : unit =
             "bodies",     fun () -> w.WriteArray(bodies |> List.map (fun b -> fun () -> writeBody w b))
             "else_body",  fun () -> writeBody w elseBody
         ]
-    | While(line, col, cond, body) ->
+    | While({ line = line; col = col }, cond, body) ->
         w.WriteObject [
             "type", fun () -> w.WriteStr "While"
             "line", fun () -> w.WriteInt line
@@ -335,7 +335,7 @@ and private writeStmt (w: Writer) (stmt: Stmt) : unit =
             "cond", fun () -> writeExpr w cond
             "body", fun () -> writeBody w body
         ]
-    | For(line, col, var_, it, body) ->
+    | For({ line = line; col = col }, var_, it, body) ->
         w.WriteObject [
             "type", fun () -> w.WriteStr "For"
             "line", fun () -> w.WriteInt line
@@ -344,7 +344,7 @@ and private writeStmt (w: Writer) (stmt: Stmt) : unit =
             "it",   fun () -> writeExpr w it
             "body", fun () -> writeBody w body
         ]
-    | Switch(line, col, expr, cases, otherwise) ->
+    | Switch({ line = line; col = col }, expr, cases, otherwise) ->
         let writeCases () =
             w.WriteArray(cases |> List.map (fun (cVal, cBody) ->
                 fun () ->
@@ -361,7 +361,7 @@ and private writeStmt (w: Writer) (stmt: Stmt) : unit =
             "cases",     fun () -> writeCases ()
             "otherwise", fun () -> writeBody w otherwise
         ]
-    | Try(line, col, tryBody, catchBody) ->
+    | Try({ line = line; col = col }, tryBody, catchBody) ->
         w.WriteObject [
             "type",       fun () -> w.WriteStr "Try"
             "line",       fun () -> w.WriteInt line
@@ -369,25 +369,25 @@ and private writeStmt (w: Writer) (stmt: Stmt) : unit =
             "try_body",   fun () -> writeBody w tryBody
             "catch_body", fun () -> writeBody w catchBody
         ]
-    | Break(line, col) ->
+    | Break { line = line; col = col } ->
         w.WriteObject [
             "type", fun () -> w.WriteStr "Break"
             "line", fun () -> w.WriteInt line
             "col",  fun () -> w.WriteInt col
         ]
-    | Continue(line, col) ->
+    | Continue { line = line; col = col } ->
         w.WriteObject [
             "type", fun () -> w.WriteStr "Continue"
             "line", fun () -> w.WriteInt line
             "col",  fun () -> w.WriteInt col
         ]
-    | Return(line, col) ->
+    | Return { line = line; col = col } ->
         w.WriteObject [
             "type", fun () -> w.WriteStr "Return"
             "line", fun () -> w.WriteInt line
             "col",  fun () -> w.WriteInt col
         ]
-    | OpaqueStmt(line, col, targets, raw) ->
+    | OpaqueStmt({ line = line; col = col }, targets, raw) ->
         // raw can be a string or empty list in Python; always serialize as string
         let rawStr =
             match raw with
@@ -399,7 +399,7 @@ and private writeStmt (w: Writer) (stmt: Stmt) : unit =
             "targets", fun () -> w.WriteStringList targets
             "raw",     fun () -> w.WriteStr rawStr
         ]
-    | FunctionDef(line, col, name, parms, outputVars, body) ->
+    | FunctionDef({ line = line; col = col }, name, parms, outputVars, body) ->
         w.WriteObject [
             "type",        fun () -> w.WriteStr "FunctionDef"
             "line",        fun () -> w.WriteInt line
@@ -409,7 +409,7 @@ and private writeStmt (w: Writer) (stmt: Stmt) : unit =
             "output_vars", fun () -> w.WriteStringList outputVars
             "body",        fun () -> writeBody w body
         ]
-    | AssignMulti(line, col, targets, expr) ->
+    | AssignMulti({ line = line; col = col }, targets, expr) ->
         w.WriteObject [
             "type",    fun () -> w.WriteStr "AssignMulti"
             "line",    fun () -> w.WriteInt line
