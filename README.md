@@ -7,7 +7,7 @@
 [![Version](https://img.shields.io/badge/version-2.0.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4.svg)](https://dotnet.microsoft.com/download)
-[![Tests](https://img.shields.io/badge/tests-338%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-340%20passing-brightgreen.svg)](#test-suite)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
 *Matrices must be **conformable** before they can perform. Conformal makes sure they are.*
@@ -36,15 +36,24 @@ Final environment:
     Env{A: matrix[3 x 4], B: matrix[5 x 2], C: unknown, D: unknown}
 ```
 
-## Requirements
+## Quick Start
 
-- [.NET 8.0 SDK](https://dotnet.microsoft.com/download) or later
-- Tested on Linux
-- No MATLAB installation required
+**VS Code** (recommended): Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal) by searching "Conformal" in Extensions, or run:
+```bash
+code --install-extension EthanDoughty.conformal
+```
+Open any `.m` file and diagnostics appear as underlines. Hover a variable to see its inferred shape. No configuration needed.
+
+**CLI**: Requires [.NET 8.0 SDK](https://dotnet.microsoft.com/download) or later. No MATLAB installation required.
+```bash
+git clone https://github.com/EthanDoughty/conformal.git
+cd conformal/src
+dotnet run -- ../tests/basics/inner_dim_mismatch.m
+```
 
 ## Performance
 
-Single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and cross-file workspace analysis runs in about 70ms. The full test suite (338 `.m` tests) finishes in about one second, with no MATLAB runtime involved.
+Single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and cross-file workspace analysis runs in about 70ms. The full test suite (340 `.m` tests) finishes in about one second, with no MATLAB runtime involved.
 
 The VS Code extension runs the analyzer in-process (compiled to JavaScript via Fable), so there is no subprocess startup cost and analysis can run on every keystroke with a 500ms debounce.
 
@@ -52,7 +61,7 @@ The VS Code extension runs the analyzer in-process (compiled to JavaScript via F
 
 All warnings include source line numbers. When the analyzer finds a definite error, it marks the result as `unknown` and keeps going so you get as many diagnostics as possible in a single pass.
 
-By default, Conformal shows only high-confidence warnings: dimension mismatches, type errors, bounds violations, division by zero, and constraint conflicts. There are 19 warning codes that only appear in `--strict` mode, mostly things that are low-confidence or cascade-prone in practice, like `W_UNKNOWN_FUNCTION`, `W_STRUCT_FIELD_NOT_FOUND`, and `W_SUSPICIOUS_COMPARISON`. In default mode, the dogfood corpus of 38 real-world files produces zero warnings; in strict mode that same corpus produces 873 (nearly all informational). The idea is that you can run default mode in CI without false-positive noise, and reach for `--strict` when you want the full picture.
+By default, Conformal shows only high-confidence warnings: dimension mismatches, type errors, bounds violations, division by zero, and constraint conflicts. There are 19 warning codes that only appear in `--strict` mode, mostly things that are low-confidence or cascade-prone in practice, like `W_UNKNOWN_FUNCTION`, `W_STRUCT_FIELD_NOT_FOUND`, and `W_SUSPICIOUS_COMPARISON`. In default mode, the dogfood corpus of 139 real-world files produces zero warnings; in strict mode the same corpus produces primarily informational diagnostics. The idea is that you can run default mode in CI without false-positive noise, and reach for `--strict` when you want the full picture.
 
 ### Operations
 
@@ -162,13 +171,13 @@ src/                    F# analyzer (lexer, parser, shape inference, builtins, d
 vscode-conformal/       VS Code extension (TypeScript client + Fable-compiled analyzer)
   fable/                Fable compilation project (F# to JavaScript, shares src/*.fs files)
   src/                  TypeScript extension and LSP server code
-tests/                  338 self-checking MATLAB programs in 17 categories
+tests/                  340 self-checking MATLAB programs in 17 categories
 .github/                CI workflow (build, test, compile Fable, package VSIX)
 ```
 
 ## Test Suite
 
-The analyzer is validated by 338 self-checking MATLAB programs organized into 17 categories. Each test embeds its expected behavior as inline assertions:
+The analyzer is validated by 340 self-checking MATLAB programs organized into 17 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -500,7 +509,7 @@ Struct creation, field access, control-flow joins, and open struct lattice behav
 </details>
 
 <details>
-<summary><h3>Cells (26 tests)</h3></summary>
+<summary><h3>Cells (27 tests)</h3></summary>
 
 Cell array literals, curly-brace indexing, element assignment, and per-element shape tracking.
 
@@ -530,6 +539,7 @@ Cell array literals, curly-brace indexing, element assignment, and per-element s
 | `cell_end_range.m` | `end` as range endpoint `C{1:end}` | 0 |
 | `end_arithmetic.m` | `end` keyword arithmetic in cell indexing (`end-1`, `end-2`) | 0 |
 | `end_outside_indexing.m` | `end` keyword outside indexing emits warning | 1 |
+| `cell_end_assign.m` | `end` keyword in cell assignment LHS (`c{end+1} = val` append pattern) | 0 |
 | `curly_indexing_non_cell.m` | Curly indexing on non-cell value is an error | 1 |
 | `empty_matrix_promotion.m` | `x = []; x{1} = val` promotes `[]` to cell without warning (MATLAB's universal empty initializer) | 0 |
 
@@ -719,7 +729,7 @@ Incorrectness witness generation: concrete proofs that dimension conflict warnin
 ### Running the Tests
 
 ```bash
-# Run all 338 .m tests
+# Run all 340 .m tests
 cd src && dotnet run -- --tests
 
 # Run with fixed-point loop analysis
@@ -729,32 +739,9 @@ cd src && dotnet run -- --fixpoint --tests
 cd src && dotnet run -- --strict --tests
 ```
 
-## Getting Started
-
-```bash
-git clone https://github.com/EthanDoughty/conformal.git
-cd conformal/src
-dotnet build                    # build the analyzer
-dotnet run -- --tests           # verify 338 tests pass
-```
-
-Analyze a file:
-```bash
-dotnet run -- ../tests/basics/inner_dim_mismatch.m
-```
-
 ## IDE Integration
 
-Conformal ships with a Language Server Protocol (LSP) implementation that integrates with editors. The reference implementation is a VS Code extension.
-
-### VS Code Extension
-
-Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal) by searching for "Conformal" in the Extensions panel, or from the command line:
-```bash
-code --install-extension EthanDoughty.conformal
-```
-
-The extension runs the analyzer in-process by compiling the F# codebase to JavaScript via Fable. There is no external runtime dependency: no Python, no .NET, no subprocess. The compiled analyzer is bundled directly into the extension at 181KB.
+The VS Code extension runs the analyzer in-process by compiling the F# codebase to JavaScript via Fable. There is no external runtime dependency: no Python, no .NET, no subprocess. The compiled analyzer is bundled directly into the extension at 181KB.
 
 Diagnostics appear as underlines as you type, with a configurable 500ms debounce. You can hover any variable to see its inferred shape, including function signatures for user-defined and external functions. There are quick-fix suggestions for common mistakes like `*` to `.*`, `&&` to `&`, and `||` to `|`. Function definitions show in the sidebar via document symbols, and the status bar tracks warning and error counts along with active modes.
 
@@ -777,7 +764,7 @@ cd src && dotnet run -- --lsp
 
 ## CLI Options
 
-`dotnet run --project src/ConformalParse.fsproj -- file.m` - analyze a file
+`cd src && dotnet run -- file.m` — analyze a file
 
 `--tests` - run full test suite
 
@@ -797,7 +784,7 @@ Exit codes:
 
 ## Real-World Compatibility
 
-To check how the parser and analyzer hold up on real MATLAB code, a dogfood corpus of 38 `.m` files was drawn from 8 open-source repos on GitHub, covering robotics, signal processing, and scientific computing. In default mode, the corpus produces zero warnings, and in strict mode it produces 873 (nearly all informational or low-confidence).
+To check how the parser and analyzer hold up on real MATLAB code, a dogfood corpus of 139 `.m` files was drawn from 8 open-source repos on GitHub, covering robotics, signal processing, and scientific computing. In default mode, the corpus produces zero warnings. In strict mode, warnings are predominantly informational or low-confidence diagnostics.
 
 The repos in the corpus include petercorke/robotics-toolbox-matlab (1491 stars), rpng/kalibr_allan (648 stars), gpeyre/matlab-toolboxes (344 stars), and ImperialCollegeLondon/sap-voicebox (248 stars), among others. These files use a wide range of MATLAB idioms: pre-2016 end-less function definitions, space-separated multi-return syntax (`function [a b c] = f(...)`), Latin-1 encoded files from European authors, `\` for linear solves, and complex matrix literal spacing like `[1 -2; 3 -4]`. Parser robustness improvements came directly from failures on this corpus.
 
@@ -807,7 +794,7 @@ Conformal analyzes a subset of MATLAB. Here's what it doesn't cover:
 
 | Category | What's missing |
 |----------|---------------|
-| Scope | Multi-file workspace analysis (Phase 2): sibling `.m` files are parsed and analyzed to infer real return shapes. No `addpath` handling or cross-directory analysis yet. |
+| Scope | Workspace analysis covers sibling `.m` files in the same directory. No `addpath` handling or cross-directory resolution yet. |
 | Functions | No `varargin`/`varargout`. No `eval`, `feval`, or `str2func`. Nested functions are supported (read/write parent scope, sibling calls, forward references). |
 | Builtins | 200+ builtins recognized; 128 have explicit shape rules (121 single-return, 11 multi-return). Toolbox functions and other unrecognized calls produce a `W_UNKNOWN_FUNCTION` warning (strict-only by default). |
 | Cell arrays | Per-element tracking available for literal-indexed cells. Dynamic indexing conservatively joins all elements. |
