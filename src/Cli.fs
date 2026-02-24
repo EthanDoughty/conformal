@@ -151,18 +151,20 @@ let runTests (strict: bool) (fixpoint: bool) (benchmark: bool) : int =
 /// Returns exit code.
 let run (argv: string array) : int =
     // Manual argv parsing (no external deps)
-    let mutable tests    = false
-    let mutable strict   = false
-    let mutable fixpoint = false
-    let mutable bench    = false
-    let mutable file     = ""
+    let mutable tests     = false
+    let mutable testProps = false
+    let mutable strict    = false
+    let mutable fixpoint  = false
+    let mutable bench     = false
+    let mutable file      = ""
     let mutable parseJson = false
 
     let mutable i = 0
     while i < argv.Length do
         match argv.[i] with
-        | "--tests"       -> tests    <- true
-        | "--strict"      -> strict   <- true
+        | "--tests"       -> tests     <- true
+        | "--test-props"  -> testProps <- true
+        | "--strict"      -> strict    <- true
         | "--fixpoint"    -> fixpoint <- true
         | "--benchmark"   -> bench    <- true
         | "--parse-json"  ->
@@ -183,7 +185,9 @@ let run (argv: string array) : int =
         | _ -> ()
         i <- i + 1
 
-    if tests then
+    if testProps then
+        PropertyTests.runPropertyTests()
+    elif tests then
         runTests strict fixpoint bench
     elif parseJson then
         // Legacy --parse-json mode: just parse and emit JSON
@@ -217,6 +221,7 @@ let run (argv: string array) : int =
         printfn ""
         printfn "Options:"
         printfn "  --tests       Run test suite"
+        printfn "  --test-props  Run property-based tests (FsCheck)"
         printfn "  --strict      Show all warnings including informational diagnostics"
         printfn "  --fixpoint    Use fixed-point iteration for loop analysis"
         printfn "  --benchmark   Print timing breakdown"
