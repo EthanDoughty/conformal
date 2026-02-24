@@ -54,7 +54,7 @@ let REDUCTION_BUILTINS : Set<string> =
 let SCALAR_QUERY_BUILTINS : Set<string> =
     Set.ofList [
         "length"; "numel"; "det"; "norm"; "trace"; "rank"; "cond"; "rcond"
-        "nnz"; "sprank"; "str2double"
+        "nnz"; "sprank"; "str2double"; "dot"
     ]
 
 let MATRIX_CONSTRUCTOR_BUILTINS : Set<string> =
@@ -893,6 +893,104 @@ let private evalFirstArgShape
             else None
 
 
+// ---------------------------------------------------------------------------
+// Control System Toolbox helpers (defined here to use evalFirstArgShape above)
+// ---------------------------------------------------------------------------
+
+/// Extract (n, m) from A(n×n) and B(n×m) -- shared by lqr/dlqr/place/acker/care/dare/ctrb
+let private extractStateFeedbackDims
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : (Dim * Dim) option =
+    if args.Length < 2 then None
+    else
+        match unwrapArg args.[0], unwrapArg args.[1] with
+        | Some a0, Some a1 ->
+            let sA = evalExprFn a0 env warnings ctx
+            let sB = evalExprFn a1 env warnings ctx
+            let n = match sA with Matrix(r, _) -> r | _ -> if isScalar sA then Concrete 1 else Unknown
+            let m = match sB with Matrix(_, c) -> c | _ -> if isScalar sB then Concrete 1 else Unknown
+            Some (n, m)
+        | _ -> None
+
+
+/// lqr/dlqr/place/acker single-return: K = matrix[m x n]
+let private handleGainMatrix
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape option =
+    match extractStateFeedbackDims args env warnings ctx evalExprFn with
+    | Some (n, m) -> Some (Matrix(m, n))
+    | None -> Some UnknownShape
+
+
+/// lyap/dlyap single-return: X = matrix[n x n] (passthrough square dim from first arg)
+let private handleSquarePassthrough
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape option =
+    match evalFirstArgShape args env warnings ctx evalExprFn with
+    | Some (r, c) ->
+        let n = if r = c then r else joinDim r c
+        Some (Matrix(n, n))
+    | None -> Some UnknownShape
+
+
+/// care/dare single-return: X = matrix[n x n]
+let private handleCareSquare
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape option =
+    match extractStateFeedbackDims args env warnings ctx evalExprFn with
+    | Some (n, _) -> Some (Matrix(n, n))
+    | None -> Some UnknownShape
+
+
+/// obsv(A, C): A n×n, C p×n -- returns matrix[n*p x n]
+let private handleObsv
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape option =
+    if args.Length < 2 then Some UnknownShape
+    else
+        match unwrapArg args.[0], unwrapArg args.[1] with
+        | Some a0, Some a1 ->
+            let sA = evalExprFn a0 env warnings ctx
+            let sC = evalExprFn a1 env warnings ctx
+            let n = match sA with Matrix(r, _) -> r | _ -> if isScalar sA then Concrete 1 else Unknown
+            let p = match sC with Matrix(r, _) -> r | _ -> if isScalar sC then Concrete 1 else Unknown
+            Some (Matrix(mulDim n p, n))
+        | _ -> Some UnknownShape
+
+
+/// ctrb(A, B): A n×n, B n×m -- returns matrix[n x n*m]
+let private handleCtrb
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape option =
+    match extractStateFeedbackDims args env warnings ctx evalExprFn with
+    | Some (n, m) -> Some (Matrix(n, mulDim n m))
+    | None -> Some UnknownShape
+
+
 // Multi-return handlers
 let private handleMultiEig
     (args: IndexArg list)
@@ -1080,6 +1178,38 @@ let private handleMultiAny (numTargets: int) : Shape list option =
     Some (List.replicate numTargets UnknownShape)
 
 
+/// lqr/dlqr multi-return [K, S, e]: K=matrix[m×n], S=matrix[n×n], e=matrix[n×1]
+let private handleMultiLqr
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (numTargets: int)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape list option =
+    if numTargets <> 3 then None
+    else
+        match extractStateFeedbackDims args env warnings ctx evalExprFn with
+        | Some (n, m) -> Some [ Matrix(m, n); Matrix(n, n); Matrix(n, Concrete 1) ]
+        | None -> Some [ UnknownShape; UnknownShape; UnknownShape ]
+
+
+/// care/dare multi-return [X, L, G]: X=matrix[n×n], L=matrix[n×1], G=matrix[m×n]
+let private handleMultiCare
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (numTargets: int)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape list option =
+    if numTargets <> 3 then None
+    else
+        match extractStateFeedbackDims args env warnings ctx evalExprFn with
+        | Some (n, m) -> Some [ Matrix(n, n); Matrix(n, Concrete 1); Matrix(m, n) ]
+        | None -> Some [ UnknownShape; UnknownShape; UnknownShape ]
+
+
 // Supported forms lookup for count mismatch messages
 let MULTI_SUPPORTED_FORMS : Map<string, string> =
     Map.ofList [
@@ -1088,6 +1218,7 @@ let MULTI_SUPPORTED_FORMS : Map<string, string> =
         "unique", "1, 2, or 3"; "min", "1 or 2"; "max", "1 or 2"
         "fileparts", "1-3"; "fopen", "2"; "meshgrid", "2 or 3"
         "cellfun", "any"; "ndgrid", "any"; "regexp", "any"; "regexpi", "any"
+        "lqr", "1 or 3"; "dlqr", "1 or 3"; "care", "1 or 3"; "dare", "1 or 3"
     ]
 
 
@@ -1144,6 +1275,11 @@ let evalBuiltinCall
         | "ndims"          -> handleNdims args
         | "sub2ind"        -> handleSub2ind args env warnings ctx evalExprFn
         | "horzcat" | "vertcat" -> handleHorzcatVertcat fname args env warnings ctx evalExprFn
+        | "lqr" | "dlqr" | "place" | "acker" -> handleGainMatrix args env warnings ctx evalExprFn
+        | "care" | "dare"  -> handleCareSquare args env warnings ctx evalExprFn
+        | "lyap" | "dlyap" -> handleSquarePassthrough args env warnings ctx evalExprFn
+        | "obsv"           -> handleObsv args env warnings ctx evalExprFn
+        | "ctrb"           -> handleCtrb args env warnings ctx evalExprFn
         | _                -> None
 
     match complexResult with
@@ -1203,4 +1339,6 @@ let evalMultiBuiltinCall
     | "fopen"    -> handleMultiFopen   args numTargets
     | "meshgrid" -> handleMultiMeshgrid args numTargets
     | "cellfun" | "ndgrid" | "regexp" | "regexpi" -> handleMultiAny numTargets
+    | "lqr" | "dlqr"   -> handleMultiLqr  args env warnings ctx numTargets evalExprFn
+    | "care" | "dare"   -> handleMultiCare args env warnings ctx numTargets evalExprFn
     | _          -> None

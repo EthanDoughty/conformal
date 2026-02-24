@@ -27,6 +27,19 @@ let KNOWN_BUILTINS : Set<string> =
         "ischar"; "isempty"; "isfield"; "isfinite"; "isfloat"; "isinf"; "isinteger"
         "islogical"; "ismember"; "isnan"; "isnumeric"; "isreal"; "isscalar"; "issorted"
         "issparse"; "isstring"; "isstruct"; "issymmetric"; "isvector"
+        // Control System Toolbox -- Tier 1 (shape handlers in EvalBuiltins.fs)
+        "lqr"; "dlqr"; "place"; "acker"; "care"; "dare"; "lyap"; "dlyap"; "obsv"; "ctrb"
+        // Control System Toolbox -- Tier 2 (recognized-only)
+        "ss"; "tf"; "zpk"
+        "c2d"; "d2c"
+        "series"; "parallel"; "feedback"
+        "minreal"; "balreal"; "modred"
+        "step"; "impulse"
+        "bode"; "nyquist"; "margin"; "bandwidth"
+        "pole"; "zero"; "dcgain"
+        "kalman"; "kalmd"; "lqe"
+        // Basic missing builtin
+        "dot"
         "kron"
         "length"; "linspace"; "load"; "log"; "log10"; "log2"; "logical"; "logm"; "logspace"
         "lower"; "lsqnonneg"; "lu"
