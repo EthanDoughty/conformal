@@ -98,6 +98,52 @@ let KNOWN_BUILTINS : Set<string> =
         "convlength"; "convmass"; "convvel"; "convforce"; "convpres"; "convtemp"; "convangvel"
         "juliandate"; "mjuliandate"; "decyear"; "leapyear"
         "earthNutation"
+        // Batch 6a passthrough additions (need to be recognized)
+        "sortrows"; "flip"; "gradient"; "detrend"
+        "movmean"; "movstd"; "movmedian"; "movsum"; "movmax"; "movmin"
+        "normalize"; "rescale"; "cummax"; "cummin"; "zscore"
+        "imfilter"; "imgaussfilt"; "medfilt2"; "imadjust"; "histeq"
+        "im2double"; "im2uint8"; "im2single"; "mat2gray"; "imbinarize"
+        "imerode"; "imdilate"; "imopen"; "imclose"; "imfill"; "imcomplement"
+        "adapthisteq"; "wiener2"; "edge"; "bwlabel"
+        "simplify"; "expand"; "subs"
+        "undistortImage"
+        "rgb2gray"
+        // Batch 6b: Constant-dimension robotics/CV transforms
+        "axang2rotm"; "tform2rotm"; "estimateFundamentalMatrix"; "estimateEssentialMatrix"
+        "rotm2tform"; "trvec2tform"; "eul2tform"; "axang2tform"; "quat2tform"
+        "rotm2eul"; "tform2trvec"; "tform2eul"; "quat2eul"
+        "rotm2axang"; "tform2axang"; "eul2quat"; "axang2quat"; "quat2axang"
+        // Batch 6c: Statistics reductions (mode/kurtosis/skewness/range) and random generators
+        "mode"; "kurtosis"; "skewness"; "range"
+        "normrnd"; "exprnd"; "unifrnd"; "poissrnd"; "chi2rnd"; "binornd"; "betarnd"
+        // Batch 6d: Complex handlers
+        "cov"; "corrcoef"; "rot90"; "conv2"; "num2cell"; "jacobian"
+        // Batch 6e: Multi-return handlers
+        "pca"; "ind2sub"; "linprog"; "quadprog"
+        // Batch 6f: Recognized-only (no shape rules)
+        // Image Processing
+        "imread"; "imresize"; "imrotate"; "imcrop"; "imshow"; "imwrite"
+        "imwarp"; "regionprops"; "bwconncomp"; "bwareaopen"; "bwareafilt"; "padarray"
+        // Statistics
+        "fitlm"; "fitcsvm"; "fitctree"; "predict"; "crossval"; "fitcecoc"
+        "squareform"; "linkage"; "prctile"; "quantile"
+        // Optimization
+        "ga"; "particleswarm"; "intlinprog"; "fgoalattain"
+        // Deep Learning
+        "dlarray"; "trainNetwork"; "trainingOptions"; "classify"
+        "sigmoid"; "relu"; "softmax"
+        // Symbolic
+        "sym"; "matlabFunction"; "vpa"; "hessian"
+        // Computer Vision
+        "detectSURFFeatures"; "extractFeatures"; "matchFeatures"
+        // Communications
+        "qammod"; "qamdemod"; "pskmod"; "pskdemod"; "awgn"; "biterr"; "symerr"; "rcosdesign"
+        // Data I/O
+        "readtable"; "readmatrix"; "writetable"; "writematrix"
+        "table"; "array2table"; "table2array"; "height"; "width"
+        // Misc
+        "groupsummary"; "splitapply"; "varfun"; "rowfun"; "vecnorm"
         // Graphics/plotting -- recognized but no shape handler (I/O side effects only)
         "annotation"; "autocorr"; "axes"
         "axis"; "bar"; "box"; "bufferm"; "caxis"; "cla"; "clabel"; "clf"; "close"; "colorbar"; "colormap"
