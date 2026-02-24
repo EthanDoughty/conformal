@@ -800,6 +800,21 @@ and private analyzeCellAssignArgs
                     let currentElems = defaultArg elemMap Map.empty
                     let newElems = Map.add idx0 rhsShape currentElems
                     Env.set env baseName (Cell(rows, cols, Some newElems))
+                | IndexExpr(_, Var(_, varName)) ->
+                    match ctx.cst.valueRanges.TryGetValue(varName) with
+                    | true, iv when iv.lo = iv.hi ->
+                        match iv.lo with
+                        | SharedTypes.Finite k ->
+                            let idx0 = k - 1
+                            let currentElems = defaultArg elemMap Map.empty
+                            let newElems = Map.add idx0 rhsShape currentElems
+                            Env.set env baseName (Cell(rows, cols, Some newElems))
+                        | _ ->
+                            for arg in args do evalArgShapeHelper arg env warnings ctx baseShape |> ignore
+                            Env.set env baseName (Cell(rows, cols, None))
+                    | _ ->
+                        for arg in args do evalArgShapeHelper arg env warnings ctx baseShape |> ignore
+                        Env.set env baseName (Cell(rows, cols, None))
                 | _ ->
                     for arg in args do evalArgShapeHelper arg env warnings ctx baseShape |> ignore
                     Env.set env baseName (Cell(rows, cols, None))
