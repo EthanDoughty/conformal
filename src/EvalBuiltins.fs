@@ -29,6 +29,7 @@ let PASSTHROUGH_BUILTINS : Set<string> =
         "expm"; "logm"; "sqrtm"; "circshift"; "null"; "orth"
         "sgolayfilt"; "squeeze"; "fftshift"; "ifftshift"; "unwrap"
         "deg2rad"; "rad2deg"; "angle"
+        "quatconj"; "quatinv"; "quatnormalize"
     ]
 
 let SCALAR_PREDICATE_BUILTINS : Set<string> =
@@ -55,6 +56,7 @@ let SCALAR_QUERY_BUILTINS : Set<string> =
     Set.ofList [
         "length"; "numel"; "det"; "norm"; "trace"; "rank"; "cond"; "rcond"
         "nnz"; "sprank"; "str2double"; "dot"
+        "quatnorm"
     ]
 
 let MATRIX_CONSTRUCTOR_BUILTINS : Set<string> =
@@ -747,8 +749,108 @@ let private handleCross
     else None
 
 
-let private handleConv (_args: IndexArg list) (_env: Env) (_warnings: ResizeArray<Diagnostic>) (_ctx: AnalysisContext) (_eval: _) : Shape option =
+let private handleConv
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape option =
+    if args.Length < 2 then Some (Matrix(Unknown, Concrete 1))
+    else
+        match unwrapArg args.[0], unwrapArg args.[1] with
+        | Some a0, Some a1 ->
+            let s0 = evalExprFn a0 env warnings ctx
+            let s1 = evalExprFn a1 env warnings ctx
+            // Determine length and orientation from each input
+            let isRowVec0, len0 =
+                match s0 with
+                | Matrix(r, Concrete 1) -> false, Some r
+                | Matrix(Concrete 1, c) -> true, Some c
+                | _ -> false, (if isScalar s0 then Some (Concrete 1) else None)
+            let isRowVec1, len1 =
+                match s1 with
+                | Matrix(r, Concrete 1) -> false, Some r
+                | Matrix(Concrete 1, c) -> true, Some c
+                | _ -> false, (if isScalar s1 then Some (Concrete 1) else None)
+            match len0, len1 with
+            | Some m, Some n ->
+                let outLen = addDim (addDim m n) (Concrete -1)
+                // Return row vector only if both inputs are row vectors
+                if isRowVec0 && isRowVec1 then Some (Matrix(Concrete 1, outLen))
+                else Some (Matrix(outLen, Concrete 1))
+            | _ -> Some (Matrix(Unknown, Concrete 1))
+        | _ -> Some (Matrix(Unknown, Concrete 1))
+
+
+let private handleFilter
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape option =
+    if args.Length < 3 then Some UnknownShape
+    else
+        match unwrapArg args.[0], unwrapArg args.[1], unwrapArg args.[2] with
+        | Some a0, Some a1, Some a2 ->
+            evalExprFn a0 env warnings ctx |> ignore
+            evalExprFn a1 env warnings ctx |> ignore
+            Some (evalExprFn a2 env warnings ctx)
+        | _ -> Some UnknownShape
+
+
+let private handleWindowFunction
+    (args: IndexArg list)
+    (env: Env)
+    (ctx: AnalysisContext)
+    : Shape option =
+    if args.Length >= 1 then
+        match unwrapArg args.[0] with
+        | Some a -> Some (Matrix(exprToDimIrCtx a env (Some ctx), Concrete 1))
+        | None -> Some (Matrix(Unknown, Concrete 1))
+    else Some (Matrix(Unknown, Concrete 1))
+
+
+let private handleFilterDesign
+    (args: IndexArg list)
+    (_env: Env)
+    (_warnings: ResizeArray<Diagnostic>)
+    (_ctx: AnalysisContext)
+    (_evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape option =
+    ignore args
+    Some (Matrix(Concrete 1, Unknown))
+
+
+let private handleXcorr
+    (_args: IndexArg list)
+    (_env: Env)
+    (_warnings: ResizeArray<Diagnostic>)
+    (_ctx: AnalysisContext)
+    (_evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape option =
     Some (Matrix(Unknown, Concrete 1))
+
+
+let private handleDcm
+    (_args: IndexArg list)
+    (_env: Env)
+    (_warnings: ResizeArray<Diagnostic>)
+    (_ctx: AnalysisContext)
+    (_evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape option =
+    Some (Matrix(Concrete 3, Concrete 3))
+
+
+let private handleQuat
+    (_args: IndexArg list)
+    (_env: Env)
+    (_warnings: ResizeArray<Diagnostic>)
+    (_ctx: AnalysisContext)
+    (_evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape option =
+    Some (Matrix(Concrete 1, Concrete 4))
 
 
 let private handlePolyfit
@@ -1210,6 +1312,45 @@ let private handleMultiCare
         | None -> Some [ UnknownShape; UnknownShape; UnknownShape ]
 
 
+/// butter/cheby1/cheby2/ellip/besself multi-return [b, a]: both matrix[1 x (n+1)]
+let private handleMultiFilterDesign
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (numTargets: int)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape list option =
+    if numTargets <> 2 then None
+    else
+        let d =
+            if args.IsEmpty then Unknown
+            else
+                match unwrapArg args.[0] with
+                | Some a -> evalExprFn a env warnings ctx |> ignore; exprToDimIrCtx a env (Some ctx)
+                | None -> Unknown
+        let outLen = addDim d (Concrete 1)
+        Some [ Matrix(Concrete 1, outLen); Matrix(Concrete 1, outLen) ]
+
+
+/// dcm2angle multi-return [r1, r2, r3]: all Scalar
+let private handleMultiDcm2angle
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (numTargets: int)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape list option =
+    if numTargets <> 3 then None
+    else
+        if not args.IsEmpty then
+            match unwrapArg args.[0] with
+            | Some a -> evalExprFn a env warnings ctx |> ignore
+            | None -> ()
+        Some [ Scalar; Scalar; Scalar ]
+
+
 // Supported forms lookup for count mismatch messages
 let MULTI_SUPPORTED_FORMS : Map<string, string> =
     Map.ofList [
@@ -1219,6 +1360,8 @@ let MULTI_SUPPORTED_FORMS : Map<string, string> =
         "fileparts", "1-3"; "fopen", "2"; "meshgrid", "2 or 3"
         "cellfun", "any"; "ndgrid", "any"; "regexp", "any"; "regexpi", "any"
         "lqr", "1 or 3"; "dlqr", "1 or 3"; "care", "1 or 3"; "dare", "1 or 3"
+        "butter", "1 or 2"; "cheby1", "1 or 2"; "cheby2", "1 or 2"; "ellip", "1 or 2"; "besself", "1 or 2"
+        "dcm2angle", "1 or 3"
     ]
 
 
@@ -1264,9 +1407,8 @@ let evalBuiltinCall
         | "fft" | "ifft" | "fft2" | "ifft2" -> handleFft args env warnings ctx evalExprFn
         | "sparse" | "full" -> handleSparseFull fname args env warnings ctx evalExprFn
         | "cross"          -> handleCross args env warnings ctx evalExprFn
-        | "conv" | "deconv" ->
-            ignore (evalExprFn, getIntervalFn, env, warnings, ctx)
-            handleConv args env warnings ctx evalExprFn
+        | "conv"           -> handleConv args env warnings ctx evalExprFn
+        | "deconv"         -> Some (Matrix(Unknown, Concrete 1))
         | "polyfit"        -> handlePolyfit args env ctx evalExprFn
         | "polyval" | "interp1" -> handlePolyval args env warnings ctx evalExprFn
         | "meshgrid"       -> handleMeshgrid args env warnings ctx evalExprFn
@@ -1280,6 +1422,17 @@ let evalBuiltinCall
         | "lyap" | "dlyap" -> handleSquarePassthrough args env warnings ctx evalExprFn
         | "obsv"           -> handleObsv args env warnings ctx evalExprFn
         | "ctrb"           -> handleCtrb args env warnings ctx evalExprFn
+        | "filter" | "filtfilt" -> handleFilter args env warnings ctx evalExprFn
+        | "hamming" | "hann" | "blackman" | "kaiser" | "rectwin" | "bartlett" ->
+            handleWindowFunction args env ctx
+        | "butter" | "cheby1" | "cheby2" | "ellip" | "besself" ->
+            handleFilterDesign args env warnings ctx evalExprFn
+        | "xcorr"          -> handleXcorr args env warnings ctx evalExprFn
+        | "angle2dcm" | "quat2dcm" | "eul2rotm" | "quat2rotm" ->
+            handleDcm args env warnings ctx evalExprFn
+        | "dcm2quat" | "rotm2quat" | "quatmultiply" ->
+            handleQuat args env warnings ctx evalExprFn
+        | "dcm2angle"      -> Some Scalar
         | _                -> None
 
     match complexResult with
@@ -1341,4 +1494,7 @@ let evalMultiBuiltinCall
     | "cellfun" | "ndgrid" | "regexp" | "regexpi" -> handleMultiAny numTargets
     | "lqr" | "dlqr"   -> handleMultiLqr  args env warnings ctx numTargets evalExprFn
     | "care" | "dare"   -> handleMultiCare args env warnings ctx numTargets evalExprFn
+    | "butter" | "cheby1" | "cheby2" | "ellip" | "besself" ->
+        handleMultiFilterDesign args env warnings ctx numTargets evalExprFn
+    | "dcm2angle" -> handleMultiDcm2angle args env warnings ctx numTargets evalExprFn
     | _          -> None

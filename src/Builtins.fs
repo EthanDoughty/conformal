@@ -65,6 +65,31 @@ let KNOWN_BUILTINS : Set<string> =
         "warning"; "whos"; "wishrnd"
         "xor"
         "zeros"
+        // Signal Processing Toolbox -- Tier 1 (shape handlers in EvalBuiltins.fs)
+        "filter"; "filtfilt"
+        "hamming"; "hann"; "blackman"; "kaiser"; "rectwin"; "bartlett"
+        "butter"; "cheby1"; "cheby2"; "ellip"; "besself"
+        "xcorr"
+        // Signal Processing Toolbox -- Tier 2 (recognized-only)
+        "freqz"; "pwelch"; "spectrogram"; "periodogram"; "tfestimate"; "mscohere"; "cpsd"
+        "decimate"; "resample"; "downsample"; "upsample"; "medfilt1"
+        "bandpass"; "lowpass"; "highpass"; "bandstop"; "findpeaks"
+        "impz"; "zplane"; "grpdelay"
+        // Aerospace Toolbox -- Tier 1 (shape handlers in EvalBuiltins.fs)
+        "angle2dcm"; "eul2rotm"
+        "quat2dcm"; "quat2rotm"
+        "dcm2quat"; "rotm2quat"
+        "quatmultiply"
+        "quatconj"; "quatinv"; "quatnormalize"
+        "quatnorm"
+        "dcm2angle"
+        // Aerospace Toolbox -- Tier 2 (recognized-only)
+        "lla2ecef"; "ecef2lla"; "ecef2ned"; "ned2ecef"
+        "atmoscoesa"; "atmosisa"
+        "geocradius"; "gravitywgs84"; "geoidegm96"
+        "convlength"; "convmass"; "convvel"; "convforce"; "convpres"; "convtemp"; "convangvel"
+        "juliandate"; "mjuliandate"; "decyear"; "leapyear"
+        "earthNutation"
         // Graphics/plotting -- recognized but no shape handler (I/O side effects only)
         "autocorr"
         "axis"; "bar"; "box"; "cla"; "clabel"; "clf"; "close"; "colorbar"; "colormap"
