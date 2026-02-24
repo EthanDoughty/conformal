@@ -30,7 +30,7 @@ You shouldn't need to configure anything. The extension bundles the analyzer dir
 
 Initially, the analyzer runs in-process inside the VS Code extension's Node.js host, since it is compiled to JavaScript from F# using Fable. When you open or save a `.m` file, the server analyzes it and publishes diagnostics back to the editor. If you save a file that other files in the same directory might depend on, those are re-analyzed too. If the server crashes, it can auto-recover up to 3 times.
 
-Under the hood, there are around 128 builtin shape rules (out of 200+ recognized builtins total), symbolic dimension tracking, constraint solving, interval analysis, and fixed-point loop convergence, all validated by 340 tests across 17 categories. Finally, the parser has been tested against 139 `.m` files drawn from 8 real open-source MATLAB repos, covering robotics, signal processing, and scientific computing, and produces zero warnings on all of them in default mode.
+Under the hood, there are around 234 builtin shape rules (out of nearly 500 recognized builtins total, covering core MATLAB plus Control System, Signal Processing, Aerospace, Optimization, and Mapping Toolbox functions), symbolic dimension tracking, constraint solving, interval analysis, and fixed-point loop convergence, all validated by 344 tests across 17 categories. Finally, the parser has been tested against 139 `.m` files drawn from 8 real open-source MATLAB repos, covering robotics, signal processing, and scientific computing, and produces zero warnings on all of them in default mode.
 
 ## Commands
 
