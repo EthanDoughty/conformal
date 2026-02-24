@@ -34,6 +34,7 @@
     <Compile Include="Witness.fs" />
     <Compile Include="Analysis.fs" />
     <Compile Include="TestRunner.fs" />
+    <Compile Include="PropertyTests.fs" />
     <Compile Include="Cli.fs" />
     <Compile Include="LspDiagnostics.fs" />
     <Compile Include="LspHover.fs" />
@@ -44,6 +45,7 @@
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="FsCheck" Version="3.3.2" />
     <PackageReference Include="Ionide.LanguageServerProtocol" Version="0.7.0" />
   </ItemGroup>
 </Project>
