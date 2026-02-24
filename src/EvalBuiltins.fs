@@ -31,6 +31,21 @@ let PASSTHROUGH_BUILTINS : Set<string> =
         "deg2rad"; "rad2deg"; "angle"
         "tand"; "sind"; "cosd"; "asind"; "acosd"; "atand"; "atan2d"; "secd"; "cscd"; "cotd"
         "quatconj"; "quatinv"; "quatnormalize"
+        // Batch 6a: Core MATLAB
+        "sortrows"; "flip"; "gradient"; "detrend"
+        "movmean"; "movstd"; "movmedian"; "movsum"; "movmax"; "movmin"
+        "normalize"; "rescale"; "cummax"; "cummin"; "zscore"
+        // Batch 6a: Image Processing
+        "imfilter"; "imgaussfilt"; "medfilt2"; "imadjust"; "histeq"
+        "im2double"; "im2uint8"; "im2single"; "mat2gray"; "imbinarize"
+        "imerode"; "imdilate"; "imopen"; "imclose"; "imfill"; "imcomplement"
+        "adapthisteq"; "wiener2"; "edge"; "bwlabel"
+        // Batch 6a: Symbolic Math
+        "simplify"; "expand"; "subs"
+        // Batch 6a: Computer Vision
+        "undistortImage"
+        // Batch 6d: rgb2gray is passthrough
+        "rgb2gray"
     ]
 
 let SCALAR_PREDICATE_BUILTINS : Set<string> =
@@ -51,6 +66,8 @@ let REDUCTION_BUILTINS : Set<string> =
     Set.ofList [
         "sum"; "prod"; "mean"; "any"; "all"; "median"; "var"; "std"
         "nanmean"; "nansum"; "nanstd"; "nanmin"; "nanmax"
+        // Batch 6c: statistics reductions
+        "mode"; "kurtosis"; "skewness"; "range"
     ]
 
 let SCALAR_QUERY_BUILTINS : Set<string> =
@@ -1020,6 +1037,172 @@ let private handleHorzcatVertcat
 
 
 // ---------------------------------------------------------------------------
+// Batch 6b: Fixed-dimension robotics/CV transform handlers
+// ---------------------------------------------------------------------------
+
+/// Functions with fixed output dimensions regardless of input.
+let private FIXED_DIM_BUILTINS : Map<string, int * int> =
+    Map.ofList [
+        "axang2rotm", (3, 3); "tform2rotm", (3, 3)
+        "estimateFundamentalMatrix", (3, 3); "estimateEssentialMatrix", (3, 3)
+        "rotm2tform", (4, 4); "trvec2tform", (4, 4); "eul2tform", (4, 4)
+        "axang2tform", (4, 4); "quat2tform", (4, 4)
+        "rotm2eul", (1, 3); "tform2trvec", (1, 3); "tform2eul", (1, 3); "quat2eul", (1, 3)
+        "rotm2axang", (1, 4); "tform2axang", (1, 4); "eul2quat", (1, 4)
+        "axang2quat", (1, 4); "quat2axang", (1, 4)
+    ]
+
+
+// ---------------------------------------------------------------------------
+// Batch 6c: Random number generator handlers
+// ---------------------------------------------------------------------------
+
+/// Distribution parameter count for each random generator.
+/// Remaining args after skipping these are treated as size dimensions.
+let private RANDOM_GENERATOR_PARAMS : Map<string, int> =
+    Map.ofList [
+        "normrnd", 2; "exprnd", 1; "unifrnd", 2; "poissrnd", 1
+        "chi2rnd", 1; "binornd", 2; "betarnd", 2
+    ]
+
+
+let private handleRandomGenerator
+    (fname: string)
+    (line: int)
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    (getIntervalFn: Expr -> Env -> AnalysisContext -> Interval option)
+    : Shape option =
+    match RANDOM_GENERATOR_PARAMS.TryFind fname with
+    | None -> None
+    | Some distParamCount ->
+        // Evaluate all dist-param args for side effects
+        for i in 0 .. (min distParamCount args.Length) - 1 do
+            match unwrapArg args.[i] with
+            | Some a -> evalExprFn a env warnings ctx |> ignore
+            | None -> ()
+        let sizeArgs = if args.Length > distParamCount then args.[distParamCount..] else []
+        if sizeArgs.Length = 0 then Some Scalar
+        elif sizeArgs.Length = 1 then
+            match unwrapArg sizeArgs.[0] with
+            | Some a ->
+                checkNegativeDimArg a env warnings ctx line getIntervalFn
+                let d = exprToDimIrCtx a env (Some ctx)
+                Some (Matrix(d, d))
+            | None -> None
+        elif sizeArgs.Length >= 2 then
+            match unwrapArg sizeArgs.[0], unwrapArg sizeArgs.[1] with
+            | Some a0, Some a1 ->
+                checkNegativeDimArg a0 env warnings ctx line getIntervalFn
+                checkNegativeDimArg a1 env warnings ctx line getIntervalFn
+                let r = exprToDimIrCtx a0 env (Some ctx)
+                let c = exprToDimIrCtx a1 env (Some ctx)
+                Some (Matrix(r, c))
+            | _ -> None
+        else None
+
+
+// ---------------------------------------------------------------------------
+// Batch 6d: Complex handler functions
+// ---------------------------------------------------------------------------
+
+/// cov/corrcoef: [n x p] -> [p x p]
+let private handleCovCorrcoef
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape option =
+    if args.Length = 1 then
+        let argShape = evalArgShape args.[0] env warnings ctx evalExprFn
+        match argShape with
+        | Matrix(_, c) -> Some (Matrix(c, c))
+        | Scalar -> Some (Matrix(Concrete 1, Concrete 1))
+        | _ -> Some UnknownShape
+    else None
+
+
+/// rot90: [m x n] -> [n x m]  (same as transpose)
+let private handleRot90
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape option =
+    if args.Length >= 1 then
+        let argShape = evalArgShape args.[0] env warnings ctx evalExprFn
+        match argShape with
+        | Matrix(r, c) -> Some (Matrix(c, r))
+        | _ -> Some argShape
+    else None
+
+
+/// conv2: 2-arg full convolution [m x n] * [p x q] -> [m+p-1 x n+q-1]
+let private handleConv2
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape option =
+    if args.Length = 2 then
+        match unwrapArg args.[0], unwrapArg args.[1] with
+        | Some a0, Some a1 ->
+            let s1 = evalExprFn a0 env warnings ctx
+            let s2 = evalExprFn a1 env warnings ctx
+            match s1, s2 with
+            | Matrix(r1, c1), Matrix(r2, c2) ->
+                Some (Matrix(addDim r1 (subDim r2 (Concrete 1)), addDim c1 (subDim c2 (Concrete 1))))
+            | _ -> Some UnknownShape
+        | _ -> Some UnknownShape
+    else
+        // 3-arg form with 'same'/'valid' flag: conservative
+        Some UnknownShape
+
+
+/// num2cell: [m x n] -> cell[m x n]
+let private handleNum2cell
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape option =
+    if args.Length = 1 then
+        let argShape = evalArgShape args.[0] env warnings ctx evalExprFn
+        match argShape with
+        | Matrix(r, c) -> Some (Cell(r, c, None))
+        | Scalar -> Some (Cell(Concrete 1, Concrete 1, None))
+        | _ -> Some UnknownShape
+    else None
+
+
+/// jacobian: 2-arg [m x 1] f, [n x 1] v -> [m x n]
+let private handleJacobian
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape option =
+    if args.Length = 2 then
+        match unwrapArg args.[0], unwrapArg args.[1] with
+        | Some a0, Some a1 ->
+            let sf = evalExprFn a0 env warnings ctx
+            let sv = evalExprFn a1 env warnings ctx
+            let m = match sf with Matrix(r, _) -> r | Scalar -> Concrete 1 | _ -> Unknown
+            let n = match sv with Matrix(r, _) -> r | Scalar -> Concrete 1 | _ -> Unknown
+            Some (Matrix(m, n))
+        | _ -> Some UnknownShape
+    else None
+
+
+// ---------------------------------------------------------------------------
 // Multi-return handler helpers
 // ---------------------------------------------------------------------------
 
@@ -1397,6 +1580,136 @@ let private handleMultiDcm2angle
         Some [ Scalar; Scalar; Scalar ]
 
 
+// ---------------------------------------------------------------------------
+// Batch 6e: Multi-return handlers
+// ---------------------------------------------------------------------------
+
+/// pca: input X [n x p] -> coeff [p x p], score [n x p], latent [p x 1]
+let private handleMultiPca
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (numTargets: int)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape list option =
+    if numTargets > 3 then None
+    else
+        match evalFirstArgShape args env warnings ctx evalExprFn with
+        | None ->
+            Some (List.replicate numTargets UnknownShape)
+        | Some (n, p) ->
+            let results = [ Matrix(p, p); Matrix(n, p); Matrix(p, Concrete 1) ]
+            Some results.[..numTargets - 1]
+
+
+/// ind2sub: all outputs same shape as args.[1] (the linear indices)
+let private handleMultiInd2sub
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (numTargets: int)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape list option =
+    if args.Length < 2 then None
+    else
+        let indShape =
+            match unwrapArg args.[1] with
+            | Some a -> evalExprFn a env warnings ctx
+            | None -> UnknownShape
+        Some (List.replicate numTargets indShape)
+
+
+/// linprog: x = same shape as f (args.[0]), fval = scalar, exitflag = scalar
+let private handleMultiLinprog
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (numTargets: int)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape list option =
+    if numTargets > 3 then None
+    else
+        let xShape =
+            match args with
+            | [] -> UnknownShape
+            | first :: _ ->
+                match unwrapArg first with
+                | Some a -> evalExprFn a env warnings ctx
+                | None -> UnknownShape
+        let results = [ xShape; Scalar; Scalar ]
+        Some results.[..numTargets - 1]
+
+
+/// quadprog: x = [n x 1] where n = cols of H (args.[0]), fval = scalar, exitflag = scalar
+let private handleMultiQuadprog
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (numTargets: int)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape list option =
+    if numTargets > 3 then None
+    else
+        let n =
+            match args with
+            | [] -> Unknown
+            | first :: _ ->
+                match unwrapArg first with
+                | Some a ->
+                    let s = evalExprFn a env warnings ctx
+                    match s with Matrix(_, c) -> c | _ -> Unknown
+                | None -> Unknown
+        let xShape = Matrix(n, Concrete 1)
+        let results = [ xShape; Scalar; Scalar ]
+        Some results.[..numTargets - 1]
+
+
+/// fmincon: x = same shape as x0 (args.[1]), fval = scalar, exitflag = scalar
+let private handleMultiFmincon
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (numTargets: int)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape list option =
+    if numTargets > 3 then None
+    else
+        let xShape =
+            if args.Length < 2 then UnknownShape
+            else
+                match unwrapArg args.[1] with
+                | Some a -> evalExprFn a env warnings ctx
+                | None -> UnknownShape
+        let results = [ xShape; Scalar; Scalar ]
+        Some results.[..numTargets - 1]
+
+
+/// fsolve: x = same shape as x0 (args.[1]), fval = same shape as x0
+let private handleMultiFsolve
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (numTargets: int)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape list option =
+    if numTargets > 3 then None
+    else
+        let xShape =
+            if args.Length < 2 then UnknownShape
+            else
+                match unwrapArg args.[1] with
+                | Some a -> evalExprFn a env warnings ctx
+                | None -> UnknownShape
+        let results = [ xShape; xShape; Scalar ]
+        Some results.[..numTargets - 1]
+
+
 // Supported forms lookup for count mismatch messages
 let MULTI_SUPPORTED_FORMS : Map<string, string> =
     Map.ofList [
@@ -1408,6 +1721,8 @@ let MULTI_SUPPORTED_FORMS : Map<string, string> =
         "lqr", "1 or 3"; "dlqr", "1 or 3"; "care", "1 or 3"; "dare", "1 or 3"
         "butter", "1 or 2"; "cheby1", "1 or 2"; "cheby2", "1 or 2"; "ellip", "1 or 2"; "besself", "1 or 2"
         "dcm2angle", "1 or 3"
+        "pca", "1-3"; "ind2sub", "any"; "linprog", "1-3"; "quadprog", "1-3"
+        "fmincon", "1-3"; "fsolve", "1-2"
     ]
 
 
@@ -1486,6 +1801,21 @@ let evalBuiltinCall
         | "dcm2quat" | "rotm2quat" | "quatmultiply" ->
             handleQuat args env warnings ctx evalExprFn
         | "dcm2angle"      -> Some Scalar
+        // Batch 6b: fixed-dimension transforms
+        | _ when FIXED_DIM_BUILTINS.ContainsKey fname ->
+            let (r, c) = FIXED_DIM_BUILTINS.[fname]
+            // Evaluate args for side effects
+            for arg in args do evalArgShape arg env warnings ctx evalExprFn |> ignore
+            Some (Matrix(Concrete r, Concrete c))
+        // Batch 6c: random generators with leading distribution params
+        | _ when RANDOM_GENERATOR_PARAMS.ContainsKey fname ->
+            handleRandomGenerator fname line args env warnings ctx evalExprFn getIntervalFn
+        // Batch 6d: complex handlers
+        | "cov" | "corrcoef" -> handleCovCorrcoef args env warnings ctx evalExprFn
+        | "rot90"            -> handleRot90 args env warnings ctx evalExprFn
+        | "conv2"            -> handleConv2 args env warnings ctx evalExprFn
+        | "num2cell"         -> handleNum2cell args env warnings ctx evalExprFn
+        | "jacobian"         -> handleJacobian args env warnings ctx evalExprFn
         | _                -> None
 
     match complexResult with
@@ -1550,4 +1880,11 @@ let evalMultiBuiltinCall
     | "butter" | "cheby1" | "cheby2" | "ellip" | "besself" ->
         handleMultiFilterDesign args env warnings ctx numTargets evalExprFn
     | "dcm2angle" -> handleMultiDcm2angle args env warnings ctx numTargets evalExprFn
+    // Batch 6e: multi-return handlers
+    | "pca"      -> handleMultiPca      args env warnings ctx numTargets evalExprFn
+    | "ind2sub"  -> handleMultiInd2sub  args env warnings ctx numTargets evalExprFn
+    | "linprog"  -> handleMultiLinprog  args env warnings ctx numTargets evalExprFn
+    | "quadprog" -> handleMultiQuadprog args env warnings ctx numTargets evalExprFn
+    | "fmincon"  -> handleMultiFmincon  args env warnings ctx numTargets evalExprFn
+    | "fsolve"   -> handleMultiFsolve   args env warnings ctx numTargets evalExprFn
     | _          -> None
