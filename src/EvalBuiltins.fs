@@ -29,6 +29,7 @@ let PASSTHROUGH_BUILTINS : Set<string> =
         "expm"; "logm"; "sqrtm"; "circshift"; "null"; "orth"
         "sgolayfilt"; "squeeze"; "fftshift"; "ifftshift"; "unwrap"
         "deg2rad"; "rad2deg"; "angle"
+        "tand"; "sind"; "cosd"; "asind"; "acosd"; "atand"; "atan2d"; "secd"; "cscd"; "cotd"
         "quatconj"; "quatinv"; "quatnormalize"
     ]
 
@@ -56,7 +57,7 @@ let SCALAR_QUERY_BUILTINS : Set<string> =
     Set.ofList [
         "length"; "numel"; "det"; "norm"; "trace"; "rank"; "cond"; "rcond"
         "nnz"; "sprank"; "str2double"; "dot"
-        "quatnorm"
+        "quatnorm"; "nchoosek"
     ]
 
 let MATRIX_CONSTRUCTOR_BUILTINS : Set<string> =
@@ -66,7 +67,7 @@ let MATRIX_CONSTRUCTOR_BUILTINS : Set<string> =
 
 let STRING_RETURN_BUILTINS : Set<string> =
     Set.ofList [
-        "num2str"; "int2str"; "mat2str"; "char"; "string"; "sprintf"; "fullfile"
+        "num2str"; "int2str"; "mat2str"; "char"; "string"; "sprintf"; "fullfile"; "regexprep"
     ]
 
 let SCALAR_NARY_BUILTINS : Set<string> =
@@ -812,6 +813,51 @@ let private handleWindowFunction
     else Some (Matrix(Unknown, Concrete 1))
 
 
+let private handleBsxfun
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape option =
+    // bsxfun(@op, A, B) -- args[0] is function handle, args[1] and args[2] are arrays
+    if args.Length < 3 then Some UnknownShape
+    else
+        let s1 = evalArgShape args.[1] env warnings ctx evalExprFn
+        let s2 = evalArgShape args.[2] env warnings ctx evalExprFn
+        if isScalar s1 then Some s2
+        elif isScalar s2 then Some s1
+        elif s1 = s2 then Some s1
+        else
+            // Broadcasting: try to resolve matching dims
+            match s1, s2 with
+            | Matrix(r1, c1), Matrix(r2, c2) ->
+                let r = if r1 = Concrete 1 then r2 elif r2 = Concrete 1 then r1 elif r1 = r2 then r1 else Unknown
+                let c = if c1 = Concrete 1 then c2 elif c2 = Concrete 1 then c1 elif c1 = c2 then c1 else Unknown
+                Some (Matrix(r, c))
+            | _ -> Some UnknownShape
+
+
+let private handleInterpft
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape option =
+    if args.Length < 2 then Some UnknownShape
+    else
+        match unwrapArg args.[0], unwrapArg args.[1] with
+        | Some a0, Some a1 ->
+            let s = evalExprFn a0 env warnings ctx
+            let d = exprToDimIrCtx a1 env (Some ctx)
+            match s with
+            | Matrix(Concrete 1, _) -> Some (Matrix(Concrete 1, d))  // row vector stays row
+            | Matrix(_, c) -> Some (Matrix(d, c))                     // column or matrix
+            | _ -> Some (Matrix(d, Concrete 1))                       // scalar/unknown -> column
+        | _ -> Some UnknownShape
+
+
 let private handleFilterDesign
     (args: IndexArg list)
     (_env: Env)
@@ -1423,8 +1469,15 @@ let evalBuiltinCall
         | "obsv"           -> handleObsv args env warnings ctx evalExprFn
         | "ctrb"           -> handleCtrb args env warnings ctx evalExprFn
         | "filter" | "filtfilt" -> handleFilter args env warnings ctx evalExprFn
-        | "hamming" | "hann" | "blackman" | "kaiser" | "rectwin" | "bartlett" ->
+        | "hamming" | "hann" | "blackman" | "kaiser" | "rectwin" | "bartlett"
+        | "hanning" | "tukeywin" | "boxcar" ->
             handleWindowFunction args env ctx
+        | "bsxfun"             -> handleBsxfun args env warnings ctx evalExprFn
+        | "interpft"           -> handleInterpft args env warnings ctx evalExprFn
+        | "rmfield" ->
+            if args.Length >= 1 then
+                Some (evalArgShape args.[0] env warnings ctx evalExprFn)
+            else Some UnknownShape
         | "butter" | "cheby1" | "cheby2" | "ellip" | "besself" ->
             handleFilterDesign args env warnings ctx evalExprFn
         | "xcorr"          -> handleXcorr args env warnings ctx evalExprFn
