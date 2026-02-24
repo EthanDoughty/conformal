@@ -133,8 +133,8 @@ let runPhase2Test () : int =
 
     Console.WriteLine("=== Phase 2: Diagnostic record + warn_* builders ===")
     // warnInnerDimMismatch via warnMatmulMismatch
-    let leftE  = Ir.Var(1, 0, "A")
-    let rightE = Ir.Var(1, 5, "B")
+    let leftE  = Ir.Var(Ir.loc 1 0, "A")
+    let rightE = Ir.Var(Ir.loc 1 5, "B")
     let leftS  = Matrix(Concrete 3, Concrete 4)
     let rightS = Matrix(Concrete 5, Concrete 2)
     let d = warnMatmulMismatch 1 leftE rightE leftS rightS false
@@ -163,16 +163,16 @@ let runPhase2Test () : int =
     checkBool "hasUnsupported false" false (hasUnsupported [ dUnk ])
 
     Console.WriteLine("=== Phase 2: prettyExprIr ===")
-    let varA = Ir.Var(1, 0, "A")
-    let varB = Ir.Var(1, 5, "B")
-    let constThree = Ir.Const(1, 0, 3.0)
+    let varA = Ir.Var(Ir.loc 1 0, "A")
+    let varB = Ir.Var(Ir.loc 1 5, "B")
+    let constThree = Ir.Const(Ir.loc 1 0, 3.0)
     check "prettyExprIr Var"    "A"       (prettyExprIr varA)
     check "prettyExprIr Const"  "3"       (prettyExprIr constThree)
-    check "prettyExprIr BinOp"  "(A + B)" (prettyExprIr (Ir.BinOp(1, 0, "+", varA, varB)))
-    check "prettyExprIr Neg"    "(-A)"    (prettyExprIr (Ir.Neg(1, 0, varA)))
-    let applyExpr = Ir.Apply(1, 0, varA, [ Ir.IndexExpr(1, 0, constThree) ])
+    check "prettyExprIr BinOp"  "(A + B)" (prettyExprIr (Ir.BinOp(Ir.loc 1 0, "+", varA, varB)))
+    check "prettyExprIr Neg"    "(-A)"    (prettyExprIr (Ir.Neg(Ir.loc 1 0, varA)))
+    let applyExpr = Ir.Apply(Ir.loc 1 0, varA, [ Ir.IndexExpr(Ir.loc 1 0, constThree) ])
     check "prettyExprIr Apply"  "A(3)"    (prettyExprIr applyExpr)
-    check "prettyExprIr FuncHandle" "@foo" (prettyExprIr (Ir.FuncHandle(1, 0, "foo")))
+    check "prettyExprIr FuncHandle" "@foo" (prettyExprIr (Ir.FuncHandle(Ir.loc 1 0, "foo")))
 
     Console.WriteLine("=== Phase 2: AnalysisContext + snapshotScope ===")
     let ctx = AnalysisContext()
@@ -200,7 +200,7 @@ let runPhase2Test () : int =
 
     Console.WriteLine("=== Phase 2: PathConstraintStack ===")
     let stack = PathConstraints.PathConstraintStack()
-    let condExpr = Ir.BinOp(10, 0, ">", Ir.Var(10, 0, "n"), Ir.Const(10, 0, 3.0))
+    let condExpr = Ir.BinOp(Ir.loc 10 0, ">", Ir.Var(Ir.loc 10 0, "n"), Ir.Const(Ir.loc 10 0, 3.0))
     stack.Push(condExpr, true, 10)
     let snap = stack.Snapshot()
     check "PathConstraints push+snapshot count" "1" (string snap.Length)
@@ -244,8 +244,8 @@ let runPhase3Test () : int =
 
     Console.WriteLine("=== Phase 3: DimExtract ===")
     let env0 = Env.Env.create ()
-    let constExpr5  = Ir.Const(1, 0, 5.0)
-    let varNExpr    = Ir.Var(1, 0, "n")
+    let constExpr5  = Ir.Const(Ir.loc 1 0, 5.0)
+    let varNExpr    = Ir.Var(Ir.loc 1 0, "n")
 
     let dim5 = DimExtract.exprToDimIr constExpr5 env0
     check "exprToDimIr Const(5)" "Concrete 5"
@@ -290,7 +290,7 @@ let runPhase3Test () : int =
     let ctx0 = AnalysisContext()
     let env1 = Env.Env.create ()
     let warnRef = ResizeArray<Diagnostic>()
-    let dummyExpr = Ir.Const(1, 0, 1.0)
+    let dummyExpr = Ir.Const(Ir.loc 1 0, 1.0)
     let noIv _ = None
 
     // matmul 3x4 * 4x2 -> 3x2
@@ -335,24 +335,24 @@ let runPhase3Test () : int =
     let env3 = Env.Env.create ()
 
     // Const -> Scalar
-    let constResult = evalExprIr (Ir.Const(1, 0, 3.14)) env3 warnRef3 ctx2 None stubDispatch
+    let constResult = evalExprIr (Ir.Const(Ir.loc 1 0, 3.14)) env3 warnRef3 ctx2 None stubDispatch
     check "evalExprIr Const -> scalar" "scalar" (shapeToString constResult)
 
     // Var bound to matrix
     Env.Env.set env3 "A" (Matrix(Concrete 3, Concrete 4))
-    let varResult = evalExprIr (Ir.Var(1, 0, "A")) env3 warnRef3 ctx2 None stubDispatch
+    let varResult = evalExprIr (Ir.Var(Ir.loc 1 0, "A")) env3 warnRef3 ctx2 None stubDispatch
     check "evalExprIr Var(A) -> matrix[3 x 4]" "matrix[3 x 4]" (shapeToString varResult)
 
     // Var unbound -> unknown
-    let varUndef = evalExprIr (Ir.Var(1, 0, "undefined_var")) env3 warnRef3 ctx2 None stubDispatch
+    let varUndef = evalExprIr (Ir.Var(Ir.loc 1 0, "undefined_var")) env3 warnRef3 ctx2 None stubDispatch
     check "evalExprIr unbound Var -> unknown" "unknown" (shapeToString varUndef)
 
     // MATLAB constant pi -> scalar
-    let piResult = evalExprIr (Ir.Var(1, 0, "pi")) env3 warnRef3 ctx2 None stubDispatch
+    let piResult = evalExprIr (Ir.Var(Ir.loc 1 0, "pi")) env3 warnRef3 ctx2 None stubDispatch
     check "evalExprIr pi -> scalar" "scalar" (shapeToString piResult)
 
     // StringLit -> string
-    let strResult = evalExprIr (Ir.StringLit(1, 0, "hello")) env3 warnRef3 ctx2 None stubDispatch
+    let strResult = evalExprIr (Ir.StringLit(Ir.loc 1 0, "hello")) env3 warnRef3 ctx2 None stubDispatch
     check "evalExprIr StringLit -> string" "string" (shapeToString strResult)
 
     Console.WriteLine("")
@@ -399,13 +399,13 @@ let runPhase4Test () : int =
 
     let stubEval (e: Ir.Expr) (_env: Env.Env) (_w: ResizeArray<Diagnostic>) (_ctx: AnalysisContext) : Shape =
         match e with
-        | Ir.Const(_, _, v) -> Scalar
+        | Ir.Const(_, v) -> Scalar
         | _ -> UnknownShape
 
     let stubGetInterval (_e: Ir.Expr) (_env: Env.Env) (_ctx: AnalysisContext) : Interval option =
         None
 
-    let zerosArgs = [ Ir.IndexExpr(1, 0, Ir.Const(1, 0, 3.0)); Ir.IndexExpr(1, 0, Ir.Const(1, 0, 4.0)) ]
+    let zerosArgs = [ Ir.IndexExpr(Ir.loc 1 0, Ir.Const(Ir.loc 1 0, 3.0)); Ir.IndexExpr(Ir.loc 1 0, Ir.Const(Ir.loc 1 0, 4.0)) ]
     let zerosResult = evalBuiltinCall "zeros" 1 zerosArgs env0 warnRef ctx0 stubEval stubGetInterval
     check "zeros(3,4)" "matrix[3 x 4]" (shapeToString zerosResult)
     checkBool "zeros(3,4) no warnings" true (warnRef.Count = 0)
@@ -413,10 +413,10 @@ let runPhase4Test () : int =
     // --- EvalBuiltins: size(A) -> scalar ---
     Console.WriteLine("=== Phase 4: evalBuiltinCall size(A) ===")
     Env.Env.set env0 "A" (Matrix(Concrete 3, Concrete 4))
-    let sizeArgs = [ Ir.IndexExpr(1, 0, Ir.Var(1, 0, "A")) ]
+    let sizeArgs = [ Ir.IndexExpr(Ir.loc 1 0, Ir.Var(Ir.loc 1 0, "A")) ]
     let sizeEval (e: Ir.Expr) (_env: Env.Env) (_w: ResizeArray<Diagnostic>) (_ctx: AnalysisContext) : Shape =
         match e with
-        | Ir.Var(_, _, "A") -> Matrix(Concrete 3, Concrete 4)
+        | Ir.Var(_, "A") -> Matrix(Concrete 3, Concrete 4)
         | _ -> UnknownShape
     let sizeResult = evalBuiltinCall "size" 1 sizeArgs env0 warnRef ctx0 sizeEval stubGetInterval
     // size(A) with 1 arg returns matrix[1 x 2]
@@ -425,7 +425,7 @@ let runPhase4Test () : int =
     // --- analyzeProgramIr: simple assignment ---
     Console.WriteLine("=== Phase 4: analyzeProgramIr simple assignment ===")
     let simpleProgram : Ir.Program = {
-        body = [ Ir.Assign(1, 0, "x", Ir.Const(1, 0, 5.0)) ]
+        body = [ Ir.Assign(Ir.loc 1 0, "x", Ir.Const(Ir.loc 1 0, 5.0)) ]
     }
     let ctx1 = AnalysisContext()
     let (env1, diags1) = analyzeProgramIr simpleProgram ctx1
@@ -436,11 +436,11 @@ let runPhase4Test () : int =
     Console.WriteLine("=== Phase 4: analyzeProgramIr zeros builtin ===")
     let zerosProgram : Ir.Program = {
         body = [
-            Ir.Assign(1, 0, "A",
-                Ir.Apply(1, 0,
-                    Ir.Var(1, 0, "zeros"),
-                    [ Ir.IndexExpr(1, 0, Ir.Const(1, 0, 3.0))
-                      Ir.IndexExpr(1, 0, Ir.Const(1, 0, 4.0)) ]))
+            Ir.Assign(Ir.loc 1 0, "A",
+                Ir.Apply(Ir.loc 1 0,
+                    Ir.Var(Ir.loc 1 0, "zeros"),
+                    [ Ir.IndexExpr(Ir.loc 1 0, Ir.Const(Ir.loc 1 0, 3.0))
+                      Ir.IndexExpr(Ir.loc 1 0, Ir.Const(Ir.loc 1 0, 4.0)) ]))
         ]
     }
     let ctx2 = AnalysisContext()
@@ -451,16 +451,16 @@ let runPhase4Test () : int =
     Console.WriteLine("=== Phase 4: analyzeProgramIr function call ===")
     let funcProgram : Ir.Program = {
         body = [
-            Ir.FunctionDef(1, 0, "makeVec",
+            Ir.FunctionDef(Ir.loc 1 0, "makeVec",
                 ["n"],
                 ["v"],
-                [ Ir.Assign(2, 0, "v",
-                      Ir.Apply(2, 0, Ir.Var(2, 0, "zeros"),
-                          [ Ir.IndexExpr(2, 0, Ir.Var(2, 0, "n"))
-                            Ir.IndexExpr(2, 0, Ir.Const(2, 0, 1.0)) ])) ])
-            Ir.Assign(5, 0, "result",
-                Ir.Apply(5, 0, Ir.Var(5, 0, "makeVec"),
-                    [ Ir.IndexExpr(5, 0, Ir.Const(5, 0, 5.0)) ]))
+                [ Ir.Assign(Ir.loc 2 0, "v",
+                      Ir.Apply(Ir.loc 2 0, Ir.Var(Ir.loc 2 0, "zeros"),
+                          [ Ir.IndexExpr(Ir.loc 2 0, Ir.Var(Ir.loc 2 0, "n"))
+                            Ir.IndexExpr(Ir.loc 2 0, Ir.Const(Ir.loc 2 0, 1.0)) ])) ])
+            Ir.Assign(Ir.loc 5 0, "result",
+                Ir.Apply(Ir.loc 5 0, Ir.Var(Ir.loc 5 0, "makeVec"),
+                    [ Ir.IndexExpr(Ir.loc 5 0, Ir.Const(Ir.loc 5 0, 5.0)) ]))
         ]
     }
     let ctx3 = AnalysisContext()

@@ -11,7 +11,7 @@ open Ir
 let rec binopContainsEnd (expr: Expr) : bool =
     match expr with
     | End _ -> true
-    | BinOp(_, _, _, left, right) -> binopContainsEnd left || binopContainsEnd right
+    | BinOp(_, _, left, right) -> binopContainsEnd left || binopContainsEnd right
     | _ -> false
 
 
@@ -20,8 +20,8 @@ let rec binopContainsEnd (expr: Expr) : bool =
 let rec evalEndArithmetic (expr: Expr) (endValue: int) : int option =
     match expr with
     | End _ -> Some endValue
-    | Const(_, _, v) -> Some (int v)
-    | BinOp(_, _, op, left, right) ->
+    | Const(_, v) -> Some (int v)
+    | BinOp(_, op, left, right) ->
         match evalEndArithmetic left endValue, evalEndArithmetic right endValue with
         | Some l, Some r ->
             match op with

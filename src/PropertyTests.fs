@@ -107,8 +107,8 @@ let private irOps = [| "+"; "-"; ".*"; "./" |]
 
 let rec private genExprD (depth: int) : Gen<Ir.Expr> =
     let baseGens = [
-        Gen.choose(-10, 10) |> Gen.map (fun n -> Ir.Const(1, 0, float n))
-        Gen.choose(0, envVarNames.Length - 1) |> Gen.map (fun i -> Ir.Var(1, 0, envVarNames.[i]))
+        Gen.choose(-10, 10) |> Gen.map (fun n -> Ir.Const(Ir.loc 1 0, float n))
+        Gen.choose(0, envVarNames.Length - 1) |> Gen.map (fun i -> Ir.Var(Ir.loc 1 0, envVarNames.[i]))
     ]
     if depth <= 0 then
         Gen.oneof baseGens
@@ -118,7 +118,7 @@ let rec private genExprD (depth: int) : Gen<Ir.Expr> =
                 let! opIdx = Gen.choose(0, irOps.Length - 1)
                 let! l = genExprD (depth - 1)
                 let! r = genExprD (depth - 1)
-                return Ir.BinOp(1, 0, irOps.[opIdx], l, r)
+                return Ir.BinOp(Ir.loc 1 0, irOps.[opIdx], l, r)
             }
         Gen.oneof (baseGens @ [binopGen])
 
@@ -130,7 +130,7 @@ let private genProgram : Gen<Ir.Program> =
         let! stmts = Gen.listOfLength n (gen {
             let! nameIdx = Gen.choose(0, envVarNames.Length - 1)
             let! expr = genExpr
-            return Ir.Assign(1, 0, envVarNames.[nameIdx], expr)
+            return Ir.Assign(Ir.loc 1 0, envVarNames.[nameIdx], expr)
         })
         return { Ir.body = stmts }
     }

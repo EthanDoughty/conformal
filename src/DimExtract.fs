@@ -16,15 +16,15 @@ open SharedTypes
 let rec exprToDimWithEnd (expr: Expr) (env: Env) (endDim: Dim) : Dim =
     match expr with
     | End _ -> endDim
-    | Const(_, _, v) ->
-        if v = System.Math.Floor v && not (System.Double.IsInfinity v) then Concrete (int v)
+    | Const(_, v) ->
+        if v = System.Math.Floor(v : float) && not (System.Double.IsInfinity v) then Concrete (int v)
         else Unknown
-    | Var(_, _, name) ->
+    | Var(_, name) ->
         // Check dim aliases first (propagates caller's dim name)
         match Map.tryFind name env.dimAliases with
         | Some d -> d
         | None   -> Symbolic (SymDim.SymDim.var name)
-    | BinOp(_, _, op, left, right) ->
+    | BinOp(_, op, left, right) ->
         let l = exprToDimWithEnd left env endDim
         let r = exprToDimWithEnd right env endDim
         match l, r with
@@ -45,11 +45,11 @@ let rec exprToDimIr (expr: Expr) (env: Env) : Dim =
 
 and exprToDimIrCtx (expr: Expr) (env: Env) (ctx: Context.AnalysisContext option) : Dim =
     match expr with
-    | Const(_, _, v) ->
-        if v = System.Math.Floor v && not (System.Double.IsInfinity v) then Concrete (int v)
+    | Const(_, v) ->
+        if v = System.Math.Floor(v : float) && not (System.Double.IsInfinity v) then Concrete (int v)
         else Unknown
     | End _ -> Unknown   // can't convert End without container context
-    | Var(_, _, name) ->
+    | Var(_, name) ->
         // Check dim aliases first
         match Map.tryFind name env.dimAliases with
         | Some d -> d
@@ -65,7 +65,7 @@ and exprToDimIrCtx (expr: Expr) (env: Env) (ctx: Context.AnalysisContext option)
                 | false, _ -> Symbolic (SymDim.SymDim.var name)
             | None -> Symbolic (SymDim.SymDim.var name)
     | Neg _ -> Unknown   // Negative literal in dim context: treat as Unknown (mirrors Python)
-    | BinOp(_, _, op, left, right) ->
+    | BinOp(_, op, left, right) ->
         let l = exprToDimIrCtx left env ctx
         let r = exprToDimIrCtx right env ctx
         match l, r with
@@ -84,10 +84,10 @@ and exprToDimIrCtx (expr: Expr) (env: Env) (ctx: Context.AnalysisContext option)
 /// Returns Unknown for stepped ranges, non-range iterators, or unresolvable.
 let extractIterationCount (itExpr: Expr) (env: Env) (ctx: Context.AnalysisContext option) : Dim =
     match itExpr with
-    | BinOp(_, _, ":", left, right) ->
+    | BinOp(_, ":", left, right) ->
         // Stepped range: BinOp(":", BinOp(":", start, step), end)
         match left with
-        | BinOp(_, _, ":", _, _) -> Unknown  // stepped range
+        | BinOp(_, ":", _, _) -> Unknown  // stepped range
         | _ ->
             let a = exprToDimIrCtx left env ctx
             let b = exprToDimIrCtx right env ctx
@@ -104,7 +104,7 @@ let extractIterationCount (itExpr: Expr) (env: Env) (ctx: Context.AnalysisContex
 let indexArgToExtentIr (arg: Ir.IndexArg) (env: Env) : Dim =
     match arg with
     | Colon _ -> Unknown
-    | Range(_, _, startExpr, endExpr) ->
+    | Range(_, startExpr, endExpr) ->
         let a = exprToDimIr startExpr env
         let b = exprToDimIr endExpr env
         match a, b with

@@ -147,7 +147,7 @@ let buildIrFromSource (source: string) : (FunctionSignature * Map<string, Functi
             program.body
             |> List.choose (fun stmt ->
                 match stmt with
-                | Ir.FunctionDef(line, col, name, parms, outputVars, body) ->
+                | Ir.FunctionDef({ line = line; col = col }, name, parms, outputVars, body) ->
                     Some { name = name; parms = parms; outputVars = outputVars; body = body; defLine = line; defCol = col }
                 | _ -> None)
         match funcDefs with

@@ -58,26 +58,26 @@ type private AccumPattern = {
 /// exprMentionsVar: check if an expression mentions a specific variable.
 let rec private exprMentionsVar (expr: Expr) (varName: string) : bool =
     match expr with
-    | Var(_, _, n)       -> n = varName
+    | Var(_, n)        -> n = varName
     | Const _ | StringLit _ | End _ -> false
-    | Neg(_, _, op)      -> exprMentionsVar op varName
-    | Not(_, _, op)      -> exprMentionsVar op varName
-    | Transpose(_, _, op) -> exprMentionsVar op varName
-    | BinOp(_, _, _, l, r) -> exprMentionsVar l varName || exprMentionsVar r varName
-    | FieldAccess(_, _, b, _) -> exprMentionsVar b varName
+    | Neg(_, op)       -> exprMentionsVar op varName
+    | Not(_, op)       -> exprMentionsVar op varName
+    | Transpose(_, op) -> exprMentionsVar op varName
+    | BinOp(_, _, l, r) -> exprMentionsVar l varName || exprMentionsVar r varName
+    | FieldAccess(_, b, _) -> exprMentionsVar b varName
     | Lambda _ | FuncHandle _ -> false
-    | MatrixLit(_, _, rows) ->
+    | MatrixLit(_, rows) ->
         rows |> List.exists (fun row -> row |> List.exists (fun e -> exprMentionsVar e varName))
-    | CellLit(_, _, rows) ->
+    | CellLit(_, rows) ->
         rows |> List.exists (fun row -> row |> List.exists (fun e -> exprMentionsVar e varName))
-    | Apply(_, _, b, iargs) ->
+    | Apply(_, b, iargs) ->
         exprMentionsVar b varName ||
         iargs |> List.exists (fun arg ->
-            match arg with IndexExpr(_, _, e) -> exprMentionsVar e varName | _ -> false)
-    | CurlyApply(_, _, b, iargs) ->
+            match arg with IndexExpr(_, e) -> exprMentionsVar e varName | _ -> false)
+    | CurlyApply(_, b, iargs) ->
         exprMentionsVar b varName ||
         iargs |> List.exists (fun arg ->
-            match arg with IndexExpr(_, _, e) -> exprMentionsVar e varName | _ -> false)
+            match arg with IndexExpr(_, e) -> exprMentionsVar e varName | _ -> false)
 
 
 /// detectAccumulation: detect accumulation patterns in a loop body.
@@ -86,13 +86,13 @@ let private detectAccumulation (loopVar: string) (body: Stmt list) : AccumPatter
 
     for stmt in body do
         match stmt with
-        | Assign(stmtLine, _, assignName, MatrixLit(_, _, rows)) ->
+        | Assign({ line = stmtLine }, assignName, MatrixLit(_, rows)) ->
             // Count occurrences of Var(name=assignName) in literal
             let mutable count = 0
             for row in rows do
                 for elem in row do
                     match elem with
-                    | Var(_, _, n) when n = assignName -> count <- count + 1
+                    | Var(_, n) when n = assignName -> count <- count + 1
                     | _ -> ()
 
             if count = 1 then
@@ -103,7 +103,7 @@ let private detectAccumulation (loopVar: string) (body: Stmt list) : AccumPatter
                     // Check vertcat or horzcat pattern
                     if rows.Length >= 2 then
                         match rows.[0] with
-                        | [ Var(_, _, n) ] when n = assignName ->
+                        | [ Var(_, n) ] when n = assignName ->
                             let deltaExprs = rows |> List.tail
                             candidates.[assignName] <- Some {
                                 varName = assignName; axis = Vert
@@ -112,7 +112,7 @@ let private detectAccumulation (loopVar: string) (body: Stmt list) : AccumPatter
                         | _ -> ()
                     elif rows.Length = 1 && rows.[0].Length >= 2 then
                         match rows.[0].[0] with
-                        | Var(_, _, n) when n = assignName ->
+                        | Var(_, n) when n = assignName ->
                             let deltaExprs = [ rows.[0] |> List.tail ]
                             candidates.[assignName] <- Some {
                                 varName = assignName; axis = Horz
@@ -359,7 +359,7 @@ and private wiredEvalExprFull
     (ctx: AnalysisContext)
     : Shape =
     match expr with
-    | Apply(line, _, Var(_, _, fname), args) ->
+    | Apply({ line = line }, Var(_, fname), args) ->
         // Determine dispatch priority
         let varShape = Env.get env fname
         if isFunctionHandle varShape then
@@ -367,7 +367,7 @@ and private wiredEvalExprFull
             evalExprIr expr env warnings ctx None wiredBuiltinDispatch
         elif Set.contains fname KNOWN_BUILTINS then
             // Priority 2: builtin
-            wiredBuiltinDispatch fname line (Var(line, 0, fname)) args env warnings ctx
+            wiredBuiltinDispatch fname line (Var(loc line 0, fname)) args env warnings ctx
         elif not (Env.hasLocal env fname) then
             // Priority 3-5: unbound — user function, nested, external, or unknown
             if ctx.call.functionRegistry.ContainsKey(fname) then
@@ -409,7 +409,7 @@ and analyzeStmtIr
     : unit =
 
     match stmt with
-    | Assign(line, _, name, expr) ->
+    | Assign({ line = line }, name, expr) ->
         let oldShape = Env.get env name
         let newShape = wiredEvalExprFull expr env warnings ctx
 
@@ -439,13 +439,13 @@ and analyzeStmtIr
             if ctx.cst.valueRanges.ContainsKey(name) then
                 ctx.cst.valueRanges.Remove(name) |> ignore
 
-    | StructAssign(line, _, baseName, fields, expr) ->
+    | StructAssign({ line = line }, baseName, fields, expr) ->
         let rhsShape = wiredEvalExprFull expr env warnings ctx
         let baseShape = Env.get env baseName
         let updated = updateStructField baseShape fields rhsShape line warnings
         Env.set env baseName updated
 
-    | FieldIndexAssign(line, _, baseName, prefixFields, indexArgs, _, suffixFields, expr) ->
+    | FieldIndexAssign({ line = line }, baseName, prefixFields, indexArgs, _, suffixFields, expr) ->
         let rhsShape = wiredEvalExprFull expr env warnings ctx
         let baseShape = Env.get env baseName
         // Evaluate index args for side effects
@@ -455,7 +455,7 @@ and analyzeStmtIr
         let updated = updateStructField baseShape allFields rhsShape line warnings
         Env.set env baseName updated
 
-    | CellAssign(line, _, baseName, args, expr) ->
+    | CellAssign({ line = line }, baseName, args, expr) ->
         let rhsShape = wiredEvalExprFull expr env warnings ctx
         let baseShape = Env.get env baseName
         if isBottom baseShape then
@@ -472,7 +472,7 @@ and analyzeStmtIr
         else
             analyzeCellAssignArgs baseName args env warnings ctx rhsShape
 
-    | IndexAssign(_, _, baseName, _, expr) ->
+    | IndexAssign(_, baseName, _, expr) ->
         let rhsShape = wiredEvalExprFull expr env warnings ctx
         ignore rhsShape
         let baseShape = Env.get env baseName
@@ -486,33 +486,33 @@ and analyzeStmtIr
                 warnings.Add(warnIndexAssignTypeMismatch (stmt.Line) baseName baseShape)
         // No OOB checking: MATLAB auto-expands on indexed assign
 
-    | IndexStructAssign(_, _, baseName, _, _, _, expr) ->
+    | IndexStructAssign(_, baseName, _, _, _, expr) ->
         wiredEvalExprFull expr env warnings ctx |> ignore
         let existing = Env.get env baseName
         if isBottom existing then Env.set env baseName UnknownShape
 
-    | ExprStmt(_, _, expr) ->
+    | ExprStmt(_, expr) ->
         wiredEvalExprFull expr env warnings ctx |> ignore
 
-    | While(line, _, cond, body) ->
+    | While({ line = line }, cond, body) ->
         wiredEvalExprFull cond env warnings ctx |> ignore
 
         let baselineRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
         let refinements = extractConditionRefinements cond env ctx
         applyRefinements ctx refinements false
 
-        analyzeLoopBody body env warnings ctx
+        analyzeLoopBody body env warnings ctx None
 
         ctx.cst.valueRanges.Clear()
         for kv in baselineRanges do ctx.cst.valueRanges.[kv.Key] <- kv.Value
 
-    | For(_, _, var_, it, body) ->
+    | For(_, var_, it, body) ->
         Env.set env var_ Scalar
         wiredEvalExprFull it env warnings ctx |> ignore
 
         // Record loop variable interval
         match it with
-        | BinOp(_, _, ":", left, right) ->
+        | BinOp(_, ":", left, right) ->
             let loConst = tryExtractConstValue left
             let hiConst = tryExtractConstValue right
             match loConst, hiConst with
@@ -542,13 +542,13 @@ and analyzeStmtIr
             else
                 (Env.copy env, Unknown, [])
 
-        analyzeLoopBody body env warnings ctx
+        analyzeLoopBody body env warnings ctx (Some var_)
 
         if ctx.call.fixpoint then
             for accum in accumPatterns do
                 refineAccumulation accum iterCount preLoopEnv env warnings ctx wiredEvalExprFull
 
-    | If(line, _, cond, thenBody, elseBody) ->
+    | If({ line = line }, cond, thenBody, elseBody) ->
         wiredEvalExprFull cond env warnings ctx |> ignore
 
         let refinements = extractConditionRefinements cond env ctx
@@ -598,7 +598,7 @@ and analyzeStmtIr
             [thenEnv; elseEnv] [thenConstraints; elseConstraints]
             [thenRanges; elseRanges] [thenReturned; elseReturned] None
 
-    | IfChain(line, _, conditions, bodies, elseBody) ->
+    | IfChain({ line = line }, conditions, bodies, elseBody) ->
         for cond in conditions do wiredEvalExprFull cond env warnings ctx |> ignore
 
         let allRefinements = conditions |> List.map (fun cond -> extractConditionRefinements cond env ctx)
@@ -645,9 +645,15 @@ and analyzeStmtIr
             env ctx baselineConstraints baselineRanges
             branchEnvs branchConstraints branchRanges returnedFlags deferredExc
 
-    | Switch(line, _, expr, cases, otherwise) ->
+    | Switch({ line = line }, expr, cases, otherwise) ->
         wiredEvalExprFull expr env warnings ctx |> ignore
         for (caseVal, _) in cases do wiredEvalExprFull caseVal env warnings ctx |> ignore
+
+        // Extract the switch variable name for interval refinement (simple Var only).
+        let switchVarName =
+            match expr with
+            | Ir.Var(_, name) -> Some name
+            | _ -> None
 
         let baselineConstraints = snapshotConstraints ctx
         let baselineRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
@@ -669,6 +675,13 @@ and analyzeStmtIr
             if isCase then
                 let (caseCond, _) = cases.[caseIdx]
                 ctx.cst.pathConstraints.Push(caseCond, true, line)
+                // Narrow the switch variable's interval when case value is a constant.
+                match switchVarName, caseCond with
+                | Some varName, Ir.Const(_, v)
+                    when v = System.Math.Floor(v) && not (System.Double.IsInfinity v) ->
+                    let refinements = [ (varName, "==", Shapes.Concrete (int v)) ]
+                    Intervals.applyRefinements ctx refinements false
+                | _ -> ()
 
             let branchEnv = Env.copy env
             let mutable returned = false
@@ -693,7 +706,7 @@ and analyzeStmtIr
             env ctx baselineConstraints baselineRanges
             branchEnvs branchConstraints branchRanges returnedFlags deferredExc
 
-    | Try(_, _, tryBody, catchBody) ->
+    | Try(_, tryBody, catchBody) ->
         let baselineConstraints = snapshotConstraints ctx
         let baselineRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
         let preTryEnv = Env.copy env
@@ -735,7 +748,7 @@ and analyzeStmtIr
             [tryEnv; catchEnv] [tryConstraints; catchConstraints]
             [tryRanges; catchRanges] [tryReturned; catchReturned] deferredExc
 
-    | OpaqueStmt(line, _, targets, raw) ->
+    | OpaqueStmt({ line = line }, targets, raw) ->
         let firstWord = if raw.Trim() = "" then "" else raw.Trim().Split([| ' '; '\t' |]).[0]
         if not (Set.contains firstWord SUPPRESSED_CMD_STMTS) then
             warnings.Add(warnUnsupportedStmt line raw targets)
@@ -749,7 +762,7 @@ and analyzeStmtIr
         // No-op: function defs are pre-scanned in pass 1
         ()
 
-    | AssignMulti(line, _, targets, expr) ->
+    | AssignMulti({ line = line }, targets, expr) ->
         analyzeAssignMulti line targets expr env warnings ctx
 
 
@@ -782,7 +795,7 @@ and private analyzeCellAssignArgs
         | Cell(rows, cols, elemMap) ->
             if args.Length = 1 then
                 match args.[0] with
-                | IndexExpr(_, _, Const(_, _, v)) ->
+                | IndexExpr(_, Const(_, v)) ->
                     let idx0 = int v - 1
                     let currentElems = defaultArg elemMap Map.empty
                     let newElems = Map.add idx0 rhsShape currentElems
@@ -822,7 +835,7 @@ and private analyzeAssignMulti
             Env.set env target shape
 
     match expr with
-    | Apply(_, _, Var(_, _, fname), args) ->
+    | Apply(_, Var(_, fname), args) ->
         if Set.contains fname KNOWN_BUILTINS then
             let numTargets = targets.Length
             if numTargets = 1 then
@@ -880,6 +893,7 @@ and analyzeLoopBody
     (env: Env)
     (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
+    (loopVar: string option)
     : unit =
 
     if not ctx.call.fixpoint then
@@ -888,6 +902,9 @@ and analyzeLoopBody
         with
         | :? EarlyReturn | :? EarlyBreak | :? EarlyContinue -> ()
     else
+        // Snapshot value ranges before loop body (mirrors preLoopEnv for shapes)
+        let preLoopRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
+
         // Phase 1 (Discover)
         let preLoopEnv = Env.copy env
         try
@@ -895,8 +912,10 @@ and analyzeLoopBody
         with
         | :? EarlyReturn | :? EarlyBreak | :? EarlyContinue -> ()
 
-        // Widen
+        // Widen shapes
         let widened = widenEnv preLoopEnv env
+        // Widen intervals in parallel with shape widening
+        widenValueRanges preLoopRanges ctx.cst.valueRanges loopVar
 
         // Phase 2 (Stabilize): Re-analyze if widening changed anything
         if not (Env.localBindingsEqual env widened) then
@@ -905,6 +924,9 @@ and analyzeLoopBody
                 for s in body do analyzeStmtIr s env warnings ctx
             with
             | :? EarlyReturn | :? EarlyBreak | :? EarlyContinue -> ()
+
+        // Widen intervals again before post-loop join (mirrors finalWidened for shapes)
+        widenValueRanges preLoopRanges ctx.cst.valueRanges loopVar
 
         // Phase 3 (Post-loop join): Model "loop may execute 0 times"
         let finalWidened = widenEnv preLoopEnv env
@@ -944,13 +966,13 @@ and analyzeFunctionCall
         let argShapes =
             args |> List.map (fun arg ->
                 match arg with
-                | IndexExpr(_, _, e) -> wiredEvalExprFull e env warnings ctx
+                | IndexExpr(_, e) -> wiredEvalExprFull e env warnings ctx
                 | _ -> UnknownShape)
 
         let argDimAliases =
             List.map2 (fun (param: string) arg ->
                 match arg with
-                | IndexExpr(_, _, e) -> (param, exprToDimIr e env)
+                | IndexExpr(_, e) -> (param, exprToDimIr e env)
                 | _ -> (param, Unknown)) sig_.parms args
 
         let cacheKey =
@@ -975,7 +997,7 @@ and analyzeFunctionCall
                     for (param, arg, argShape) in List.zip3 sig_.parms args argShapes do
                         Env.set funcEnv param argShape
                         match arg with
-                        | IndexExpr(_, _, e) ->
+                        | IndexExpr(_, e) ->
                             let callerDim = exprToDimIr e env
                             if callerDim <> Unknown then
                                 funcEnv.dimAliases <- Map.add param callerDim funcEnv.dimAliases
@@ -984,7 +1006,7 @@ and analyzeFunctionCall
                     // Pre-scan body for nested FunctionDefs
                     for s in sig_.body do
                         match s with
-                        | FunctionDef(nLine, nCol, nestedName, nestedParms, nestedOuts, nestedBody) ->
+                        | FunctionDef({ line = nLine; col = nCol }, nestedName, nestedParms, nestedOuts, nestedBody) ->
                             ctx.call.nestedFunctionRegistry.[nestedName] <-
                                 { name = nestedName; parms = nestedParms; outputVars = nestedOuts; body = nestedBody; defLine = nLine; defCol = nCol }
                         | _ -> ()
@@ -1042,13 +1064,13 @@ and analyzeNestedFunctionCall
         let argShapes =
             args |> List.map (fun arg ->
                 match arg with
-                | IndexExpr(_, _, e) -> wiredEvalExprFull e parentEnv warnings ctx
+                | IndexExpr(_, e) -> wiredEvalExprFull e parentEnv warnings ctx
                 | _ -> UnknownShape)
 
         let argDimAliases =
             List.map2 (fun (param: string) arg ->
                 match arg with
-                | IndexExpr(_, _, e) -> (param, exprToDimIr e parentEnv)
+                | IndexExpr(_, e) -> (param, exprToDimIr e parentEnv)
                 | _ -> (param, Unknown)) sig_.parms args
 
         let cacheKey =
@@ -1072,7 +1094,7 @@ and analyzeNestedFunctionCall
                     for (param, arg, argShape) in List.zip3 sig_.parms args argShapes do
                         Env.set funcEnv param argShape
                         match arg with
-                        | IndexExpr(_, _, e) ->
+                        | IndexExpr(_, e) ->
                             let callerDim = exprToDimIr e parentEnv
                             if callerDim <> Unknown then
                                 funcEnv.dimAliases <- Map.add param callerDim funcEnv.dimAliases
@@ -1080,7 +1102,7 @@ and analyzeNestedFunctionCall
 
                     for s in sig_.body do
                         match s with
-                        | FunctionDef(nLine, nCol, nestedName, nestedParms, nestedOuts, nestedBody) ->
+                        | FunctionDef({ line = nLine; col = nCol }, nestedName, nestedParms, nestedOuts, nestedBody) ->
                             ctx.call.nestedFunctionRegistry.[nestedName] <-
                                 { name = nestedName; parms = nestedParms; outputVars = nestedOuts; body = nestedBody; defLine = nLine; defCol = nCol }
                         | _ -> ()
@@ -1148,13 +1170,13 @@ and analyzeExternalFunctionCall
     let argShapes =
         args |> List.map (fun arg ->
             match arg with
-            | IndexExpr(_, _, e) -> wiredEvalExprFull e env warnings ctx
+            | IndexExpr(_, e) -> wiredEvalExprFull e env warnings ctx
             | _ -> UnknownShape)
 
     let argDimAliases =
         List.map2 (fun (param: string) arg ->
             match arg with
-            | IndexExpr(_, _, e) -> (param, exprToDimIr e env)
+            | IndexExpr(_, e) -> (param, exprToDimIr e env)
             | _ -> (param, Unknown)) primarySig.parms args
 
     let cacheKey =
@@ -1182,7 +1204,7 @@ and analyzeExternalFunctionCall
                 for (param, arg, argShape) in List.zip3 primarySig.parms args argShapes do
                     Env.set funcEnv param argShape
                     match arg with
-                    | IndexExpr(_, _, e) ->
+                    | IndexExpr(_, e) ->
                         let callerDim = exprToDimIr e env
                         if callerDim <> Unknown then
                             funcEnv.dimAliases <- Map.add param callerDim funcEnv.dimAliases

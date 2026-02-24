@@ -20,7 +20,7 @@ let getDocumentSymbols
 
     for stmt in program.body do
         match stmt with
-        | FunctionDef(line, _, name, parms, outputVars, body) ->
+        | FunctionDef({ line = line }, name, parms, outputVars, body) ->
 
             // Detail string: (params) -> [outputs]
             let paramsStr  = parms      |> String.concat ", "
