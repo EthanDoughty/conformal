@@ -7,7 +7,7 @@
 [![Version](https://img.shields.io/badge/version-2.0.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4.svg)](https://dotnet.microsoft.com/download)
-[![Tests](https://img.shields.io/badge/tests-344%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-354%20passing-brightgreen.svg)](#test-suite)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
 *Matrices must be **conformable** before they can perform. Conformal makes sure they are.*
@@ -53,7 +53,7 @@ dotnet run -- ../tests/basics/inner_dim_mismatch.m
 
 ## Performance
 
-The single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and the cross-file workspace analysis runs in about 70ms. The full test suite (344 tests total) finishes in about one second, with no MATLAB runtime involved during any part of the process.
+The single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and the cross-file workspace analysis runs in about 70ms. The full test suite (354 tests total) finishes in about one second, with no MATLAB runtime involved during any part of the process.
 
 The VS Code extension runs the analyzer while you are typing code, since it is compiled to JavaScript, using the Fable tool, so there is no subprocess startup cost and analysis works on every keystroke with a 500ms debounce.
 
@@ -77,7 +77,7 @@ Conformal supports parenthesized indexing `A(i,j)`, slice indexing `A(:,j)` and 
 
 ### Functions
 
-Nearly 500 MATLAB builtins are recognized (so calls to them don't produce `W_UNKNOWN_FUNCTION` warnings), and around 234 of those have explicit shape rules. First, matrix constructors like `zeros`, `ones`, `eye`, `rand`, `randn`, `true`, `false`, `nan`, and `inf` handle all three call forms: no args gives a scalar, one arg gives an n x n square, and two args give an m x n matrix. Second, shape transformations include `reshape` (with a conformability check), `repmat`, `diag`, `transpose`, `horzcat`, `vertcat`, and more specialized ones like `kron` (where `kron(A[m x n], B[p x q])` gives `matrix[(m*p) x (n*q)]`) and `blkdiag` (where `blkdiag(A[m x n], B[p x q])` gives `matrix[(m+p) x (n+q)]`). Third, element-wise math functions like `sin`, `cos`, `exp`, `log`, `sqrt`, `abs`, `ceil`, `floor`, and their relatives all pass the input shape through. Reductions like `sum`, `prod`, `mean`, `min`, `max`, and `diff` accept an optional dimension argument. Finally, type predicates like `isscalar`, `iscell`, `isempty`, and `isnumeric` return scalar, and linear algebra functions like `det`, `inv`, `norm`, and `linspace`, query functions like `size`, `length`, and `numel`, and two-argument element-wise functions like `mod`, `rem`, and `atan2` are also covered.
+Over 635 MATLAB builtins are recognized (so calls to them don't produce `W_UNKNOWN_FUNCTION` warnings), and around 315 of those have explicit shape rules. First, matrix constructors like `zeros`, `ones`, `eye`, `rand`, `randn`, `true`, `false`, `nan`, and `inf` handle all three call forms: no args gives a scalar, one arg gives an n x n square, and two args give an m x n matrix. Second, shape transformations include `reshape` (with a conformability check), `repmat`, `diag`, `transpose`, `horzcat`, `vertcat`, and more specialized ones like `kron` (where `kron(A[m x n], B[p x q])` gives `matrix[(m*p) x (n*q)]`) and `blkdiag` (where `blkdiag(A[m x n], B[p x q])` gives `matrix[(m+p) x (n+q)]`). Third, element-wise math functions like `sin`, `cos`, `exp`, `log`, `sqrt`, `abs`, `ceil`, `floor`, and their relatives all pass the input shape through. Reductions like `sum`, `prod`, `mean`, `min`, `max`, and `diff` accept an optional dimension argument. Finally, type predicates like `isscalar`, `iscell`, `isempty`, and `isnumeric` return scalar, and linear algebra functions like `det`, `inv`, `norm`, and `linspace`, query functions like `size`, `length`, and `numel`, and two-argument element-wise functions like `mod`, `rem`, and `atan2` are also covered.
 
 Dimension arithmetic works inside builtin arguments, so `zeros(n+1, 2*m)` is tracked symbolically.
 
@@ -93,7 +93,9 @@ Cell arrays work with `cell(n)` and `cell(m,n)` constructors, curly-brace indexi
 
 ### Control flow
 
-Conformal covers `if`/`elseif`/`else`, `for`, `while`, `switch`/`case`/`otherwise`, `try`/`catch`, `break`, `continue`, and `return`. When branches assign different shapes to the same variable, Conformal joins them conservatively. Loops use a single pass by default, or widening-based fixed-point iteration via `--fixpoint` for guaranteed convergence in at most 2 iterations. In `--fixpoint` mode, for-loop accumulation patterns like `A = [A; delta]` and `A = [A, delta]` are detected and refined algebraically: the iteration count is extracted from the range (`(b-a)+1`), and the widened dimension is replaced with `init_dim + iter_count * delta_dim`.
+Conformal covers `if`/`elseif`/`else`, `for`, `while`, `switch`/`case`/`otherwise`, `try`/`catch`, `break`, `continue`, and `return`. When branches assign different shapes to the same variable, Conformal joins them conservatively. Loops use a single pass by default, or widening-based fixed-point iteration via `--fixpoint` for guaranteed convergence in at most 2 iterations. In `--fixpoint` mode, for-loop accumulation patterns like `A = [A; delta]` and `A = [A, delta]` are detected and refined algebraically: the iteration count is extracted from the range (`(b-a)+1`), and the widened dimension is replaced with `init_dim + iter_count * delta_dim`. Interval widening in fixpoint loops produces sound post-loop intervals, so interval-based checks remain accurate even after a fixpoint run.
+
+Switch/case bodies also benefit from interval refinement: when the switch expression is an integer variable and a case arm matches a concrete value, Conformal narrows the variable to that value inside the case body, which can eliminate false-positive dimension and bounds warnings in dispatch-style code.
 
 ### Symbolic dimensions
 
@@ -127,7 +129,7 @@ Conformal parses and tracks shapes through:
 | Literals | `[1 2; 3 4]`, `{1, 2; 3, 4}`, `'string'`, `"string"`, `1:n` |
 | Indexing | `A(i,j)`, `A(:,j)`, `A(2:5,:)`, `C{i}`, `C{i} = x` |
 | Assignment | `x = expr`, `s.field = expr`, `C{i} = expr`, `M(i,j) = expr`, `[a, b] = f(x)`, `[~, b] = f(x)`, `[s.x, s.y] = f(x)` |
-| Functions | `function y = f(x)`, `function name` (no-arg), nested `function` blocks, `@(x) expr`, `@funcName`, ~500 recognized builtins (234 with shape rules) |
+| Functions | `function y = f(x)`, `function name` (no-arg), nested `function` blocks, `@(x) expr`, `@funcName`, 635 recognized builtins (315 with shape rules) |
 | Control flow | `if`/`elseif`/`else`, `for`, `while`, `switch`/`case`, `try`/`catch` |
 | Statements | `break`, `continue`, `return` |
 | Data types | scalars, matrices, strings, structs, cell arrays, function handles |
@@ -159,13 +161,13 @@ src/                    F# analyzer (lexer, parser, shape inference, builtins, d
 vscode-conformal/       VS Code extension (TypeScript client + Fable-compiled analyzer)
   fable/                Fable compilation project (F# to JavaScript, shares src/*.fs files)
   src/                  TypeScript extension and LSP server code
-tests/                  344 self-checking MATLAB programs in 17 categories
+tests/                  354 self-checking MATLAB programs in 17 categories
 .github/                CI workflow (build, test, compile Fable, package VSIX)
 ```
 
 ## Test Suite
 
-Conformal is validated by 344 self-checking MATLAB programs organized into 17 categories. Each test embeds its expected behavior as inline assertions:
+Conformal is validated by 354 self-checking MATLAB programs organized into 17 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -173,7 +175,7 @@ Conformal is validated by 344 self-checking MATLAB programs organized into 17 ca
 % EXPECT_FIXPOINT: A = matrix[None x None]   % Override for --fixpoint mode
 ```
 
-The test runner checks that Conformal's output matches these expectations.
+The test runner checks that Conformal's output matches these expectations. In addition to the `.m` test files, the shape domain is validated by 28 property-based tests using FsCheck, covering 6 sections of the lattice (join commutativity, associativity, monotonicity, and lattice ordering for shapes and intervals). These run as part of `dotnet run -- --tests`.
 
 ---
 
@@ -302,7 +304,7 @@ Matrix literals, string literals, and concatenation constraints.
 <details>
 <summary><h3>Builtins (27 tests)</h3></summary>
 
-Shape rules for ~500 recognized MATLAB builtins (234 with shape handlers, 28 multi-return), call/index disambiguation, and dimension arithmetic.
+Shape rules for 635 recognized MATLAB builtins (315 with shape handlers), call/index disambiguation, and dimension arithmetic.
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -473,7 +475,7 @@ Nested Functions (7 tests)
 
 Conformal analyzes functions at each call site with the caller's argument shapes, and results are cached per argument shape tuple so the same function called with the same shapes isn't re-analyzed. Symbolic dimension names can propagate across function boundaries, so `f(n)` where `f = @(k) zeros(k,k)` infers `matrix[n x n]`. Lambdas capture their environment by-value at definition time, matching MATLAB semantics. When branches assign different lambdas, Conformal analyzes both bodies and joins the results at the call site.
 
-Nested functions have read access to the parent scope via scope chains, can write back to the parent workspace after returning, and can call sibling nested functions via forward references. A nested function's parameters shadow parent variables without any write-back. Variable lookup walks up the scope chain until it finds the name, so inner functions can read anything defined in any enclosing scope.
+Nested functions have read access to the parent scope via scope chains, can write back to the parent workspace after returning, and can call sibling nested functions via forward references. A nested function's parameters shadow parent variables without any write-back. Variable lookup walks up the scope chain until it finds the name, so inner functions can read anything defined in any enclosing scope. Multi-level nesting works too, so a function nested three levels deep can read variables from any enclosing level.
 
 External `.m` files are fully parsed and analyzed to infer real return shapes, with cross-file cycles (A->B->A) handled gracefully. Local functions defined inside external files are accessible during cross-file analysis.
 
@@ -535,7 +537,7 @@ Cell array literals, curly-brace indexing, element assignment, and per-element s
 | `curly_indexing_non_cell.m` | Curly indexing on non-cell value is an error | 1 |
 | `empty_matrix_promotion.m` | `x = []; x{1} = val` promotes `[]` to cell without warning (MATLAB's universal empty initializer) | 0 |
 
->Cell arrays use abstract shape `cell[r x c]` with optional per-element tracking. Literal indexing `C{i}` extracts precise element shapes when available. Dynamic indexing joins all elements conservatively. The `end` keyword resolves to the last element index and supports arithmetic (`end-1`, `end/2`).
+>Cell arrays use abstract shape `cell[r x c]` with optional per-element tracking. Literal indexing `C{i}` extracts precise element shapes when available. Dynamic indexing joins all elements conservatively. When the index variable has a known concrete value from interval analysis, Conformal can also extract the precise element shape even for variable-index reads. The `end` keyword resolves to the last element index and supports arithmetic (`end-1`, `end/2`).
 
 </details>
 
@@ -721,7 +723,7 @@ Incorrectness witness generation: concrete proofs that dimension conflict warnin
 ### Running the Tests
 
 ```bash
-# Run all 344 .m tests
+# Run all 354 .m tests
 cd src && dotnet run -- --tests
 
 # Run with fixed-point loop analysis
@@ -784,7 +786,7 @@ Conformal analyzes a subset of MATLAB. Here's what it doesn't cover:
 |----------|---------------|
 | Scope | Workspace analysis covers sibling `.m` files in the same directory. No `addpath` handling or cross-directory resolution yet. |
 | Functions | No `varargin`/`varargout`. No `eval`, `feval`, or `str2func`. Nested functions are supported (read/write parent scope, sibling calls, forward references). |
-| Builtins | ~500 builtins recognized (including Control System, Signal Processing, Aerospace, Optimization, and Mapping Toolbox functions); 234 have explicit shape rules (28 multi-return). Unrecognized calls produce a `W_UNKNOWN_FUNCTION` warning (strict-only by default). |
+| Builtins | 635 builtins recognized (including Control System, Signal Processing, Aerospace, Optimization, Mapping, Image Processing, Robotics, Statistics, Communications, Computer Vision, Deep Learning, and Symbolic Math Toolbox functions); 315 have explicit shape rules. Unrecognized calls produce a `W_UNKNOWN_FUNCTION` warning (strict-only by default). |
 | Cell arrays | Per-element tracking available for literal-indexed cells. Dynamic indexing conservatively joins all elements. |
 | Indexing | `end` keyword supported with arithmetic (`C{end}`, `C{end-1}`, `A(1:end)`, `A(end-2:end, :)`). Variable operands in `end` arithmetic fall through to conservative join. |
 | Data types | No classes, no maps, no tables, no N-D arrays (only 2-D matrices). No complex number tracking. |
