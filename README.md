@@ -7,7 +7,7 @@
 [![Version](https://img.shields.io/badge/version-2.0.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4.svg)](https://dotnet.microsoft.com/download)
-[![Tests](https://img.shields.io/badge/tests-340%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-344%20passing-brightgreen.svg)](#test-suite)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
 *Matrices must be **conformable** before they can perform. Conformal makes sure they are.*
@@ -53,7 +53,7 @@ dotnet run -- ../tests/basics/inner_dim_mismatch.m
 
 ## Performance
 
-The single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and the cross-file workspace analysis runs in about 70ms. The full test suite (340 tests total) finishes in about one second, with no MATLAB runtime involved during any part of the process.
+The single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and the cross-file workspace analysis runs in about 70ms. The full test suite (344 tests total) finishes in about one second, with no MATLAB runtime involved during any part of the process.
 
 The VS Code extension runs the analyzer while you are typing code, since it is compiled to JavaScript, using the Fable tool, so there is no subprocess startup cost and analysis works on every keystroke with a 500ms debounce.
 
@@ -77,7 +77,7 @@ Conformal supports parenthesized indexing `A(i,j)`, slice indexing `A(:,j)` and 
 
 ### Functions
 
-Over 200 MATLAB builtins are recognized (so calls to them don't produce `W_UNKNOWN_FUNCTION` warnings), and around 128 of those have explicit shape rules. First, matrix constructors like `zeros`, `ones`, `eye`, `rand`, `randn`, `true`, `false`, `nan`, and `inf` handle all three call forms: no args gives a scalar, one arg gives an n x n square, and two args give an m x n matrix. Second, shape transformations include `reshape` (with a conformability check), `repmat`, `diag`, `transpose`, `horzcat`, `vertcat`, and more specialized ones like `kron` (where `kron(A[m x n], B[p x q])` gives `matrix[(m*p) x (n*q)]`) and `blkdiag` (where `blkdiag(A[m x n], B[p x q])` gives `matrix[(m+p) x (n+q)]`). Third, element-wise math functions like `sin`, `cos`, `exp`, `log`, `sqrt`, `abs`, `ceil`, `floor`, and their relatives all pass the input shape through. Reductions like `sum`, `prod`, `mean`, `min`, `max`, and `diff` accept an optional dimension argument. Finally, type predicates like `isscalar`, `iscell`, `isempty`, and `isnumeric` return scalar, and linear algebra functions like `det`, `inv`, `norm`, and `linspace`, query functions like `size`, `length`, and `numel`, and two-argument element-wise functions like `mod`, `rem`, and `atan2` are also covered.
+Nearly 500 MATLAB builtins are recognized (so calls to them don't produce `W_UNKNOWN_FUNCTION` warnings), and around 234 of those have explicit shape rules. First, matrix constructors like `zeros`, `ones`, `eye`, `rand`, `randn`, `true`, `false`, `nan`, and `inf` handle all three call forms: no args gives a scalar, one arg gives an n x n square, and two args give an m x n matrix. Second, shape transformations include `reshape` (with a conformability check), `repmat`, `diag`, `transpose`, `horzcat`, `vertcat`, and more specialized ones like `kron` (where `kron(A[m x n], B[p x q])` gives `matrix[(m*p) x (n*q)]`) and `blkdiag` (where `blkdiag(A[m x n], B[p x q])` gives `matrix[(m+p) x (n+q)]`). Third, element-wise math functions like `sin`, `cos`, `exp`, `log`, `sqrt`, `abs`, `ceil`, `floor`, and their relatives all pass the input shape through. Reductions like `sum`, `prod`, `mean`, `min`, `max`, and `diff` accept an optional dimension argument. Finally, type predicates like `isscalar`, `iscell`, `isempty`, and `isnumeric` return scalar, and linear algebra functions like `det`, `inv`, `norm`, and `linspace`, query functions like `size`, `length`, and `numel`, and two-argument element-wise functions like `mod`, `rem`, and `atan2` are also covered.
 
 Dimension arithmetic works inside builtin arguments, so `zeros(n+1, 2*m)` is tracked symbolically.
 
@@ -127,7 +127,7 @@ Conformal parses and tracks shapes through:
 | Literals | `[1 2; 3 4]`, `{1, 2; 3, 4}`, `'string'`, `"string"`, `1:n` |
 | Indexing | `A(i,j)`, `A(:,j)`, `A(2:5,:)`, `C{i}`, `C{i} = x` |
 | Assignment | `x = expr`, `s.field = expr`, `C{i} = expr`, `M(i,j) = expr`, `[a, b] = f(x)`, `[~, b] = f(x)`, `[s.x, s.y] = f(x)` |
-| Functions | `function y = f(x)`, `function name` (no-arg), nested `function` blocks, `@(x) expr`, `@funcName`, 200+ recognized builtins (128 with shape rules) |
+| Functions | `function y = f(x)`, `function name` (no-arg), nested `function` blocks, `@(x) expr`, `@funcName`, ~500 recognized builtins (234 with shape rules) |
 | Control flow | `if`/`elseif`/`else`, `for`, `while`, `switch`/`case`, `try`/`catch` |
 | Statements | `break`, `continue`, `return` |
 | Data types | scalars, matrices, strings, structs, cell arrays, function handles |
@@ -159,13 +159,13 @@ src/                    F# analyzer (lexer, parser, shape inference, builtins, d
 vscode-conformal/       VS Code extension (TypeScript client + Fable-compiled analyzer)
   fable/                Fable compilation project (F# to JavaScript, shares src/*.fs files)
   src/                  TypeScript extension and LSP server code
-tests/                  340 self-checking MATLAB programs in 17 categories
+tests/                  344 self-checking MATLAB programs in 17 categories
 .github/                CI workflow (build, test, compile Fable, package VSIX)
 ```
 
 ## Test Suite
 
-Conformal is validated by 340 self-checking MATLAB programs organized into 17 categories. Each test embeds its expected behavior as inline assertions:
+Conformal is validated by 344 self-checking MATLAB programs organized into 17 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -300,9 +300,9 @@ Matrix literals, string literals, and concatenation constraints.
 </details>
 
 <details>
-<summary><h3>Builtins (23 tests)</h3></summary>
+<summary><h3>Builtins (27 tests)</h3></summary>
 
-Shape rules for 200+ recognized MATLAB builtins (128 with shape handlers: 121 single-return, 11 multi-return), call/index disambiguation, and dimension arithmetic.
+Shape rules for ~500 recognized MATLAB builtins (234 with shape handlers, 28 multi-return), call/index disambiguation, and dimension arithmetic.
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -329,6 +329,10 @@ Shape rules for 200+ recognized MATLAB builtins (128 with shape handlers: 121 si
 | `range_args.m` | Builtins receiving colon-range arguments like `polyval(p, 1:10)` don't crash | 0 |
 | `corpus_builtins.m` | Dogfood corpus builtins recognized without `W_UNKNOWN_FUNCTION` (NaN/Inf variants, string ops, nan-ignoring reductions, I/O ops) | 0 |
 | `expanded_builtins_2.m` | File I/O builtins (`fopen`, `fgets`, `fseek`, `ftell`, `textscan`, `fclose`) recognized without warnings | 0 |
+| `control_system_builtins.m` | Control System Toolbox: `lqr`, `dlqr`, `place`, `acker`, `care`, `dare`, `lyap`, `dlyap`, `obsv`, `ctrb` with shape rules; `ss`, `tf`, `zpk` recognized | 0 |
+| `signal_processing_builtins.m` | Signal Processing Toolbox: `filter`/`filtfilt` passthrough, `conv` symbolic length, window functions, `butter` multi-return | 0 |
+| `aerospace_builtins.m` | Aerospace Toolbox: DCM (`angle2dcm` -> 3x3), quaternion (`dcm2quat` -> 1x4, `quatmultiply`), `dcm2angle` multi-return | 0 |
+| `core_builtins_dogfood.m` | Dogfood corpus builtins: `bsxfun` broadcast, `interpft` resampling, degree trig, `rmfield`, `nchoosek` | 0 |
 
 >Dimension arithmetic uses canonical polynomial representation to track expressions like `zeros(n+m+1, 2*k)`.
 
@@ -717,7 +721,7 @@ Incorrectness witness generation: concrete proofs that dimension conflict warnin
 ### Running the Tests
 
 ```bash
-# Run all 340 .m tests
+# Run all 344 .m tests
 cd src && dotnet run -- --tests
 
 # Run with fixed-point loop analysis
@@ -780,7 +784,7 @@ Conformal analyzes a subset of MATLAB. Here's what it doesn't cover:
 |----------|---------------|
 | Scope | Workspace analysis covers sibling `.m` files in the same directory. No `addpath` handling or cross-directory resolution yet. |
 | Functions | No `varargin`/`varargout`. No `eval`, `feval`, or `str2func`. Nested functions are supported (read/write parent scope, sibling calls, forward references). |
-| Builtins | 200+ builtins recognized; 128 have explicit shape rules (121 single-return, 11 multi-return). Toolbox functions and other unrecognized calls produce a `W_UNKNOWN_FUNCTION` warning (strict-only by default). |
+| Builtins | ~500 builtins recognized (including Control System, Signal Processing, Aerospace, Optimization, and Mapping Toolbox functions); 234 have explicit shape rules (28 multi-return). Unrecognized calls produce a `W_UNKNOWN_FUNCTION` warning (strict-only by default). |
 | Cell arrays | Per-element tracking available for literal-indexed cells. Dynamic indexing conservatively joins all elements. |
 | Indexing | `end` keyword supported with arithmetic (`C{end}`, `C{end-1}`, `A(1:end)`, `A(end-2:end, :)`). Variable operands in `end` arithmetic fall through to conservative join. |
 | Data types | No classes, no maps, no tables, no N-D arrays (only 2-D matrices). No complex number tracking. |
@@ -796,4 +800,4 @@ I felt that it was very rewarding to use MATLAB as the source language for a sta
 
 ### Roadmap
 
-First, the immediate priorities are expanding builtin coverage to include common toolbox functions and propagating constraints across function boundaries. Further out, I'd like to support additional editors like Neovim, add cross-directory workspace analysis with `addpath` handling, and explore integration with MATLAB's built-in Code Analyzer.
+First, the immediate priorities are propagating constraints across function boundaries and improving the GitHub Action for CI integration. Further out, I'd like to support additional editors like Neovim, add cross-directory workspace analysis with `addpath` handling, and explore integration with MATLAB's built-in Code Analyzer.
