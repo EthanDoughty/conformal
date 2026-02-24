@@ -765,7 +765,7 @@ and private evalArgShapeHelper
     (containerShape: Shape)
     : Shape =
     evalIndexArgToShape arg env warnings ctx (Some containerShape)
-        (fun e en w c _ -> wiredEvalExprFull e en w c)
+        (fun e en w c cs -> evalExprIr e en w c cs wiredBuiltinDispatch)
 
 and private analyzeCellAssignArgs
     (baseName: string)
