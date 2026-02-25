@@ -257,20 +257,21 @@ let private refineAccumulation
                     else
                         match initShape, deltaShape, currentShape with
                         | Matrix(initRows, initCols), Matrix(deltaRows_, deltaCols), Matrix(curRows, curCols) ->
+                            let isImprecise (d: Dim) = match d with Unknown | Range _ -> true | _ -> false
                             let refinedShapeOpt =
                                 if accum.axis = Vert then
                                     if deltaRows_ = Unknown then None
                                     else
                                         let totalAdded = mulDim iterCount deltaRows_
                                         let refinedRows = addDim initRows totalAdded
-                                        if curRows = Unknown then Some (Matrix(refinedRows, initCols))
+                                        if isImprecise curRows then Some (Matrix(refinedRows, initCols))
                                         else None
                                 else // Horz
                                     if deltaCols = Unknown then None
                                     else
                                         let totalAdded = mulDim iterCount deltaCols
                                         let refinedCols = addDim initCols totalAdded
-                                        if curCols = Unknown then Some (Matrix(initRows, refinedCols))
+                                        if isImprecise curCols then Some (Matrix(initRows, refinedCols))
                                         else None
                             match refinedShapeOpt with
                             | None -> ()
@@ -632,11 +633,11 @@ and analyzeStmtIr
                 let loBound =
                     match loConst with
                     | Some v -> Finite v
-                    | None -> match loDim with Concrete n -> Finite n | Symbolic s -> SymBound s | Unknown -> Unbounded
+                    | None -> match loDim with Concrete n -> Finite n | Symbolic s -> SymBound s | Range _ -> Unbounded | Unknown -> Unbounded
                 let hiBound =
                     match hiConst with
                     | Some v -> Finite v
-                    | None -> match hiDim with Concrete n -> Finite n | Symbolic s -> SymBound s | Unknown -> Unbounded
+                    | None -> match hiDim with Concrete n -> Finite n | Symbolic s -> SymBound s | Range _ -> Unbounded | Unknown -> Unbounded
                 ctx.cst.valueRanges.[var_] <- { lo = loBound; hi = hiBound }
         | _ -> ()
 

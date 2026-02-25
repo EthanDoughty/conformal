@@ -104,7 +104,8 @@ let getConcreteDimSize (dim: Dim) (ctx: AnalysisContext) : int option =
                 | _ -> None
             | false, _ -> None
         | _ -> None
-    | Unknown -> None
+    | Range _  -> None   // Range dim has no single concrete value
+    | Unknown  -> None
 
 
 
@@ -131,7 +132,7 @@ let evalIndexArgToShape
     : Shape =
     match arg with
     | IndexExpr(_, expr) -> evalFn expr env warnings ctx containerShape
-    | Range(_, startExpr, endExpr) ->
+    | Ir.Range(_, startExpr, endExpr) ->
         // Evaluate start/end for side effects
         evalFn startExpr env warnings ctx containerShape |> ignore
         evalFn endExpr   env warnings ctx containerShape |> ignore
@@ -153,7 +154,7 @@ let indexArgToExtentIr
     match arg with
     | Colon _ -> Unknown
 
-    | Range(_, startExpr, endExpr) ->
+    | Ir.Range(_, startExpr, endExpr) ->
         let startShape = evalFn startExpr env warnings ctx containerShape
         let endShape   = evalFn endExpr   env warnings ctx containerShape
 
@@ -315,7 +316,7 @@ let rec evalExprIr
                             | _ -> joinAllElements elemMap
                         | _ -> joinAllElements elemMap
                     | Colon _ -> joinAllElements elemMap
-                    | Range _ ->
+                    | Ir.Range _ ->
                         evalIndexArgToShape arg env warnings ctx (Some baseShape) (fun e en w c cs -> evalExprIr e en w c cs builtinDispatch)
                         |> ignore
                         joinAllElements elemMap
@@ -518,7 +519,7 @@ and private evalHandleCall
         let argShapes =
             args |> List.map (fun arg ->
                 match arg with
-                | Colon _ | Range _ -> UnknownShape
+                | Colon _ | Ir.Range _ -> UnknownShape
                 | IndexExpr(_, e) -> evalExprIr e env warnings ctx None builtinDispatch)
 
         let results = System.Collections.Generic.List<Shape>()
@@ -691,7 +692,7 @@ and private evalIndexing
 
             let isAllowedUnknown (a: IndexArg) =
                 match a with
-                | Colon _ | Range _ -> true
+                | Colon _ | Ir.Range _ -> true
                 | IndexExpr(_, MatrixLit _) -> true
                 | _ -> false
 

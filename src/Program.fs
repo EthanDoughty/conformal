@@ -54,11 +54,11 @@ let runShapesTest () : int =
     check "n+m"       "m+n"    (SymDim.toString (SymDim.add n m))
 
     Console.WriteLine("=== Dim join/widen tests ===")
-    let dimToStr d = match d with Concrete n -> "Concrete " + string n | Symbolic _ -> "Symbolic" | Unknown -> "Unknown"
+    let dimToStr d = match d with Concrete n -> "Concrete " + string n | Symbolic _ -> "Symbolic" | Range _ -> "Range" | Unknown -> "Unknown"
     check "joinDim 3 3"     "Concrete 3" (dimToStr (joinDim (Concrete 3) (Concrete 3)))
     check "joinDim 3 4"     "Unknown"    (dimToStr (joinDim (Concrete 3) (Concrete 4)))
     check "widenDim 3 3"    "Concrete 3" (dimToStr (widenDim (Concrete 3) (Concrete 3)))
-    check "widenDim 3 4"    "Unknown"    (dimToStr (widenDim (Concrete 3) (Concrete 4)))
+    check "widenDim 3 4"    "Range"      (dimToStr (widenDim (Concrete 3) (Concrete 4)))
     check "addDim 3 4"      "Concrete 7" (dimToStr (addDim (Concrete 3) (Concrete 4)))
 
     Console.WriteLine("=== Env tests ===")
@@ -249,11 +249,11 @@ let runPhase3Test () : int =
 
     let dim5 = DimExtract.exprToDimIr constExpr5 env0
     check "exprToDimIr Const(5)" "Concrete 5"
-        (match dim5 with Concrete n -> "Concrete " + string n | Symbolic _ -> "Symbolic" | Unknown -> "Unknown")
+        (match dim5 with Concrete n -> "Concrete " + string n | Symbolic _ -> "Symbolic" | Range _ -> "Range" | Unknown -> "Unknown")
 
     let dimN = DimExtract.exprToDimIr varNExpr env0
     check "exprToDimIr Var(n)" "Symbolic n"
-        (match dimN with Concrete n -> "Concrete " + string n | Symbolic s -> "Symbolic " + SymDim.toString s | Unknown -> "Unknown")
+        (match dimN with Concrete n -> "Concrete " + string n | Symbolic s -> "Symbolic " + SymDim.toString s | Range _ -> "Range" | Unknown -> "Unknown")
 
     Console.WriteLine("=== Phase 3: Interval arithmetic ===")
     let iv13 = Some { lo = Finite 1; hi = Finite 3 }

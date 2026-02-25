@@ -26,6 +26,7 @@ let private evalDim (d: Dim) (bindings: Map<string, int>) : int option =
     match d with
     | Concrete n -> Some n
     | Unknown    -> None
+    | Range _    -> None   // Can't evaluate a range to a point; bail out conservatively
     | Symbolic s ->
         // Evaluate SymDim by substituting bindings (signature: evaluate bindings s)
         SymDim.evaluate bindings s
@@ -43,6 +44,7 @@ let private collectRelevantVars (site: ConflictSite) : Set<string> =
     let getVars (d: Dim) : Set<string> =
         match d with
         | Symbolic s -> Set.ofSeq (SymDim.variables s)
+        | Range _    -> Set.empty   // Range dims don't participate in witness enumeration
         | _ -> Set.empty
     Set.union (getVars site.dimA) (getVars site.dimB)
 
@@ -184,6 +186,10 @@ let attemptWitness (site: ConflictSite) : Witness option =
 
     if dimA = Unknown || dimB = Unknown then None
     else
+    // Range dims: can't evaluate to a point for witness verification
+    match dimA, dimB with
+    | Range _, _ | _, Range _ -> None
+    | _ ->
 
     // Bail on quadratic+ terms
     let maxDegree (d: Dim) =
