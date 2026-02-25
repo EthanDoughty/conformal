@@ -80,6 +80,33 @@ let rec private exprMentionsVar (expr: Expr) (varName: string) : bool =
             match arg with IndexExpr(_, e) -> exprMentionsVar e varName | _ -> false)
 
 
+/// exprMentionsFieldAccess: check if an expression mentions a specific struct field access.
+let rec private exprMentionsFieldAccess (expr: Expr) (baseName: string) (fieldName: string) : bool =
+    match expr with
+    | FieldAccess(_, Var(_, bn), fn) -> bn = baseName && fn = fieldName
+    | Var _ | Const _ | StringLit _ | End _ -> false
+    | Neg(_, op)       -> exprMentionsFieldAccess op baseName fieldName
+    | Not(_, op)       -> exprMentionsFieldAccess op baseName fieldName
+    | Transpose(_, op) -> exprMentionsFieldAccess op baseName fieldName
+    | BinOp(_, _, l, r) ->
+        exprMentionsFieldAccess l baseName fieldName ||
+        exprMentionsFieldAccess r baseName fieldName
+    | FieldAccess(_, b, _) -> exprMentionsFieldAccess b baseName fieldName
+    | Lambda _ | FuncHandle _ -> false
+    | MatrixLit(_, rows) ->
+        rows |> List.exists (fun row -> row |> List.exists (fun e -> exprMentionsFieldAccess e baseName fieldName))
+    | CellLit(_, rows) ->
+        rows |> List.exists (fun row -> row |> List.exists (fun e -> exprMentionsFieldAccess e baseName fieldName))
+    | Apply(_, bexpr, iargs) ->
+        exprMentionsFieldAccess bexpr baseName fieldName ||
+        iargs |> List.exists (fun arg ->
+            match arg with IndexExpr(_, e) -> exprMentionsFieldAccess e baseName fieldName | _ -> false)
+    | CurlyApply(_, bexpr, iargs) ->
+        exprMentionsFieldAccess bexpr baseName fieldName ||
+        iargs |> List.exists (fun arg ->
+            match arg with IndexExpr(_, e) -> exprMentionsFieldAccess e baseName fieldName | _ -> false)
+
+
 /// detectAccumulation: detect accumulation patterns in a loop body.
 let private detectAccumulation (loopVar: string) (body: Stmt list) : AccumPattern list =
     let candidates = System.Collections.Generic.Dictionary<string, AccumPattern option>()
@@ -119,6 +146,37 @@ let private detectAccumulation (loopVar: string) (body: Stmt list) : AccumPatter
                                 deltaExprs = deltaExprs; line = stmtLine; loopVar = loopVar
                             }
                         | _ -> ()
+
+        | StructAssign({ line = stmtLine }, baseName, [fieldName], MatrixLit(_, rows)) ->
+            // Struct field accumulation: s.field = [s.field; row] or s.field = [s.field, col]
+            let key = baseName + "." + fieldName
+            let mutable count = 0
+            for row in rows do
+                for elem in row do
+                    if exprMentionsFieldAccess elem baseName fieldName then
+                        count <- count + 1
+
+            if count = 1 then
+                if candidates.ContainsKey(key) then
+                    candidates.[key] <- None
+                else
+                    if rows.Length >= 2 then
+                        match rows.[0] with
+                        | [ singleElem ] when exprMentionsFieldAccess singleElem baseName fieldName ->
+                            let deltaExprs = rows |> List.tail
+                            candidates.[key] <- Some {
+                                varName = key; axis = Vert
+                                deltaExprs = deltaExprs; line = stmtLine; loopVar = loopVar
+                            }
+                        | _ -> ()
+                    elif rows.Length = 1 && rows.[0].Length >= 2 then
+                        if exprMentionsFieldAccess rows.[0].[0] baseName fieldName then
+                            let deltaExprs = [ rows.[0] |> List.tail ]
+                            candidates.[key] <- Some {
+                                varName = key; axis = Horz
+                                deltaExprs = deltaExprs; line = stmtLine; loopVar = loopVar
+                            }
+
         | _ -> ()
 
     candidates.Values
@@ -126,7 +184,25 @@ let private detectAccumulation (loopVar: string) (body: Stmt list) : AccumPatter
     |> Seq.toList
 
 
+/// getStructField: extract the shape of a named field from a Struct shape. Returns Bottom if missing.
+let private getStructField (structShape: Shape) (fieldName: string) : Shape =
+    match structShape with
+    | Struct(fields, _) ->
+        fields |> List.tryFind (fun (fn, _) -> fn = fieldName) |> Option.map snd |> Option.defaultValue Bottom
+    | _ -> Bottom
+
+/// setStructField: return a new Struct shape with a specific field updated.
+let private setStructField (structShape: Shape) (fieldName: string) (fieldShape: Shape) : Shape =
+    match structShape with
+    | Struct(fields, isOpen) ->
+        let fmap = Map.ofList fields
+        let newMap = Map.add fieldName fieldShape fmap
+        Struct(newMap |> Map.toList, isOpen)
+    | _ -> structShape  // Can't update field on non-struct; return unchanged
+
+
 /// refineAccumulation: refine accumulation variable shape using algebraic computation.
+/// Handles plain variables and dot-separated struct fields (baseName.fieldName).
 let private refineAccumulation
     (accum: AccumPattern)
     (iterCount: Dim)
@@ -138,17 +214,37 @@ let private refineAccumulation
     : unit =
     if iterCount = Unknown then ()
     else
-        let initShape = Env.get preLoopEnv accum.varName
+        // Determine whether this is a struct field accumulation (varName contains ".")
+        let dotIdx = accum.varName.IndexOf('.')
+        let isStructField = dotIdx > 0 && dotIdx < accum.varName.Length - 1
+
+        let initShape, currentShape =
+            if isStructField then
+                let baseName  = accum.varName.[..dotIdx - 1]
+                let fieldName = accum.varName.[dotIdx + 1..]
+                getStructField (Env.get preLoopEnv  baseName) fieldName,
+                getStructField (Env.get postLoopEnv baseName) fieldName
+            else
+                Env.get preLoopEnv  accum.varName,
+                Env.get postLoopEnv accum.varName
+
         if not (isMatrix initShape) || isUnknown initShape || isBottom initShape then ()
         else
-            let currentShape = Env.get postLoopEnv accum.varName
             if not (isMatrix currentShape) then ()
             else
-                // Check for self-reference in delta expressions
+                // Self-reference check: for struct fields, check for FieldAccess mentions
                 let selfRef =
-                    accum.deltaExprs |> List.exists (fun row ->
-                        row |> List.exists (fun elem ->
-                            exprMentionsVar elem accum.varName || exprMentionsVar elem accum.loopVar))
+                    if isStructField then
+                        let baseName  = accum.varName.[..dotIdx - 1]
+                        let fieldName = accum.varName.[dotIdx + 1..]
+                        accum.deltaExprs |> List.exists (fun row ->
+                            row |> List.exists (fun elem ->
+                                exprMentionsFieldAccess elem baseName fieldName ||
+                                exprMentionsVar elem accum.loopVar))
+                    else
+                        accum.deltaExprs |> List.exists (fun row ->
+                            row |> List.exists (fun elem ->
+                                exprMentionsVar elem accum.varName || exprMentionsVar elem accum.loopVar))
                 if selfRef then ()
                 else
                     let deltaWarnings = ResizeArray<Diagnostic>()
@@ -161,20 +257,32 @@ let private refineAccumulation
                     else
                         match initShape, deltaShape, currentShape with
                         | Matrix(initRows, initCols), Matrix(deltaRows_, deltaCols), Matrix(curRows, curCols) ->
-                            if accum.axis = Vert then
-                                if deltaRows_ = Unknown then ()
+                            let refinedShapeOpt =
+                                if accum.axis = Vert then
+                                    if deltaRows_ = Unknown then None
+                                    else
+                                        let totalAdded = mulDim iterCount deltaRows_
+                                        let refinedRows = addDim initRows totalAdded
+                                        if curRows = Unknown then Some (Matrix(refinedRows, initCols))
+                                        else None
+                                else // Horz
+                                    if deltaCols = Unknown then None
+                                    else
+                                        let totalAdded = mulDim iterCount deltaCols
+                                        let refinedCols = addDim initCols totalAdded
+                                        if curCols = Unknown then Some (Matrix(initRows, refinedCols))
+                                        else None
+                            match refinedShapeOpt with
+                            | None -> ()
+                            | Some refinedShape ->
+                                if isStructField then
+                                    let baseName  = accum.varName.[..dotIdx - 1]
+                                    let fieldName = accum.varName.[dotIdx + 1..]
+                                    let baseStruct = Env.get postLoopEnv baseName
+                                    let updatedStruct = setStructField baseStruct fieldName refinedShape
+                                    Env.set postLoopEnv baseName updatedStruct
                                 else
-                                    let totalAdded = mulDim iterCount deltaRows_
-                                    let refinedRows = addDim initRows totalAdded
-                                    if curRows = Unknown then
-                                        Env.set postLoopEnv accum.varName (Matrix(refinedRows, initCols))
-                            else // Horz
-                                if deltaCols = Unknown then ()
-                                else
-                                    let totalAdded = mulDim iterCount deltaCols
-                                    let refinedCols = addDim initCols totalAdded
-                                    if curCols = Unknown then
-                                        Env.set postLoopEnv accum.varName (Matrix(initRows, refinedCols))
+                                    Env.set postLoopEnv accum.varName refinedShape
                         | _ -> ()
 
 
