@@ -79,22 +79,100 @@ and exprToDimIrCtx (expr: Expr) (env: Env) (ctx: Context.AnalysisContext option)
     | _ -> Unknown
 
 
+/// tryExtractIntLiteral: extract a concrete integer from an expression.
+/// Handles Const and Neg(Const) to support negative step literals like -3 in a:(-3):b.
+let private tryExtractIntLiteral (expr: Expr) : int option =
+    match expr with
+    | Const(_, v) when v = System.Math.Floor(v) && not (System.Double.IsInfinity v) -> Some (int v)
+    | Neg(_, Const(_, v)) when v = System.Math.Floor(v) && not (System.Double.IsInfinity v) -> Some (-(int v))
+    | _ -> None
+
+
 /// extractIterationCount: extract iteration count from a for-loop iterator expression.
-/// Handles BinOp(":", start, end) -> (end - start) + 1.
-/// Returns Unknown for stepped ranges, non-range iterators, or unresolvable.
+///
+/// Handles three structural forms (as emitted by MatlabParser):
+///
+///  1. Non-stepped:    BinOp(":", a, b)
+///     Count = (b - a) + 1; symbolic ok.
+///
+///  2. Positive step (parenthesized):  BinOp(":", BinOp(":", a, step), b)
+///     where step > 0.
+///     Count = floor((b-a)/step)+1 for concrete a,b; Unknown for symbolic.
+///
+///  3. Negative step (unparenthesized):  BinOp(":", a, Neg(BinOp(":", s, b)))
+///     Parser produces this form for `a:-s:b` (e.g. 10:-3:1 -> BinOp(":", 10, Neg(BinOp(":", 3, 1)))).
+///     Effective step = -s (negative), count = floor((a-b)/s)+1 for concrete a,b.
+///
+/// Returns Unknown for non-range iterators, symbolic steps, or unresolvable.
 let extractIterationCount (itExpr: Expr) (env: Env) (ctx: Context.AnalysisContext option) : Dim =
     match itExpr with
     | BinOp(_, ":", left, right) ->
-        // Stepped range: BinOp(":", BinOp(":", start, step), end)
-        match left with
-        | BinOp(_, ":", _, _) -> Unknown  // stepped range
-        | _ ->
-            let a = exprToDimIrCtx left env ctx
-            let b = exprToDimIrCtx right env ctx
+        match left, right with
+        // Form 2: a:step:b (parenthesized positive or explicit step)
+        // BinOp(":", BinOp(":", a, step), b)
+        | BinOp(_, ":", startExpr, stepExpr), bExpr ->
+            let stepInt = tryExtractIntLiteral stepExpr
+            let a = exprToDimIrCtx startExpr env ctx
+            let b = exprToDimIrCtx bExpr      env ctx
+            match stepInt with
+            | Some 1 ->
+                match a, b with
+                | Unknown, _ | _, Unknown -> Unknown
+                | Concrete a', Concrete b' -> Concrete (max 0 ((b' - a') + 1))
+                | _ -> addDim (subDim b a) (Concrete 1)
+            | Some -1 ->
+                match a, b with
+                | Unknown, _ | _, Unknown -> Unknown
+                | Concrete a', Concrete b' -> Concrete (max 0 ((a' - b') + 1))
+                | _ -> addDim (subDim a b) (Concrete 1)
+            | Some step' when step' > 0 ->
+                match a, b with
+                | Concrete a', Concrete b' ->
+                    let dividend = b' - a'
+                    if dividend < 0 then Concrete 0
+                    else Concrete (dividend / step' + 1)
+                | _ -> Unknown
+            | Some step' when step' < 0 ->
+                match a, b with
+                | Concrete a', Concrete b' ->
+                    let dividend = a' - b'
+                    if dividend < 0 then Concrete 0
+                    else Concrete (dividend / (-step') + 1)
+                | _ -> Unknown
+            | _ -> Unknown
+
+        // Form 3: a:-s:b (unparenthesized negative step)
+        // Parser produces BinOp(":", a, Neg(BinOp(":", s, b)))
+        // because -s:b is parsed as Neg(BinOp(":", s, b))
+        | aExpr, Neg(_, BinOp(_, ":", stepExpr, bExpr)) ->
+            let stepInt = tryExtractIntLiteral stepExpr
+            let a = exprToDimIrCtx aExpr env ctx
+            let b = exprToDimIrCtx bExpr  env ctx
+            match stepInt with
+            | Some 1 ->
+                // Effective step=-1: count = (a-b)+1
+                match a, b with
+                | Unknown, _ | _, Unknown -> Unknown
+                | Concrete a', Concrete b' -> Concrete (max 0 ((a' - b') + 1))
+                | _ -> addDim (subDim a b) (Concrete 1)
+            | Some s when s > 0 ->
+                // Effective step=-s: count = floor((a-b)/s)+1
+                match a, b with
+                | Concrete a', Concrete b' ->
+                    let dividend = a' - b'
+                    if dividend < 0 then Concrete 0
+                    else Concrete (dividend / s + 1)
+                | _ -> Unknown
+            | _ -> Unknown
+
+        // Form 1: non-stepped a:b
+        | aExpr, bExpr ->
+            let a = exprToDimIrCtx aExpr env ctx
+            let b = exprToDimIrCtx bExpr env ctx
             match a, b with
             | Unknown, _ | _, Unknown -> Unknown
             | Concrete a', Concrete b' -> Concrete (max 0 ((b' - a') + 1))
-            | _ -> addDim (subDim b a) (Concrete 1)  // (b - a) + 1
+            | _ -> addDim (subDim b a) (Concrete 1)
     | _ -> Unknown
 
 
