@@ -3,12 +3,25 @@ module Shapes
 open SymDim
 
 // ---------------------------------------------------------------------------
-// Dim: abstract dimension (concrete int, symbolic SymDim, or unknown)
+// DimBound: flat constituent of Range (no nesting)
+// BConcrete: exact integer bound
+// BSymbolic: symbolic bound
+// BUnknown: represents +infinity (hi) or 0 (lo), i.e. "don't know"
+// ---------------------------------------------------------------------------
+
+type DimBound =
+    | BConcrete of int
+    | BSymbolic of SymDim
+    | BUnknown
+
+// ---------------------------------------------------------------------------
+// Dim: abstract dimension (concrete int, symbolic SymDim, range interval, or unknown)
 // ---------------------------------------------------------------------------
 
 type Dim =
     | Concrete of int
     | Symbolic of SymDim
+    | Range    of lo: DimBound * hi: DimBound   // lo <= hi semantically
     | Unknown
 
 // ---------------------------------------------------------------------------
@@ -26,6 +39,69 @@ type Shape =
     | Bottom
 
 // ---------------------------------------------------------------------------
+// DimBound helpers
+// ---------------------------------------------------------------------------
+
+/// minBound: minimum of two DimBounds (for lo of hull).
+/// BUnknown as lo represents 0 (minimum possible dim).
+let private minBound (a: DimBound) (b: DimBound) : DimBound =
+    match a, b with
+    | BConcrete x, BConcrete y -> BConcrete (min x y)
+    | BUnknown, _ -> BUnknown   // BUnknown as lo = 0 (the smallest possible)
+    | _, BUnknown -> BUnknown
+    | _ -> BUnknown  // can't compare symbolic: conservative
+
+/// maxBound: maximum of two DimBounds (for hi of hull).
+/// BUnknown as hi represents +infinity.
+let private maxBound (a: DimBound) (b: DimBound) : DimBound =
+    match a, b with
+    | BConcrete x, BConcrete y -> BConcrete (max x y)
+    | BUnknown, _ -> BUnknown   // BUnknown as hi = +infinity
+    | _, BUnknown -> BUnknown
+    | _ -> BUnknown  // can't compare symbolic: conservative
+
+/// addBound: add two DimBounds (for interval arithmetic).
+let addBound (a: DimBound) (b: DimBound) : DimBound =
+    match a, b with
+    | BConcrete x, BConcrete y -> BConcrete (x + y)
+    | BUnknown, _ | _, BUnknown -> BUnknown
+    | BSymbolic s, BConcrete n -> BSymbolic (SymDim.add s (SymDim.const' n))
+    | BConcrete n, BSymbolic s -> BSymbolic (SymDim.add (SymDim.const' n) s)
+    | BSymbolic a, BSymbolic b -> BSymbolic (SymDim.add a b)
+
+/// dimToBounds: extract (lo, hi) DimBound pair from any Dim.
+let dimToBounds (d: Dim) : DimBound * DimBound =
+    match d with
+    | Concrete n  -> (BConcrete n, BConcrete n)
+    | Symbolic s  -> (BSymbolic s, BSymbolic s)
+    | Range(lo, hi) -> (lo, hi)
+    | Unknown     -> (BUnknown, BUnknown)
+
+/// canonicalizeDim: normalize degenerate Range cases.
+let canonicalizeDim (d: Dim) : Dim =
+    match d with
+    | Range(BConcrete a, BConcrete b) when a = b  -> Concrete a
+    | Range(BSymbolic a, BSymbolic b) when a = b  -> Symbolic a
+    | Range(BUnknown, BUnknown)                    -> Unknown
+    | Range(BConcrete a, BConcrete b) when a > b  -> Unknown   // empty interval
+    | Range(BConcrete a, _) when a < 0            ->
+        // Clamp lo to 0 (MATLAB dims are non-negative)
+        Range(BConcrete 0, snd (dimToBounds d))
+    | _ -> d
+
+/// boundsDisjoint: check if intervals [alo, ahi] and [blo, bhi] are provably non-overlapping.
+/// Only provable when both sides have concrete bounds.
+let private boundsDisjoint (alo: DimBound) (ahi: DimBound) (blo: DimBound) (bhi: DimBound) : bool =
+    match alo, ahi, blo, bhi with
+    | BConcrete al, BConcrete ah, BConcrete bl, BConcrete bh ->
+        ah < bl || bh < al   // disjoint: a ends before b starts, or vice versa
+    | _ -> false   // symbolic/unknown: can't prove disjoint
+
+/// extendRange: extend range [lo, hi] to include a new point bound.
+let private extendRange (lo: DimBound) (hi: DimBound) (pt: DimBound) : Dim =
+    canonicalizeDim (Range(minBound lo pt, maxBound hi pt))
+
+// ---------------------------------------------------------------------------
 // Dimension helpers
 // ---------------------------------------------------------------------------
 
@@ -33,6 +109,7 @@ let private toSymDim (d: Dim) : SymDim =
     match d with
     | Concrete n -> SymDim.const' n
     | Symbolic s -> s
+    | Range _    -> failwith "Cannot convert Range Dim to SymDim"
     | Unknown    -> failwith "Cannot convert Unknown Dim to SymDim"
 
 // Format a Dim for display in shape strings.
@@ -42,6 +119,7 @@ let private toSymDim (d: Dim) : SymDim =
 //   SymDim constant -> display as int
 //   SymDim bare variable (single term, coeff 1, single var exp 1) -> bare name
 //   SymDim expression -> "(expr)"
+//   Range -> "lo..hi" with BUnknown displayed as empty string on that side
 let dimStr (d: Dim) : string =
     match d with
     | Unknown    -> "None"
@@ -56,6 +134,18 @@ let dimStr (d: Dim) : string =
                 fst (List.head (fst s._terms.[0]))
             | _ ->
                 "(" + SymDim.toString s + ")"
+    | Range(lo, hi) ->
+        let loStr =
+            match lo with
+            | BConcrete n -> string n
+            | BSymbolic s -> "(" + SymDim.toString s + ")"
+            | BUnknown    -> ""
+        let hiStr =
+            match hi with
+            | BConcrete n -> string n
+            | BSymbolic s -> "(" + SymDim.toString s + ")"
+            | BUnknown    -> ""
+        loStr + ".." + hiStr
 
 // ---------------------------------------------------------------------------
 // Shape -> string (must be character-identical to Python __str__)
@@ -85,20 +175,60 @@ let rec shapeToString (s: Shape) : string =
 // Dimension lattice operations
 // ---------------------------------------------------------------------------
 
-// join_dim: same -> same; anything with Unknown -> Unknown; different -> Unknown
+// join_dim: same -> same; Range + anything -> convex hull; different non-Range -> Unknown
+// IMPORTANT: joinDim is Range-PRESERVING but NOT Range-CREATING.
+// Two non-Range values that differ still produce Unknown (unchanged behavior).
 let joinDim (a: Dim) (b: Dim) : Dim =
     if a = b then a
-    else Unknown
+    else
+        match a, b with
+        // Range-Range: convex hull
+        | Range(alo, ahi), Range(blo, bhi) ->
+            canonicalizeDim (Range(minBound alo blo, maxBound ahi bhi))
+        // Range-Point or Point-Range: embed point, then hull
+        | Range(lo, hi), other | other, Range(lo, hi) ->
+            let (olo, ohi) = dimToBounds other
+            canonicalizeDim (Range(minBound lo olo, maxBound hi ohi))
+        // Two non-Range values that differ: Unknown (NOT Range — unchanged behavior)
+        | _ -> Unknown
 
-// widen_dim: same -> same; different -> Unknown
+// widen_dim: same -> same; different -> Unknown (Phase 1: no Range creation yet)
+// Phase 3 will change this to produce Ranges.
 let widenDim (old: Dim) (newDim: Dim) : Dim =
     if old = newDim then old
-    else Unknown
+    else
+        match old, newDim with
+        // Point -> Point: create Range (Phase 3 activation)
+        | Concrete a, Concrete b -> canonicalizeDim (Range(BConcrete (min a b), BConcrete (max a b)))
+        | Concrete a, Symbolic s -> Range(BConcrete a, BSymbolic s)  // assume symbolic >= concrete
+        | Symbolic s, Concrete a -> Range(BConcrete a, BSymbolic s)
+        // Point -> Unknown: open-ended range
+        | Concrete a, Unknown -> Range(BConcrete a, BUnknown)
+        | Symbolic s, Unknown -> Range(BSymbolic s, BUnknown)
+        // Range -> Point: extend bounds
+        | Range(lo, hi), Concrete n -> extendRange lo hi (BConcrete n)
+        | Range(lo, hi), Symbolic s -> extendRange lo hi (BSymbolic s)
+        // Range -> Unknown: open-ended
+        | Range(lo, _), Unknown -> canonicalizeDim (Range(lo, BUnknown))
+        // Range -> Range: hull
+        | Range(lo1, hi1), Range(lo2, hi2) -> canonicalizeDim (Range(minBound lo1 lo2, maxBound hi1 hi2))
+        // Point -> Range: incorporate point into the range (post-loop join: preLoop is point, stabilized is Range)
+        | Concrete a, Range(lo, hi) -> extendRange lo hi (BConcrete a)
+        | Symbolic s, Range(lo, hi) -> extendRange lo hi (BSymbolic s)
+        // Unknown old -> Unknown (can't narrow after going to top)
+        | Unknown, _ -> Unknown
+        // Symbolic -> Symbolic (different): conservative
+        | _ -> Unknown
 
-// dims_definitely_conflict: both known and provably different
+// dims_definitely_conflict: both known and provably different (or disjoint ranges)
 let dimsDefinitelyConflict (a: Dim) (b: Dim) : bool =
     match a, b with
     | Unknown, _ | _, Unknown -> false
+    | Range _, _ | _, Range _ ->
+        // Range vs anything: check if intervals are provably disjoint
+        let (alo, ahi) = dimToBounds a
+        let (blo, bhi) = dimToBounds b
+        boundsDisjoint alo ahi blo bhi
     | _ when a = b -> false
     | Concrete ia, Concrete ib -> ia <> ib
     | _ ->
@@ -112,10 +242,16 @@ let dimsDefinitelyConflict (a: Dim) (b: Dim) : bool =
             | _ -> false
         with _ -> false
 
-// add_dim: symbolic addition (None propagates)
+// add_dim: symbolic addition (Unknown propagates); Range gets interval arithmetic
 let addDim (a: Dim) (b: Dim) : Dim =
     match a, b with
     | Unknown, _ | _, Unknown -> Unknown
+    | Range(alo, ahi), _ ->
+        let blo, bhi = dimToBounds b
+        canonicalizeDim (Range(addBound alo blo, addBound ahi bhi))
+    | _, Range(blo, bhi) ->
+        let alo, ahi = dimToBounds a
+        canonicalizeDim (Range(addBound alo blo, addBound ahi bhi))
     | Concrete ia, Concrete ib -> Concrete (ia + ib)
     | _ ->
         let sa = toSymDim a
@@ -125,7 +261,7 @@ let addDim (a: Dim) (b: Dim) : Dim =
         | Some cv -> Concrete cv
         | None    -> Symbolic result
 
-// mul_dim: symbolic multiplication with short-circuits
+// mul_dim: symbolic multiplication with short-circuits; Range gets interval arithmetic
 let mulDim (a: Dim) (b: Dim) : Dim =
     // Short-circuit: 0 * x = 0
     if a = Concrete 0 || b = Concrete 0 then Concrete 0
@@ -135,6 +271,27 @@ let mulDim (a: Dim) (b: Dim) : Dim =
     else
         match a, b with
         | Unknown, _ | _, Unknown -> Unknown
+        | Range(alo, ahi), Range(blo, bhi) ->
+            // 4-corner interval multiplication (non-negative dims: min of corners = lo*lo, max = hi*hi)
+            match alo, ahi, blo, bhi with
+            | BConcrete al, BConcrete ah, BConcrete bl, BConcrete bh ->
+                let corners = [ al*bl; al*bh; ah*bl; ah*bh ]
+                canonicalizeDim (Range(BConcrete (List.min corners), BConcrete (List.max corners)))
+            | _ -> Unknown   // symbolic bounds in mul: conservative
+        | Range(alo, ahi), Concrete n ->
+            // Range * concrete scalar
+            let blo, bhi = BConcrete n, BConcrete n
+            match alo, ahi with
+            | BConcrete al, BConcrete ah ->
+                let corners = [ al*n; ah*n ]
+                canonicalizeDim (Range(BConcrete (List.min corners), BConcrete (List.max corners)))
+            | _ -> Unknown
+        | Concrete n, Range(blo, bhi) ->
+            match blo, bhi with
+            | BConcrete bl, BConcrete bh ->
+                let corners = [ n*bl; n*bh ]
+                canonicalizeDim (Range(BConcrete (List.min corners), BConcrete (List.max corners)))
+            | _ -> Unknown
         | Concrete ia, Concrete ib -> Concrete (ia * ib)
         | _ ->
             let sa = toSymDim a

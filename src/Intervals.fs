@@ -307,7 +307,8 @@ let negateComparisonOp (op: string) : string =
 /// Uses Shapes.addDim for bound arithmetic.
 let intervalFromComparison (op: string) (bound: Shapes.Dim) : Interval option =
     match bound with
-    | Shapes.Unknown -> None
+    | Shapes.Unknown  -> None
+    | Shapes.Range _  -> None   // Range bound: too imprecise to refine intervals
     | Shapes.Concrete c ->
         match op with
         | ">"  -> Some { lo = Finite (c + 1); hi = Unbounded }

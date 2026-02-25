@@ -182,7 +182,7 @@ let extractIterationCount (itExpr: Expr) (env: Env) (ctx: Context.AnalysisContex
 let indexArgToExtentIr (arg: Ir.IndexArg) (env: Env) : Dim =
     match arg with
     | Colon _ -> Unknown
-    | Range(_, startExpr, endExpr) ->
+    | Ir.Range(_, startExpr, endExpr) ->
         let a = exprToDimIr startExpr env
         let b = exprToDimIr endExpr env
         match a, b with

@@ -96,9 +96,9 @@ let rec prettyExprIr (expr: Expr) : string =
 
 and prettyIndexArgIr (arg: IndexArg) : string =
     match arg with
-    | Colon _           -> ":"
-    | Range(_, s, e)    -> prettyExprIr s + ":" + prettyExprIr e
-    | IndexExpr(_, e)   -> prettyExprIr e
+    | Colon _              -> ":"
+    | Ir.Range(_, s, e)    -> prettyExprIr s + ":" + prettyExprIr e
+    | IndexExpr(_, e)      -> prettyExprIr e
 
 // ---------------------------------------------------------------------------
 // Warning message builders

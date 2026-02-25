@@ -24,6 +24,7 @@ let private dimKey (d: Dim) : int * string =
     match d with
     | Concrete n -> (0, string n)
     | Symbolic s -> (1, SymDim.toString s)
+    | Range _    -> (3, Shapes.dimStr d)   // Range sorts after Symbolic
     | Unknown    -> (2, "")
 
 
@@ -37,6 +38,7 @@ let private isPreBoundVar (d: Dim) (env: Env) : bool =
             // Check if varName is bound in env (not bottom)
             not (Env.get env varName = Bottom)
         | _ -> false
+    | Range _ -> false   // Range dims are not simple pre-bound variables
     | _ -> false
 
 
