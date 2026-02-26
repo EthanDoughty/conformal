@@ -97,13 +97,15 @@ let inferMatrixLiteralShape
                         for i in 1 .. elemRows.Count - 1 do
                             let rr = elemRows.[i]
                             Constraints.recordConstraint ctx env height rr line
+                            let height' = Constraints.resolveDim ctx height
+                            let rr'    = Constraints.resolveDim ctx rr
 
-                            if dimsDefinitelyConflict height rr then
+                            if dimsDefinitelyConflict height' rr' then
                                 hadDefiniteError <- true
                                 warnings.Add(Diagnostics.makeDiag line "W_HORZCAT_ROW_MISMATCH"
                                     ("Horizontal concatenation requires equal row counts in row " + string (r + 1) +
                                      "; got " + dimStr height + " and " + dimStr rr + " in matrix literal."))
-                            height <- joinDim height rr
+                            height <- joinDim height' rr'
 
                         let width = sumDims (elemCols |> Seq.toList)
                         rowHeights.Add(height)
@@ -118,13 +120,15 @@ let inferMatrixLiteralShape
                 for i in 1 .. rowWidths.Count - 1 do
                     let w = rowWidths.[i]
                     Constraints.recordConstraint ctx env commonWidth w line
+                    let commonWidth' = Constraints.resolveDim ctx commonWidth
+                    let w'           = Constraints.resolveDim ctx w
 
-                    if dimsDefinitelyConflict commonWidth w then
+                    if dimsDefinitelyConflict commonWidth' w' then
                         hadDefiniteError <- true
                         warnings.Add(Diagnostics.makeDiag line "W_VERTCAT_COL_MISMATCH"
                             ("Vertical concatenation requires equal column counts across rows; got " +
                              dimStr commonWidth + " and " + dimStr w + " in matrix literal."))
-                    commonWidth <- joinDim commonWidth w
+                    commonWidth <- joinDim commonWidth' w'
 
                 let totalHeight = sumDims (rowHeights |> Seq.toList)
 

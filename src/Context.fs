@@ -3,6 +3,7 @@ module Context
 open Ir
 open Shapes
 open Env
+open DimEquiv
 open PathConstraints
 open SharedTypes
 
@@ -98,6 +99,8 @@ type ConstraintContext() =
                                      = System.Collections.Generic.Dictionary<string * string, Dim>() with get, set
     /// Branch path constraint stack
     member val pathConstraints     : PathConstraintStack = PathConstraintStack() with get, set
+    /// Dimension equivalence store (union-find for dim equality classes)
+    member val dimEquiv            : DimEquiv.DimEquiv = DimEquiv.create () with get, set
     /// Colon context (used to track when ':' is in a subscript context)
     member val colonContext : bool = false with get, set
     /// Strict mode (show all warnings)
@@ -134,6 +137,7 @@ type AnalysisContext() =
         let savedScalars      = System.Collections.Generic.Dictionary<string, int>(this.cst.scalarBindings)
         let savedRanges       = System.Collections.Generic.Dictionary<string, Interval>(this.cst.valueRanges)
         let savedNested       = System.Collections.Generic.Dictionary<string, FunctionSignature>(this.call.nestedFunctionRegistry)
+        let savedDimEquiv     = DimEquiv.snapshot this.cst.dimEquiv
         try
             body ()
         finally
@@ -148,6 +152,13 @@ type AnalysisContext() =
             for kv in savedRanges do this.cst.valueRanges.[kv.Key] <- kv.Value
             this.call.nestedFunctionRegistry.Clear()
             for kv in savedNested do this.call.nestedFunctionRegistry.[kv.Key] <- kv.Value
+            // Restore DimEquiv by replacing the store contents
+            this.cst.dimEquiv.parent.Clear()
+            for kv in savedDimEquiv.parent do this.cst.dimEquiv.parent.[kv.Key] <- kv.Value
+            this.cst.dimEquiv.rank.Clear()
+            for kv in savedDimEquiv.rank do this.cst.dimEquiv.rank.[kv.Key] <- kv.Value
+            this.cst.dimEquiv.concrete.Clear()
+            for kv in savedDimEquiv.concrete do this.cst.dimEquiv.concrete.[kv.Key] <- kv.Value
 
 // ---------------------------------------------------------------------------
 // BuiltinEvalContext: callback record to break EvalExpr <-> EvalBuiltins

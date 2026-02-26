@@ -90,7 +90,9 @@ let evalBinopIr
         | UnknownShape, _ | _, UnknownShape -> UnknownShape
         | Matrix(lr, lc), Matrix(rr, rc) ->
             Constraints.recordConstraint ctx env lr rr line
-            if dimsDefinitelyConflict lr rr then
+            let lr' = Constraints.resolveDim ctx lr
+            let rr' = Constraints.resolveDim ctx rr
+            if dimsDefinitelyConflict lr' rr' then
                 warnings.Add(warnMldivideDimMismatch line leftExpr rightExpr left right)
                 UnknownShape
             else Matrix(lc, rc)
@@ -114,12 +116,16 @@ let evalBinopIr
         | Matrix(r1, c1), Matrix(r2, c2) ->
             Constraints.recordConstraint ctx env r1 r2 line
             Constraints.recordConstraint ctx env c1 c2 line
-            let rConflict = dimsDefinitelyConflict r1 r2
-            let cConflict = dimsDefinitelyConflict c1 c2
+            let r1' = Constraints.resolveDim ctx r1
+            let r2' = Constraints.resolveDim ctx r2
+            let c1' = Constraints.resolveDim ctx c1
+            let c2' = Constraints.resolveDim ctx c2
+            let rConflict = dimsDefinitelyConflict r1' r2'
+            let cConflict = dimsDefinitelyConflict c1' c2'
             if rConflict || cConflict then
                 warnings.Add(warnElementwiseMismatch line op leftExpr rightExpr left right)
                 UnknownShape
-            else Matrix(joinDim r1 r2, joinDim c1 c2)
+            else Matrix(joinDim r1' r2', joinDim c1' c2')
         | _ -> UnknownShape
 
     // Matrix multiplication: *
@@ -130,7 +136,9 @@ let evalBinopIr
         | Matrix _, Scalar -> left
         | Matrix(r1, c1), Matrix(r2, c2) ->
             Constraints.recordConstraint ctx env c1 r2 line
-            if dimsDefinitelyConflict c1 r2 then
+            let c1' = Constraints.resolveDim ctx c1
+            let r2' = Constraints.resolveDim ctx r2
+            if dimsDefinitelyConflict c1' r2' then
                 let suggest =
                     not (dimsDefinitelyConflict r1 r2) &&
                     not (dimsDefinitelyConflict c1 c2)
@@ -149,12 +157,16 @@ let evalBinopIr
         | Matrix(r1, c1), Matrix(r2, c2) ->
             Constraints.recordConstraint ctx env r1 r2 line
             Constraints.recordConstraint ctx env c1 c2 line
-            let rConflict = dimsDefinitelyConflict r1 r2
-            let cConflict = dimsDefinitelyConflict c1 c2
+            let r1' = Constraints.resolveDim ctx r1
+            let r2' = Constraints.resolveDim ctx r2
+            let c1' = Constraints.resolveDim ctx c1
+            let c2' = Constraints.resolveDim ctx c2
+            let rConflict = dimsDefinitelyConflict r1' r2'
+            let cConflict = dimsDefinitelyConflict c1' c2'
             if rConflict || cConflict then
                 warnings.Add(warnElementwiseMismatch line op leftExpr rightExpr left right)
                 UnknownShape
-            else Matrix(joinDim r1 r2, joinDim c1 c2)
+            else Matrix(joinDim r1' r2', joinDim c1' c2')
         | _ -> UnknownShape
 
     else UnknownShape
