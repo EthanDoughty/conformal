@@ -10,6 +10,7 @@
     <Compile Include="../../src/Json.fs" />
     <Compile Include="../../src/SymDim.fs" />
     <Compile Include="../../src/Shapes.fs" />
+    <Compile Include="../../src/DimEquiv.fs" />
     <Compile Include="../../src/Env.fs" />
     <Compile Include="../../src/Diagnostics.fs" />
     <Compile Include="../../src/Builtins.fs" />

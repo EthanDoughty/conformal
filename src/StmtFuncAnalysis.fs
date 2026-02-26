@@ -296,9 +296,11 @@ let private joinBranchResults
     (env: Env)
     (ctx: AnalysisContext)
     (baselineConstraints: System.Collections.Generic.HashSet<string * string>)
+    (baselineDimEquiv: DimEquiv.DimEquiv)
     (baselineRanges: System.Collections.Generic.Dictionary<string, SharedTypes.Interval>)
     (branchEnvs: Env list)
     (branchConstraints: System.Collections.Generic.HashSet<string * string> list)
+    (branchDimEquivs: DimEquiv.DimEquiv list)
     (branchRanges: System.Collections.Generic.Dictionary<string, SharedTypes.Interval> list)
     (returnedFlags: bool list)
     (deferredExc: System.Exception option)
@@ -311,6 +313,7 @@ let private joinBranchResults
     else
         let liveEnvs          = List.zip branchEnvs returnedFlags |> List.choose (fun (e, r) -> if not r then Some e else None)
         let liveConstraints   = List.zip branchConstraints returnedFlags |> List.choose (fun (c, r) -> if not r then Some c else None)
+        let liveDimEquivs     = List.zip branchDimEquivs returnedFlags |> List.choose (fun (d, r) -> if not r then Some d else None)
         let liveRanges        = List.zip branchRanges returnedFlags |> List.choose (fun (vr, r) -> if not r then Some vr else None)
 
         if not liveEnvs.IsEmpty then
@@ -335,6 +338,18 @@ let private joinBranchResults
                 | _ -> ()
             ctx.cst.constraintProvenance.Clear()
             for kv in newProv do ctx.cst.constraintProvenance.[kv.Key] <- kv.Value
+
+            // Intersect DimEquiv stores: keep equivalences present in ALL live branches
+            let joinedDimEquiv =
+                match liveDimEquivs with
+                | [] -> baselineDimEquiv
+                | first :: rest -> rest |> List.fold DimEquiv.intersect first
+            ctx.cst.dimEquiv.parent.Clear()
+            for kv in joinedDimEquiv.parent do ctx.cst.dimEquiv.parent.[kv.Key] <- kv.Value
+            ctx.cst.dimEquiv.rank.Clear()
+            for kv in joinedDimEquiv.rank do ctx.cst.dimEquiv.rank.[kv.Key] <- kv.Value
+            ctx.cst.dimEquiv.concrete.Clear()
+            for kv in joinedDimEquiv.concrete do ctx.cst.dimEquiv.concrete.[kv.Key] <- kv.Value
 
             // Join value_ranges
             let joinedRanges = joinValueRanges baselineRanges liveRanges
@@ -527,6 +542,44 @@ and analyzeStmtIr
 
         Env.set env name newShape
 
+        // size() dimension aliasing: n = size(A, 1) => union(n, A.rowDim)
+        // Records DimEquiv equivalence for backward propagation.
+        // Also sets dimAliases for Symbolic source dims (so zeros(n,...) resolves inline).
+        // For Concrete source dims, only DimEquiv is updated (backward pass handles it for free vars).
+        match expr with
+        | Apply(_, Var(_, "size"), [IndexExpr(_, argExpr); IndexExpr(_, dimArgExpr)]) ->
+            let argVarName =
+                match argExpr with
+                | Var(_, n) -> Some n
+                | _ -> None
+            let argShape =
+                match argVarName with
+                | Some n -> Env.get env n
+                | None -> UnknownShape
+            let dimIdx = exprToDimIrCtx dimArgExpr env (Some ctx)
+            let targetDim =
+                match argShape, dimIdx with
+                | Matrix(rowDim, _), Concrete 1 -> Some rowDim
+                | Matrix(_, colDim), Concrete 2 -> Some colDim
+                | _ -> None
+            match targetDim with
+            | Some dim when dim <> Unknown ->
+                let nameKey = name
+                let dimKey  = Shapes.dimStr dim
+                DimEquiv.union ctx.cst.dimEquiv nameKey dimKey |> ignore
+                match dim with
+                | Concrete n ->
+                    // Concrete dim: record in DimEquiv only.
+                    // Don't set dimAliases or valueRanges to avoid overriding symbolic dim behavior
+                    // in existing tests that expect size() results to remain as symbolic names.
+                    DimEquiv.setConcrete ctx.cst.dimEquiv nameKey n |> ignore
+                | Symbolic _ ->
+                    // Symbolic dim: set dimAliases so inline resolution works in builtins.
+                    env.dimAliases <- Map.add name dim env.dimAliases
+                | _ -> ()
+            | _ -> ()
+        | _ -> ()
+
         // Constraint validation: first binding of scalar to concrete value
         if isBottom oldShape && isScalar newShape then
             let concreteValue = tryExtractConstValue expr
@@ -662,6 +715,7 @@ and analyzeStmtIr
 
         let refinements = extractConditionRefinements cond env ctx
         let baselineConstraints = snapshotConstraints ctx
+        let baselineDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
         let baselineRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
 
         let thenEnv = Env.copy env
@@ -681,11 +735,18 @@ and analyzeStmtIr
         | :? EarlyContinue as e -> thenReturned <- true; ctx.cst.pathConstraints.Pop(); reraise ()
         ctx.cst.pathConstraints.Pop()
         let thenConstraints = snapshotConstraints ctx
+        let thenDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
         let thenRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
 
         // Reset to baseline for else branch
         ctx.cst.constraints.Clear()
         for c in baselineConstraints do ctx.cst.constraints.Add(c) |> ignore
+        ctx.cst.dimEquiv.parent.Clear()
+        for kv in baselineDimEquiv.parent do ctx.cst.dimEquiv.parent.[kv.Key] <- kv.Value
+        ctx.cst.dimEquiv.rank.Clear()
+        for kv in baselineDimEquiv.rank do ctx.cst.dimEquiv.rank.[kv.Key] <- kv.Value
+        ctx.cst.dimEquiv.concrete.Clear()
+        for kv in baselineDimEquiv.concrete do ctx.cst.dimEquiv.concrete.[kv.Key] <- kv.Value
         ctx.cst.valueRanges.Clear()
         for kv in baselineRanges do ctx.cst.valueRanges.[kv.Key] <- kv.Value
 
@@ -700,11 +761,13 @@ and analyzeStmtIr
         | :? EarlyContinue as e -> elseReturned <- true; ctx.cst.pathConstraints.Pop(); reraise ()
         ctx.cst.pathConstraints.Pop()
         let elseConstraints = snapshotConstraints ctx
+        let elseDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
         let elseRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
 
         joinBranchResults
-            env ctx baselineConstraints baselineRanges
+            env ctx baselineConstraints baselineDimEquiv baselineRanges
             [thenEnv; elseEnv] [thenConstraints; elseConstraints]
+            [thenDimEquiv; elseDimEquiv]
             [thenRanges; elseRanges] [thenReturned; elseReturned] None
 
     | IfChain({ line = line }, conditions, bodies, elseBody) ->
@@ -712,11 +775,13 @@ and analyzeStmtIr
 
         let allRefinements = conditions |> List.map (fun cond -> extractConditionRefinements cond env ctx)
         let baselineConstraints = snapshotConstraints ctx
+        let baselineDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
         let baselineRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
 
         let allBodies = bodies @ [ elseBody ]
         let mutable branchEnvs : Env list = []
         let mutable branchConstraints : System.Collections.Generic.HashSet<string * string> list = []
+        let mutable branchDimEquivs : DimEquiv.DimEquiv list = []
         let mutable branchRanges : System.Collections.Generic.Dictionary<string, SharedTypes.Interval> list = []
         let mutable returnedFlags : bool list = []
         let mutable deferredExc : System.Exception option = None
@@ -724,6 +789,12 @@ and analyzeStmtIr
         for idx in 0 .. allBodies.Length - 1 do
             ctx.cst.constraints.Clear()
             for c in baselineConstraints do ctx.cst.constraints.Add(c) |> ignore
+            ctx.cst.dimEquiv.parent.Clear()
+            for kv in baselineDimEquiv.parent do ctx.cst.dimEquiv.parent.[kv.Key] <- kv.Value
+            ctx.cst.dimEquiv.rank.Clear()
+            for kv in baselineDimEquiv.rank do ctx.cst.dimEquiv.rank.[kv.Key] <- kv.Value
+            ctx.cst.dimEquiv.concrete.Clear()
+            for kv in baselineDimEquiv.concrete do ctx.cst.dimEquiv.concrete.[kv.Key] <- kv.Value
             ctx.cst.valueRanges.Clear()
             for kv in baselineRanges do ctx.cst.valueRanges.[kv.Key] <- kv.Value
 
@@ -747,12 +818,13 @@ and analyzeStmtIr
 
             branchEnvs <- branchEnvs @ [branchEnv]
             branchConstraints <- branchConstraints @ [ snapshotConstraints ctx ]
+            branchDimEquivs <- branchDimEquivs @ [ DimEquiv.snapshot ctx.cst.dimEquiv ]
             branchRanges <- branchRanges @ [ System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges) ]
             returnedFlags <- returnedFlags @ [returned]
 
         joinBranchResults
-            env ctx baselineConstraints baselineRanges
-            branchEnvs branchConstraints branchRanges returnedFlags deferredExc
+            env ctx baselineConstraints baselineDimEquiv baselineRanges
+            branchEnvs branchConstraints branchDimEquivs branchRanges returnedFlags deferredExc
 
     | Switch({ line = line }, expr, cases, otherwise) ->
         wiredEvalExprFull expr env warnings ctx |> ignore
@@ -765,11 +837,13 @@ and analyzeStmtIr
             | _ -> None
 
         let baselineConstraints = snapshotConstraints ctx
+        let baselineDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
         let baselineRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
 
         let allBodies = (cases |> List.map snd) @ [ otherwise ]
         let mutable branchEnvs : Env list = []
         let mutable branchConstraints : System.Collections.Generic.HashSet<string * string> list = []
+        let mutable branchDimEquivs : DimEquiv.DimEquiv list = []
         let mutable branchRanges : System.Collections.Generic.Dictionary<string, SharedTypes.Interval> list = []
         let mutable returnedFlags : bool list = []
         let mutable deferredExc : System.Exception option = None
@@ -777,6 +851,12 @@ and analyzeStmtIr
         for caseIdx in 0 .. allBodies.Length - 1 do
             ctx.cst.constraints.Clear()
             for c in baselineConstraints do ctx.cst.constraints.Add(c) |> ignore
+            ctx.cst.dimEquiv.parent.Clear()
+            for kv in baselineDimEquiv.parent do ctx.cst.dimEquiv.parent.[kv.Key] <- kv.Value
+            ctx.cst.dimEquiv.rank.Clear()
+            for kv in baselineDimEquiv.rank do ctx.cst.dimEquiv.rank.[kv.Key] <- kv.Value
+            ctx.cst.dimEquiv.concrete.Clear()
+            for kv in baselineDimEquiv.concrete do ctx.cst.dimEquiv.concrete.[kv.Key] <- kv.Value
             ctx.cst.valueRanges.Clear()
             for kv in baselineRanges do ctx.cst.valueRanges.[kv.Key] <- kv.Value
 
@@ -808,15 +888,17 @@ and analyzeStmtIr
 
             branchEnvs <- branchEnvs @ [branchEnv]
             branchConstraints <- branchConstraints @ [ snapshotConstraints ctx ]
+            branchDimEquivs <- branchDimEquivs @ [ DimEquiv.snapshot ctx.cst.dimEquiv ]
             branchRanges <- branchRanges @ [ System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges) ]
             returnedFlags <- returnedFlags @ [returned]
 
         joinBranchResults
-            env ctx baselineConstraints baselineRanges
-            branchEnvs branchConstraints branchRanges returnedFlags deferredExc
+            env ctx baselineConstraints baselineDimEquiv baselineRanges
+            branchEnvs branchConstraints branchDimEquivs branchRanges returnedFlags deferredExc
 
     | Try(_, tryBody, catchBody) ->
         let baselineConstraints = snapshotConstraints ctx
+        let baselineDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
         let baselineRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
         let preTryEnv = Env.copy env
 
@@ -830,10 +912,17 @@ and analyzeStmtIr
         | :? EarlyBreak as e -> tryReturned <- true; deferredExc <- Some (e :> System.Exception)
         | :? EarlyContinue as e -> tryReturned <- true; deferredExc <- Some (e :> System.Exception)
         let tryConstraints = snapshotConstraints ctx
+        let tryDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
         let tryRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
 
         ctx.cst.constraints.Clear()
         for c in baselineConstraints do ctx.cst.constraints.Add(c) |> ignore
+        ctx.cst.dimEquiv.parent.Clear()
+        for kv in baselineDimEquiv.parent do ctx.cst.dimEquiv.parent.[kv.Key] <- kv.Value
+        ctx.cst.dimEquiv.rank.Clear()
+        for kv in baselineDimEquiv.rank do ctx.cst.dimEquiv.rank.[kv.Key] <- kv.Value
+        ctx.cst.dimEquiv.concrete.Clear()
+        for kv in baselineDimEquiv.concrete do ctx.cst.dimEquiv.concrete.[kv.Key] <- kv.Value
         ctx.cst.valueRanges.Clear()
         for kv in baselineRanges do ctx.cst.valueRanges.[kv.Key] <- kv.Value
 
@@ -850,11 +939,13 @@ and analyzeStmtIr
             catchReturned <- true
             if deferredExc.IsNone then deferredExc <- Some (e :> System.Exception)
         let catchConstraints = snapshotConstraints ctx
+        let catchDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
         let catchRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
 
         joinBranchResults
-            env ctx baselineConstraints baselineRanges
+            env ctx baselineConstraints baselineDimEquiv baselineRanges
             [tryEnv; catchEnv] [tryConstraints; catchConstraints]
+            [tryDimEquiv; catchDimEquiv]
             [tryRanges; catchRanges] [tryReturned; catchReturned] deferredExc
 
     | OpaqueStmt({ line = line }, targets, raw) ->
@@ -965,10 +1056,66 @@ and private analyzeAssignMulti
             if numTargets = 1 then
                 let result = evalBuiltinCall fname line args env warnings ctx wiredEvalExprFull wiredGetInterval
                 bindTarget targets.[0] result
+                // size() single-return aliasing (target = size(A, dim))
+                if fname = "size" then
+                    match args with
+                    | [IndexExpr(_, argExpr); IndexExpr(_, dimArgExpr)] ->
+                        let argShape =
+                            match argExpr with
+                            | Var(_, n) -> Env.get env n
+                            | _ -> UnknownShape
+                        let dimIdx = exprToDimIrCtx dimArgExpr env (Some ctx)
+                        let targetDim =
+                            match argShape, dimIdx with
+                            | Matrix(rowDim, _), Concrete 1 -> Some rowDim
+                            | Matrix(_, colDim), Concrete 2 -> Some colDim
+                            | _ -> None
+                        let tgt = targets.[0]
+                        match targetDim with
+                        | Some dim when dim <> Unknown && tgt <> "~" && not (tgt.Contains(".")) ->
+                            DimEquiv.union ctx.cst.dimEquiv tgt (Shapes.dimStr dim) |> ignore
+                            match dim with
+                            | Concrete n ->
+                                DimEquiv.setConcrete ctx.cst.dimEquiv tgt n |> ignore
+                            | Symbolic _ ->
+                                env.dimAliases <- Map.add tgt dim env.dimAliases
+                            | _ -> ()
+                        | _ -> ()
+                    | _ -> ()
             else
                 match evalMultiBuiltinCall fname numTargets args env warnings ctx wiredEvalExprFull wiredGetInterval with
                 | Some shapes ->
                     for (target, shape) in List.zip targets shapes do bindTarget target shape
+                    // [r, c] = size(A) aliasing
+                    if fname = "size" && targets.Length = 2 then
+                        match args with
+                        | [IndexExpr(_, argExpr)] ->
+                            let argShape =
+                                match argExpr with
+                                | Var(_, n) -> Env.get env n
+                                | _ -> UnknownShape
+                            match argShape with
+                            | Matrix(rowDim, colDim) ->
+                                let tgt0 = targets.[0]
+                                let tgt1 = targets.[1]
+                                if rowDim <> Unknown && tgt0 <> "~" && not (tgt0.Contains(".")) then
+                                    DimEquiv.union ctx.cst.dimEquiv tgt0 (Shapes.dimStr rowDim) |> ignore
+                                    match rowDim with
+                                    | Concrete n ->
+                                        DimEquiv.setConcrete ctx.cst.dimEquiv tgt0 n |> ignore
+                                    | Symbolic _ ->
+                                        env.dimAliases <- Map.add tgt0 rowDim env.dimAliases
+                                    | _ -> ()
+                                if colDim <> Unknown && tgt1 <> "~" && not (tgt1.Contains(".")) then
+                                    DimEquiv.union ctx.cst.dimEquiv tgt1 (Shapes.dimStr colDim) |> ignore
+                                    match colDim with
+                                    | Concrete n ->
+                                        DimEquiv.setConcrete ctx.cst.dimEquiv tgt1 n |> ignore
+                                    | Symbolic _ ->
+                                        env.dimAliases <- Map.add tgt1 colDim env.dimAliases
+                                    | _ -> ()
+                            | _ -> ()
+                        | _ -> ()
                 | None ->
                     let supported = defaultArg (Map.tryFind fname MULTI_SUPPORTED_FORMS) "unknown"
                     warnings.Add(warnMultiReturnCount line fname supported numTargets)

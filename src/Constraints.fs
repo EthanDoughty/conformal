@@ -4,6 +4,7 @@ open Ir
 open Shapes
 open Env
 open SymDim
+open DimEquiv
 open Context
 
 // ---------------------------------------------------------------------------
@@ -64,6 +65,64 @@ let recordConstraint (ctx: AnalysisContext) (env: Env) (dim1: Dim) (dim2: Dim) (
             // Store provenance (first-seen: keep original line)
             if not (ctx.cst.constraintProvenance.ContainsKey(canonical)) then
                 ctx.cst.constraintProvenance.[canonical] <- line
+
+            // DimEquiv: union the two dimension strings
+            let key1 = Shapes.dimStr dim1
+            let key2 = Shapes.dimStr dim2
+            DimEquiv.union ctx.cst.dimEquiv key1 key2 |> ignore
+
+            // Propagate concrete values into the equivalence class
+            match dim1 with
+            | Concrete n -> DimEquiv.setConcrete ctx.cst.dimEquiv key1 n |> ignore
+            | _ -> ()
+            match dim2 with
+            | Concrete n -> DimEquiv.setConcrete ctx.cst.dimEquiv key2 n |> ignore
+            | _ -> ()
+
+
+/// resolveDim: resolve a symbolic dim using the equivalence store.
+/// 1. Check if the whole dim's key has a concrete value in the equiv store.
+/// 2. If not, extract individual variables, substitute known concrete values.
+/// 3. If all variables resolve, evaluate to Concrete; partial resolution returns simplified Symbolic.
+let resolveDim (ctx: AnalysisContext) (d: Dim) : Dim =
+    match d with
+    | Symbolic s ->
+        let key = Shapes.dimStr d
+        match DimEquiv.getConcrete ctx.cst.dimEquiv key with
+        | Some n -> Concrete n
+        | None ->
+            // Substitute individual variables from equiv classes
+            let vars = SymDim.SymDim.variables s |> Set.toList
+            let bindings =
+                vars |> List.choose (fun v ->
+                    match DimEquiv.getConcrete ctx.cst.dimEquiv v with
+                    | Some n -> Some (v, n)
+                    | None -> None)
+                |> Map.ofList
+            if Map.isEmpty bindings then d
+            else
+                match SymDim.SymDim.evaluate bindings s with
+                | Some n -> Concrete n
+                | None ->
+                    let sub = SymDim.SymDim.substitute bindings s
+                    match SymDim.SymDim.constValue sub with
+                    | Some cv -> Concrete cv
+                    | None -> Symbolic sub
+    | _ -> d
+
+
+/// resolveShape: apply resolveDim to all dims in a Shape.
+let resolveShape (ctx: AnalysisContext) (shape: Shape) : Shape =
+    match shape with
+    | Matrix(r, c) ->
+        let r' = resolveDim ctx r
+        let c' = resolveDim ctx c
+        if r' = r && c' = c then shape else Matrix(r', c')
+    | Cell(r, c, elems) ->
+        let r' = resolveDim ctx r
+        let c' = resolveDim ctx c
+        if r' = r && c' = c then shape else Cell(r', c', elems)
+    | _ -> shape
 
 
 /// snapshotConstraints: return a copy of current constraint set.
