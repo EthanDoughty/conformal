@@ -120,7 +120,9 @@ let private toSymDim (d: Dim) : SymDim =
 //   SymDim bare variable (single term, coeff 1, single var exp 1) -> bare name
 //   SymDim expression -> "(expr)"
 //   Range -> "lo..hi" with BUnknown displayed as empty string on that side
-let dimStr (d: Dim) : string =
+let private dimStrCache = System.Collections.Generic.Dictionary<Dim, string>()
+
+let private dimStrCore (d: Dim) : string =
     match d with
     | Unknown    -> "None"
     | Concrete n -> string n
@@ -147,11 +149,29 @@ let dimStr (d: Dim) : string =
             | BUnknown    -> ""
         loStr + ".." + hiStr
 
+let dimStr (d: Dim) : string =
+    match dimStrCache.TryGetValue(d) with
+    | true, cached -> cached
+    | _ ->
+        let result = dimStrCore d
+        dimStrCache.[d] <- result
+        result
+
 // ---------------------------------------------------------------------------
 // Shape -> string (must be character-identical to Python __str__)
 // ---------------------------------------------------------------------------
 
+let private shapeStringCache = System.Collections.Generic.Dictionary<Shape, string>()
+
 let rec shapeToString (s: Shape) : string =
+    match shapeStringCache.TryGetValue(s) with
+    | true, cached -> cached
+    | _ ->
+        let result = shapeToStringCore s
+        shapeStringCache.[s] <- result
+        result
+
+and private shapeToStringCore (s: Shape) : string =
     match s with
     | Scalar           -> "scalar"
     | Matrix(r, c)     -> "matrix[" + dimStr r + " x " + dimStr c + "]"
