@@ -402,6 +402,7 @@ let rec evalExprIr
     | FieldAccess({ line = line }, baseExpr, field) ->
         let baseShape = evalExprIr baseExpr env warnings ctx None builtinDispatch
         if field = "<dynamic>" then
+            if ctx.cst.coderMode then warnings.Add(warnCoderDynamicField line)
             UnknownShape  // dynamic field access: conservative
         else
             match baseShape with

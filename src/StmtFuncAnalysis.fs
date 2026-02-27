@@ -446,6 +446,8 @@ and private wiredBuiltinDispatch
     (ctx: AnalysisContext)
     : Shape =
     ignore baseExpr
+    if ctx.cst.coderMode && Set.contains fname CODER_UNSUPPORTED_BUILTINS then
+        warnings.Add(warnCoderUnsupportedBuiltin line fname)
     if Set.contains fname KNOWN_BUILTINS then
         evalBuiltinCall fname line args env warnings ctx wiredEvalExprFull wiredGetInterval
     elif ctx.call.functionRegistry.ContainsKey(fname) then
@@ -965,7 +967,9 @@ and analyzeStmtIr
             branchEnvs branchConstraints branchDimEquivs branchRanges branchUpperBoundsAcc
             returnedFlags deferredExc
 
-    | Try(_, tryBody, catchBody) ->
+    | Try({ line = tryLine }, tryBody, catchBody) ->
+        if ctx.cst.coderMode then
+            warnings.Add(warnCoderTryCatch tryLine)
         let baselineConstraints = snapshotConstraints ctx
         let baselineDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
         let baselineRanges = ctx.cst.valueRanges
@@ -1435,6 +1439,7 @@ and analyzeFunctionCall
         // Recursion guard
         if ctx.call.analyzingFunctions.Contains(funcName) then
             warnings.Add(warnRecursiveFunction line funcName)
+            if ctx.cst.coderMode then warnings.Add(warnCoderRecursion line funcName)
             List.replicate (max sig_.outputVars.Length 1) UnknownShape
         else
 
@@ -1544,6 +1549,7 @@ and analyzeNestedFunctionCall
 
         if ctx.call.analyzingFunctions.Contains(funcName) then
             warnings.Add(warnRecursiveFunction line funcName)
+            if ctx.cst.coderMode then warnings.Add(warnCoderRecursion line funcName)
             List.replicate (max sig_.outputVars.Length 1) UnknownShape
         else
 

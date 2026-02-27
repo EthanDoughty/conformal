@@ -94,6 +94,25 @@ let analyzeProgramIr
         if resolved <> shape then
             Env.set env varName resolved
 
+    // Post-analysis Coder pass: emit W_CODER_VARIABLE_SIZE and W_CODER_CELL_ARRAY
+    // for top-level script variables with problematic shapes.
+    // Scope: only variables in the top-level env (script vars + function return vars assigned here).
+    if ctx.cst.coderMode then
+        let isUnboundedDim (d: Shapes.Dim) : bool =
+            match d with
+            | Shapes.Unknown -> true
+            | Shapes.Range(_, Shapes.BUnknown) -> true
+            | Shapes.Range(Shapes.BUnknown, _) -> true
+            | _ -> false
+        for varName in (env.bindings |> Map.toList |> List.map fst) do
+            let shape = Env.get env varName
+            match shape with
+            | Shapes.Matrix(r, c) when isUnboundedDim r || isUnboundedDim c ->
+                warnings.Add(warnCoderVariableSize 0 varName shape)
+            | Shapes.Cell _ ->
+                warnings.Add(warnCoderCellArray 0 varName)
+            | _ -> ()
+
     // Deduplicate warnings while preserving order
     let deduped = Seq.toList warnings |> List.distinctBy id
     (env, deduped)

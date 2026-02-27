@@ -16,6 +16,7 @@ let private expectRe          = Regex(@"%\s*EXPECT:\s*(.+)$",          RegexOpti
 let private expectFixpointRe  = Regex(@"%\s*EXPECT_FIXPOINT:\s*(.+)$", RegexOptions.Multiline)
 let private expectWarningsRe  = Regex(@"warnings\s*=\s*(\d+)\s*$",     RegexOptions.IgnoreCase)
 let private expectBindingRe   = Regex(@"([A-Za-z_]\w*)\s*=\s*(.+)$")
+let private modeCoderRe       = Regex(@"%\s*MODE:\s*coder",             RegexOptions.Multiline)
 
 let private normalizeShapeStr (s: string) : string =
     Regex.Replace(s.Trim(), @"\s+", "")
@@ -72,7 +73,7 @@ let private parseExpectations (src: string) (fixpoint: bool) : Expectations =
 
 /// runTest: analyze one .m file, check assertions.
 /// Returns (passed: bool).
-let private runTest (path: string) (fixpoint: bool) : bool =
+let private runTest (path: string) (fixpoint: bool) (forceCoder: bool) : bool =
     printfn "===== Analysis for %s" path
 
     if not (File.Exists path) then
@@ -88,6 +89,9 @@ let private runTest (path: string) (fixpoint: bool) : bool =
             ""
 
     let expectations = parseExpectations src fixpoint
+
+    // Determine coder mode: forced by directory or by % MODE: coder directive
+    let coderMode = forceCoder || modeCoderRe.IsMatch(src)
 
     let irProgOpt =
         try
@@ -116,6 +120,7 @@ let private runTest (path: string) (fixpoint: bool) : bool =
 
     let ctx = AnalysisContext()
     ctx.call.fixpoint <- fixpoint
+    ctx.cst.coderMode <- coderMode
     for kv in extMap do
         ctx.ws.externalFunctions.[kv.Key] <- kv.Value
     ctx.ws.workspaceDir <- dirPath
@@ -193,7 +198,7 @@ let private discoverTestFiles (rootDir: string) : string list =
 // ---------------------------------------------------------------------------
 
 /// run: run all tests, return exit code (0 = all pass, 1 = any fail).
-let run (strict: bool) (fixpoint: bool) : int =
+let run (strict: bool) (fixpoint: bool) (coder: bool) : int =
     // Discover tests relative to cwd (project root when running via `dotnet run`)
     let testsDir =
         let cwd = Directory.GetCurrentDirectory()
@@ -203,6 +208,8 @@ let run (strict: bool) (fixpoint: bool) : int =
             // Try parent of src/ directory
             let parent = Path.GetDirectoryName(cwd)
             Path.Combine(parent, "tests")
+
+    let coderDir = Path.Combine(testsDir, "coder")
 
     let testFiles = discoverTestFiles testsDir
 
@@ -214,7 +221,9 @@ let run (strict: bool) (fixpoint: bool) : int =
 
     for path in testFiles do
         total <- total + 1
-        let passed = runTest path fixpoint
+        // Auto-enable coder mode for tests/coder/ directory
+        let inCoderDir = path.StartsWith(coderDir + Path.DirectorySeparatorChar.ToString()) || path = coderDir
+        let passed = runTest path fixpoint (coder || inCoderDir)
         if passed then ok <- ok + 1
 
     printfn "===== Summary: %d/%d tests passed =====" ok total
