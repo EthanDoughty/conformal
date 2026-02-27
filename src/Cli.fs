@@ -34,7 +34,7 @@ let private printEnv (env: Env.Env) : unit =
 
 /// runFile: analyze one .m file and print results.
 /// Returns exit code: 0 = success, 1 = error.
-let runFile (filePath: string) (strict: bool) (fixpoint: bool) (benchmark: bool) : int =
+let runFile (filePath: string) (strict: bool) (fixpoint: bool) (benchmark: bool) (coder: bool) : int =
     if not (File.Exists filePath) then
         eprintfn "ERROR: file not found: %s" filePath
         1
@@ -81,6 +81,7 @@ let runFile (filePath: string) (strict: bool) (fixpoint: bool) (benchmark: bool)
 
         let ctx = AnalysisContext()
         ctx.call.fixpoint <- fixpoint
+        ctx.cst.coderMode <- coder
         for kv in extMap do
             ctx.ws.externalFunctions.[kv.Key] <- kv.Value
         ctx.ws.workspaceDir <- dirPath
@@ -131,7 +132,7 @@ let runFile (filePath: string) (strict: bool) (fixpoint: bool) (benchmark: bool)
 
 let runTests (strict: bool) (fixpoint: bool) (benchmark: bool) : int =
     let tStart = DateTime.UtcNow
-    let result = TestRunner.run strict fixpoint
+    let result = TestRunner.run strict fixpoint false
     let tEnd = DateTime.UtcNow
 
     if benchmark then
@@ -156,6 +157,7 @@ let run (argv: string array) : int =
     let mutable strict    = false
     let mutable fixpoint  = false
     let mutable bench     = false
+    let mutable coder     = false
     let mutable file      = ""
     let mutable parseJson = false
 
@@ -167,6 +169,7 @@ let run (argv: string array) : int =
         | "--strict"      -> strict    <- true
         | "--fixpoint"    -> fixpoint <- true
         | "--benchmark"   -> bench    <- true
+        | "--coder"       -> coder    <- true
         | "--parse-json"  ->
             parseJson <- true
             i <- i + 1
@@ -215,9 +218,9 @@ let run (argv: string array) : int =
                 eprintfn "Error: %s" ex.Message
                 3
     elif file <> "" then
-        runFile file strict fixpoint bench
+        runFile file strict fixpoint bench coder
     else
-        printfn "Usage: conformal-parse [--tests] [--strict] [--fixpoint] [--benchmark] <file.m>"
+        printfn "Usage: conformal-parse [--tests] [--strict] [--fixpoint] [--benchmark] [--coder] <file.m>"
         printfn ""
         printfn "Options:"
         printfn "  --tests       Run test suite"
@@ -225,5 +228,6 @@ let run (argv: string array) : int =
         printfn "  --strict      Show all warnings including informational diagnostics"
         printfn "  --fixpoint    Use fixed-point iteration for loop analysis"
         printfn "  --benchmark   Print timing breakdown"
+        printfn "  --coder       Enable MATLAB Coder compatibility warnings (W_CODER_*)"
         printfn "  --parse-json  Parse file and emit JSON IR"
         1

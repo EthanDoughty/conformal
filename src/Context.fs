@@ -113,6 +113,8 @@ type ConstraintContext() =
     member val colonContext : bool = false with get, set
     /// Strict mode (show all warnings)
     member val strictMode   : bool = false with get, set
+    /// Coder mode (emit W_CODER_* warnings for MATLAB Coder compatibility)
+    member val coderMode    : bool = false with get, set
     /// Pentagon upper-bound map: var -> (boundVar, offset) means var ≤ boundVar + offset
     member val upperBounds  : Map<string, string * int> = Map.empty with get, set
 

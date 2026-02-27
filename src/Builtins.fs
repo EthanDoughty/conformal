@@ -157,6 +157,27 @@ let KNOWN_BUILTINS : Set<string> =
     ]
 
 // ---------------------------------------------------------------------------
+// CODER_UNSUPPORTED_BUILTINS: builtins with no MATLAB Coder equivalent.
+// Conservative set: high-confidence entries only.
+// Note: MathWorks expands Coder support over time; revisit periodically.
+// ---------------------------------------------------------------------------
+
+let CODER_UNSUPPORTED_BUILTINS : Set<string> =
+    Set.ofList [
+        // Dynamic evaluation
+        "eval"; "evalin"; "feval"; "assignin"; "evalc"
+        // Interactive / debugging
+        "input"; "keyboard"; "dbstop"; "dbclear"; "dbcont"
+        // Graphics / plotting
+        "figure"; "plot"; "plot3"; "subplot"; "surf"; "mesh"; "imagesc"; "scatter"
+        "bar"; "histogram"; "stem"; "stairs"; "contour"; "pie"; "area"; "pareto"; "errorbar"
+        // UI
+        "uicontrol"; "uimenu"; "uipanel"; "uitable"; "msgbox"; "inputdlg"; "questdlg"
+        // Introspection / help
+        "diary"; "type"; "doc"; "help"; "lookfor"; "which"; "what"; "who"; "whos"
+    ]
+
+// ---------------------------------------------------------------------------
 // SUPPRESSED_CMD_STMTS: command-syntax statements that are silently ignored.
 // Mechanical port of analysis/eval_builtins.py _SUPPRESSED_CMD_STMTS.
 // ---------------------------------------------------------------------------

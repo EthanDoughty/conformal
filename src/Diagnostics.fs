@@ -29,6 +29,17 @@ let STRICT_ONLY_CODES : Set<string> =
         "W_CELLFUN_NON_UNIFORM"
     ]
 
+/// Coder-mode-only warning codes (emitted only when --coder is active).
+let CODER_ONLY_CODES : Set<string> =
+    Set.ofList [
+        "W_CODER_VARIABLE_SIZE"
+        "W_CODER_CELL_ARRAY"
+        "W_CODER_DYNAMIC_FIELD"
+        "W_CODER_TRY_CATCH"
+        "W_CODER_UNSUPPORTED_BUILTIN"
+        "W_CODER_RECURSION"
+    ]
+
 // ---------------------------------------------------------------------------
 // Diagnostic record
 // ---------------------------------------------------------------------------
@@ -363,3 +374,32 @@ let warnVertcatColMismatch (line: int) (colA: Dim) (colB: Dim) : Diagnostic =
 let warnCellfunNonUniform (line: int) : Diagnostic =
     makeDiag line "W_CELLFUN_NON_UNIFORM"
         "cellfun returns non-scalar elements; set 'UniformOutput',false to collect into a cell array"
+
+// ---------------------------------------------------------------------------
+// Coder-mode warning builders (W_CODER_* family)
+// ---------------------------------------------------------------------------
+
+let warnCoderVariableSize (line: int) (varName: string) (shape: Shape) : Diagnostic =
+    makeDiag line "W_CODER_VARIABLE_SIZE"
+        ("Variable '" + varName + "' has unbounded dimension " + shapeToString shape +
+         " (MATLAB Coder requires fixed-size or coder.varsize declaration)")
+
+let warnCoderCellArray (line: int) (varName: string) : Diagnostic =
+    makeDiag line "W_CODER_CELL_ARRAY"
+        ("Variable '" + varName + "' is a cell array (limited support in MATLAB Coder)")
+
+let warnCoderDynamicField (line: int) : Diagnostic =
+    makeDiag line "W_CODER_DYNAMIC_FIELD"
+        "Dynamic struct field access s.(expr) is not supported by MATLAB Coder"
+
+let warnCoderTryCatch (line: int) : Diagnostic =
+    makeDiag line "W_CODER_TRY_CATCH"
+        "try/catch is not supported by MATLAB Coder"
+
+let warnCoderUnsupportedBuiltin (line: int) (fname: string) : Diagnostic =
+    makeDiag line "W_CODER_UNSUPPORTED_BUILTIN"
+        ("Builtin '" + fname + "' is not supported by MATLAB Coder")
+
+let warnCoderRecursion (line: int) (fname: string) : Diagnostic =
+    makeDiag line "W_CODER_RECURSION"
+        ("Recursive call to '" + fname + "' (MATLAB Coder supports limited recursion)")
