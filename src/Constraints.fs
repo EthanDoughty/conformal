@@ -122,7 +122,7 @@ let resolveShape (ctx: AnalysisContext) (shape: Shape) : Shape =
         let r' = resolveDim ctx r
         let c' = resolveDim ctx c
         if r' = r && c' = c then shape else Cell(r', c', elems)
-    | _ -> shape
+    | Scalar | StringShape | FunctionHandle _ | Struct _ | UnknownShape | Bottom -> shape
 
 
 /// snapshotConstraints: return current constraint set (persistent; O(1)).

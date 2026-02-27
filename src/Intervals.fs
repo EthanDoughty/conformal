@@ -407,7 +407,7 @@ let private simpleExprToDim (expr: Ir.Expr) (env: Env.Env) (ctx: Context.Analysi
             match Map.tryFind name env.dimAliases with
             | Some d -> d
             | None   -> Shapes.Symbolic (SymDim.SymDim.var name)
-    | _ -> Shapes.Unknown
+    | _ -> Shapes.Unknown  // open type: all other Expr cases not handled here
 
 
 /// extractConditionRefinements: extract interval refinements from a branch condition.

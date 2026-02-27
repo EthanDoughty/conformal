@@ -49,7 +49,8 @@ let private minBound (a: DimBound) (b: DimBound) : DimBound =
     | BConcrete x, BConcrete y -> BConcrete (min x y)
     | BUnknown, _ -> BUnknown   // BUnknown as lo = 0 (the smallest possible)
     | _, BUnknown -> BUnknown
-    | _ -> BUnknown  // can't compare symbolic: conservative
+    | BSymbolic _, BConcrete _ | BConcrete _, BSymbolic _ | BSymbolic _, BSymbolic _ ->
+        BUnknown  // can't compare symbolic: conservative
 
 /// maxBound: maximum of two DimBounds (for hi of hull).
 /// BUnknown as hi represents +infinity.
@@ -58,7 +59,8 @@ let private maxBound (a: DimBound) (b: DimBound) : DimBound =
     | BConcrete x, BConcrete y -> BConcrete (max x y)
     | BUnknown, _ -> BUnknown   // BUnknown as hi = +infinity
     | _, BUnknown -> BUnknown
-    | _ -> BUnknown  // can't compare symbolic: conservative
+    | BSymbolic _, BConcrete _ | BConcrete _, BSymbolic _ | BSymbolic _, BSymbolic _ ->
+        BUnknown  // can't compare symbolic: conservative
 
 /// addBound: add two DimBounds (for interval arithmetic).
 let addBound (a: DimBound) (b: DimBound) : DimBound =
@@ -252,7 +254,7 @@ let dimsDefinitelyConflict (a: Dim) (b: Dim) : bool =
         boundsDisjoint alo ahi blo bhi
     | _ when a = b -> false
     | Concrete ia, Concrete ib -> ia <> ib
-    | _ ->
+    | Symbolic _, Symbolic _ | Symbolic _, Concrete _ | Concrete _, Symbolic _ ->
         // Check if difference is a nonzero constant
         try
             let sa = toSymDim a
@@ -274,7 +276,7 @@ let addDim (a: Dim) (b: Dim) : Dim =
         let alo, ahi = dimToBounds a
         canonicalizeDim (Range(addBound alo blo, addBound ahi bhi))
     | Concrete ia, Concrete ib -> Concrete (ia + ib)
-    | _ ->
+    | Symbolic _, Symbolic _ | Symbolic _, Concrete _ | Concrete _, Symbolic _ ->
         let sa = toSymDim a
         let sb = toSymDim b
         let result = SymDim.add sa sb
@@ -314,7 +316,7 @@ let mulDim (a: Dim) (b: Dim) : Dim =
                 canonicalizeDim (Range(BConcrete (List.min corners), BConcrete (List.max corners)))
             | _ -> Unknown
         | Concrete ia, Concrete ib -> Concrete (ia * ib)
-        | _ ->
+        | Symbolic _, Symbolic _ | Symbolic _, Concrete _ | Concrete _, Symbolic _ ->
             let sa = toSymDim a
             let sb = toSymDim b
             let result = SymDim.mul sa sb
@@ -393,8 +395,8 @@ let rec traverseShapes (dimOp: Dim -> Dim -> Dim) (s1: Shape) (s2: Shape) : Shap
                     |> Map.ofList
                 if Map.isEmpty elemDict then None else Some elemDict
         Cell(mergedRows, mergedCols, mergedElems)
-    // Different kinds -> Unknown
-    | _ -> UnknownShape
+    // Different Shape kinds -> UnknownShape (all remaining cross-kind pairs)
+    | _ -> UnknownShape  // all other Shape cases: intentional cross-kind fallback
 
 let joinShape (s1: Shape) (s2: Shape) : Shape = traverseShapes joinDim s1 s2
 let widenShape (old: Shape) (newShape: Shape) : Shape = traverseShapes widenDim old newShape
