@@ -3,6 +3,7 @@ module MatrixLiterals
 open Shapes
 open Env
 open Context
+open WarningCodes
 
 // ---------------------------------------------------------------------------
 // Matrix/cell literal shape inference.
@@ -56,7 +57,7 @@ let inferMatrixLiteralShape
                 // Empty row (rare/unexpected)
                 if row.IsEmpty then
                     hadDefiniteError <- true
-                    warnings.Add(Diagnostics.makeDiag line "W_MATRIX_LIT_EMPTY_ROW"
+                    warnings.Add(Diagnostics.makeDiag line W_MATRIX_LIT_EMPTY_ROW
                         "Empty row in matrix literal. Treating result as unknown.")
                     rowHeights.Add(Unknown)
                     rowWidths.Add(Unknown)
@@ -102,7 +103,7 @@ let inferMatrixLiteralShape
 
                             if dimsDefinitelyConflict height' rr' then
                                 hadDefiniteError <- true
-                                warnings.Add(Diagnostics.makeDiag line "W_HORZCAT_ROW_MISMATCH"
+                                warnings.Add(Diagnostics.makeDiag line W_HORZCAT_ROW_MISMATCH
                                     ("Horizontal concatenation requires equal row counts in row " + string (r + 1) +
                                      "; got " + dimStr height + " and " + dimStr rr + " in matrix literal."))
                             height <- joinDim height' rr'
@@ -125,7 +126,7 @@ let inferMatrixLiteralShape
 
                     if dimsDefinitelyConflict commonWidth' w' then
                         hadDefiniteError <- true
-                        warnings.Add(Diagnostics.makeDiag line "W_VERTCAT_COL_MISMATCH"
+                        warnings.Add(Diagnostics.makeDiag line W_VERTCAT_COL_MISMATCH
                             ("Vertical concatenation requires equal column counts across rows; got " +
                              dimStr commonWidth + " and " + dimStr w + " in matrix literal."))
                     commonWidth <- joinDim commonWidth' w'

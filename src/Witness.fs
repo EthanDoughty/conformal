@@ -2,6 +2,7 @@ module Witness
 
 open Shapes
 open SymDim
+open WarningCodes
 open SharedTypes
 
 // ---------------------------------------------------------------------------
@@ -246,7 +247,7 @@ let attemptWitness (site: ConflictSite) : Witness option =
 
 
 /// generateWitnesses: batch-process conflict sites and return witnesses keyed by (line, code).
-let generateWitnesses (conflictSites: ConflictSite list) : Map<int * string, Witness> =
+let generateWitnesses (conflictSites: ConflictSite list) : Map<int * WarningCode, Witness> =
     let mutable result = Map.empty
     for site in conflictSites do
         let key = (site.line, site.warningCode)

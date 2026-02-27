@@ -13,6 +13,7 @@
     <Compile Include="Parser.fs" />
     <Compile Include="Json.fs" />
     <Compile Include="SymDim.fs" />
+    <Compile Include="WarningCodes.fs" />
     <Compile Include="Shapes.fs" />
     <Compile Include="DimEquiv.fs" />
     <Compile Include="Env.fs" />

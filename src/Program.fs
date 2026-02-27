@@ -4,6 +4,7 @@ open System
 open System.IO
 open Shapes
 open SymDim
+open WarningCodes
 open Diagnostics
 open Builtins
 open Context
@@ -110,11 +111,11 @@ let runPhase2Test () : int =
 
     Console.WriteLine("=== Phase 2: STRICT_ONLY_CODES ===")
     check "STRICT_ONLY_CODES count" "19" (string STRICT_ONLY_CODES.Count)
-    checkBool "W_UNSUPPORTED_STMT in strict"     true  (Set.contains "W_UNSUPPORTED_STMT" STRICT_ONLY_CODES)
-    checkBool "W_UNKNOWN_FUNCTION in strict"     true  (Set.contains "W_UNKNOWN_FUNCTION" STRICT_ONLY_CODES)
-    checkBool "W_TOO_MANY_INDICES in strict"     true  (Set.contains "W_TOO_MANY_INDICES" STRICT_ONLY_CODES)
-    checkBool "W_INNER_DIM_MISMATCH not strict"  false (Set.contains "W_INNER_DIM_MISMATCH" STRICT_ONLY_CODES)
-    checkBool "W_ELEMENTWISE_MISMATCH not strict" false (Set.contains "W_ELEMENTWISE_MISMATCH" STRICT_ONLY_CODES)
+    checkBool "W_UNSUPPORTED_STMT in strict"     true  (Set.contains W_UNSUPPORTED_STMT STRICT_ONLY_CODES)
+    checkBool "W_UNKNOWN_FUNCTION in strict"     true  (Set.contains W_UNKNOWN_FUNCTION STRICT_ONLY_CODES)
+    checkBool "W_TOO_MANY_INDICES in strict"     true  (Set.contains W_TOO_MANY_INDICES STRICT_ONLY_CODES)
+    checkBool "W_INNER_DIM_MISMATCH not strict"  false (Set.contains W_INNER_DIM_MISMATCH STRICT_ONLY_CODES)
+    checkBool "W_ELEMENTWISE_MISMATCH not strict" false (Set.contains W_ELEMENTWISE_MISMATCH STRICT_ONLY_CODES)
 
     Console.WriteLine("=== Phase 2: KNOWN_BUILTINS ===")
     // Python KNOWN_BUILTINS has 323 entries (count from source)
@@ -138,21 +139,21 @@ let runPhase2Test () : int =
     let leftS  = Matrix(Concrete 3, Concrete 4)
     let rightS = Matrix(Concrete 5, Concrete 2)
     let d = warnMatmulMismatch 1 leftE rightE leftS rightS false
-    check "W_INNER_DIM_MISMATCH code" "W_INNER_DIM_MISMATCH" d.code
+    check "W_INNER_DIM_MISMATCH code" "W_INNER_DIM_MISMATCH" (codeString d.code)
     check "W_INNER_DIM_MISMATCH line" "1" (string d.line)
     checkBool "W_INNER_DIM_MISMATCH relatedLine None" true d.relatedLine.IsNone
 
     let dUnk = warnUnknownFunction 5 "myFunc"
-    check "W_UNKNOWN_FUNCTION code"    "W_UNKNOWN_FUNCTION" dUnk.code
+    check "W_UNKNOWN_FUNCTION code"    "W_UNKNOWN_FUNCTION" (codeString dUnk.code)
     check "W_UNKNOWN_FUNCTION line"    "5" (string dUnk.line)
     check "W_UNKNOWN_FUNCTION message" "Function 'myFunc' is not recognized; treating result as unknown" dUnk.message
 
     let dUnsup = warnUnsupportedStmt 3 "parfor" ["x"; "y"]
-    check "W_UNSUPPORTED_STMT code"    "W_UNSUPPORTED_STMT" dUnsup.code
+    check "W_UNSUPPORTED_STMT code"    "W_UNSUPPORTED_STMT" (codeString dUnsup.code)
     check "W_UNSUPPORTED_STMT toString" "W_UNSUPPORTED_STMT line=3 targets=x, y 'parfor'" (diagnosticToString dUnsup)
 
     let dElem = warnElementwiseMismatch 7 ".+" leftE rightE leftS rightS
-    check "W_ELEMENTWISE_MISMATCH code" "W_ELEMENTWISE_MISMATCH" dElem.code
+    check "W_ELEMENTWISE_MISMATCH code" "W_ELEMENTWISE_MISMATCH" (codeString dElem.code)
     check "W_ELEMENTWISE_MISMATCH toString"
         "W_ELEMENTWISE_MISMATCH line 7: Elementwise .+ mismatch in (A .+ B): matrix[3 x 4] vs matrix[5 x 2]"
         (diagnosticToString dElem)
@@ -305,7 +306,7 @@ let runPhase3Test () : int =
     let rightMbad = Matrix(Concrete 5, Concrete 2)
     let resultBad = EvalBinop.evalBinopIr "*" leftM rightMbad warnRef dummyExpr dummyExpr 1 ctx0 env1 noIv
     check "matmul mismatch -> unknown" "unknown" (shapeToString resultBad)
-    checkBool "matmul mismatch has warning" true (warnRef |> Seq.exists (fun d -> d.code = "W_INNER_DIM_MISMATCH"))
+    checkBool "matmul mismatch has warning" true (warnRef |> Seq.exists (fun d -> d.code = W_INNER_DIM_MISMATCH))
 
     warnRef.Clear()
     // elementwise: 3x4 .* 3x4 -> 3x4

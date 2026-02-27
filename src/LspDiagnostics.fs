@@ -3,39 +3,40 @@ module LspDiagnostics
 open Ionide.LanguageServerProtocol.Types
 open Diagnostics
 open Witness
+open WarningCodes
 
 // ---------------------------------------------------------------------------
 // Codes that represent definite errors (will crash at runtime).
 // Port of lsp/diagnostics.py ERROR_CODES set.
 // ---------------------------------------------------------------------------
 
-let ERROR_CODES : Set<string> =
+let ERROR_CODES : Set<WarningCode> =
     Set.ofList [
-        "W_INNER_DIM_MISMATCH"
-        "W_ELEMENTWISE_MISMATCH"
-        "W_CONSTRAINT_CONFLICT"
-        "W_HORZCAT_ROW_MISMATCH"
-        "W_VERTCAT_COL_MISMATCH"
-        "W_RESHAPE_MISMATCH"
-        "W_INDEX_OUT_OF_BOUNDS"
-        "W_DIVISION_BY_ZERO"
-        "W_ARITHMETIC_TYPE_MISMATCH"
-        "W_TRANSPOSE_TYPE_MISMATCH"
-        "W_NEGATE_TYPE_MISMATCH"
-        "W_CONCAT_TYPE_MISMATCH"
-        "W_INDEX_ASSIGN_TYPE_MISMATCH"
-        "W_POSSIBLY_NEGATIVE_DIM"
-        "W_FUNCTION_ARG_COUNT_MISMATCH"
-        "W_LAMBDA_ARG_COUNT_MISMATCH"
-        "W_MULTI_ASSIGN_COUNT_MISMATCH"
-        "W_MULTI_ASSIGN_NON_CALL"
-        "W_MULTI_ASSIGN_BUILTIN"
-        "W_PROCEDURE_IN_EXPR"
-        "W_BREAK_OUTSIDE_LOOP"
-        "W_CONTINUE_OUTSIDE_LOOP"
-        "W_STRICT_MODE"
-        "W_MLDIVIDE_DIM_MISMATCH"
-        "W_MATRIX_POWER_NON_SQUARE"
+        W_INNER_DIM_MISMATCH
+        W_ELEMENTWISE_MISMATCH
+        W_CONSTRAINT_CONFLICT
+        W_HORZCAT_ROW_MISMATCH
+        W_VERTCAT_COL_MISMATCH
+        W_RESHAPE_MISMATCH
+        W_INDEX_OUT_OF_BOUNDS
+        W_DIVISION_BY_ZERO
+        W_ARITHMETIC_TYPE_MISMATCH
+        W_TRANSPOSE_TYPE_MISMATCH
+        W_NEGATE_TYPE_MISMATCH
+        W_CONCAT_TYPE_MISMATCH
+        W_INDEX_ASSIGN_TYPE_MISMATCH
+        W_POSSIBLY_NEGATIVE_DIM
+        W_FUNCTION_ARG_COUNT_MISMATCH
+        W_LAMBDA_ARG_COUNT_MISMATCH
+        W_MULTI_ASSIGN_COUNT_MISMATCH
+        W_MULTI_ASSIGN_NON_CALL
+        W_MULTI_ASSIGN_BUILTIN
+        W_PROCEDURE_IN_EXPR
+        W_BREAK_OUTSIDE_LOOP
+        W_CONTINUE_OUTSIDE_LOOP
+        W_STRICT_MODE
+        W_MLDIVIDE_DIM_MISMATCH
+        W_MATRIX_POWER_NON_SQUARE
     ]
 
 // ---------------------------------------------------------------------------
@@ -68,15 +69,18 @@ let toLspDiagnostic
     }
 
     // Severity mapping
+    let isUnsupported =
+        match d.code with
+        | W_UNSUPPORTED_STMT | W_UNSUPPORTED_MULTI_ASSIGN -> true
+        | _ -> false
     let severity =
         if Set.contains d.code ERROR_CODES then DiagnosticSeverity.Error
-        elif d.code.StartsWith("W_UNSUPPORTED_") then DiagnosticSeverity.Hint
+        elif isUnsupported then DiagnosticSeverity.Hint
         else DiagnosticSeverity.Warning
 
     // Tags: Unnecessary for unsupported constructs
     let tags : DiagnosticTag[] option =
-        if d.code.StartsWith("W_UNSUPPORTED_") then
-            Some [| DiagnosticTag.Unnecessary |]
+        if isUnsupported then Some [| DiagnosticTag.Unnecessary |]
         else None
 
     // Related information for related_line
@@ -119,7 +123,7 @@ let toLspDiagnostic
     {
         Range              = range
         Severity           = Some severity
-        Code               = Some (U2.C2 d.code)
+        Code               = Some (U2.C2 (codeString d.code))
         Source             = Some "conformal"
         Message            = message
         Tags               = tags
