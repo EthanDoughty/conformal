@@ -501,3 +501,64 @@ let applyRefinements
                 // prevent false positives inside unreachable branches.
                 ctx.cst.valueRanges <- Map.add varName guard ctx.cst.valueRanges
                 bridgeToDimEquiv ctx varName guard
+
+
+// ---------------------------------------------------------------------------
+// Pentagon domain helpers (relational upper-bound constraints)
+// ---------------------------------------------------------------------------
+
+/// joinUpperBounds: intersect two upper-bound maps (keep only facts present in both).
+/// When the same variable appears in both maps with different offsets, take the max offset
+/// (least precise but sound: a larger offset is a weaker constraint).
+let joinUpperBounds
+    (a: Map<string, string * int>)
+    (b: Map<string, string * int>)
+    : Map<string, string * int> =
+    // Keep only variables bound in BOTH maps.
+    a |> Map.filter (fun varName boundA ->
+        match Map.tryFind varName b with
+        | Some boundB -> boundA = boundB   // keep only when the bound is identical
+        | None -> false)
+
+
+/// widenUpperBounds: same as joinUpperBounds (intersection).
+/// Since the set of bounds only shrinks, this naturally converges.
+let widenUpperBounds
+    (oldMap: Map<string, string * int>)
+    (newMap: Map<string, string * int>)
+    : Map<string, string * int> =
+    joinUpperBounds oldMap newMap
+
+
+/// killUpperBoundsFor: remove all bounds that mention varName (either as the
+/// constrained variable or as the bound variable) after an assignment to varName.
+let killUpperBoundsFor (varName: string) (bounds: Map<string, string * int>) : Map<string, string * int> =
+    bounds
+    |> Map.filter (fun key (bVar, _) -> key <> varName && bVar <> varName)
+
+
+/// applyPentagonBridge: for each x in upperBounds where upperBounds[x] = (y, c)
+/// and valueRanges[y] = [k,k] (exact), tighten valueRanges[x].hi to min(current_hi, k+c).
+let applyPentagonBridge (ctx: Context.AnalysisContext) : unit =
+    for kvp in ctx.cst.upperBounds |> Map.toSeq do
+        let (varName, (boundVar, offset)) = kvp
+        match Map.tryFind boundVar ctx.cst.valueRanges with
+        | Some iv ->
+            match iv.lo, iv.hi with
+            | Finite lo, Finite hi when lo = hi ->
+                // boundVar is exactly known: tighten varName's upper bound
+                let tightenedHi = Finite (hi + offset)
+                let existing =
+                    match Map.tryFind varName ctx.cst.valueRanges with
+                    | Some existing -> existing
+                    | None -> { lo = Unbounded; hi = Unbounded }
+                let newHi =
+                    match existing.hi with
+                    | Finite h -> Finite (min h (hi + offset))
+                    | Unbounded -> tightenedHi
+                    | SymBound _ -> tightenedHi
+                let newIv = { existing with hi = newHi }
+                if newIv <> existing then
+                    ctx.cst.valueRanges <- Map.add varName newIv ctx.cst.valueRanges
+            | _ -> ()
+        | None -> ()

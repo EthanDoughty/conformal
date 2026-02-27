@@ -113,6 +113,8 @@ type ConstraintContext() =
     member val colonContext : bool = false with get, set
     /// Strict mode (show all warnings)
     member val strictMode   : bool = false with get, set
+    /// Pentagon upper-bound map: var -> (boundVar, offset) means var ≤ boundVar + offset
+    member val upperBounds  : Map<string, string * int> = Map.empty with get, set
 
 type WorkspaceContext() =
     /// Maps function name -> ExternalSignature (workspace-scanned)
@@ -144,6 +146,7 @@ type AnalysisContext() =
         let savedProvenance   = this.cst.constraintProvenance
         let savedScalars      = this.cst.scalarBindings
         let savedRanges       = this.cst.valueRanges
+        let savedUpperBounds  = this.cst.upperBounds
         let savedNested       = System.Collections.Generic.Dictionary<string, FunctionSignature>(this.call.nestedFunctionRegistry)
         let savedDimEquiv     = DimEquiv.snapshot this.cst.dimEquiv
         try
@@ -154,6 +157,7 @@ type AnalysisContext() =
             this.cst.constraintProvenance <- savedProvenance
             this.cst.scalarBindings      <- savedScalars
             this.cst.valueRanges         <- savedRanges
+            this.cst.upperBounds         <- savedUpperBounds
             this.call.nestedFunctionRegistry.Clear()
             for kv in savedNested do this.call.nestedFunctionRegistry.[kv.Key] <- kv.Value
             // Restore DimEquiv by replacing the store contents
