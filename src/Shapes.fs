@@ -413,3 +413,24 @@ let isCell s           = match s with Cell _ -> true | _ -> false
 let isFunctionHandle s = match s with FunctionHandle _ -> true | _ -> false
 let isNumeric s        = match s with Scalar | Matrix _ | StringShape -> true | _ -> false
 let isEmptyMatrix s    = match s with Matrix(Concrete 0, Concrete 0) -> true | _ -> false
+
+// ---------------------------------------------------------------------------
+// Active patterns for Shape/Dim (additive — existing predicates kept)
+// ---------------------------------------------------------------------------
+
+// --- Shape classification ---
+let (|IsScalar|_|)  s = if s = Scalar       then Some () else None
+let (|IsMatrix|_|)  s = match s with Matrix _        -> Some () | _ -> None
+let (|IsStruct|_|)  s = match s with Struct _        -> Some () | _ -> None
+let (|IsCell|_|)    s = match s with Cell _          -> Some () | _ -> None
+let (|IsUnknown|_|) s = if s = UnknownShape then Some () else None
+let (|IsBottom|_|)  s = if s = Bottom       then Some () else None
+
+// --- Dimension extraction ---
+let (|MatrixDims|_|) s = match s with Matrix(r, c) -> Some(r, c) | _ -> None
+let (|MatrixRows|_|) s = match s with Matrix(r, _) -> Some r     | _ -> None
+let (|MatrixCols|_|) s = match s with Matrix(_, c) -> Some c     | _ -> None
+
+// --- Dim classification ---
+let (|ConcreteDim|_|) d = match d with Concrete n -> Some n | _ -> None
+let (|SymbolicDim|_|) d = match d with Symbolic s -> Some s | _ -> None

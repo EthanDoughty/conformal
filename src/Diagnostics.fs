@@ -175,9 +175,9 @@ let warnElementwiseMismatch
 let warnMatmulMismatch
     (line: int) (leftExpr: Expr) (rightExpr: Expr) (left: Shape) (right: Shape) (suggestElementwise: bool) : Diagnostic =
     let leftCols =
-        match left with Matrix(_, c) -> dimStr c | _ -> "?"
+        match left with MatrixCols c -> dimStr c | _ -> "?"
     let rightRows =
-        match right with Matrix(r, _) -> dimStr r | _ -> "?"
+        match right with MatrixRows r -> dimStr r | _ -> "?"
     let baseMsg =
         $"Dimension mismatch in expression ({prettyExprIr leftExpr} * {prettyExprIr rightExpr}): inner dims {leftCols} vs {rightRows} (shapes {shapeToString left} and {shapeToString right})"
     let msg =
@@ -331,14 +331,14 @@ let warnConcatTypeMismatch (line: int) (shape: Shape) : Diagnostic =
 
 let warnMldivideDimMismatch
     (line: int) (leftExpr: Expr) (rightExpr: Expr) (left: Shape) (right: Shape) : Diagnostic =
-    let leftRows  = match left  with Matrix(r, _) -> dimStr r | _ -> "?"
-    let rightRows = match right with Matrix(r, _) -> dimStr r | _ -> "?"
+    let leftRows  = match left  with MatrixRows r -> dimStr r | _ -> "?"
+    let rightRows = match right with MatrixRows r -> dimStr r | _ -> "?"
     makeDiag line W_MLDIVIDE_DIM_MISMATCH
         $"Dimension mismatch in mldivide ({prettyExprIr leftExpr} \\ {prettyExprIr rightExpr}): A has {leftRows} rows but b has {rightRows} rows (shapes {shapeToString left} and {shapeToString right})"
 
 let warnMatrixPowerNonSquare (line: int) (expr: Expr) (shape: Shape) : Diagnostic =
-    let rows = match shape with Matrix(r, _) -> dimStr r | _ -> "?"
-    let cols = match shape with Matrix(_, c) -> dimStr c | _ -> "?"
+    let rows = match shape with MatrixRows r -> dimStr r | _ -> "?"
+    let cols = match shape with MatrixCols c -> dimStr c | _ -> "?"
     makeDiag line W_MATRIX_POWER_NON_SQUARE
         $"Matrix power (^) requires square matrix; {prettyExprIr expr} has shape {shapeToString shape} ({rows} rows, {cols} cols)"
 

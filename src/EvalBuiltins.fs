@@ -303,12 +303,10 @@ let private handleReshape
             // Conformability check
             if not (isUnknown inputShape) then
                 let inputCount =
-                    if isScalar inputShape then Some (Concrete 1)
-                    elif isMatrix inputShape then
-                        match inputShape with
-                        | Matrix(r, c) -> Some (mulDim r c)
-                        | _ -> None
-                    else None
+                    match inputShape with
+                    | IsScalar -> Some (Concrete 1)
+                    | MatrixDims(r, c) -> Some (mulDim r c)
+                    | _ -> None
                 let outputCount = mulDim m n
                 match inputCount with
                 | Some ic when outputCount <> Unknown ->
@@ -339,9 +337,10 @@ let private handleRepmat
             if isUnknown aShape then Some UnknownShape
             else
                 let aRows, aCols =
-                    if isScalar aShape then Concrete 1, Concrete 1
-                    elif isMatrix aShape then match aShape with Matrix(r, c) -> r, c | _ -> Unknown, Unknown
-                    else Unknown, Unknown
+                    match aShape with
+                    | IsScalar -> Concrete 1, Concrete 1
+                    | MatrixDims(r, c) -> r, c
+                    | _ -> Unknown, Unknown
                 Some (Matrix(mulDim aRows m, mulDim aCols n))
         | _ -> None
     else None
@@ -416,12 +415,10 @@ let private handleReduction
     : Shape option =
     if args.Length = 1 then
         let argShape = evalArgShape args.[0] env warnings ctx evalExprFn
-        if isScalar argShape then Some Scalar
-        elif isMatrix argShape then
-            match argShape with
-            | Matrix(_, c) -> Some (Matrix(Concrete 1, c))
-            | _ -> Some UnknownShape
-        else Some UnknownShape
+        match argShape with
+        | IsScalar -> Some Scalar
+        | MatrixCols c -> Some (Matrix(Concrete 1, c))
+        | _ -> Some UnknownShape
     elif args.Length = 2 then
         let argShape = evalArgShape args.[0] env warnings ctx evalExprFn
         match unwrapArg args.[1] with
@@ -429,17 +426,13 @@ let private handleReduction
             let dimVal = exprToDimIrCtx dimExpr env (Some ctx)
             match dimVal with
             | Concrete 1 ->
-                if isMatrix argShape then
-                    match argShape with
-                    | Matrix(_, c) -> Some (Matrix(Concrete 1, c))
-                    | _ -> Some UnknownShape
-                else Some UnknownShape
+                match argShape with
+                | MatrixCols c -> Some (Matrix(Concrete 1, c))
+                | _ -> Some UnknownShape
             | Concrete 2 ->
-                if isMatrix argShape then
-                    match argShape with
-                    | Matrix(r, _) -> Some (Matrix(r, Concrete 1))
-                    | _ -> Some UnknownShape
-                else Some UnknownShape
+                match argShape with
+                | MatrixRows r -> Some (Matrix(r, Concrete 1))
+                | _ -> Some UnknownShape
             | _ -> None
         | None -> None
     else None
@@ -528,13 +521,15 @@ let private handleKron
             if isUnknown s1 || isUnknown s2 then Some UnknownShape
             else
                 let r1, c1 =
-                    if isScalar s1 then Concrete 1, Concrete 1
-                    elif isMatrix s1 then match s1 with Matrix(r, c) -> r, c | _ -> Unknown, Unknown
-                    else Unknown, Unknown
+                    match s1 with
+                    | IsScalar -> Concrete 1, Concrete 1
+                    | MatrixDims(r, c) -> r, c
+                    | _ -> Unknown, Unknown
                 let r2, c2 =
-                    if isScalar s2 then Concrete 1, Concrete 1
-                    elif isMatrix s2 then match s2 with Matrix(r, c) -> r, c | _ -> Unknown, Unknown
-                    else Unknown, Unknown
+                    match s2 with
+                    | IsScalar -> Concrete 1, Concrete 1
+                    | MatrixDims(r, c) -> r, c
+                    | _ -> Unknown, Unknown
                 if r1 = Unknown || r2 = Unknown then Some UnknownShape
                 else Some (Matrix(mulDim r1 r2, mulDim c1 c2))
         | _ -> None
