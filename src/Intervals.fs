@@ -53,23 +53,46 @@ let joinInterval (a: Interval option) (b: Interval option) : Interval option =
         Some { lo = newLo; hi = newHi }
 
 
-/// widenInterval: push bounds to infinity when they move.
+/// Threshold set for widening (sorted ascending).
+/// When a bound moves outward, it is snapped to the next threshold in the
+/// direction of movement.  This keeps intervals finite longer and gives the
+/// fixpoint loop more iterations at useful precision before collapsing to
+/// Unbounded.  Convergence is still guaranteed: each widening step moves the
+/// bound to a strictly larger threshold or to Unbounded; the set is finite.
+let private WIDEN_THRESHOLDS = [| -1000; -100; -10; -1; 0; 1; 10; 100; 1000 |]
+
+/// widenInterval: push bounds outward to the next threshold when they move,
+/// falling back to Unbounded only when no threshold covers the new value.
 let widenInterval (oldIv: Interval) (newIv: Interval) : Interval =
-    let lo =
-        match newIv.lo, oldIv.lo with
-        | Unbounded, _ | _, Unbounded -> oldIv.lo
-        | Finite nl, Finite ol ->
-            if nl < ol then Unbounded else oldIv.lo
-        | _ -> Unbounded   // symbolic: can't prove it didn't move, widen (sound)
+    // Lower bound: when it decreases, snap to the next threshold <= nl.
+    let widenLo oldBound newBound =
+        match oldBound, newBound with
+        | Unbounded, _ -> Unbounded        // already widened to -inf, preserve
+        | _, Unbounded -> Unbounded        // body produced unknown lower bound; must not narrow
+        | Finite ol, Finite nl ->
+            if nl < ol then
+                // Lower bound decreased: snap to largest threshold <= nl
+                match WIDEN_THRESHOLDS |> Array.tryFindBack (fun t -> t <= nl) with
+                | Some thresh -> Finite thresh
+                | None        -> Unbounded  // below all thresholds
+            else Finite ol  // stable or increased: keep old bound
+        | _ -> Unbounded   // symbolic: can't compare, widen to -inf (sound)
 
-    let hi =
-        match newIv.hi, oldIv.hi with
-        | Unbounded, _ | _, Unbounded -> oldIv.hi
-        | Finite nh, Finite oh ->
-            if nh > oh then Unbounded else oldIv.hi
-        | _ -> Unbounded   // symbolic: can't prove it didn't move, widen (sound)
+    // Upper bound: when it increases, snap to the next threshold >= nh.
+    let widenHi oldBound newBound =
+        match oldBound, newBound with
+        | Unbounded, _ -> Unbounded        // already widened to +inf, preserve
+        | _, Unbounded -> Unbounded        // body produced unknown upper bound; must not narrow
+        | Finite oh, Finite nh ->
+            if nh > oh then
+                // Upper bound increased: snap to smallest threshold >= nh
+                match WIDEN_THRESHOLDS |> Array.tryFind (fun t -> t >= nh) with
+                | Some thresh -> Finite thresh
+                | None        -> Unbounded  // above all thresholds
+            else Finite oh  // stable or decreased: keep old bound
+        | _ -> Unbounded   // symbolic: can't compare, widen to +inf (sound)
 
-    { lo = lo; hi = hi }
+    { lo = widenLo oldIv.lo newIv.lo; hi = widenHi oldIv.hi newIv.hi }
 
 
 /// meetInterval: intersection of two intervals (lattice meet).

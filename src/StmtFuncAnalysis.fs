@@ -1196,7 +1196,15 @@ and analyzeLoopBody
             with
             | :? EarlyReturn | :? EarlyBreak | :? EarlyContinue -> ()
 
-        // Widen intervals again before post-loop join (mirrors finalWidened for shapes)
+        // Widen intervals again before post-loop join (mirrors finalWidened for shapes).
+        // This second call widens from preLoopRanges (the pre-loop baseline), NOT from the
+        // Phase-1-widened state.  With binary widening this would collapse Unbounded bounds
+        // back to baseline (unsound), but with threshold widening the Phase-1 bounds are
+        // still Finite, so the re-snap is "accidentally correct": the bound either stays at
+        // the same threshold or moves to the next one.  If Phase 2 fires (shapes changed),
+        // the body re-runs and the Phase-2 state is widened here; if Phase 2 does not fire
+        // (scalar counters: shapes are always Scalar), this is the sole widening of the
+        // Phase-1 intervals and the counter reaches at most the second threshold hop.
         widenValueRanges preLoopRanges ctx.cst.valueRanges loopVar
 
         // Phase 3 (Post-loop join): Model "loop may execute 0 times"
