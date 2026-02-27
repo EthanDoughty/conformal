@@ -666,16 +666,22 @@ and private evalIndexing
                 | Some iv ->
                     let fmt = "[" + string iv.lo + ", " + string iv.hi + "]"
                     let dimStr = string ms
-                    match iv.lo, iv.hi with
-                    | Finite lo, _ when lo > ms ->
-                        warnings.Add(warnIndexOutOfBounds line fmt dimStr true)
-                    | _, Finite hi when hi < 1 ->
-                        warnings.Add(warnIndexOutOfBounds line fmt dimStr true)
-                    | _, Finite hi when hi > ms ->
-                        warnings.Add(warnIndexOutOfBounds line fmt dimStr false)
-                    | Finite lo, _ when lo < 1 ->
-                        warnings.Add(warnIndexOutOfBounds line fmt dimStr false)
-                    | _ -> ()
+                    // Pentagon suppression: if index var has relational bound matching dim, suppress.
+                    let suppressedByPentagon =
+                        match idxExpr with
+                        | Var(_, varName) -> Intervals.pentagonProvesInBounds ctx varName m
+                        | _ -> false
+                    if not suppressedByPentagon then
+                        match iv.lo, iv.hi with
+                        | Finite lo, _ when lo > ms ->
+                            warnings.Add(warnIndexOutOfBounds line fmt dimStr true)
+                        | _, Finite hi when hi < 1 ->
+                            warnings.Add(warnIndexOutOfBounds line fmt dimStr true)
+                        | _, Finite hi when hi > ms ->
+                            warnings.Add(warnIndexOutOfBounds line fmt dimStr false)
+                        | Finite lo, _ when lo < 1 ->
+                            warnings.Add(warnIndexOutOfBounds line fmt dimStr false)
+                        | _ -> ()
                 | None -> ()
             | _ -> ()
 
@@ -686,16 +692,22 @@ and private evalIndexing
                 | Some iv ->
                     let fmt = "[" + string iv.lo + ", " + string iv.hi + "]"
                     let dimStr = string ns
-                    match iv.lo, iv.hi with
-                    | Finite lo, _ when lo > ns ->
-                        warnings.Add(warnIndexOutOfBounds line fmt dimStr true)
-                    | _, Finite hi when hi < 1 ->
-                        warnings.Add(warnIndexOutOfBounds line fmt dimStr true)
-                    | _, Finite hi when hi > ns ->
-                        warnings.Add(warnIndexOutOfBounds line fmt dimStr false)
-                    | Finite lo, _ when lo < 1 ->
-                        warnings.Add(warnIndexOutOfBounds line fmt dimStr false)
-                    | _ -> ()
+                    // Pentagon suppression: if index var has relational bound matching dim, suppress.
+                    let suppressedByPentagon =
+                        match idxExpr with
+                        | Var(_, varName) -> Intervals.pentagonProvesInBounds ctx varName n
+                        | _ -> false
+                    if not suppressedByPentagon then
+                        match iv.lo, iv.hi with
+                        | Finite lo, _ when lo > ns ->
+                            warnings.Add(warnIndexOutOfBounds line fmt dimStr true)
+                        | _, Finite hi when hi < 1 ->
+                            warnings.Add(warnIndexOutOfBounds line fmt dimStr true)
+                        | _, Finite hi when hi > ns ->
+                            warnings.Add(warnIndexOutOfBounds line fmt dimStr false)
+                        | Finite lo, _ when lo < 1 ->
+                            warnings.Add(warnIndexOutOfBounds line fmt dimStr false)
+                        | _ -> ()
                 | None -> ()
             | _ -> ()
 
