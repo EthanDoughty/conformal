@@ -418,6 +418,23 @@ let rec extractConditionRefinements
     | _ -> []
 
 
+/// bridgeToDimEquiv: when an interval is exact [k,k], propagate k into DimEquiv and
+/// back-propagate the concrete value to valueRanges for all equivalent simple variables.
+let bridgeToDimEquiv (ctx: Context.AnalysisContext) (varName: string) (iv: Interval) : unit =
+    match iv.lo, iv.hi with
+    | Finite lo, Finite hi when lo = hi ->
+        DimEquiv.setConcrete ctx.cst.dimEquiv varName lo |> ignore
+        // Back-propagate: update valueRanges for all simple-variable keys in the SAME class.
+        let root = DimEquiv.find ctx.cst.dimEquiv varName
+        let exact = { lo = Finite lo; hi = Finite hi }
+        for key in ctx.cst.dimEquiv.parent.Keys |> Seq.toArray do
+            // Only propagate to simple identifier-style keys (no operators/spaces).
+            let isSimpleVar = key |> Seq.forall (fun c -> System.Char.IsLetterOrDigit c || c = '_')
+            if isSimpleVar && DimEquiv.find ctx.cst.dimEquiv key = root then
+                ctx.cst.valueRanges <- Map.add key exact ctx.cst.valueRanges
+    | _ -> ()
+
+
 /// applyRefinements: apply interval refinements to ctx.valueRanges in place.
 let applyRefinements
     (ctx: Context.AnalysisContext)
@@ -439,8 +456,11 @@ let applyRefinements
         | Some guard ->
             let refined = meetInterval baseIv guard
             match refined with
-            | Some r -> ctx.cst.valueRanges <- Map.add varName r ctx.cst.valueRanges
+            | Some r ->
+                ctx.cst.valueRanges <- Map.add varName r ctx.cst.valueRanges
+                bridgeToDimEquiv ctx varName r
             | None ->
                 // Meet is empty: branch is dead code. Use guard interval to
                 // prevent false positives inside unreachable branches.
                 ctx.cst.valueRanges <- Map.add varName guard ctx.cst.valueRanges
+                bridgeToDimEquiv ctx varName guard
