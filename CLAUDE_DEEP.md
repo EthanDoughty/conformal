@@ -161,7 +161,7 @@ Tests use inline assertions in MATLAB comments:
 % EXPECT_FIXPOINT: A = matrix[None x None]   (override when --fixpoint active)
 ```
 
-The test runner (`TestRunner.fs`) validates these expectations against analysis results. Test files are organized in `tests/` subdirectories by category (18 categories, 378 tests) and discovered dynamically via glob. Run `cd src && dotnet run -- --tests` to see the current count.
+The test runner (`TestRunner.fs`) validates these expectations against analysis results. Test files are organized in `tests/` subdirectories by category (19 categories, 390 tests) and discovered dynamically via glob. Run `cd src && dotnet run -- --tests` to see the current count.
 
 ## Critical Implementation Details
 
@@ -200,6 +200,12 @@ When analyzing a `.m` file, the analyzer scans sibling `.m` files in the same di
 - Procedure: `function name(params)` (no return values)
 - Nested: `function...end` blocks inside another function body
 
+**`nargin`/`nargout` semantics**:
+- `nargin` and `nargout` are not in `KNOWN_BUILTINS`; instead, they are injected into the function's initial environment as concrete singleton intervals at each call site (`nargin = [argc, argc]`, `nargout = [outc, outc]`)
+- Calling with fewer arguments than declared is treated as optional (missing args start as bottom); calling with more than declared is still an error
+- The cache key includes the argument count, so optional-arg functions called with different argc values are analyzed separately
+- Interval refinement inside the body can then prune dead branches: `if nargin < 2` with `nargin = [2, 2]` has a provably false condition, so the true branch is effectively dead
+
 **Nested function semantics**:
 - Nested functions are visible only within their enclosing function (not at top-level script scope)
 - They have read access to parent workspace variables via `ScopedEnv` parent-pointer scope chains
@@ -235,6 +241,18 @@ When a definite mismatch is detected (e.g., inner dimension mismatch in `A*B`), 
 1. Emits a warning
 2. Treats the result as `unknown`
 3. Continues analysis to provide maximum information
+
+**`cellfun`/`arrayfun` dispatch** (`EvalBuiltins.fs`):
+- `resolveHandleOutputShape` synthesizes an `Apply` node and evaluates it through `evalExprFn` with the handle's argument shapes to determine per-element output shape
+- `detectUniformOutput` scans the argument list for the `'UniformOutput'` name-value pair; when `false`, `cellfun` returns a cell matching the input cell dimensions and emits `W_CELLFUN_NON_UNIFORM` (strict-only)
+- When `UniformOutput` is `true` (the default), a scalar per-element result produces a matrix matching the cell/matrix dimensions; named handles (`@func`) and lambdas (`@(x) expr`) both go through normal handle dispatch
+- `arrayfun` follows the same logic applied to matrix inputs rather than cell inputs
+
+**`classdef` support** (`Parser.fs`, `ClassInfo` registry):
+- `ParseClassdef` extracts property names from `properties` blocks (bare names and `name = default` forms) and method `FunctionDef` nodes from `methods` blocks into a `ClassInfo` record
+- The `ClassInfo` registry maps class names to their `ClassInfo`; when a call site matches a registered class name, the constructor body is analyzed and the result is a struct carrying the declared property fields
+- Superclass syntax `classdef Foo < Bar` is parsed: the `< Bar` part is consumed and stored but the superclass is not resolved or analyzed
+- Method dispatch (calling `obj.method(...)`) is not yet supported; method definitions are extracted but not called from outside the constructor flow
 
 ## Known Behaviors and Gotchas
 
