@@ -5,7 +5,7 @@ This directory contains the F# implementation of the Conformal static shape anal
 ## Build and run
 
 ```bash
-# Run the full test suite (354 .m tests + 28 property-based tests)
+# Run the full test suite (370 .m tests + 28 property-based tests)
 dotnet run -- --tests
 
 # Analyze a single file
