@@ -7,7 +7,7 @@
 [![Version](https://img.shields.io/badge/version-2.0.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4.svg)](https://dotnet.microsoft.com/download)
-[![Tests](https://img.shields.io/badge/tests-373%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-378%20passing-brightgreen.svg)](#test-suite)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
 *Matrices must be **conformable** before they can perform. Conformal makes sure they are.*
@@ -53,7 +53,7 @@ dotnet run -- ../tests/basics/inner_dim_mismatch.m
 
 ## Performance
 
-The single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and the cross-file workspace analysis runs in about 70ms. The full test suite (373 tests total) finishes in about one second, with no MATLAB runtime involved during any part of the process.
+The single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and the cross-file workspace analysis runs in about 70ms. The full test suite (378 tests total) finishes in about one second, with no MATLAB runtime involved during any part of the process.
 
 The VS Code extension runs the analyzer while you are typing code, since it is compiled to JavaScript, using the Fable tool, so there is no subprocess startup cost and analysis works on every keystroke with a 500ms debounce.
 
@@ -113,6 +113,8 @@ When `--fixpoint` widening would ordinarily snap an interval bound to infinity, 
 
 Additionally, branch conditions narrow variable intervals inside the branch body. If you write `if x > 0`, Conformal refines `x` to `[1, +inf]` for the true branch, which can eliminate false-positive out-of-bounds and negative-dim warnings when a guard proves safety. Conformal supports `>`, `>=`, `<`, `<=`, `==`, `~=`, compound `&&` conditions, and operator flipping like `5 >= x`.
 
+There is also a cross-domain bridge between the interval domain and the dimension equivalence classes. When an exact interval `[k, k]` is recorded for a variable, for example because a branch condition like `if r == 5` narrows `r` to a singleton, the bridge propagates `k` into any DimEquiv equivalence class that `r` belongs to, and back into `valueRanges` for all equivalent variables. This means that if `r = size(A, 1)` and `A` has a symbolic `n` row dimension, narrowing `r` inside a branch immediately resolves `n` to that same concrete value for the duration of the branch. Similarly, `n = size(A, 1)` where `A` has a concrete row dimension now directly sets `valueRanges[n] = [dim, dim]`, so a subsequent `zeros(n, n)` can resolve to a concrete shape rather than staying symbolic.
+
 ### Type errors
 
 When you use a non-numeric type (struct, cell, function_handle) where a numeric value is expected, Conformal emits a type mismatch error. Arithmetic operations like `+`, `-`, `*`, and `.*` on structs or cells emit `W_ARITHMETIC_TYPE_MISMATCH`. Transpose on a non-numeric type emits `W_TRANSPOSE_TYPE_MISMATCH`, negation emits `W_NEGATE_TYPE_MISMATCH`, and mixing incompatible types in a matrix literal (like `[s, A]` where `s` is a struct) emits `W_CONCAT_TYPE_MISMATCH`. All four codes are Error severity, not warnings.
@@ -165,13 +167,13 @@ src/                    F# analyzer (lexer, parser, shape inference, builtins, d
 vscode-conformal/       VS Code extension (TypeScript client + Fable-compiled analyzer)
   fable/                Fable compilation project (F# to JavaScript, shares src/*.fs files)
   src/                  TypeScript extension and LSP server code
-tests/                  373 self-checking MATLAB programs in 18 categories
+tests/                  378 self-checking MATLAB programs in 18 categories
 .github/                CI workflow (build, test, compile Fable, package VSIX)
 ```
 
 ## Test Suite
 
-Conformal is validated by 373 self-checking MATLAB programs organized into 18 categories. Each test embeds its expected behavior as inline assertions:
+Conformal is validated by 378 self-checking MATLAB programs organized into 18 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -349,9 +351,9 @@ Shape rules for 635 recognized MATLAB builtins (315 with shape handlers), call/i
 </details>
 
 <details>
-<summary><h3>Loops (27 tests)</h3></summary>
+<summary><h3>Loops (35 tests)</h3></summary>
 
-Loop analysis with single-pass and fixed-point widening modes (via `--fixpoint`).
+Loop analysis with single-pass and fixed-point widening modes (via `--fixpoint`), including accumulation refinement, stepped ranges, range-valued dimensions, and interval gate convergence.
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -382,8 +384,16 @@ Loop analysis with single-pass and fixed-point widening modes (via `--fixpoint`)
 | `for_accum_horzcat.m` | Horzcat accumulation refined: `D=[D,delta]` for symbolic `k` iters gives `matrix[5 x (k+2)]` | 1 |
 | `for_accum_symbolic.m` | Symbolic range `a:b` accumulation: iteration count `(b-a+1)` used algebraically | 1 |
 | `for_accum_no_match.m` | Conservative bailout for self-referencing delta, stepped range, conditional accumulation | 0 |
+| `for_accum_stepped.m` | Stepped range `1:2:10` computes 5 iterations; accumulation gives concrete row count | 2 |
+| `for_accum_stepped_edge.m` | Edge cases for stepped iteration counts (degenerate ranges, negative step) | 0 |
+| `for_accum_stepped_symbolic.m` | Symbolic stepped range `1:2:n` bails out conservatively | 1 |
+| `for_accum_struct_field.m` | Struct field accumulation `s.data = [s.data; row]` detected and refined | 0 |
+| `conditional_accum_range.m` | Conditional accumulation (only one branch grows the matrix) produces a `Range` dimension in fixpoint mode | 1 |
+| `range_dim_arithmetic.m` | Arithmetic on `Range` dimensions: `[B; zeros(2,3)]` adds 2 to the lower bound | 1 |
+| `range_dim_conflict.m` | Conflict detection when a `Range` dimension is disjoint from a concrete dimension | 2 |
+| `phase2_interval_gate.m` | Phase 2 re-analysis fires when intervals change; scalar counter widens to a finite threshold interval rather than stalling | 0 |
 
->Principled widening-based loop analysis uses a 3-phase algorithm (discover, stabilize, post-loop join) that guarantees convergence in at most 2 iterations by widening conflicting dimensions to `None` while preserving stable dimensions.
+>Principled widening-based loop analysis uses a 3-phase algorithm (discover, stabilize, post-loop join) that guarantees convergence in at most 2 iterations by widening conflicting dimensions to `None` while preserving stable dimensions. In `--fixpoint` mode, conditional accumulation produces `Range` dimensions rather than `None`, tracking a lower bound on how many rows have been added. Phase 2 re-analysis fires whenever shapes or intervals change, so scalar counters propagate through threshold widening correctly.
 
 </details>
 
@@ -605,9 +615,9 @@ Dimension constraint solving: equality constraints recorded during operations, v
 </details>
 
 <details>
-<summary><h3>Intervals (21 tests)</h3></summary>
+<summary><h3>Intervals (29 tests)</h3></summary>
 
-Integer interval domain tracking scalar value ranges for division-by-zero, out-of-bounds indexing, and negative-dimension checks. Conditional interval refinement, symbolic interval bounds, and threshold-based widening.
+Integer interval domain tracking scalar value ranges for division-by-zero, out-of-bounds indexing, and negative-dimension checks. Conditional interval refinement, symbolic interval bounds, threshold-based widening, switch/case narrowing, and cross-domain propagation into dimension equivalence classes.
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -632,8 +642,16 @@ Integer interval domain tracking scalar value ranges for division-by-zero, out-o
 | `scalar_propagation.m` | Concrete scalar values propagate into dimension constructors (`m = 3; zeros(m,m)` gives `matrix[3 x 3]`) | 0 |
 | `widen_threshold_upper.m` | Incrementing loop counter: threshold widening snaps upper bound to `1000` rather than `+inf`; variable remains a finite scalar post-loop | 0 |
 | `widen_threshold_lower.m` | Decrementing loop counter: threshold widening snaps lower bound to `-1000` rather than `-inf`; variable remains a finite scalar post-loop | 0 |
+| `interval_for_preserved.m` | For-loop iteration variable interval is set by its range declaration and not overwritten by widening | 0 |
+| `interval_widen_while.m` | Interval widening in a while loop produces an unbounded upper bound so no false OOB fires after the loop | 0 |
+| `switch_interval_refine.m` | Switch/case narrowing: `case 3` refines the switch variable to `[3, 3]` inside that arm, so `zeros(n, n)` resolves to `matrix[3 x 3]` | 0 |
+| `switch_interval_string.m` | Switch with a string case value: no interval refinement attempted, no crash | 0 |
+| `assign_dimequiv_bridge.m` | Cross-domain bridge: matmul inner-dim constraint forces `k == 4`; bridge propagates into DimEquiv so `zeros(k, k)` gives `matrix[4 x 4]` | 0 |
+| `if_dimequiv_bridge.m` | Bridge via if condition: `r == 5` narrows `r` to `[5, 5]`, bridge propagates to equivalent symbolic `n`, so `zeros(n, n)` gives `matrix[5 x 5]` | 0 |
+| `switch_dimequiv_bridge.m` | Bridge via switch/case arm: `case 3` narrows `r` to `[3, 3]`, bridge propagates to equivalent `n`, so `zeros(n, n)` gives `matrix[3 x 3]` | 0 |
+| `size_concrete_bridge.m` | `size()` concrete propagation: `n = size(A, 1)` where `A` is `matrix[3 x 4]` sets `valueRanges[n] = [3, 3]`, so `zeros(n, n)` resolves to `matrix[3 x 3]` | 0 |
 
->Interval analysis runs in parallel with shape inference. `W_INDEX_OUT_OF_BOUNDS` and `W_DIVISION_BY_ZERO` have Error severity (definite runtime errors). Conditional refinement eliminates false positives when branch guards prove safety; symbolic bounds fall back soundly.
+>Interval analysis runs in parallel with shape inference. `W_INDEX_OUT_OF_BOUNDS` and `W_DIVISION_BY_ZERO` have Error severity (definite runtime errors). Conditional refinement eliminates false positives when branch guards prove safety; symbolic bounds fall back soundly. The cross-domain bridge connects the interval domain to dimension equivalence classes so that a concretized interval can resolve symbolic dimensions that are equated to the narrowed variable.
 
 </details>
 
@@ -733,7 +751,7 @@ Incorrectness witness generation: concrete proofs that dimension conflict warnin
 ### Running the Tests
 
 ```bash
-# Run all 373 .m tests
+# Run all 378 .m tests
 cd src && dotnet run -- --tests
 
 # Run with fixed-point loop analysis
