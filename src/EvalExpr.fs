@@ -54,9 +54,7 @@ let rec getExprInterval (expr: Expr) (env: Env) (ctx: AnalysisContext) : Interva
             Some { lo = Finite iv; hi = Finite iv }
         else None
     | Var(_, name) ->
-        match ctx.cst.valueRanges.TryGetValue(name) with
-        | true, iv -> Some iv
-        | false, _ -> None
+        Map.tryFind name ctx.cst.valueRanges
     | Neg(_, operand) ->
         let operandIv = getExprInterval operand env ctx
         Intervals.intervalNeg operandIv
@@ -97,12 +95,12 @@ let getConcreteDimSize (dim: Dim) (ctx: AnalysisContext) : int option =
         // Only extract from simple single-variable SymDims (e.g., 'n' but not '2*n' or 'n+1')
         match s._terms with
         | [([varName, 1], coeff)] when coeff = SymDim.Rational.One ->
-            match ctx.cst.valueRanges.TryGetValue(varName) with
-            | true, iv ->
+            match Map.tryFind varName ctx.cst.valueRanges with
+            | Some iv ->
                 match iv.lo, iv.hi with
                 | Finite lo, Finite hi when lo = hi -> Some lo
                 | _ -> None
-            | false, _ -> None
+            | None -> None
         | _ -> None
     | Range _  -> None   // Range dim has no single concrete value
     | Unknown  -> None

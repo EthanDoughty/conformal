@@ -176,24 +176,24 @@ let runPhase2Test () : int =
 
     Console.WriteLine("=== Phase 2: AnalysisContext + snapshotScope ===")
     let ctx = AnalysisContext()
-    ctx.cst.scalarBindings.["n"] <- 5
-    ctx.cst.scalarBindings.["m"] <- 3
+    ctx.cst.scalarBindings <- Map.add "n" 5 ctx.cst.scalarBindings
+    ctx.cst.scalarBindings <- Map.add "m" 3 ctx.cst.scalarBindings
     // Run snapshot scope -- changes inside should be reverted
     let resultInside =
         ctx.SnapshotScope(fun () ->
-            ctx.cst.scalarBindings.["n"] <- 99
-            ctx.cst.scalarBindings.["k"] <- 42
+            ctx.cst.scalarBindings <- Map.add "n" 99 ctx.cst.scalarBindings
+            ctx.cst.scalarBindings <- Map.add "k" 42 ctx.cst.scalarBindings
             ctx.cst.scalarBindings.["n"])  // returns 99 inside
     check "snapshotScope inside n"    "99" (string resultInside)
     check "snapshotScope restored n"  "5"  (string ctx.cst.scalarBindings.["n"])
     check "snapshotScope restored m"  "3"  (string ctx.cst.scalarBindings.["m"])
-    checkBool "snapshotScope k removed" false (ctx.cst.scalarBindings.ContainsKey("k"))
+    checkBool "snapshotScope k removed" false (Map.containsKey "k" ctx.cst.scalarBindings)
 
     // Verify exception safety of snapshotScope
-    ctx.cst.scalarBindings.["n"] <- 5
+    ctx.cst.scalarBindings <- Map.add "n" 5 ctx.cst.scalarBindings
     try
         ctx.SnapshotScope(fun () ->
-            ctx.cst.scalarBindings.["n"] <- 77
+            ctx.cst.scalarBindings <- Map.add "n" 77 ctx.cst.scalarBindings
             raise (System.Exception("test exception"))) |> ignore
     with _ -> ()
     check "snapshotScope restored after exception" "5" (string ctx.cst.scalarBindings.["n"])

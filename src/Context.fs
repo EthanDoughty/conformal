@@ -81,22 +81,19 @@ type CallContext() =
 
 type ConstraintContext() =
     /// Set of (dim1_str, dim2_str) equality constraints (canonicalized)
-    member val constraints         : System.Collections.Generic.HashSet<string * string>
-                                     = System.Collections.Generic.HashSet<string * string>() with get, set
+    member val constraints         : Set<string * string>
+                                     = Set.empty with get, set
     /// Provenance: (dim1_str, dim2_str) -> source_line
-    member val constraintProvenance : System.Collections.Generic.Dictionary<string * string, int>
-                                      = System.Collections.Generic.Dictionary<string * string, int>() with get, set
+    member val constraintProvenance : Map<string * string, int>
+                                      = Map.empty with get, set
     /// Concrete bindings: var_name -> concrete_value
-    member val scalarBindings      : System.Collections.Generic.Dictionary<string, int>
-                                     = System.Collections.Generic.Dictionary<string, int>() with get, set
+    member val scalarBindings      : Map<string, int>
+                                     = Map.empty with get, set
     /// Value ranges: var_name -> interval
-    member val valueRanges         : System.Collections.Generic.Dictionary<string, Interval>
-                                     = System.Collections.Generic.Dictionary<string, Interval>() with get, set
+    member val valueRanges         : Map<string, Interval>
+                                     = Map.empty with get, set
     /// Conflict sites accumulated globally
     member val conflictSites : ConflictSite list = [] with get, set
-    /// Dim provenance: (var_name, "rows"|"cols") -> Dim
-    member val dimProvenance       : System.Collections.Generic.Dictionary<string * string, Dim>
-                                     = System.Collections.Generic.Dictionary<string * string, Dim>() with get, set
     /// Branch path constraint stack
     member val pathConstraints     : PathConstraintStack = PathConstraintStack() with get, set
     /// Dimension equivalence store (union-find for dim equality classes)
@@ -131,25 +128,21 @@ type AnalysisContext() =
     /// Mirrors Python's snapshot_scope() context manager.
     /// Usage: ctx.SnapshotScope(fun () -> analyzeBody())
     member this.SnapshotScope (body: unit -> 'T) : 'T =
-        // Save
-        let savedConstraints  = System.Collections.Generic.HashSet<string * string>(this.cst.constraints)
-        let savedProvenance   = System.Collections.Generic.Dictionary<string * string, int>(this.cst.constraintProvenance)
-        let savedScalars      = System.Collections.Generic.Dictionary<string, int>(this.cst.scalarBindings)
-        let savedRanges       = System.Collections.Generic.Dictionary<string, Interval>(this.cst.valueRanges)
+        // Save (persistent maps: O(1) snapshot)
+        let savedConstraints  = this.cst.constraints
+        let savedProvenance   = this.cst.constraintProvenance
+        let savedScalars      = this.cst.scalarBindings
+        let savedRanges       = this.cst.valueRanges
         let savedNested       = System.Collections.Generic.Dictionary<string, FunctionSignature>(this.call.nestedFunctionRegistry)
         let savedDimEquiv     = DimEquiv.snapshot this.cst.dimEquiv
         try
             body ()
         finally
-            // Restore
-            this.cst.constraints.Clear()
-            for kv in savedConstraints do this.cst.constraints.Add(kv) |> ignore
-            this.cst.constraintProvenance.Clear()
-            for kv in savedProvenance do this.cst.constraintProvenance.[kv.Key] <- kv.Value
-            this.cst.scalarBindings.Clear()
-            for kv in savedScalars do this.cst.scalarBindings.[kv.Key] <- kv.Value
-            this.cst.valueRanges.Clear()
-            for kv in savedRanges do this.cst.valueRanges.[kv.Key] <- kv.Value
+            // Restore (direct assignment for persistent maps)
+            this.cst.constraints         <- savedConstraints
+            this.cst.constraintProvenance <- savedProvenance
+            this.cst.scalarBindings      <- savedScalars
+            this.cst.valueRanges         <- savedRanges
             this.call.nestedFunctionRegistry.Clear()
             for kv in savedNested do this.call.nestedFunctionRegistry.[kv.Key] <- kv.Value
             // Restore DimEquiv by replacing the store contents
