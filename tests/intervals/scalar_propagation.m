@@ -14,9 +14,9 @@ C = rand(k, k);
 D = ones(m, k);
 % EXPECT: D = matrix[3 x 4]
 
-% Non-constant: should remain symbolic
+% size() with concrete dim: p = size(A,1) sets valueRanges[p]=[3,3], resolves inline.
 p = size(A, 1);
 E = zeros(p, p);
-% EXPECT: E = matrix[p x p]
+% EXPECT: E = matrix[3 x 3]
 
 % EXPECT: warnings = 0

@@ -540,40 +540,43 @@ and analyzeStmtIr
         // size() dimension aliasing: n = size(A, 1) => union(n, A.rowDim)
         // Records DimEquiv equivalence for backward propagation.
         // Also sets dimAliases for Symbolic source dims (so zeros(n,...) resolves inline).
-        // For Concrete source dims, only DimEquiv is updated (backward pass handles it for free vars).
-        match expr with
-        | Apply(_, Var(_, "size"), [IndexExpr(_, argExpr); IndexExpr(_, dimArgExpr)]) ->
-            let argVarName =
-                match argExpr with
-                | Var(_, n) -> Some n
+        // For Concrete source dims, DimEquiv is set here; valueRanges is set after interval
+        // tracking (below) so the concrete value takes precedence over the interval tracking
+        // block, which would otherwise remove the entry (size() returns None from getExprInterval).
+        let sizeConcreteExact : Interval option =
+            match expr with
+            | Apply(_, Var(_, "size"), [IndexExpr(_, argExpr); IndexExpr(_, dimArgExpr)]) ->
+                let argVarName =
+                    match argExpr with
+                    | Var(_, n) -> Some n
+                    | _ -> None
+                let argShape =
+                    match argVarName with
+                    | Some n -> Env.get env n
+                    | None -> UnknownShape
+                let dimIdx = exprToDimIrCtx dimArgExpr env (Some ctx)
+                let targetDim =
+                    match argShape, dimIdx with
+                    | Matrix(rowDim, _), Concrete 1 -> Some rowDim
+                    | Matrix(_, colDim), Concrete 2 -> Some colDim
+                    | _ -> None
+                match targetDim with
+                | Some dim when dim <> Unknown ->
+                    let nameKey = name
+                    let dimKey  = Shapes.dimStr dim
+                    DimEquiv.union ctx.cst.dimEquiv nameKey dimKey |> ignore
+                    match dim with
+                    | Concrete n ->
+                        // Concrete dim: record in DimEquiv now; valueRanges set after interval tracking.
+                        DimEquiv.setConcrete ctx.cst.dimEquiv nameKey n |> ignore
+                        Some { lo = Finite n; hi = Finite n }
+                    | Symbolic _ ->
+                        // Symbolic dim: set dimAliases so inline resolution works in builtins.
+                        env.dimAliases <- Map.add name dim env.dimAliases
+                        None
+                    | _ -> None
                 | _ -> None
-            let argShape =
-                match argVarName with
-                | Some n -> Env.get env n
-                | None -> UnknownShape
-            let dimIdx = exprToDimIrCtx dimArgExpr env (Some ctx)
-            let targetDim =
-                match argShape, dimIdx with
-                | Matrix(rowDim, _), Concrete 1 -> Some rowDim
-                | Matrix(_, colDim), Concrete 2 -> Some colDim
-                | _ -> None
-            match targetDim with
-            | Some dim when dim <> Unknown ->
-                let nameKey = name
-                let dimKey  = Shapes.dimStr dim
-                DimEquiv.union ctx.cst.dimEquiv nameKey dimKey |> ignore
-                match dim with
-                | Concrete n ->
-                    // Concrete dim: record in DimEquiv only.
-                    // Don't set dimAliases or valueRanges to avoid overriding symbolic dim behavior
-                    // in existing tests that expect size() results to remain as symbolic names.
-                    DimEquiv.setConcrete ctx.cst.dimEquiv nameKey n |> ignore
-                | Symbolic _ ->
-                    // Symbolic dim: set dimAliases so inline resolution works in builtins.
-                    env.dimAliases <- Map.add name dim env.dimAliases
-                | _ -> ()
-            | _ -> ()
-        | _ -> ()
+            | _ -> None
 
         // Constraint validation: first binding of scalar to concrete value
         if isBottom oldShape && isScalar newShape then
@@ -594,6 +597,14 @@ and analyzeStmtIr
             | None   -> ctx.cst.valueRanges <- Map.remove name ctx.cst.valueRanges
         else
             ctx.cst.valueRanges <- Map.remove name ctx.cst.valueRanges
+
+        // Post-interval: apply concrete valueRanges from size() aliasing (takes precedence).
+        // This runs after interval tracking so it is not overwritten by Map.remove.
+        match sizeConcreteExact with
+        | Some exact ->
+            ctx.cst.valueRanges <- Map.add name exact ctx.cst.valueRanges
+            Intervals.bridgeToDimEquiv ctx name exact
+        | None -> ()
 
     | StructAssign({ line = line }, baseName, fields, expr) ->
         let rhsShape = wiredEvalExprFull expr env warnings ctx
@@ -1062,6 +1073,9 @@ and private analyzeAssignMulti
                             match dim with
                             | Concrete n ->
                                 DimEquiv.setConcrete ctx.cst.dimEquiv tgt n |> ignore
+                                let exact = { lo = Finite n; hi = Finite n }
+                                ctx.cst.valueRanges <- Map.add tgt exact ctx.cst.valueRanges
+                                Intervals.bridgeToDimEquiv ctx tgt exact
                             | Symbolic _ ->
                                 env.dimAliases <- Map.add tgt dim env.dimAliases
                             | _ -> ()
@@ -1088,6 +1102,9 @@ and private analyzeAssignMulti
                                     match rowDim with
                                     | Concrete n ->
                                         DimEquiv.setConcrete ctx.cst.dimEquiv tgt0 n |> ignore
+                                        let exact = { lo = Finite n; hi = Finite n }
+                                        ctx.cst.valueRanges <- Map.add tgt0 exact ctx.cst.valueRanges
+                                        Intervals.bridgeToDimEquiv ctx tgt0 exact
                                     | Symbolic _ ->
                                         env.dimAliases <- Map.add tgt0 rowDim env.dimAliases
                                     | _ -> ()
@@ -1096,6 +1113,9 @@ and private analyzeAssignMulti
                                     match colDim with
                                     | Concrete n ->
                                         DimEquiv.setConcrete ctx.cst.dimEquiv tgt1 n |> ignore
+                                        let exact = { lo = Finite n; hi = Finite n }
+                                        ctx.cst.valueRanges <- Map.add tgt1 exact ctx.cst.valueRanges
+                                        Intervals.bridgeToDimEquiv ctx tgt1 exact
                                     | Symbolic _ ->
                                         env.dimAliases <- Map.add tgt1 colDim env.dimAliases
                                     | _ -> ()

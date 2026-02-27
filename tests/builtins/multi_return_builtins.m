@@ -82,8 +82,8 @@ v = zeros(5, 1);
 % EXPECT: ms = matrix[1 x 1]
 % EXPECT: msi = matrix[1 x 1]
 
-% === Symbolic dimensions ===
+% === Concrete dimensions (n = size(B,2) = 5, resolves inline via valueRanges) ===
 C = zeros(n, n);
 [Vs, Ds] = eig(C);
-% EXPECT: Vs = matrix[n x n]
-% EXPECT: Ds = matrix[n x n]
+% EXPECT: Vs = matrix[5 x 5]
+% EXPECT: Ds = matrix[5 x 5]
