@@ -442,18 +442,18 @@ and private wiredBuiltinDispatch
         let sig_ = ctx.call.functionRegistry.[fname]
         if sig_.outputVars.IsEmpty then
             warnings.Add(warnProcedureInExpr line fname)
-        let outputShapes = analyzeFunctionCall fname args line env warnings ctx
+        let outputShapes = analyzeFunctionCall fname args line env warnings ctx 1
         if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
     elif ctx.call.nestedFunctionRegistry.ContainsKey(fname) then
         let sig_ = ctx.call.nestedFunctionRegistry.[fname]
         if sig_.outputVars.IsEmpty then
             warnings.Add(warnProcedureInExpr line fname)
-        let outputShapes = analyzeNestedFunctionCall fname args line env warnings ctx
+        let outputShapes = analyzeNestedFunctionCall fname args line env warnings ctx 1
         if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
     elif ctx.ws.externalFunctions.ContainsKey(fname) then
         // External functions: no W_PROCEDURE_IN_EXPR (only applies to same-file functions)
         let extSig = ctx.ws.externalFunctions.[fname]
-        let outputShapes = analyzeExternalFunctionCall fname extSig args line env warnings ctx
+        let outputShapes = analyzeExternalFunctionCall fname extSig args line env warnings ctx 1
         if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
     else
         warnings.Add(warnUnknownFunction line fname)
@@ -493,18 +493,18 @@ and private wiredEvalExprFull
                 let sig_ = ctx.call.functionRegistry.[fname]
                 if sig_.outputVars.IsEmpty then
                     warnings.Add(warnProcedureInExpr line fname)
-                let outputShapes = analyzeFunctionCall fname args line env warnings ctx
+                let outputShapes = analyzeFunctionCall fname args line env warnings ctx 1
                 if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
             elif ctx.call.nestedFunctionRegistry.ContainsKey(fname) then
                 let sig_ = ctx.call.nestedFunctionRegistry.[fname]
                 if sig_.outputVars.IsEmpty then
                     warnings.Add(warnProcedureInExpr line fname)
-                let outputShapes = analyzeNestedFunctionCall fname args line env warnings ctx
+                let outputShapes = analyzeNestedFunctionCall fname args line env warnings ctx 1
                 if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
             elif ctx.ws.externalFunctions.ContainsKey(fname) then
                 // External functions: no W_PROCEDURE_IN_EXPR (only applies to same-file functions)
                 let extSig = ctx.ws.externalFunctions.[fname]
-                let outputShapes = analyzeExternalFunctionCall fname extSig args line env warnings ctx
+                let outputShapes = analyzeExternalFunctionCall fname extSig args line env warnings ctx 1
                 if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
             else
                 warnings.Add(warnUnknownFunction line fname)
@@ -1127,7 +1127,7 @@ and private analyzeAssignMulti
                     for target in targets do bindTarget target UnknownShape
 
         elif ctx.call.functionRegistry.ContainsKey(fname) then
-            let outputShapes = analyzeFunctionCall fname args line env warnings ctx
+            let outputShapes = analyzeFunctionCall fname args line env warnings ctx targets.Length
             if targets.Length <> outputShapes.Length then
                 warnings.Add(warnMultiAssignCountMismatch line fname outputShapes.Length targets.Length)
                 for target in targets do bindTarget target UnknownShape
@@ -1135,7 +1135,7 @@ and private analyzeAssignMulti
                 for (target, shape) in List.zip targets outputShapes do bindTarget target shape
 
         elif ctx.call.nestedFunctionRegistry.ContainsKey(fname) then
-            let outputShapes = analyzeNestedFunctionCall fname args line env warnings ctx
+            let outputShapes = analyzeNestedFunctionCall fname args line env warnings ctx targets.Length
             if targets.Length <> outputShapes.Length then
                 warnings.Add(warnMultiAssignCountMismatch line fname outputShapes.Length targets.Length)
                 for target in targets do bindTarget target UnknownShape
@@ -1144,7 +1144,7 @@ and private analyzeAssignMulti
 
         elif ctx.ws.externalFunctions.ContainsKey(fname) then
             let extSig = ctx.ws.externalFunctions.[fname]
-            let outputShapes = analyzeExternalFunctionCall fname extSig args line env warnings ctx
+            let outputShapes = analyzeExternalFunctionCall fname extSig args line env warnings ctx targets.Length
             if targets.Length <> outputShapes.Length then
                 warnings.Add(warnMultiAssignCountMismatch line fname outputShapes.Length targets.Length)
                 for target in targets do bindTarget target UnknownShape
@@ -1233,17 +1233,20 @@ and analyzeFunctionCall
     (env: Env)
     (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
+    (numTargets: int)
     : Shape list =
 
     if not (ctx.call.functionRegistry.ContainsKey(funcName)) then [ UnknownShape ]
     else
         let sig_ = ctx.call.functionRegistry.[funcName]
 
-        // Check argument count
-        if args.Length <> sig_.parms.Length then
+        // Check argument count: too many args = error; too few = optional args (nargin support)
+        if args.Length > sig_.parms.Length then
             warnings.Add(warnFunctionArgCountMismatch line funcName sig_.parms.Length args.Length)
             List.replicate (max sig_.outputVars.Length 1) UnknownShape
         else
+
+        let actualArgCount = args.Length
 
         // Recursion guard
         if ctx.call.analyzingFunctions.Contains(funcName) then
@@ -1251,7 +1254,7 @@ and analyzeFunctionCall
             List.replicate (max sig_.outputVars.Length 1) UnknownShape
         else
 
-        // Evaluate arg shapes for cache key
+        // Evaluate arg shapes for cache key (only for actually-passed args)
         let argShapes =
             args |> List.map (fun arg ->
                 match arg with
@@ -1262,10 +1265,10 @@ and analyzeFunctionCall
             List.map2 (fun (param: string) arg ->
                 match arg with
                 | IndexExpr(_, e) -> (param, exprToDimIr e env)
-                | _ -> (param, Unknown)) sig_.parms args
+                | _ -> (param, Unknown)) (List.take actualArgCount sig_.parms) args
 
         let cacheKey =
-            funcName + ":(" +
+            funcName + ":n=" + string actualArgCount + ":o=" + string numTargets + ":(" +
             (argShapes |> List.map shapeToString |> String.concat ",") + "):(" +
             (argDimAliases |> List.map (fun (p, d) -> p + "=" + dimStr d) |> String.concat ",") + ")"
 
@@ -1282,8 +1285,8 @@ and analyzeFunctionCall
                     let funcEnv = Env.create ()
                     let funcWarnings = ResizeArray<Diagnostic>()
 
-                    // Bind parameters
-                    for (param, arg, argShape) in List.zip3 sig_.parms args argShapes do
+                    // Bind passed parameters; leave extra params unbound (Bottom)
+                    for (param, arg, argShape) in List.zip3 (List.take actualArgCount sig_.parms) args argShapes do
                         Env.set funcEnv param argShape
                         match arg with
                         | IndexExpr(_, e) ->
@@ -1291,6 +1294,12 @@ and analyzeFunctionCall
                             if callerDim <> Unknown then
                                 funcEnv.dimAliases <- Map.add param callerDim funcEnv.dimAliases
                         | _ -> ()
+
+                    // Inject nargin/nargout into function env
+                    Env.set funcEnv "nargin" Scalar
+                    ctx.cst.valueRanges <- Map.add "nargin" { lo = Finite actualArgCount; hi = Finite actualArgCount } ctx.cst.valueRanges
+                    Env.set funcEnv "nargout" Scalar
+                    ctx.cst.valueRanges <- Map.add "nargout" { lo = Finite numTargets; hi = Finite numTargets } ctx.cst.valueRanges
 
                     // Pre-scan body for nested FunctionDefs
                     for s in sig_.body do
@@ -1334,16 +1343,20 @@ and analyzeNestedFunctionCall
     (parentEnv: Env)
     (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
+    (numTargets: int)
     : Shape list =
 
     if not (ctx.call.nestedFunctionRegistry.ContainsKey(funcName)) then [ UnknownShape ]
     else
         let sig_ = ctx.call.nestedFunctionRegistry.[funcName]
 
-        if args.Length <> sig_.parms.Length then
+        // Too many args = error; too few = optional args (nargin support)
+        if args.Length > sig_.parms.Length then
             warnings.Add(warnFunctionArgCountMismatch line funcName sig_.parms.Length args.Length)
             List.replicate (max sig_.outputVars.Length 1) UnknownShape
         else
+
+        let actualArgCount = args.Length
 
         if ctx.call.analyzingFunctions.Contains(funcName) then
             warnings.Add(warnRecursiveFunction line funcName)
@@ -1360,10 +1373,10 @@ and analyzeNestedFunctionCall
             List.map2 (fun (param: string) arg ->
                 match arg with
                 | IndexExpr(_, e) -> (param, exprToDimIr e parentEnv)
-                | _ -> (param, Unknown)) sig_.parms args
+                | _ -> (param, Unknown)) (List.take actualArgCount sig_.parms) args
 
         let cacheKey =
-            "nested:" + funcName + ":(" +
+            "nested:" + funcName + ":n=" + string actualArgCount + ":o=" + string numTargets + ":(" +
             (argShapes |> List.map shapeToString |> String.concat ",") + "):(" +
             (argDimAliases |> List.map (fun (p, d) -> p + "=" + dimStr d) |> String.concat ",") + ")"
 
@@ -1380,7 +1393,8 @@ and analyzeNestedFunctionCall
                     let funcEnv = Env.createWithParent parentEnv
                     let funcWarnings = ResizeArray<Diagnostic>()
 
-                    for (param, arg, argShape) in List.zip3 sig_.parms args argShapes do
+                    // Bind passed parameters; leave extra params unbound (Bottom)
+                    for (param, arg, argShape) in List.zip3 (List.take actualArgCount sig_.parms) args argShapes do
                         Env.set funcEnv param argShape
                         match arg with
                         | IndexExpr(_, e) ->
@@ -1388,6 +1402,12 @@ and analyzeNestedFunctionCall
                             if callerDim <> Unknown then
                                 funcEnv.dimAliases <- Map.add param callerDim funcEnv.dimAliases
                         | _ -> ()
+
+                    // Inject nargin/nargout into function env
+                    Env.set funcEnv "nargin" Scalar
+                    ctx.cst.valueRanges <- Map.add "nargin" { lo = Finite actualArgCount; hi = Finite actualArgCount } ctx.cst.valueRanges
+                    Env.set funcEnv "nargout" Scalar
+                    ctx.cst.valueRanges <- Map.add "nargout" { lo = Finite numTargets; hi = Finite numTargets } ctx.cst.valueRanges
 
                     for s in sig_.body do
                         match s with
@@ -1435,6 +1455,7 @@ and analyzeExternalFunctionCall
     (env: Env)
     (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
+    (numTargets: int)
     : Shape list =
 
     // Cross-file recursion guard
@@ -1450,11 +1471,13 @@ and analyzeExternalFunctionCall
         List.replicate (max extSig.returnCount 1) UnknownShape
     | Some (primarySig, (subfunctions : Map<string, FunctionSignature>)) ->
 
-    // Arg count check
-    if args.Length <> primarySig.parms.Length then
+    // Too many args = error; too few = optional args (nargin support)
+    if args.Length > primarySig.parms.Length then
         warnings.Add(warnFunctionArgCountMismatch line fname primarySig.parms.Length args.Length)
         List.replicate (max primarySig.outputVars.Length 1) UnknownShape
     else
+
+    let actualArgCount = args.Length
 
     let argShapes =
         args |> List.map (fun arg ->
@@ -1466,10 +1489,10 @@ and analyzeExternalFunctionCall
         List.map2 (fun (param: string) arg ->
             match arg with
             | IndexExpr(_, e) -> (param, exprToDimIr e env)
-            | _ -> (param, Unknown)) primarySig.parms args
+            | _ -> (param, Unknown)) (List.take actualArgCount primarySig.parms) args
 
     let cacheKey =
-        "external:" + fname + ":(" +
+        "external:" + fname + ":n=" + string actualArgCount + ":o=" + string numTargets + ":(" +
         (argShapes |> List.map shapeToString |> String.concat ",") + "):(" +
         (argDimAliases |> List.map (fun (p, d) -> p + "=" + dimStr d) |> String.concat ",") + ")"
 
@@ -1490,7 +1513,8 @@ and analyzeExternalFunctionCall
                 let funcEnv = Env.create ()
                 let funcWarnings = ResizeArray<Diagnostic>()  // Suppressed
 
-                for (param, arg, argShape) in List.zip3 primarySig.parms args argShapes do
+                // Bind passed parameters; leave extra params unbound (Bottom)
+                for (param, arg, argShape) in List.zip3 (List.take actualArgCount primarySig.parms) args argShapes do
                     Env.set funcEnv param argShape
                     match arg with
                     | IndexExpr(_, e) ->
@@ -1498,6 +1522,12 @@ and analyzeExternalFunctionCall
                         if callerDim <> Unknown then
                             funcEnv.dimAliases <- Map.add param callerDim funcEnv.dimAliases
                     | _ -> ()
+
+                // Inject nargin/nargout into function env
+                Env.set funcEnv "nargin" Scalar
+                ctx.cst.valueRanges <- Map.add "nargin" { lo = Finite actualArgCount; hi = Finite actualArgCount } ctx.cst.valueRanges
+                Env.set funcEnv "nargout" Scalar
+                ctx.cst.valueRanges <- Map.add "nargout" { lo = Finite numTargets; hi = Finite numTargets } ctx.cst.valueRanges
 
                 try
                     for s in primarySig.body do analyzeStmtIr s funcEnv funcWarnings ctx

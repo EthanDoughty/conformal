@@ -2,7 +2,7 @@
 % Tests cross-file error scenarios, cross-feature interactions (structs, cells,
 % control flow, subfunctions, loops, builtins), domain-authentic pipelines,
 % builtin shadowing, procedure handling, and unknown propagation.
-% EXPECT: warnings = 4
+% EXPECT: warnings = 3
 
 % ==========================================================================
 % SECTION 1: Domain-Authentic Pipelines (0 warnings)
@@ -92,7 +92,7 @@ ac = ws_accumulate(5);
 % EXPECT_FIXPOINT: ac = matrix[5 x 3]
 
 % ==========================================================================
-% SECTION 4: Caller-Side Error Detection (3 warnings)
+% SECTION 4: Caller-Side Error Detection (2 warnings)
 % ==========================================================================
 
 % Internal mismatch → silent unknown (body warning suppressed)
@@ -101,17 +101,17 @@ ac = ws_accumulate(5);
 silent = ws_return_unknown(zeros(3, 4), zeros(2, 5));
 % EXPECT: silent = unknown
 
-% Wrong arg count → W_FUNCTION_ARG_COUNT_MISMATCH (WARNING 2)
+% Too-few args: nargin support, no W_FUNCTION_ARG_COUNT_MISMATCH (B = unbound → unknown)
 wrong_args = ws_two_args(zeros(3, 3));
 % EXPECT: wrong_args = unknown
 
 % Cross-file inner dim mismatch: ws_covariance(5x3) = 3x3, 3x3 * 5x5 → mismatch
-% W_INNER_DIM_MISMATCH (WARNING 3)
+% W_INNER_DIM_MISMATCH (WARNING 2)
 cov_result = ws_covariance(X53);
 bad_mul = cov_result * ones(5, 5);
 
 % Multi-assign count mismatch: ws_kalman_predict returns 2, requesting 3
-% W_MULTI_ASSIGN_COUNT_MISMATCH (WARNING 4)
+% W_MULTI_ASSIGN_COUNT_MISMATCH (WARNING 3)
 [ka, kb, kc] = ws_kalman_predict(F, x0, P0, Q);
 
 % ==========================================================================
