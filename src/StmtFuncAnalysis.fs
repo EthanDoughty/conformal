@@ -298,10 +298,12 @@ let private joinBranchResults
     (baselineConstraints: Set<string * string>)
     (baselineDimEquiv: DimEquiv.DimEquiv)
     (baselineRanges: Map<string, SharedTypes.Interval>)
+    (baselineUpperBounds: Map<string, string * int>)
     (branchEnvs: Env list)
     (branchConstraints: Set<string * string> list)
     (branchDimEquivs: DimEquiv.DimEquiv list)
     (branchRanges: Map<string, SharedTypes.Interval> list)
+    (branchUpperBounds: Map<string, string * int> list)
     (returnedFlags: bool list)
     (deferredExc: System.Exception option)
     : unit =
@@ -315,6 +317,7 @@ let private joinBranchResults
         let liveConstraints   = List.zip branchConstraints returnedFlags |> List.choose (fun (c, r) -> if not r then Some c else None)
         let liveDimEquivs     = List.zip branchDimEquivs returnedFlags |> List.choose (fun (d, r) -> if not r then Some d else None)
         let liveRanges        = List.zip branchRanges returnedFlags |> List.choose (fun (vr, r) -> if not r then Some vr else None)
+        let liveUpperBounds   = List.zip branchUpperBounds returnedFlags |> List.choose (fun (ub, r) -> if not r then Some ub else None)
 
         if not liveEnvs.IsEmpty then
             let joined = liveEnvs |> List.fold (fun acc e -> joinEnv acc e) liveEnvs.[0]
@@ -350,6 +353,13 @@ let private joinBranchResults
 
             // Join value_ranges
             ctx.cst.valueRanges <- joinValueRanges baselineRanges liveRanges
+
+            // Pentagon: intersect upper-bound maps across live branches
+            let joinedUpperBounds =
+                match liveUpperBounds with
+                | [] -> baselineUpperBounds
+                | first :: rest -> rest |> List.fold Intervals.joinUpperBounds first
+            ctx.cst.upperBounds <- joinedUpperBounds
 
 
 // ---------------------------------------------------------------------------
@@ -575,6 +585,9 @@ and analyzeStmtIr
 
         Env.set env name newShape
 
+        // Pentagon: kill stale upper bounds for the assigned variable
+        ctx.cst.upperBounds <- Intervals.killUpperBoundsFor name ctx.cst.upperBounds
+
         // size() dimension aliasing: n = size(A, 1) => union(n, A.rowDim)
         // Records DimEquiv equivalence for backward propagation.
         // Also sets dimAliases for Symbolic source dims (so zeros(n,...) resolves inline).
@@ -734,7 +747,15 @@ and analyzeStmtIr
                     | Some v -> Finite v
                     | None -> match hiDim with Concrete n -> Finite n | Symbolic s -> SymBound s | Range _ -> Unbounded | Unknown -> Unbounded
                 ctx.cst.valueRanges <- Map.add var_ { lo = loBound; hi = hiBound } ctx.cst.valueRanges
+                // Pentagon: record relational upper bound when hi endpoint is a variable
+                match right with
+                | Var(_, boundVarName) ->
+                    ctx.cst.upperBounds <- Map.add var_ (boundVarName, 0) ctx.cst.upperBounds
+                | _ -> ()
         | _ -> ()
+
+        // Pentagon bridge: tighten var_ interval using any known exact bound variable
+        Intervals.applyPentagonBridge ctx
 
         // Fixpoint-only: accumulation refinement
         let (preLoopEnv, iterCount, accumPatterns) =
@@ -759,6 +780,7 @@ and analyzeStmtIr
         let baselineConstraints = snapshotConstraints ctx
         let baselineDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
         let baselineRanges = ctx.cst.valueRanges
+        let baselineUpperBounds = ctx.cst.upperBounds
 
         let thenEnv = Env.copy env
         let elseEnv = Env.copy env
@@ -779,6 +801,7 @@ and analyzeStmtIr
         let thenConstraints = snapshotConstraints ctx
         let thenDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
         let thenRanges = ctx.cst.valueRanges
+        let thenUpperBounds = ctx.cst.upperBounds
 
         // Reset to baseline for else branch
         ctx.cst.constraints <- baselineConstraints
@@ -789,6 +812,7 @@ and analyzeStmtIr
         ctx.cst.dimEquiv.concrete.Clear()
         for kv in baselineDimEquiv.concrete do ctx.cst.dimEquiv.concrete.[kv.Key] <- kv.Value
         ctx.cst.valueRanges <- baselineRanges
+        ctx.cst.upperBounds <- baselineUpperBounds
 
         // Else branch
         applyRefinements ctx refinements true
@@ -803,12 +827,14 @@ and analyzeStmtIr
         let elseConstraints = snapshotConstraints ctx
         let elseDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
         let elseRanges = ctx.cst.valueRanges
+        let elseUpperBounds = ctx.cst.upperBounds
 
         joinBranchResults
-            env ctx baselineConstraints baselineDimEquiv baselineRanges
+            env ctx baselineConstraints baselineDimEquiv baselineRanges baselineUpperBounds
             [thenEnv; elseEnv] [thenConstraints; elseConstraints]
             [thenDimEquiv; elseDimEquiv]
-            [thenRanges; elseRanges] [thenReturned; elseReturned] None
+            [thenRanges; elseRanges] [thenUpperBounds; elseUpperBounds]
+            [thenReturned; elseReturned] None
 
     | IfChain({ line = line }, conditions, bodies, elseBody) ->
         for cond in conditions do wiredEvalExprFull cond env warnings ctx |> ignore
@@ -817,12 +843,14 @@ and analyzeStmtIr
         let baselineConstraints = snapshotConstraints ctx
         let baselineDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
         let baselineRanges = ctx.cst.valueRanges
+        let baselineUpperBounds = ctx.cst.upperBounds
 
         let allBodies = bodies @ [ elseBody ]
         let mutable branchEnvs : Env list = []
         let mutable branchConstraints : Set<string * string> list = []
         let mutable branchDimEquivs : DimEquiv.DimEquiv list = []
         let mutable branchRanges : Map<string, SharedTypes.Interval> list = []
+        let mutable branchUpperBoundsAcc : Map<string, string * int> list = []
         let mutable returnedFlags : bool list = []
         let mutable deferredExc : System.Exception option = None
 
@@ -835,6 +863,7 @@ and analyzeStmtIr
             ctx.cst.dimEquiv.concrete.Clear()
             for kv in baselineDimEquiv.concrete do ctx.cst.dimEquiv.concrete.[kv.Key] <- kv.Value
             ctx.cst.valueRanges <- baselineRanges
+            ctx.cst.upperBounds <- baselineUpperBounds
 
             if idx < allRefinements.Length then
                 applyRefinements ctx allRefinements.[idx] false
@@ -858,11 +887,13 @@ and analyzeStmtIr
             branchConstraints <- branchConstraints @ [ snapshotConstraints ctx ]
             branchDimEquivs <- branchDimEquivs @ [ DimEquiv.snapshot ctx.cst.dimEquiv ]
             branchRanges <- branchRanges @ [ ctx.cst.valueRanges ]
+            branchUpperBoundsAcc <- branchUpperBoundsAcc @ [ ctx.cst.upperBounds ]
             returnedFlags <- returnedFlags @ [returned]
 
         joinBranchResults
-            env ctx baselineConstraints baselineDimEquiv baselineRanges
-            branchEnvs branchConstraints branchDimEquivs branchRanges returnedFlags deferredExc
+            env ctx baselineConstraints baselineDimEquiv baselineRanges baselineUpperBounds
+            branchEnvs branchConstraints branchDimEquivs branchRanges branchUpperBoundsAcc
+            returnedFlags deferredExc
 
     | Switch({ line = line }, expr, cases, otherwise) ->
         wiredEvalExprFull expr env warnings ctx |> ignore
@@ -877,12 +908,14 @@ and analyzeStmtIr
         let baselineConstraints = snapshotConstraints ctx
         let baselineDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
         let baselineRanges = ctx.cst.valueRanges
+        let baselineUpperBounds = ctx.cst.upperBounds
 
         let allBodies = (cases |> List.map snd) @ [ otherwise ]
         let mutable branchEnvs : Env list = []
         let mutable branchConstraints : Set<string * string> list = []
         let mutable branchDimEquivs : DimEquiv.DimEquiv list = []
         let mutable branchRanges : Map<string, SharedTypes.Interval> list = []
+        let mutable branchUpperBoundsAcc : Map<string, string * int> list = []
         let mutable returnedFlags : bool list = []
         let mutable deferredExc : System.Exception option = None
 
@@ -895,6 +928,7 @@ and analyzeStmtIr
             ctx.cst.dimEquiv.concrete.Clear()
             for kv in baselineDimEquiv.concrete do ctx.cst.dimEquiv.concrete.[kv.Key] <- kv.Value
             ctx.cst.valueRanges <- baselineRanges
+            ctx.cst.upperBounds <- baselineUpperBounds
 
             let isCase = caseIdx < cases.Length
             if isCase then
@@ -926,16 +960,19 @@ and analyzeStmtIr
             branchConstraints <- branchConstraints @ [ snapshotConstraints ctx ]
             branchDimEquivs <- branchDimEquivs @ [ DimEquiv.snapshot ctx.cst.dimEquiv ]
             branchRanges <- branchRanges @ [ ctx.cst.valueRanges ]
+            branchUpperBoundsAcc <- branchUpperBoundsAcc @ [ ctx.cst.upperBounds ]
             returnedFlags <- returnedFlags @ [returned]
 
         joinBranchResults
-            env ctx baselineConstraints baselineDimEquiv baselineRanges
-            branchEnvs branchConstraints branchDimEquivs branchRanges returnedFlags deferredExc
+            env ctx baselineConstraints baselineDimEquiv baselineRanges baselineUpperBounds
+            branchEnvs branchConstraints branchDimEquivs branchRanges branchUpperBoundsAcc
+            returnedFlags deferredExc
 
     | Try(_, tryBody, catchBody) ->
         let baselineConstraints = snapshotConstraints ctx
         let baselineDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
         let baselineRanges = ctx.cst.valueRanges
+        let baselineUpperBounds = ctx.cst.upperBounds
         let preTryEnv = Env.copy env
 
         let tryEnv = Env.copy env
@@ -950,6 +987,7 @@ and analyzeStmtIr
         let tryConstraints = snapshotConstraints ctx
         let tryDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
         let tryRanges = ctx.cst.valueRanges
+        let tryUpperBounds = ctx.cst.upperBounds
 
         ctx.cst.constraints <- baselineConstraints
         ctx.cst.dimEquiv.parent.Clear()
@@ -959,6 +997,7 @@ and analyzeStmtIr
         ctx.cst.dimEquiv.concrete.Clear()
         for kv in baselineDimEquiv.concrete do ctx.cst.dimEquiv.concrete.[kv.Key] <- kv.Value
         ctx.cst.valueRanges <- baselineRanges
+        ctx.cst.upperBounds <- baselineUpperBounds
 
         let catchEnv = Env.copy preTryEnv
         let mutable catchReturned = false
@@ -975,12 +1014,14 @@ and analyzeStmtIr
         let catchConstraints = snapshotConstraints ctx
         let catchDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
         let catchRanges = ctx.cst.valueRanges
+        let catchUpperBounds = ctx.cst.upperBounds
 
         joinBranchResults
-            env ctx baselineConstraints baselineDimEquiv baselineRanges
+            env ctx baselineConstraints baselineDimEquiv baselineRanges baselineUpperBounds
             [tryEnv; catchEnv] [tryConstraints; catchConstraints]
             [tryDimEquiv; catchDimEquiv]
-            [tryRanges; catchRanges] [tryReturned; catchReturned] deferredExc
+            [tryRanges; catchRanges] [tryUpperBounds; catchUpperBounds]
+            [tryReturned; catchReturned] deferredExc
 
     | OpaqueStmt({ line = line }, targets, raw) ->
         let firstWord = if raw.Trim() = "" then "" else raw.Trim().Split([| ' '; '\t'; ':' |]).[0]
