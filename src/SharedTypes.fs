@@ -1,6 +1,7 @@
 module SharedTypes
 
 open SymDim
+open WarningCodes
 
 // ---------------------------------------------------------------------------
 // Type definitions shared across modules that need to be available before
@@ -32,7 +33,7 @@ type ConflictSite = {
     dimA:                  Shapes.Dim
     dimB:                  Shapes.Dim
     line:                  int
-    warningCode:           string
+    warningCode:           WarningCode
     constraintsSnapshot:   Set<string * string>
     scalarBindingsSnapshot: (string * int) list
     valueRangesSnapshot:   (string * (int * int)) list
