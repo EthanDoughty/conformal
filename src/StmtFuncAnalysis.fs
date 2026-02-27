@@ -1193,9 +1193,14 @@ and analyzeLoopBody
         // Widen intervals in parallel with shape widening
         ctx.cst.valueRanges <- widenValueRanges preLoopRanges ctx.cst.valueRanges loopVar
 
-        // Phase 2 (Stabilize): Re-analyze if widening changed anything
-        if not (Env.localBindingsEqual env widened) then
+        // Phase 2 (Stabilize): Re-analyze if widening changed shapes OR intervals.
+        // Scalar counters (count = count + 1) never change shape, so the old gate
+        // (shapes-only) skipped Phase 2 entirely, leaving intervals under-widened.
+        let shapesChanged = not (Env.localBindingsEqual env widened)
+        let intervalsChanged = ctx.cst.valueRanges <> preLoopRanges
+        if shapesChanged then
             Env.replaceLocal env widened
+        if shapesChanged || intervalsChanged then
             try
                 for s in body do analyzeStmtIr s env warnings ctx
             with
