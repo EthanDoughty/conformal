@@ -1710,6 +1710,187 @@ let private handleMultiFsolve
         Some results.[..numTargets - 1]
 
 
+// ---------------------------------------------------------------------------
+// cellfun / arrayfun helpers
+// ---------------------------------------------------------------------------
+
+/// detectUniformOutput: scan name-value pairs starting at index 2 for
+/// 'UniformOutput', false (or 0).  Default is true.
+let private detectUniformOutput (args: IndexArg list) : bool =
+    let mutable result = true
+    let mutable i = 2  // skip first two positional args
+    while i + 1 < args.Length do
+        match unwrapArg args.[i], unwrapArg args.[i + 1] with
+        | Some (StringLit(_, s)), Some (Const(_, v)) when s = "UniformOutput" ->
+            result <- v <> 0.0
+            i <- i + 2
+        | Some (StringLit(_, s)), Some (Var(_, "false")) when s = "UniformOutput" ->
+            result <- false
+            i <- i + 2
+        | _ -> i <- i + 1
+    result
+
+
+/// resolveHandleOutputShape: given a FunctionHandle shape and element shapes,
+/// dispatch through the full evaluation pipeline to get the output shape.
+/// For named handles, synthesises an Apply call with temp-env variables so all
+/// existing dispatch logic (builtins, user funcs, external funcs) is reused.
+/// For lambdas, binds params to elementShapes and evaluates the body.
+/// Returns UnknownShape for opaque handles or arity mismatches.
+let private resolveHandleOutputShape
+    (handleShape: Shape)
+    (elementShapes: Shape list)
+    (line: int)
+    (env: Env)
+    (ctx: AnalysisContext)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape =
+    match handleShape with
+    | FunctionHandle(Some ids) when ids.Count = 1 ->
+        let id = Set.minElement ids
+        let silentWarnings = ResizeArray<Diagnostic>()
+        match ctx.call.handleRegistry.TryGetValue(id) with
+        | true, funcName ->
+            // Named handle: build temp env with element-shaped variables and
+            // construct a synthetic Apply so the full dispatch is reused.
+            let tempEnv = Env.copy env
+            let tempArgs =
+                elementShapes |> List.mapi (fun i s ->
+                    let tempName = "__cellfun_arg_" + string i
+                    Env.set tempEnv tempName s
+                    IndexExpr(loc line 0, Var(loc line 0, tempName)))
+            let callExpr = Apply(loc line 0, Var(loc line 0, funcName), tempArgs)
+            evalExprFn callExpr tempEnv silentWarnings ctx
+        | false, _ ->
+            // Lambda handle
+            match ctx.call.lambdaMetadata.TryGetValue(id) with
+            | true, (parms, bodyExpr, closureEnv) ->
+                if parms.Length <> elementShapes.Length then UnknownShape
+                else
+                    let lambdaEnv = Env.copy closureEnv
+                    for (p, s) in List.zip parms elementShapes do
+                        Env.set lambdaEnv p s
+                    evalExprFn bodyExpr lambdaEnv silentWarnings ctx
+            | false, _ -> UnknownShape
+    | _ -> UnknownShape
+
+
+/// handleCellfun: single-return cellfun handler.
+let private handleCellfun
+    (line: int)
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape option =
+    if args.Length < 2 then Some UnknownShape
+    else
+        let handleShape = evalArgShape args.[0] env warnings ctx evalExprFn
+        let cellShape   = evalArgShape args.[1] env warnings ctx evalExprFn
+        let uniformOutput = detectUniformOutput args
+        // Extract element shape from cell elements map (join all tracked elements)
+        let elemShape =
+            match cellShape with
+            | Cell(_, _, Some elemMap) ->
+                if elemMap.IsEmpty then UnknownShape
+                else elemMap |> Map.toSeq |> Seq.map snd |> Seq.fold joinShape UnknownShape
+            | Cell _ -> UnknownShape
+            | _      -> UnknownShape
+        // Collect element shapes for all cell arguments (args at indices 1, 2, ... up to first string)
+        let mutable extraElems : Shape list = [ elemShape ]
+        let mutable i = 2
+        while i < args.Length do
+            match unwrapArg args.[i] with
+            | Some (StringLit _) -> i <- args.Length  // stop at name-value pair
+            | Some _ ->
+                let s = evalArgShape args.[i] env warnings ctx evalExprFn
+                let elem2 =
+                    match s with
+                    | Cell(_, _, Some em) ->
+                        if em.IsEmpty then UnknownShape
+                        else em |> Map.toSeq |> Seq.map snd |> Seq.fold joinShape UnknownShape
+                    | Cell _ -> UnknownShape
+                    | _ -> UnknownShape
+                extraElems <- extraElems @ [ elem2 ]
+                i <- i + 1
+            | None -> i <- i + 1
+        let resultElemShape = resolveHandleOutputShape handleShape extraElems line env ctx evalExprFn
+        let (cellRows, cellCols) =
+            match cellShape with
+            | Cell(r, c, _) -> (r, c)
+            | _ -> (Unknown, Unknown)
+        if uniformOutput then
+            // Strict warning: non-scalar result without explicit UniformOutput=false
+            if ctx.cst.strictMode && resultElemShape <> UnknownShape && not (isScalar resultElemShape) then
+                warnings.Add(warnCellfunNonUniform line)
+            if isScalar resultElemShape then Some (Matrix(cellRows, cellCols))
+            else Some UnknownShape
+        else
+            Some (Cell(cellRows, cellCols, None))
+
+
+/// handleArrayfun: single-return arrayfun handler.
+let private handleArrayfun
+    (line: int)
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape option =
+    if args.Length < 2 then Some UnknownShape
+    else
+        let handleShape = evalArgShape args.[0] env warnings ctx evalExprFn
+        let arrayShape  = evalArgShape args.[1] env warnings ctx evalExprFn
+        let uniformOutput = detectUniformOutput args
+        // arrayfun applies function to each scalar element
+        let resultElemShape = resolveHandleOutputShape handleShape [ Scalar ] line env ctx evalExprFn
+        let (arrayRows, arrayCols) =
+            match arrayShape with
+            | Matrix(r, c) -> (r, c)
+            | Scalar       -> (Concrete 1, Concrete 1)
+            | _            -> (Unknown, Unknown)
+        if uniformOutput then
+            if isScalar resultElemShape then Some (Matrix(arrayRows, arrayCols))
+            else Some UnknownShape
+        else
+            Some (Cell(arrayRows, arrayCols, None))
+
+
+/// handleMultiCellfun: multi-return cellfun handler.
+/// Each output target gets the appropriate shape.
+let private handleMultiCellfun
+    (line: int)
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (numTargets: int)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape list option =
+    let singleShape =
+        handleCellfun line args env warnings ctx evalExprFn
+        |> Option.defaultValue UnknownShape
+    Some (List.replicate numTargets singleShape)
+
+
+/// handleMultiArrayfun: multi-return arrayfun handler.
+let private handleMultiArrayfun
+    (line: int)
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (numTargets: int)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape list option =
+    let singleShape =
+        handleArrayfun line args env warnings ctx evalExprFn
+        |> Option.defaultValue UnknownShape
+    Some (List.replicate numTargets singleShape)
+
+
 // Supported forms lookup for count mismatch messages
 let MULTI_SUPPORTED_FORMS : Map<string, string> =
     Map.ofList [
@@ -1717,7 +1898,7 @@ let MULTI_SUPPORTED_FORMS : Map<string, string> =
         "chol", "2"; "size", "2"; "sort", "2"; "find", "1, 2, or 3"
         "unique", "1, 2, or 3"; "min", "1 or 2"; "max", "1 or 2"
         "fileparts", "1-3"; "fopen", "2"; "meshgrid", "2 or 3"
-        "cellfun", "any"; "ndgrid", "any"; "regexp", "any"; "regexpi", "any"
+        "cellfun", "any"; "arrayfun", "any"; "ndgrid", "any"; "regexp", "any"; "regexpi", "any"
         "lqr", "1 or 3"; "dlqr", "1 or 3"; "care", "1 or 3"; "dare", "1 or 3"
         "butter", "1 or 2"; "cheby1", "1 or 2"; "cheby2", "1 or 2"; "ellip", "1 or 2"; "besself", "1 or 2"
         "dcm2angle", "1 or 3"
@@ -1816,6 +1997,8 @@ let evalBuiltinCall
         | "conv2"            -> handleConv2 args env warnings ctx evalExprFn
         | "num2cell"         -> handleNum2cell args env warnings ctx evalExprFn
         | "jacobian"         -> handleJacobian args env warnings ctx evalExprFn
+        | "cellfun"          -> handleCellfun  line args env warnings ctx evalExprFn
+        | "arrayfun"         -> handleArrayfun line args env warnings ctx evalExprFn
         | _                -> None
 
     match complexResult with
@@ -1851,6 +2034,7 @@ let evalBuiltinCall
 /// evalMultiBuiltinCall: dispatch a multi-return builtin call, returning shape list.
 let evalMultiBuiltinCall
     (fname: string)
+    (line: int)
     (numTargets: int)
     (args: IndexArg list)
     (env: Env)
@@ -1874,7 +2058,9 @@ let evalMultiBuiltinCall
     | "fileparts" -> handleMultiFileparts args numTargets
     | "fopen"    -> handleMultiFopen   args numTargets
     | "meshgrid" -> handleMultiMeshgrid args numTargets
-    | "cellfun" | "ndgrid" | "regexp" | "regexpi" -> handleMultiAny numTargets
+    | "cellfun"  -> handleMultiCellfun  line args env warnings ctx numTargets evalExprFn
+    | "arrayfun" -> handleMultiArrayfun line args env warnings ctx numTargets evalExprFn
+    | "ndgrid" | "regexp" | "regexpi" -> handleMultiAny numTargets
     | "lqr" | "dlqr"   -> handleMultiLqr  args env warnings ctx numTargets evalExprFn
     | "care" | "dare"   -> handleMultiCare args env warnings ctx numTargets evalExprFn
     | "butter" | "cheby1" | "cheby2" | "ellip" | "besself" ->
