@@ -12,6 +12,8 @@
 
 *Matrices must be **conformable** before they can perform. Conformal makes sure they are.*
 
+> Conformal is an independent project and is not affiliated with, endorsed by, or connected to MathWorks, Inc. MATLAB is a registered trademark of MathWorks, Inc.
+
 </div>
 
 ---
