@@ -1082,7 +1082,7 @@ and private analyzeAssignMulti
                         | _ -> ()
                     | _ -> ()
             else
-                match evalMultiBuiltinCall fname numTargets args env warnings ctx wiredEvalExprFull wiredGetInterval with
+                match evalMultiBuiltinCall fname line numTargets args env warnings ctx wiredEvalExprFull wiredGetInterval with
                 | Some shapes ->
                     for (target, shape) in List.zip targets shapes do bindTarget target shape
                     // [r, c] = size(A) aliasing

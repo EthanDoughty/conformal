@@ -25,6 +25,8 @@ let STRICT_ONLY_CODES : Set<string> =
         "W_LOGICAL_OP_NON_SCALAR"; "W_STRING_ARITHMETIC"
         // 2D shape system limitation
         "W_TOO_MANY_INDICES"
+        // cellfun/arrayfun output uniformity
+        "W_CELLFUN_NON_UNIFORM"
     ]
 
 // ---------------------------------------------------------------------------
@@ -357,3 +359,7 @@ let warnHorzcatRowMismatch (line: int) (rowA: Dim) (rowB: Dim) : Diagnostic =
 let warnVertcatColMismatch (line: int) (colA: Dim) (colB: Dim) : Diagnostic =
     makeDiag line "W_VERTCAT_COL_MISMATCH"
         ("Vertical concatenation column count mismatch: " + dimStr colA + " vs " + dimStr colB)
+
+let warnCellfunNonUniform (line: int) : Diagnostic =
+    makeDiag line "W_CELLFUN_NON_UNIFORM"
+        "cellfun returns non-scalar elements; set 'UniformOutput',false to collect into a cell array"
