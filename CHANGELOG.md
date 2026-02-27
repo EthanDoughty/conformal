@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-02-26
+### Added
+- **Threshold-based interval widening** (`Intervals.fs`): `widenInterval` now snaps widened bounds to the nearest value in the threshold set `{-1000, -100, -10, -1, 0, 1, 10, 100, 1000}` instead of jumping directly to `Unbounded`; a loop counter that increments from 0 will widen its upper bound to `1000` rather than `+inf`, keeping the interval finite and preserving more precision for downstream checks; `StmtFuncAnalysis.fs` updated to pass through widened intervals correctly
+- **2 new interval tests**: `tests/intervals/widen_threshold_upper.m` (incrementing counter snaps upper bound to threshold, remains scalar post-loop) and `tests/intervals/widen_threshold_lower.m` (decrementing counter snaps lower bound to threshold, remains scalar post-loop)
+- **Comparison broadcast shapes** (`EvalBinop.fs`): `==`, `~=`, `<`, `<=`, `>`, `>=` now return the broadcast shape of their operands instead of always returning scalar; `matrix[3 x 4] > 0` gives `matrix[3 x 4]`, and two equal-sized matrices give the shared shape; scalar operands still produce scalar when both sides are scalar
+- **1 new indexing test**: `tests/indexing/comparison_returns_matrix.m` checks that `A > 0` where `A` is `matrix[3 x 4]` gives `matrix[3 x 4]`
+- **Logical indexing shape inference** (`EvalExpr.fs`): `A(A > 0)` now infers `matrix[None x 1]` (column vector) instead of scalar; row vector inputs (`matrix[1 x N]`) preserve orientation and produce `matrix[1 x None]`; the detection guards against `Unknown == Unknown` false positives by checking that the index expression is a matrix-typed comparison rather than a plain unknown
+- **3 new indexing tests**: `tests/indexing/logical_index_basic.m` (`A(A > 0)` gives column vector), `tests/indexing/logical_index_compound.m` (`A(A > 0 & A < 1)` with compound logical mask), `tests/indexing/logical_index_variable.m` (pre-computed mask stored in variable, then used for indexing)
+- Total test count: 373 (was 370)
+
+### Changed
+- **Persistent `Map`/`Set` on `ConstraintContext`** (`Constraints.fs`, `Context.fs`, and 5 other files): replaced mutable `Dictionary`/`HashSet` on 4 fields (`constraints`, `constraintProvenance`, `scalarBindings`, `valueRanges`) with immutable F# `Map`/`Set`; removed dead `dimProvenance` field; `SnapshotScope` is now O(1) (copy-on-enter, no explicit restore); `widenValueRanges` returns a new `Map` rather than mutating in-place; net change across 7 files is -35 lines
+
 ## [1.15.0] - 2026-02-21
 ### Added
 - **`FieldIndexAssign` IR node**: captures `s.field(n).subfield = val` patterns (chained struct-array field assignments) with full index data preserved; previously the index `(n)` was silently dropped when collapsing to `StructAssign`
