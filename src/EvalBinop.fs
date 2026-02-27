@@ -34,7 +34,7 @@ let evalBinopIr
             warnings.Add(warnSuspiciousComparisonMatrixScalar line op leftExpr rightExpr left right)
         | Matrix _, Matrix _ ->
             warnings.Add(warnMatrixToMatrixComparison line op leftExpr rightExpr left right)
-        | _ -> ()
+        | _ -> ()  // all other Shape pairs: no warning emitted
         // Return shape reflects MATLAB broadcast semantics: A > 0 where A is matrix[m x n]
         // returns a logical matrix[m x n], not a scalar.
         match left, right with
@@ -42,14 +42,14 @@ let evalBinopIr
         | Matrix(r, c), Scalar | Scalar, Matrix(r, c) -> Matrix(r, c)
         | Matrix(r1, c1), Matrix(r2, c2) -> Matrix(joinDim r1 r2, joinDim c1 c2)
         | UnknownShape, _ | _, UnknownShape -> UnknownShape
-        | _ -> Scalar  // string, struct, cell, etc: scalar boolean
+        | _ -> Scalar  // all other Shape cases: StringShape/Struct/Cell/FunctionHandle/Bottom compare as scalar boolean
 
     // Short-circuit logical operators
     elif op = "&&" || op = "||" then
         match left, right with
         | Matrix _, _ | _, Matrix _ ->
             warnings.Add(warnLogicalOpNonScalar line op leftExpr rightExpr left right)
-        | _ -> ()
+        | _ -> ()  // all other Shape pairs: no warning emitted
         Scalar
 
     // Colon range: always 1 x unknown
@@ -86,7 +86,7 @@ let evalBinopIr
                 warnings.Add(warnMatrixPowerNonSquare line leftExpr left)
                 UnknownShape
             else left
-        | _ -> UnknownShape
+        | _ -> UnknownShape  // all other Shape cases: UnknownShape/StringShape/Struct/Cell/FunctionHandle/Bottom
 
     // mldivide: A\b
     elif op = "\\" then
@@ -103,7 +103,7 @@ let evalBinopIr
                 warnings.Add(warnMldivideDimMismatch line leftExpr rightExpr left right)
                 UnknownShape
             else Matrix(lc, rc)
-        | _ -> UnknownShape
+        | _ -> UnknownShape  // all other Shape cases: StringShape/Struct/Cell/FunctionHandle/Bottom
 
     // Scalar broadcasting
     elif isScalar left && not (isScalar right) then right
@@ -133,7 +133,7 @@ let evalBinopIr
                 warnings.Add(warnElementwiseMismatch line op leftExpr rightExpr left right)
                 UnknownShape
             else Matrix(joinDim r1' r2', joinDim c1' c2')
-        | _ -> UnknownShape
+        | _ -> UnknownShape  // all other Shape cases: StringShape/Struct/Cell/FunctionHandle/Bottom
 
     // Matrix multiplication: *
     elif op = "*" then
@@ -152,7 +152,7 @@ let evalBinopIr
                 warnings.Add(warnMatmulMismatch line leftExpr rightExpr left right suggest)
                 UnknownShape
             else Matrix(r1, c2)
-        | _ -> UnknownShape
+        | _ -> UnknownShape  // all other Shape cases: UnknownShape/StringShape/Struct/Cell/FunctionHandle/Bottom
 
     // Element-wise logical: &, |
     elif op = "&" || op = "|" then
@@ -174,6 +174,6 @@ let evalBinopIr
                 warnings.Add(warnElementwiseMismatch line op leftExpr rightExpr left right)
                 UnknownShape
             else Matrix(joinDim r1' r2', joinDim c1' c2')
-        | _ -> UnknownShape
+        | _ -> UnknownShape  // all other Shape cases: StringShape/Struct/Cell/FunctionHandle/Bottom
 
     else UnknownShape

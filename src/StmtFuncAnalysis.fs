@@ -1297,7 +1297,7 @@ and private collectModifiedVars (body: Stmt list) : Set<string> =
         | Try(_, tryBody, catchBody) ->
             for s2 in tryBody do scanStmt s2
             for s2 in catchBody do scanStmt s2
-        | _ -> ()
+        | ExprStmt _ | OpaqueStmt _ | Break _ | Continue _ | Return _ | FunctionDef _ -> ()
     for s in body do scanStmt s
     vars
 

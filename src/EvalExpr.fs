@@ -743,8 +743,8 @@ and private evalIndexing
         | c when c > 2 ->
             warnings.Add(warnTooManyIndices line (Apply(loc line 0, Var(loc line 0, "?"), args)))
             UnknownShape
-        | _ -> UnknownShape
-    | _ -> UnknownShape
+        | _ -> UnknownShape  // open type: args.Length match on int
+    | StringShape | Struct _ | FunctionHandle _ | Cell _ | Bottom -> UnknownShape
 
 
 /// isColon: check if an IndexArg is a Colon.
