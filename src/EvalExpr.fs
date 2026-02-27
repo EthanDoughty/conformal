@@ -632,6 +632,21 @@ and private evalIndexing
             | IndexExpr(_, (MatrixLit _ as matLitExpr)) ->
                 // Matrix literal as linear index: result has the same shape as the index
                 evalExprIr matLitExpr env warnings ctx (Some baseShape) builtinDispatch
+            | IndexExpr(_, indexExpr) ->
+                let indexShape = evalExprIr indexExpr env warnings ctx (Some baseShape) builtinDispatch
+                match indexShape with
+                | Matrix(ir, ic) when ir = m && ic = n
+                                      && not (m = Unknown && n = Unknown) ->
+                    // Logical indexing: index has same shape as base matrix.
+                    // Row vectors preserve row orientation; everything else -> col vector.
+                    if m = Concrete 1 then Matrix(Concrete 1, Unknown)   // row vector
+                    elif n = Concrete 1 then Matrix(Unknown, Concrete 1) // col vector
+                    else Matrix(Unknown, Concrete 1)                     // general matrix -> col vector
+                | Matrix _ ->
+                    // Matrix index with different shape: linear indexing with matrix
+                    // subscript. MATLAB returns a matrix with the same shape as the index.
+                    indexShape
+                | _ -> Scalar
             | _ -> Scalar
 
         | 2 ->
