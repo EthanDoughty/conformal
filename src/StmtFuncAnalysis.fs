@@ -1277,6 +1277,23 @@ and analyzeLoopBody
         // Phase-1 intervals and the counter reaches at most the second threshold hop.
         ctx.cst.valueRanges <- widenValueRanges preLoopRanges ctx.cst.valueRanges loopVar
 
+        // Phase 2.5 (Narrow): One narrowing pass to recover precision lost to widening.
+        // Re-run the body with the stabilized (widened) state, then intersect the
+        // resulting iterate with the current widened bounds.  Because we only do ONE
+        // pass (not a fixpoint), termination is guaranteed.  Narrowing can only tighten
+        // bounds, never widen them, so soundness is preserved.
+        // Shape state (env) and warnings are restored after the pass: narrowing only
+        // updates intervals, not shapes, and must not produce duplicate diagnostics.
+        let preNarrowRanges = ctx.cst.valueRanges
+        let preNarrowEnv = Env.copy env
+        let throwawayWarnings = ResizeArray<Diagnostic>()
+        try
+            for s in body do analyzeStmtIr s env throwawayWarnings ctx
+        with
+        | :? EarlyReturn | :? EarlyBreak | :? EarlyContinue -> ()
+        ctx.cst.valueRanges <- narrowValueRanges preNarrowRanges ctx.cst.valueRanges loopVar
+        Env.replaceLocal env preNarrowEnv
+
         // Phase 3 (Post-loop join): Model "loop may execute 0 times"
         let finalWidened = widenEnv preLoopEnv env
         Env.replaceLocal env finalWidened

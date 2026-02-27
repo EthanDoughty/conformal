@@ -309,6 +309,43 @@ let widenValueRanges
             | _ -> iv)  // new variable or unchanged: keep as-is
 
 
+/// narrowInterval: tighten a widened bound using the new iterate from the narrowing pass.
+/// Only moves bounds inward (more precise); never widens.
+let narrowInterval (wideIv: Interval) (newIv: Interval) : Interval =
+    // Lower bound: take max (move floor up if iterate has higher lower bound)
+    let narrowLo wideBound newBound =
+        match wideBound, newBound with
+        | Unbounded, other -> other           // -inf narrows to anything tighter
+        | _, Unbounded -> wideBound           // new iterate is -inf: no tightening
+        | Finite wl, Finite nl -> Finite (max wl nl)  // take the tighter floor
+        | _ -> wideBound                      // can't compare: keep wide (sound)
+    // Upper bound: take min (move ceiling down if iterate has lower upper bound)
+    let narrowHi wideBound newBound =
+        match wideBound, newBound with
+        | Unbounded, other -> other           // +inf narrows to anything tighter
+        | _, Unbounded -> wideBound           // new iterate is +inf: no tightening
+        | Finite wh, Finite nh -> Finite (min wh nh)  // take the tighter ceiling
+        | _ -> wideBound                      // can't compare: keep wide (sound)
+    { lo = narrowLo wideIv.lo newIv.lo; hi = narrowHi wideIv.hi newIv.hi }
+
+
+/// narrowValueRanges: apply one narrowing pass to all intervals.
+/// For each variable in the widened map, if the narrowing iterate has a tighter
+/// bound, adopt it.  Variables that disappeared in the iterate are kept wide (sound).
+/// The loop iteration variable (if any) is excluded from narrowing.
+let narrowValueRanges
+    (widened: Map<string, Interval>)
+    (narrowed: Map<string, Interval>)
+    (exclude: string option)
+    : Map<string, Interval> =
+    widened |> Map.map (fun key iv ->
+        if Some key = exclude then iv
+        else
+            match Map.tryFind key narrowed with
+            | Some newIv -> narrowInterval iv newIv
+            | None -> iv)  // variable disappeared: keep widened (sound)
+
+
 // ---------------------------------------------------------------------------
 // Conditional interval refinement (v1.8.0)
 // ---------------------------------------------------------------------------
