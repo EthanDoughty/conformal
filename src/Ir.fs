@@ -28,23 +28,17 @@ type Expr =
     | MatrixLit   of loc: SrcLoc * rows: Expr list list
     | CellLit     of loc: SrcLoc * rows: Expr list list
 
-    member this.Line =
+    member this.Loc =
         match this with
         | Var(l,_) | Const(l,_) | StringLit(l,_)
         | Neg(l,_) | Not(l,_) | BinOp(l,_,_,_)
         | Transpose(l,_) | FieldAccess(l,_,_)
         | Lambda(l,_,_) | FuncHandle(l,_) | End l
         | Apply(l,_,_) | CurlyApply(l,_,_)
-        | MatrixLit(l,_) | CellLit(l,_) -> l.line
+        | MatrixLit(l,_) | CellLit(l,_) -> l
 
-    member this.Col =
-        match this with
-        | Var(l,_) | Const(l,_) | StringLit(l,_)
-        | Neg(l,_) | Not(l,_) | BinOp(l,_,_,_)
-        | Transpose(l,_) | FieldAccess(l,_,_)
-        | Lambda(l,_,_) | FuncHandle(l,_) | End l
-        | Apply(l,_,_) | CurlyApply(l,_,_)
-        | MatrixLit(l,_) | CellLit(l,_) -> l.col
+    member this.Line = this.Loc.line
+    member this.Col  = this.Loc.col
 
 and IndexArg =
     | Colon     of loc: SrcLoc
@@ -75,22 +69,22 @@ type Stmt =
                           * outputVars: string list * body: Stmt list
     | AssignMulti      of loc: SrcLoc * targets: string list * expr: Expr
 
-    member this.Line =
+    member this.Loc =
         match this with
         | Assign(l,_,_) | StructAssign(l,_,_,_) | CellAssign(l,_,_,_)
         | IndexAssign(l,_,_,_) | IndexStructAssign(l,_,_,_,_,_)
         | FieldIndexAssign(l,_,_,_,_,_,_) | ExprStmt(l,_)
         | If(l,_,_,_) | IfChain(l,_,_,_) | While(l,_,_) | For(l,_,_,_)
         | Switch(l,_,_,_) | Try(l,_,_) | Break l | Continue l | Return l
-        | OpaqueStmt(l,_,_) | FunctionDef(l,_,_,_,_) | AssignMulti(l,_,_) -> l.line
+        | OpaqueStmt(l,_,_) | FunctionDef(l,_,_,_,_) | AssignMulti(l,_,_) -> l
 
-    member this.Col =
-        match this with
-        | Assign(l,_,_) | StructAssign(l,_,_,_) | CellAssign(l,_,_,_)
-        | IndexAssign(l,_,_,_) | IndexStructAssign(l,_,_,_,_,_)
-        | FieldIndexAssign(l,_,_,_,_,_,_) | ExprStmt(l,_)
-        | If(l,_,_,_) | IfChain(l,_,_,_) | While(l,_,_) | For(l,_,_,_)
-        | Switch(l,_,_,_) | Try(l,_,_) | Break l | Continue l | Return l
-        | OpaqueStmt(l,_,_) | FunctionDef(l,_,_,_,_) | AssignMulti(l,_,_) -> l.col
+    member this.Line = this.Loc.line
+    member this.Col  = this.Loc.col
+
+/// Extract SrcLoc from any Expr case (total active pattern).
+let (|ExprLoc|) (expr: Expr) : SrcLoc = expr.Loc
+
+/// Extract SrcLoc from any Stmt case (total active pattern).
+let (|StmtLoc|) (stmt: Stmt) : SrcLoc = stmt.Loc
 
 type Program = { body: Stmt list }
