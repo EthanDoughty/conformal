@@ -61,10 +61,10 @@ let recordConstraint (ctx: AnalysisContext) (env: Env) (dim1: Dim) (dim2: Dim) (
                 else (Shapes.dimStr dim2, Shapes.dimStr dim1)
             let canonical = (canonKey1, canonKey2)
 
-            ctx.cst.constraints.Add(canonical) |> ignore
+            ctx.cst.constraints <- Set.add canonical ctx.cst.constraints
             // Store provenance (first-seen: keep original line)
-            if not (ctx.cst.constraintProvenance.ContainsKey(canonical)) then
-                ctx.cst.constraintProvenance.[canonical] <- line
+            if not (Map.containsKey canonical ctx.cst.constraintProvenance) then
+                ctx.cst.constraintProvenance <- Map.add canonical line ctx.cst.constraintProvenance
 
             // DimEquiv: union the two dimension strings
             let key1 = Shapes.dimStr dim1
@@ -125,39 +125,31 @@ let resolveShape (ctx: AnalysisContext) (shape: Shape) : Shape =
     | _ -> shape
 
 
-/// snapshotConstraints: return a copy of current constraint set.
-let snapshotConstraints (ctx: AnalysisContext) : System.Collections.Generic.HashSet<string * string> =
-    System.Collections.Generic.HashSet<string * string>(ctx.cst.constraints)
+/// snapshotConstraints: return current constraint set (persistent; O(1)).
+let snapshotConstraints (ctx: AnalysisContext) : Set<string * string> =
+    ctx.cst.constraints
 
 
 /// joinConstraints: path-sensitive join: keep baseline + constraints added in ALL branches.
 let joinConstraints
-    (baseline: System.Collections.Generic.HashSet<string * string>)
-    (branchSets: System.Collections.Generic.HashSet<string * string> list)
-    : System.Collections.Generic.HashSet<string * string> =
+    (baseline: Set<string * string>)
+    (branchSets: Set<string * string> list)
+    : Set<string * string> =
 
     // Extract new constraints per branch (branch - baseline)
     let newPerBranch =
         branchSets
-        |> List.map (fun branch ->
-            let newSet = System.Collections.Generic.HashSet<string * string>(branch)
-            for b in baseline do newSet.Remove(b) |> ignore
-            newSet)
+        |> List.map (fun branch -> Set.difference branch baseline)
 
     // Intersection of all new constraints (only if all branches added them)
     let commonNew =
         match newPerBranch with
-        | [] -> System.Collections.Generic.HashSet<string * string>()
+        | [] -> Set.empty
         | first :: rest ->
-            let result = System.Collections.Generic.HashSet<string * string>(first)
-            for s in rest do
-                result.IntersectWith(s)
-            result
+            List.fold Set.intersect first rest
 
     // Return baseline + common new
-    let result = System.Collections.Generic.HashSet<string * string>(baseline)
-    for c in commonNew do result.Add(c) |> ignore
-    result
+    Set.union baseline commonNew
 
 
 /// validateBinding: check if binding var_name=value conflicts with recorded constraints.
@@ -188,17 +180,17 @@ let validateBinding
             | true, otherInt ->
                 if otherInt <> value then
                     let sourceLine =
-                        match ctx.cst.constraintProvenance.TryGetValue((d1, d2)) with
-                        | true, l -> l
-                        | _ -> 0
+                        match Map.tryFind (d1, d2) ctx.cst.constraintProvenance with
+                        | Some l -> l
+                        | None   -> 0
                     warnings.Add(Diagnostics.warnConstraintConflict line varName value other sourceLine)
             | _ ->
                 // Check if other dim is in scalar_bindings
-                match ctx.cst.scalarBindings.TryGetValue(other) with
-                | true, otherValue when otherValue <> value ->
+                match Map.tryFind other ctx.cst.scalarBindings with
+                | Some otherValue when otherValue <> value ->
                     let sourceLine =
-                        match ctx.cst.constraintProvenance.TryGetValue((d1, d2)) with
-                        | true, l -> l
-                        | _ -> 0
+                        match Map.tryFind (d1, d2) ctx.cst.constraintProvenance with
+                        | Some l -> l
+                        | None   -> 0
                     warnings.Add(Diagnostics.warnConstraintConflict line varName value other sourceLine)
                 | _ -> ()

@@ -57,12 +57,12 @@ and exprToDimIrCtx (expr: Expr) (env: Env) (ctx: Context.AnalysisContext option)
             // Check ctx.value_ranges for exact concrete value
             match ctx with
             | Some c ->
-                match c.cst.valueRanges.TryGetValue(name) with
-                | true, iv ->
+                match Map.tryFind name c.cst.valueRanges with
+                | Some iv ->
                     match iv.lo, iv.hi with
                     | Finite lo, Finite hi when lo = hi -> Concrete lo
                     | _ -> Symbolic (SymDim.SymDim.var name)
-                | false, _ -> Symbolic (SymDim.SymDim.var name)
+                | None -> Symbolic (SymDim.SymDim.var name)
             | None -> Symbolic (SymDim.SymDim.var name)
     | Neg _ -> Unknown   // Negative literal in dim context: treat as Unknown (mirrors Python)
     | BinOp(_, op, left, right) ->

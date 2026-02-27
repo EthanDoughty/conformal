@@ -263,51 +263,50 @@ let intervalDefinitelyNegative (iv: Interval option) : bool =
         | _ -> false
 
 
-/// joinValueRanges: join value_ranges dicts across branches (convex hull per variable).
+/// joinValueRanges: join value_ranges maps across branches (convex hull per variable).
 let joinValueRanges
-    (baseline: System.Collections.Generic.Dictionary<string, Interval>)
-    (branchRanges: System.Collections.Generic.Dictionary<string, Interval> list)
-    : System.Collections.Generic.Dictionary<string, Interval> =
+    (baseline: Map<string, Interval>)
+    (branchRanges: Map<string, Interval> list)
+    : Map<string, Interval> =
 
-    let allVars = System.Collections.Generic.HashSet<string>()
-    for br in branchRanges do
-        for kv in br do allVars.Add(kv.Key) |> ignore
+    let allVars =
+        branchRanges
+        |> List.collect (fun br -> br |> Map.toList |> List.map fst)
+        |> List.distinct
 
-    let result = System.Collections.Generic.Dictionary<string, Interval>()
-    for var in allVars do
+    List.fold (fun acc var ->
         let intervals =
             branchRanges
             |> List.choose (fun br ->
-                match br.TryGetValue(var) with
-                | true, iv -> Some (Some iv)
-                | false, _ -> None)
+                match Map.tryFind var br with
+                | Some iv -> Some (Some iv)
+                | None    -> None)
         match intervals with
-        | [] -> ()
+        | [] -> acc
         | first :: rest ->
-            let joined =
-                List.fold (fun acc iv -> joinInterval acc iv) first rest
+            let joined = List.fold joinInterval first rest
             match joined with
-            | Some iv -> result.[var] <- iv
-            | None -> ()
-    result
+            | Some iv -> Map.add var iv acc
+            | None    -> acc
+    ) Map.empty allVars
 
 
 /// widenValueRanges: widen intervals that moved between baseline and current state.
 /// Variables whose interval did not change are preserved.
 /// Variables new in current (not in baseline) are kept as-is.
 /// The loop iteration variable (if any) is excluded from widening.
+/// Returns the widened map (does not mutate).
 let widenValueRanges
-    (baseline: System.Collections.Generic.Dictionary<string, Interval>)
-    (current: System.Collections.Generic.Dictionary<string, Interval>)
+    (baseline: Map<string, Interval>)
+    (current: Map<string, Interval>)
     (exclude: string option)
-    : unit =
-    for kv in current do
-        if Some kv.Key <> exclude then
-            match baseline.TryGetValue(kv.Key) with
-            | true, oldIv ->
-                if oldIv <> kv.Value then
-                    current.[kv.Key] <- widenInterval oldIv kv.Value
-            | false, _ -> ()  // new variable introduced in loop body, keep as-is
+    : Map<string, Interval> =
+    current |> Map.map (fun key iv ->
+        if Some key = exclude then iv
+        else
+            match Map.tryFind key baseline with
+            | Some oldIv when oldIv <> iv -> widenInterval oldIv iv
+            | _ -> iv)  // new variable or unchanged: keep as-is
 
 
 // ---------------------------------------------------------------------------
@@ -359,15 +358,15 @@ let private simpleExprToDim (expr: Ir.Expr) (env: Env.Env) (ctx: Context.Analysi
         else Shapes.Unknown
     | Ir.Var(_, name) ->
         // Check exact interval in value_ranges
-        match ctx.cst.valueRanges.TryGetValue(name) with
-        | true, iv ->
+        match Map.tryFind name ctx.cst.valueRanges with
+        | Some iv ->
             match iv.lo, iv.hi with
             | Finite lo, Finite hi when lo = hi -> Shapes.Concrete lo
             | _ ->
                 match Map.tryFind name env.dimAliases with
                 | Some d -> d
                 | None   -> Shapes.Symbolic (SymDim.SymDim.var name)
-        | false, _ ->
+        | None ->
             match Map.tryFind name env.dimAliases with
             | Some d -> d
             | None   -> Shapes.Symbolic (SymDim.SymDim.var name)
@@ -428,9 +427,9 @@ let applyRefinements
 
     for (varName, op, bound) in refinements do
         let baseIv =
-            match ctx.cst.valueRanges.TryGetValue(varName) with
-            | true, iv -> iv
-            | false, _ -> { lo = Unbounded; hi = Unbounded }
+            match Map.tryFind varName ctx.cst.valueRanges with
+            | Some iv -> iv
+            | None    -> { lo = Unbounded; hi = Unbounded }
 
         let actualOp = if negate then negateComparisonOp op else op
         let guardOpt = intervalFromComparison actualOp bound
@@ -440,8 +439,8 @@ let applyRefinements
         | Some guard ->
             let refined = meetInterval baseIv guard
             match refined with
-            | Some r -> ctx.cst.valueRanges.[varName] <- r
+            | Some r -> ctx.cst.valueRanges <- Map.add varName r ctx.cst.valueRanges
             | None ->
                 // Meet is empty: branch is dead code. Use guard interval to
                 // prevent false positives inside unreachable branches.
-                ctx.cst.valueRanges.[varName] <- guard
+                ctx.cst.valueRanges <- Map.add varName guard ctx.cst.valueRanges

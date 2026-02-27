@@ -295,13 +295,13 @@ let private refineAccumulation
 let private joinBranchResults
     (env: Env)
     (ctx: AnalysisContext)
-    (baselineConstraints: System.Collections.Generic.HashSet<string * string>)
+    (baselineConstraints: Set<string * string>)
     (baselineDimEquiv: DimEquiv.DimEquiv)
-    (baselineRanges: System.Collections.Generic.Dictionary<string, SharedTypes.Interval>)
+    (baselineRanges: Map<string, SharedTypes.Interval>)
     (branchEnvs: Env list)
-    (branchConstraints: System.Collections.Generic.HashSet<string * string> list)
+    (branchConstraints: Set<string * string> list)
     (branchDimEquivs: DimEquiv.DimEquiv list)
-    (branchRanges: System.Collections.Generic.Dictionary<string, SharedTypes.Interval> list)
+    (branchRanges: Map<string, SharedTypes.Interval> list)
     (returnedFlags: bool list)
     (deferredExc: System.Exception option)
     : unit =
@@ -327,17 +327,14 @@ let private joinBranchResults
 
             // Join constraints
             let joinedConstraints = joinConstraints baselineConstraints liveConstraints
-            ctx.cst.constraints.Clear()
-            for c in joinedConstraints do ctx.cst.constraints.Add(c) |> ignore
+            ctx.cst.constraints <- joinedConstraints
 
-            // Provenance pruning
-            let newProv = System.Collections.Generic.Dictionary<string * string, int>()
-            for c in joinedConstraints do
-                match ctx.cst.constraintProvenance.TryGetValue(c) with
-                | true, line -> newProv.[c] <- line
-                | _ -> ()
-            ctx.cst.constraintProvenance.Clear()
-            for kv in newProv do ctx.cst.constraintProvenance.[kv.Key] <- kv.Value
+            // Provenance pruning: keep only provenance entries for surviving constraints
+            ctx.cst.constraintProvenance <-
+                joinedConstraints |> Set.fold (fun acc c ->
+                    match Map.tryFind c ctx.cst.constraintProvenance with
+                    | Some line -> Map.add c line acc
+                    | None      -> acc) Map.empty
 
             // Intersect DimEquiv stores: keep equivalences present in ALL live branches
             let joinedDimEquiv =
@@ -352,9 +349,7 @@ let private joinBranchResults
             for kv in joinedDimEquiv.concrete do ctx.cst.dimEquiv.concrete.[kv.Key] <- kv.Value
 
             // Join value_ranges
-            let joinedRanges = joinValueRanges baselineRanges liveRanges
-            ctx.cst.valueRanges.Clear()
-            for kv in joinedRanges do ctx.cst.valueRanges.[kv.Key] <- kv.Value
+            ctx.cst.valueRanges <- joinValueRanges baselineRanges liveRanges
 
 
 // ---------------------------------------------------------------------------
@@ -585,7 +580,7 @@ and analyzeStmtIr
             let concreteValue = tryExtractConstValue expr
             match concreteValue with
             | Some cv ->
-                ctx.cst.scalarBindings.[name] <- cv
+                ctx.cst.scalarBindings <- Map.add name cv ctx.cst.scalarBindings
                 validateBinding ctx env name cv warnings line
             | None -> ()
 
@@ -593,13 +588,10 @@ and analyzeStmtIr
         if isScalar newShape then
             let iv = getExprInterval expr env ctx
             match iv with
-            | Some i -> ctx.cst.valueRanges.[name] <- i
-            | None ->
-                if ctx.cst.valueRanges.ContainsKey(name) then
-                    ctx.cst.valueRanges.Remove(name) |> ignore
+            | Some i -> ctx.cst.valueRanges <- Map.add name i ctx.cst.valueRanges
+            | None   -> ctx.cst.valueRanges <- Map.remove name ctx.cst.valueRanges
         else
-            if ctx.cst.valueRanges.ContainsKey(name) then
-                ctx.cst.valueRanges.Remove(name) |> ignore
+            ctx.cst.valueRanges <- Map.remove name ctx.cst.valueRanges
 
     | StructAssign({ line = line }, baseName, fields, expr) ->
         let rhsShape = wiredEvalExprFull expr env warnings ctx
@@ -659,14 +651,13 @@ and analyzeStmtIr
     | While({ line = line }, cond, body) ->
         wiredEvalExprFull cond env warnings ctx |> ignore
 
-        let baselineRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
+        let baselineRanges = ctx.cst.valueRanges
         let refinements = extractConditionRefinements cond env ctx
         applyRefinements ctx refinements false
 
         analyzeLoopBody body env warnings ctx None
 
-        ctx.cst.valueRanges.Clear()
-        for kv in baselineRanges do ctx.cst.valueRanges.[kv.Key] <- kv.Value
+        ctx.cst.valueRanges <- baselineRanges
 
     | For(_, var_, it, body) ->
         Env.set env var_ Scalar
@@ -679,7 +670,7 @@ and analyzeStmtIr
             let hiConst = tryExtractConstValue right
             match loConst, hiConst with
             | Some lo, Some hi ->
-                ctx.cst.valueRanges.[var_] <- { lo = Finite lo; hi = Finite hi }
+                ctx.cst.valueRanges <- Map.add var_ { lo = Finite lo; hi = Finite hi } ctx.cst.valueRanges
             | _ ->
                 let loDim = exprToDimIr left env
                 let hiDim = exprToDimIr right env
@@ -691,7 +682,7 @@ and analyzeStmtIr
                     match hiConst with
                     | Some v -> Finite v
                     | None -> match hiDim with Concrete n -> Finite n | Symbolic s -> SymBound s | Range _ -> Unbounded | Unknown -> Unbounded
-                ctx.cst.valueRanges.[var_] <- { lo = loBound; hi = hiBound }
+                ctx.cst.valueRanges <- Map.add var_ { lo = loBound; hi = hiBound } ctx.cst.valueRanges
         | _ -> ()
 
         // Fixpoint-only: accumulation refinement
@@ -716,7 +707,7 @@ and analyzeStmtIr
         let refinements = extractConditionRefinements cond env ctx
         let baselineConstraints = snapshotConstraints ctx
         let baselineDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
-        let baselineRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
+        let baselineRanges = ctx.cst.valueRanges
 
         let thenEnv = Env.copy env
         let elseEnv = Env.copy env
@@ -736,19 +727,17 @@ and analyzeStmtIr
         ctx.cst.pathConstraints.Pop()
         let thenConstraints = snapshotConstraints ctx
         let thenDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
-        let thenRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
+        let thenRanges = ctx.cst.valueRanges
 
         // Reset to baseline for else branch
-        ctx.cst.constraints.Clear()
-        for c in baselineConstraints do ctx.cst.constraints.Add(c) |> ignore
+        ctx.cst.constraints <- baselineConstraints
         ctx.cst.dimEquiv.parent.Clear()
         for kv in baselineDimEquiv.parent do ctx.cst.dimEquiv.parent.[kv.Key] <- kv.Value
         ctx.cst.dimEquiv.rank.Clear()
         for kv in baselineDimEquiv.rank do ctx.cst.dimEquiv.rank.[kv.Key] <- kv.Value
         ctx.cst.dimEquiv.concrete.Clear()
         for kv in baselineDimEquiv.concrete do ctx.cst.dimEquiv.concrete.[kv.Key] <- kv.Value
-        ctx.cst.valueRanges.Clear()
-        for kv in baselineRanges do ctx.cst.valueRanges.[kv.Key] <- kv.Value
+        ctx.cst.valueRanges <- baselineRanges
 
         // Else branch
         applyRefinements ctx refinements true
@@ -762,7 +751,7 @@ and analyzeStmtIr
         ctx.cst.pathConstraints.Pop()
         let elseConstraints = snapshotConstraints ctx
         let elseDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
-        let elseRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
+        let elseRanges = ctx.cst.valueRanges
 
         joinBranchResults
             env ctx baselineConstraints baselineDimEquiv baselineRanges
@@ -776,27 +765,25 @@ and analyzeStmtIr
         let allRefinements = conditions |> List.map (fun cond -> extractConditionRefinements cond env ctx)
         let baselineConstraints = snapshotConstraints ctx
         let baselineDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
-        let baselineRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
+        let baselineRanges = ctx.cst.valueRanges
 
         let allBodies = bodies @ [ elseBody ]
         let mutable branchEnvs : Env list = []
-        let mutable branchConstraints : System.Collections.Generic.HashSet<string * string> list = []
+        let mutable branchConstraints : Set<string * string> list = []
         let mutable branchDimEquivs : DimEquiv.DimEquiv list = []
-        let mutable branchRanges : System.Collections.Generic.Dictionary<string, SharedTypes.Interval> list = []
+        let mutable branchRanges : Map<string, SharedTypes.Interval> list = []
         let mutable returnedFlags : bool list = []
         let mutable deferredExc : System.Exception option = None
 
         for idx in 0 .. allBodies.Length - 1 do
-            ctx.cst.constraints.Clear()
-            for c in baselineConstraints do ctx.cst.constraints.Add(c) |> ignore
+            ctx.cst.constraints <- baselineConstraints
             ctx.cst.dimEquiv.parent.Clear()
             for kv in baselineDimEquiv.parent do ctx.cst.dimEquiv.parent.[kv.Key] <- kv.Value
             ctx.cst.dimEquiv.rank.Clear()
             for kv in baselineDimEquiv.rank do ctx.cst.dimEquiv.rank.[kv.Key] <- kv.Value
             ctx.cst.dimEquiv.concrete.Clear()
             for kv in baselineDimEquiv.concrete do ctx.cst.dimEquiv.concrete.[kv.Key] <- kv.Value
-            ctx.cst.valueRanges.Clear()
-            for kv in baselineRanges do ctx.cst.valueRanges.[kv.Key] <- kv.Value
+            ctx.cst.valueRanges <- baselineRanges
 
             if idx < allRefinements.Length then
                 applyRefinements ctx allRefinements.[idx] false
@@ -819,7 +806,7 @@ and analyzeStmtIr
             branchEnvs <- branchEnvs @ [branchEnv]
             branchConstraints <- branchConstraints @ [ snapshotConstraints ctx ]
             branchDimEquivs <- branchDimEquivs @ [ DimEquiv.snapshot ctx.cst.dimEquiv ]
-            branchRanges <- branchRanges @ [ System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges) ]
+            branchRanges <- branchRanges @ [ ctx.cst.valueRanges ]
             returnedFlags <- returnedFlags @ [returned]
 
         joinBranchResults
@@ -838,27 +825,25 @@ and analyzeStmtIr
 
         let baselineConstraints = snapshotConstraints ctx
         let baselineDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
-        let baselineRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
+        let baselineRanges = ctx.cst.valueRanges
 
         let allBodies = (cases |> List.map snd) @ [ otherwise ]
         let mutable branchEnvs : Env list = []
-        let mutable branchConstraints : System.Collections.Generic.HashSet<string * string> list = []
+        let mutable branchConstraints : Set<string * string> list = []
         let mutable branchDimEquivs : DimEquiv.DimEquiv list = []
-        let mutable branchRanges : System.Collections.Generic.Dictionary<string, SharedTypes.Interval> list = []
+        let mutable branchRanges : Map<string, SharedTypes.Interval> list = []
         let mutable returnedFlags : bool list = []
         let mutable deferredExc : System.Exception option = None
 
         for caseIdx in 0 .. allBodies.Length - 1 do
-            ctx.cst.constraints.Clear()
-            for c in baselineConstraints do ctx.cst.constraints.Add(c) |> ignore
+            ctx.cst.constraints <- baselineConstraints
             ctx.cst.dimEquiv.parent.Clear()
             for kv in baselineDimEquiv.parent do ctx.cst.dimEquiv.parent.[kv.Key] <- kv.Value
             ctx.cst.dimEquiv.rank.Clear()
             for kv in baselineDimEquiv.rank do ctx.cst.dimEquiv.rank.[kv.Key] <- kv.Value
             ctx.cst.dimEquiv.concrete.Clear()
             for kv in baselineDimEquiv.concrete do ctx.cst.dimEquiv.concrete.[kv.Key] <- kv.Value
-            ctx.cst.valueRanges.Clear()
-            for kv in baselineRanges do ctx.cst.valueRanges.[kv.Key] <- kv.Value
+            ctx.cst.valueRanges <- baselineRanges
 
             let isCase = caseIdx < cases.Length
             if isCase then
@@ -889,7 +874,7 @@ and analyzeStmtIr
             branchEnvs <- branchEnvs @ [branchEnv]
             branchConstraints <- branchConstraints @ [ snapshotConstraints ctx ]
             branchDimEquivs <- branchDimEquivs @ [ DimEquiv.snapshot ctx.cst.dimEquiv ]
-            branchRanges <- branchRanges @ [ System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges) ]
+            branchRanges <- branchRanges @ [ ctx.cst.valueRanges ]
             returnedFlags <- returnedFlags @ [returned]
 
         joinBranchResults
@@ -899,7 +884,7 @@ and analyzeStmtIr
     | Try(_, tryBody, catchBody) ->
         let baselineConstraints = snapshotConstraints ctx
         let baselineDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
-        let baselineRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
+        let baselineRanges = ctx.cst.valueRanges
         let preTryEnv = Env.copy env
 
         let tryEnv = Env.copy env
@@ -913,18 +898,16 @@ and analyzeStmtIr
         | :? EarlyContinue as e -> tryReturned <- true; deferredExc <- Some (e :> System.Exception)
         let tryConstraints = snapshotConstraints ctx
         let tryDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
-        let tryRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
+        let tryRanges = ctx.cst.valueRanges
 
-        ctx.cst.constraints.Clear()
-        for c in baselineConstraints do ctx.cst.constraints.Add(c) |> ignore
+        ctx.cst.constraints <- baselineConstraints
         ctx.cst.dimEquiv.parent.Clear()
         for kv in baselineDimEquiv.parent do ctx.cst.dimEquiv.parent.[kv.Key] <- kv.Value
         ctx.cst.dimEquiv.rank.Clear()
         for kv in baselineDimEquiv.rank do ctx.cst.dimEquiv.rank.[kv.Key] <- kv.Value
         ctx.cst.dimEquiv.concrete.Clear()
         for kv in baselineDimEquiv.concrete do ctx.cst.dimEquiv.concrete.[kv.Key] <- kv.Value
-        ctx.cst.valueRanges.Clear()
-        for kv in baselineRanges do ctx.cst.valueRanges.[kv.Key] <- kv.Value
+        ctx.cst.valueRanges <- baselineRanges
 
         let catchEnv = Env.copy preTryEnv
         let mutable catchReturned = false
@@ -940,7 +923,7 @@ and analyzeStmtIr
             if deferredExc.IsNone then deferredExc <- Some (e :> System.Exception)
         let catchConstraints = snapshotConstraints ctx
         let catchDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
-        let catchRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
+        let catchRanges = ctx.cst.valueRanges
 
         joinBranchResults
             env ctx baselineConstraints baselineDimEquiv baselineRanges
@@ -1001,8 +984,8 @@ and private analyzeCellAssignArgs
                     let newElems = Map.add idx0 rhsShape currentElems
                     Env.set env baseName (Cell(rows, cols, Some newElems))
                 | IndexExpr(_, Var(_, varName)) ->
-                    match ctx.cst.valueRanges.TryGetValue(varName) with
-                    | true, iv when iv.lo = iv.hi ->
+                    match Map.tryFind varName ctx.cst.valueRanges with
+                    | Some iv when iv.lo = iv.hi ->
                         match iv.lo with
                         | SharedTypes.Finite k ->
                             let idx0 = k - 1
@@ -1173,8 +1156,8 @@ and analyzeLoopBody
         with
         | :? EarlyReturn | :? EarlyBreak | :? EarlyContinue -> ()
     else
-        // Snapshot value ranges before loop body (mirrors preLoopEnv for shapes)
-        let preLoopRanges = System.Collections.Generic.Dictionary<string, SharedTypes.Interval>(ctx.cst.valueRanges)
+        // Snapshot value ranges before loop body (persistent map: O(1) snapshot)
+        let preLoopRanges = ctx.cst.valueRanges
 
         // Phase 1 (Discover)
         let preLoopEnv = Env.copy env
@@ -1186,7 +1169,7 @@ and analyzeLoopBody
         // Widen shapes
         let widened = widenEnv preLoopEnv env
         // Widen intervals in parallel with shape widening
-        widenValueRanges preLoopRanges ctx.cst.valueRanges loopVar
+        ctx.cst.valueRanges <- widenValueRanges preLoopRanges ctx.cst.valueRanges loopVar
 
         // Phase 2 (Stabilize): Re-analyze if widening changed anything
         if not (Env.localBindingsEqual env widened) then
@@ -1205,7 +1188,7 @@ and analyzeLoopBody
         // the body re-runs and the Phase-2 state is widened here; if Phase 2 does not fire
         // (scalar counters: shapes are always Scalar), this is the sole widening of the
         // Phase-1 intervals and the counter reaches at most the second threshold hop.
-        widenValueRanges preLoopRanges ctx.cst.valueRanges loopVar
+        ctx.cst.valueRanges <- widenValueRanges preLoopRanges ctx.cst.valueRanges loopVar
 
         // Phase 3 (Post-loop join): Model "loop may execute 0 times"
         let finalWidened = widenEnv preLoopEnv env
