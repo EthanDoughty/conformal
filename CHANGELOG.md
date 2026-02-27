@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-02-26
+### Added
+- **Cross-domain bridge** (`Intervals.fs`, `bridgeToDimEquiv`): when an exact interval `[k, k]` is recorded for a variable, the bridge propagates `k` into any DimEquiv equivalence class that variable belongs to, and back-propagates the concrete value into `valueRanges` for all equivalent variables; this means that if `r` and `n` are in the same equivalence class (for example because `r = size(A, 1)` and `A` has a symbolic `n` row dimension), narrowing `r` to a concrete value via a branch condition immediately resolves `n` as well
+- **3 new interval tests** exercising the bridge: `tests/intervals/assign_dimequiv_bridge.m` (direct constraint assignment forces `k == 4` via matmul inner-dim constraint, `zeros(k, k)` resolves to `matrix[4 x 4]`), `tests/intervals/if_dimequiv_bridge.m` (`r == 5` in an if condition propagates to equivalent symbolic `n`, so `zeros(n, n)` inside the branch gives `matrix[5 x 5]`), `tests/intervals/switch_dimequiv_bridge.m` (same mechanism via a switch/case arm)
+- **`size()` concrete propagation** (`StmtFuncAnalysis.fs`): `n = size(A, 1)` now sets `valueRanges[n] = [dim, dim]` when `A` has a concrete row dimension, and calls `bridgeToDimEquiv` so the value spreads to any equivalent symbolic variables; `[r, c] = size(A)` handles both outputs the same way; this generalizes the previous symbolic alias approach to cover the common pattern of extracting a dimension into a named variable and then using it in builtin constructors
+- **1 new interval test**: `tests/intervals/size_concrete_bridge.m` (`n = size(A, 1)` where `A` is `matrix[3 x 4]` sets `valueRanges[n] = [3, 3]`, so `zeros(n, n)` resolves to `matrix[3 x 3]` without a shape mismatch warning)
+- **Phase 2 interval gate fix** (`StmtFuncAnalysis.fs`, `analyzeLoopBody`): Phase 2 re-analysis previously fired only when shapes changed; it now also fires when `valueRanges` changes; this means a scalar counter that accumulates through a loop can widen its interval past the first threshold across the Phase 2 re-analysis, rather than stalling at a stale narrow interval
+- **1 new loop test**: `tests/loops/phase2_interval_gate.m` (`count = 0; for i = 1:100; count = count + 1; end; B = zeros(1, count)` -- in fixpoint mode, `count` widens to a finite threshold interval rather than staying at `[0, 1]`, so `B = matrix[1 x count]` is inferred rather than `matrix[1 x None]`)
+- Total test count: 378 (was 373)
+
 ## [2.1.0] - 2026-02-26
 ### Added
 - **Threshold-based interval widening** (`Intervals.fs`): `widenInterval` now snaps widened bounds to the nearest value in the threshold set `{-1000, -100, -10, -1, 0, 1, 10, 100, 1000}` instead of jumping directly to `Unbounded`; a loop counter that increments from 0 will widen its upper bound to `1000` rather than `+inf`, keeping the interval finite and preserving more precision for downstream checks; `StmtFuncAnalysis.fs` updated to pass through widened intervals correctly
