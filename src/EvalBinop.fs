@@ -27,7 +27,7 @@ let evalBinopIr
     (getDivisorInterval: Expr -> Interval option)
     : Shape =
 
-    // Comparison operators: always return scalar
+    // Comparison operators: return broadcast shape (logical array matching operand shape)
     if Set.contains op (Set.ofList ["=="; "~="; "<"; "<="; ">"; ">="]) then
         match left, right with
         | Matrix _, Scalar | Scalar, Matrix _ ->
@@ -35,7 +35,14 @@ let evalBinopIr
         | Matrix _, Matrix _ ->
             warnings.Add(warnMatrixToMatrixComparison line op leftExpr rightExpr left right)
         | _ -> ()
-        Scalar
+        // Return shape reflects MATLAB broadcast semantics: A > 0 where A is matrix[m x n]
+        // returns a logical matrix[m x n], not a scalar.
+        match left, right with
+        | Scalar, Scalar -> Scalar
+        | Matrix(r, c), Scalar | Scalar, Matrix(r, c) -> Matrix(r, c)
+        | Matrix(r1, c1), Matrix(r2, c2) -> Matrix(joinDim r1 r2, joinDim c1 c2)
+        | UnknownShape, _ | _, UnknownShape -> UnknownShape
+        | _ -> Scalar  // string, struct, cell, etc: scalar boolean
 
     // Short-circuit logical operators
     elif op = "&&" || op = "||" then
