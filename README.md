@@ -7,7 +7,7 @@
 [![Version](https://img.shields.io/badge/version-2.0.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4.svg)](https://dotnet.microsoft.com/download)
-[![Tests](https://img.shields.io/badge/tests-390%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-394%20passing-brightgreen.svg)](#test-suite)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
 *Matrices must be **conformable** before they can perform. Conformal makes sure they are.*
@@ -53,7 +53,7 @@ dotnet run -- ../tests/basics/inner_dim_mismatch.m
 
 ## Performance
 
-The single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and the cross-file workspace analysis runs in about 70ms. The full test suite (390 tests total) finishes in about one second, with no MATLAB runtime involved during any part of the process.
+The single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and the cross-file workspace analysis runs in about 70ms. The full test suite (394 tests total) finishes in about one second, with no MATLAB runtime involved during any part of the process.
 
 The VS Code extension runs the analyzer while you are typing code, since it is compiled to JavaScript, using the Fable tool, so there is no subprocess startup cost and analysis works on every keystroke with a 500ms debounce.
 
@@ -121,6 +121,8 @@ Additionally, branch conditions narrow variable intervals inside the branch body
 
 There is also a cross-domain bridge between the interval domain and the dimension equivalence classes. When an exact interval `[k, k]` is recorded for a variable, for example because a branch condition like `if r == 5` narrows `r` to a singleton, the bridge propagates `k` into any DimEquiv equivalence class that `r` belongs to, and back into `valueRanges` for all equivalent variables. This means that if `r = size(A, 1)` and `A` has a symbolic `n` row dimension, narrowing `r` inside a branch immediately resolves `n` to that same concrete value for the duration of the branch. Similarly, `n = size(A, 1)` where `A` has a concrete row dimension now directly sets `valueRanges[n] = [dim, dim]`, so a subsequent `zeros(n, n)` can resolve to a concrete shape rather than staying symbolic.
 
+Three more precision features operate in `--fixpoint` mode. Narrowing after widening adds a Phase 2.5 pass that re-runs the loop body once after the fixpoint stabilizes, then intersects the result with the widened bounds to tighten them back, so a counter that widened to `[0, 1000]` might recover a tighter bound, all without risking non-termination. Scope-limited widening restricts widening and narrowing operations to the variables that are actually assigned inside the loop body, so a variable like `n = 5` that is read but never written inside the loop keeps its exact `[5, 5]` interval and won't be corrupted by bridge side-effects from other variables. The Pentagon domain tracks relational upper bounds of the form `x <= y + c`: for-loop variables get an entry `i <= n` when the range endpoint is a named variable, and when `n` has an exact interval, the Pentagon bridge fires to tighten `i`'s upper bound, which is useful infrastructure for proving that loop indices stay in bounds.
+
 ### Type errors
 
 When you use a non-numeric type (struct, cell, function_handle) where a numeric value is expected, Conformal emits a type mismatch error. Arithmetic operations like `+`, `-`, `*`, and `.*` on structs or cells emit `W_ARITHMETIC_TYPE_MISMATCH`. Transpose on a non-numeric type emits `W_TRANSPOSE_TYPE_MISMATCH`, negation emits `W_NEGATE_TYPE_MISMATCH`, and mixing incompatible types in a matrix literal (like `[s, A]` where `s` is a struct) emits `W_CONCAT_TYPE_MISMATCH`. All four codes are Error severity, not warnings.
@@ -173,13 +175,13 @@ src/                    F# analyzer (lexer, parser, shape inference, builtins, d
 vscode-conformal/       VS Code extension (TypeScript client + Fable-compiled analyzer)
   fable/                Fable compilation project (F# to JavaScript, shares src/*.fs files)
   src/                  TypeScript extension and LSP server code
-tests/                  390 self-checking MATLAB programs in 19 categories
+tests/                  394 self-checking MATLAB programs in 19 categories
 .github/                CI workflow (build, test, compile Fable, package VSIX)
 ```
 
 ## Test Suite
 
-Conformal is validated by 390 self-checking MATLAB programs organized into 19 categories. Each test embeds its expected behavior as inline assertions:
+Conformal is validated by 394 self-checking MATLAB programs organized into 19 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -362,9 +364,9 @@ Shape rules for 635 recognized MATLAB builtins (315 with shape handlers), call/i
 </details>
 
 <details>
-<summary><h3>Loops (35 tests)</h3></summary>
+<summary><h3>Loops (39 tests)</h3></summary>
 
-Loop analysis with single-pass and fixed-point widening modes (via `--fixpoint`), including accumulation refinement, stepped ranges, range-valued dimensions, and interval gate convergence.
+Loop analysis with single-pass and fixed-point widening modes (via `--fixpoint`), including accumulation refinement, stepped ranges, range-valued dimensions, interval gate convergence, narrowing after widening, scope-limited widening, and Pentagon upper-bound tracking.
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -403,8 +405,12 @@ Loop analysis with single-pass and fixed-point widening modes (via `--fixpoint`)
 | `range_dim_arithmetic.m` | Arithmetic on `Range` dimensions: `[B; zeros(2,3)]` adds 2 to the lower bound | 1 |
 | `range_dim_conflict.m` | Conflict detection when a `Range` dimension is disjoint from a concrete dimension | 2 |
 | `phase2_interval_gate.m` | Phase 2 re-analysis fires when intervals change; scalar counter widens to a finite threshold interval rather than stalling | 0 |
+| `narrowing_basic.m` | Narrowing pass after widening recovers tighter bounds; counter increments 10 times, widens to `[0, 1000]`, then tightens so `zeros(1, count)` resolves to `matrix[1 x count]` | 0 |
+| `narrowing_conditional.m` | Narrowing tightens bounds even after conditional accumulation: counter conditionally incremented inside the loop, narrowing pass still recovers a finite interval | 0 |
+| `scope_limited_widen.m` | Scope-limited widening preserves exact intervals for variables never modified inside the loop: `n = 5` set before the loop keeps `[5, 5]` so `zeros(n, n)` resolves to `matrix[5 x 5]` | 0 |
+| `pentagon_for_bound.m` | Pentagon domain records `i <= n` from `for i = 1:n`; bridge fires when `n = [5, 5]` and tightens `i`'s interval to `[1, 5]`, so downstream `zeros(n, n)` resolves to `matrix[5 x 5]` | 0 |
 
->Principled widening-based loop analysis uses a 3-phase algorithm (discover, stabilize, post-loop join) that guarantees convergence in at most 2 iterations by widening conflicting dimensions to `None` while preserving stable dimensions. In `--fixpoint` mode, conditional accumulation produces `Range` dimensions rather than `None`, tracking a lower bound on how many rows have been added. Phase 2 re-analysis fires whenever shapes or intervals change, so scalar counters propagate through threshold widening correctly.
+>Principled widening-based loop analysis uses a 3-phase algorithm (discover, stabilize, post-loop join) that guarantees convergence in at most 2 iterations by widening conflicting dimensions to `None` while preserving stable dimensions. In `--fixpoint` mode, conditional accumulation produces `Range` dimensions rather than `None`, tracking a lower bound on how many rows have been added. Phase 2 re-analysis fires whenever shapes or intervals change, so scalar counters propagate through threshold widening correctly. A narrowing pass after Phase 2 (Phase 2.5) intersects the widened intervals with a fresh iterate to recover precision without risking non-termination. Scope-limited widening prevents bridge side-effects from drifting into intervals for variables the loop never modifies. The Pentagon domain tracks `x <= y + c` upper-bound relations from for-loop range endpoints, and fires a bridge when the bound variable has an exact interval.
 
 </details>
 
@@ -782,7 +788,7 @@ Incorrectness witness generation: concrete proofs that dimension conflict warnin
 ### Running the Tests
 
 ```bash
-# Run all 390 .m tests
+# Run all 394 .m tests
 cd src && dotnet run -- --tests
 
 # Run with fixed-point loop analysis
