@@ -588,7 +588,9 @@ and analyzeStmtIr
         if isScalar newShape then
             let iv = getExprInterval expr env ctx
             match iv with
-            | Some i -> ctx.cst.valueRanges <- Map.add name i ctx.cst.valueRanges
+            | Some i ->
+                ctx.cst.valueRanges <- Map.add name i ctx.cst.valueRanges
+                Intervals.bridgeToDimEquiv ctx name i
             | None   -> ctx.cst.valueRanges <- Map.remove name ctx.cst.valueRanges
         else
             ctx.cst.valueRanges <- Map.remove name ctx.cst.valueRanges
