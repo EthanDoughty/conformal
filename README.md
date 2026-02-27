@@ -7,7 +7,7 @@
 [![Version](https://img.shields.io/badge/version-2.0.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4.svg)](https://dotnet.microsoft.com/download)
-[![Tests](https://img.shields.io/badge/tests-394%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-403%20passing-brightgreen.svg)](#test-suite)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
 *Matrices must be **conformable** before they can perform. Conformal makes sure they are.*
@@ -55,7 +55,7 @@ dotnet run -- ../tests/basics/inner_dim_mismatch.m
 
 ## Performance
 
-The single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and the cross-file workspace analysis runs in about 70ms. The full test suite (394 tests total) finishes in about one second, with no MATLAB runtime involved during any part of the process.
+The single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and the cross-file workspace analysis runs in about 70ms. The full test suite (403 tests total) finishes in about one second, with no MATLAB runtime involved during any part of the process.
 
 The VS Code extension runs the analyzer while you are typing code, since it is compiled to JavaScript, using the Fable tool, so there is no subprocess startup cost and analysis works on every keystroke with a 500ms debounce.
 
@@ -123,7 +123,7 @@ Additionally, branch conditions narrow variable intervals inside the branch body
 
 There is also a cross-domain bridge between the interval domain and the dimension equivalence classes. When an exact interval `[k, k]` is recorded for a variable, for example because a branch condition like `if r == 5` narrows `r` to a singleton, the bridge propagates `k` into any DimEquiv equivalence class that `r` belongs to, and back into `valueRanges` for all equivalent variables. This means that if `r = size(A, 1)` and `A` has a symbolic `n` row dimension, narrowing `r` inside a branch immediately resolves `n` to that same concrete value for the duration of the branch. Similarly, `n = size(A, 1)` where `A` has a concrete row dimension now directly sets `valueRanges[n] = [dim, dim]`, so a subsequent `zeros(n, n)` can resolve to a concrete shape rather than staying symbolic.
 
-Three more precision features operate in `--fixpoint` mode. Narrowing after widening adds a Phase 2.5 pass that re-runs the loop body once after the fixpoint stabilizes, then intersects the result with the widened bounds to tighten them back, so a counter that widened to `[0, 1000]` might recover a tighter bound, all without risking non-termination. Scope-limited widening restricts widening and narrowing operations to the variables that are actually assigned inside the loop body, so a variable like `n = 5` that is read but never written inside the loop keeps its exact `[5, 5]` interval and won't be corrupted by bridge side-effects from other variables. The Pentagon domain tracks relational upper bounds of the form `x <= y + c`: for-loop variables get an entry `i <= n` when the range endpoint is a named variable, and when `n` has an exact interval, the Pentagon bridge fires to tighten `i`'s upper bound, which is useful infrastructure for proving that loop indices stay in bounds.
+Three more precision features operate in `--fixpoint` mode. Narrowing after widening adds a Phase 2.5 pass that re-runs the loop body once after the fixpoint stabilizes, then intersects the result with the widened bounds to tighten them back, so a counter that widened to `[0, 1000]` might recover a tighter bound, all without risking non-termination. Scope-limited widening restricts widening and narrowing operations to the variables that are actually assigned inside the loop body, so a variable like `n = 5` that is read but never written inside the loop keeps its exact `[5, 5]` interval and won't be corrupted by bridge side-effects from other variables. The Pentagon domain tracks relational upper bounds of the form `x <= y + c`: for-loop variables get an entry `i <= n` when the range endpoint is a named variable, and when `n` has an exact interval, the Pentagon bridge fires to tighten `i`'s upper bound. The Pentagon domain also actively suppresses `W_INDEX_OUT_OF_BOUNDS` when it can prove an index stays in bounds: `pentagonProvesInBounds` checks both the concrete case (the index interval's upper bound matches the dimension exactly) and the symbolic case (the Pentagon bound variable is in the same DimEquiv equivalence class as the matrix dimension), so `for i = 1:n; A(i,1); end` where `A` is `n x m` produces no spurious out-of-bounds warning. The Pentagon bridge fires before each analysis pass in `analyzeLoopBody` rather than only at loop entry, so it stays effective across all fixpoint phases.
 
 ### Type errors
 
@@ -134,6 +134,12 @@ When you use a non-numeric type (struct, cell, function_handle) where a numeric 
 For dimension conflict warnings, Conformal can optionally produce a concrete counterexample proving the bug is real. A witness is a set of variable assignments like `n=3, m=5` under which the conflicting dimensions evaluate to different integers. The solver pulls from variables with known concrete values, interval bounds from interval analysis, and branch path conditions to narrow the candidate space before enumerating. It bails out conservatively when dimensions are unknown, when symbolic terms are quadratic or higher, or when more than 8 free variables are involved.
 
 In `--witness enrich` mode (the default when `--witness` is given), the concrete assignment is printed below each warning. In `--witness filter` mode, only warnings with a verified witness are shown, which gives you zero false positives. In `--witness tag` mode, each warning is prefixed with `[confirmed]` or `[possible]`. The LSP server always runs witness generation and appends the witness explanation to the hover text automatically, with no extra configuration needed.
+
+### MATLAB Coder compatibility
+
+The `--coder` flag adds a post-analysis pass that checks for constructs MATLAB Coder can't handle. Six new warning codes are emitted, all strict-only by default so they don't appear in a normal CI run unless you opt in. `W_CODER_VARIABLE_SIZE` fires when a variable has an unknown or `None` dimension, since Coder requires all sizes to be statically determined. `W_CODER_CELL_ARRAY` fires when any cell array variable is present, since Coder does not support cells by default. `W_CODER_DYNAMIC_FIELD` fires when you use dynamic struct field access `s.(expr)`. `W_CODER_TRY_CATCH` fires on try/catch blocks, which Coder restricts. `W_CODER_UNSUPPORTED_BUILTIN` fires when you call one of the 30 builtins that Coder does not support, including `eval`, `feval`, `input`, `keyboard`, and display functions like `disp` and `fprintf`. `W_CODER_RECURSION` fires on recursive function calls.
+
+You can use `--coder --strict` together to surface all six codes, or combine with `--fixpoint` for the most precise size analysis before the Coder pass runs.
 
 ## Language Coverage
 
@@ -177,13 +183,13 @@ src/                    F# analyzer (lexer, parser, shape inference, builtins, d
 vscode-conformal/       VS Code extension (TypeScript client + Fable-compiled analyzer)
   fable/                Fable compilation project (F# to JavaScript, shares src/*.fs files)
   src/                  TypeScript extension and LSP server code
-tests/                  394 self-checking MATLAB programs in 19 categories
+tests/                  403 self-checking MATLAB programs in 20 categories
 .github/                CI workflow (build, test, compile Fable, package VSIX)
 ```
 
 ## Test Suite
 
-Conformal is validated by 394 self-checking MATLAB programs organized into 19 categories. Each test embeds its expected behavior as inline assertions:
+Conformal is validated by 403 self-checking MATLAB programs organized into 20 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -654,9 +660,9 @@ Dimension constraint solving: equality constraints recorded during operations, v
 </details>
 
 <details>
-<summary><h3>Intervals (29 tests)</h3></summary>
+<summary><h3>Intervals (33 tests)</h3></summary>
 
-Integer interval domain tracking scalar value ranges for division-by-zero, out-of-bounds indexing, and negative-dimension checks. Conditional interval refinement, symbolic interval bounds, threshold-based widening, switch/case narrowing, and cross-domain propagation into dimension equivalence classes.
+Integer interval domain tracking scalar value ranges for division-by-zero, out-of-bounds indexing, and negative-dimension checks. Conditional interval refinement, symbolic interval bounds, threshold-based widening, switch/case narrowing, cross-domain propagation into dimension equivalence classes, and Pentagon-based index-bounds suppression.
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -689,8 +695,12 @@ Integer interval domain tracking scalar value ranges for division-by-zero, out-o
 | `if_dimequiv_bridge.m` | Bridge via if condition: `r == 5` narrows `r` to `[5, 5]`, bridge propagates to equivalent symbolic `n`, so `zeros(n, n)` gives `matrix[5 x 5]` | 0 |
 | `switch_dimequiv_bridge.m` | Bridge via switch/case arm: `case 3` narrows `r` to `[3, 3]`, bridge propagates to equivalent `n`, so `zeros(n, n)` gives `matrix[3 x 3]` | 0 |
 | `size_concrete_bridge.m` | `size()` concrete propagation: `n = size(A, 1)` where `A` is `matrix[3 x 4]` sets `valueRanges[n] = [3, 3]`, so `zeros(n, n)` resolves to `matrix[3 x 3]` | 0 |
+| `pentagon_suppresses_oob.m` | Pentagon concrete suppression: `for i = 1:5` with `A = zeros(5,5)` -- `i <= 5` via Pentagon bound matches the row dimension exactly, so `A(i,1)` produces no OOB warning | 0 |
+| `pentagon_symbolic_oob.m` | Pentagon symbolic suppression: function parameter `A`, `n = size(A,1)`, `for i = 1:n` -- `i <= n` via Pentagon, `A` has row dim `n` via DimEquiv, so `A(i,1)` is suppressed without a concrete bound | 0 |
+| `pentagon_bridge_fixpoint.m` | Pentagon bridge fires in each fixpoint phase, not just at loop entry; `A = zeros(5,5)`, `n = size(A,1)`, `for i = 1:n` stays warning-free under both normal and `--fixpoint` modes | 0 |
+| `pentagon_no_false_suppress.m` | Pentagon must not suppress real OOB: `for i = 1:10` with `A = zeros(5,5)` -- `i <= 10` via Pentagon but the row dim is only 5, so the OOB warning is still emitted | >=1 |
 
->Interval analysis runs in parallel with shape inference. `W_INDEX_OUT_OF_BOUNDS` and `W_DIVISION_BY_ZERO` have Error severity (definite runtime errors). Conditional refinement eliminates false positives when branch guards prove safety; symbolic bounds fall back soundly. The cross-domain bridge connects the interval domain to dimension equivalence classes so that a concretized interval can resolve symbolic dimensions that are equated to the narrowed variable.
+>Interval analysis runs in parallel with shape inference. `W_INDEX_OUT_OF_BOUNDS` and `W_DIVISION_BY_ZERO` have Error severity (definite runtime errors). Conditional refinement eliminates false positives when branch guards prove safety; symbolic bounds fall back soundly. The cross-domain bridge connects the interval domain to dimension equivalence classes so that a concretized interval can resolve symbolic dimensions that are equated to the narrowed variable. The Pentagon domain suppresses `W_INDEX_OUT_OF_BOUNDS` when it can prove an index stays in bounds, covering both concrete and symbolic cases via `pentagonProvesInBounds`.
 
 </details>
 
@@ -785,12 +795,29 @@ Incorrectness witness generation: concrete proofs that dimension conflict warnin
 
 </details>
 
+<details>
+<summary><h3>Coder (5 tests)</h3></summary>
+
+MATLAB Coder compatibility checks, enabled with `--coder --strict`. These tests use the `% MODE: coder` directive so the test runner enables the Coder pass automatically.
+
+| Test | What It Validates | Warnings |
+|------|-------------------|----------|
+| `coder_variable_size.m` | `W_CODER_VARIABLE_SIZE` fires for a variable with an unknown or `None` dimension (e.g., result of `find()`) | 1 |
+| `coder_cell_array.m` | `W_CODER_CELL_ARRAY` fires when any cell array variable is present | 1 |
+| `coder_dynamic_field.m` | `W_CODER_DYNAMIC_FIELD` fires on dynamic struct field access `s.(expr)` | 1 |
+| `coder_try_catch.m` | `W_CODER_TRY_CATCH` fires on try/catch blocks | 1 |
+| `coder_unsupported_builtin.m` | `W_CODER_UNSUPPORTED_BUILTIN` fires when one of the 30 Coder-unsupported builtins is called (e.g., `eval`, `feval`, `disp`, `fprintf`) | 1 |
+
+>All six `W_CODER_*` codes are strict-only and all six are emitted by a post-analysis pass that runs only when `--coder` is given. This means the Coder pass is completely invisible in normal analysis and CI runs, and adding `--coder` doesn't change how shape inference works, it only adds the compatibility scan on top.
+
+</details>
+
 ---
 
 ### Running the Tests
 
 ```bash
-# Run all 394 .m tests
+# Run all 403 .m tests
 cd src && dotnet run -- --tests
 
 # Run with fixed-point loop analysis
@@ -834,6 +861,8 @@ Run `cd src && dotnet run -- file.m` to analyze a file. The other flags are:
 `--fixpoint` uses fixed-point iteration for loop analysis.
 
 `--witness [MODE]` attaches incorrectness witnesses to dimension conflict warnings. MODE can be `enrich` (the default, prints the witness below each warning), `filter` (only shows warnings with a confirmed witness), or `tag` (prefixes each warning with `[confirmed]` or `[possible]`). The LSP server always runs witness generation and enriches diagnostics automatically.
+
+`--coder` runs the MATLAB Coder compatibility pass after shape analysis, emitting six `W_CODER_*` warnings for constructs Coder cannot handle (variable-size arrays, cell arrays, dynamic field access, try/catch, unsupported builtins, recursion). These codes are strict-only, so you normally combine `--coder` with `--strict`.
 
 `--lsp` starts the native .NET Language Server Protocol server.
 
