@@ -868,3 +868,44 @@ I felt that it was very rewarding to use MATLAB as the source language for a sta
 ### Roadmap
 
 First, the immediate priorities are propagating constraints across function boundaries and improving the GitHub Action for CI integration. Further out, I'd like to support additional editors like Neovim, add cross-directory workspace analysis with `addpath` handling, and explore integration with MATLAB's built-in Code Analyzer.
+
+## References
+
+Conformal's abstract interpretation techniques draw on decades of research in static analysis and formal methods. The following papers and resources informed the design of the analyzer's shape lattice, interval domain, relational constraints, and fixpoint computation.
+
+### Foundational
+
+- P. Cousot and R. Cousot, "Abstract interpretation: a unified lattice model for static analysis of programs by construction or approximation of fixpoints," *POPL*, 1977. [ACM DL](https://dl.acm.org/doi/10.1145/512950.512973)
+- P. Cousot, R. Cousot, and L. Mauborgne, "The Reduced Product of Abstract Domains and the Combination of Decision Procedures," *FoSSaCS*, 2011.
+- P. Cousot et al., "A Personal Historical Perspective on Abstract Interpretation," 2024.
+
+### Abstract Domains
+
+- A. Miné, "The Octagon Abstract Domain," *Higher-Order and Symbolic Computation*, vol. 19, no. 1, 2006. [HAL](https://hal.science/hal-00136639/document)
+- F. Logozzo and M. Fähndrich, "Pentagons: A Weakly Relational Abstract Domain," *SAS*, 2008. [Microsoft Research](https://www.microsoft.com/en-us/research/wp-content/uploads/2009/01/pentagons.pdf)
+- F. Ranzato, "The Best of Abstract Interpretations," *POPL*, 2025.
+- A. Pitchanathan et al., "Strided Difference Bound Matrices," *CAV*, 2024.
+- A. Lesbre et al., "Relational Abstractions Based on Labeled Union-Find," *PLDI*, 2025.
+
+### Industrial Analyzers
+
+- B. Blanchet et al., "A Static Analyzer for Large Safety-Critical Software," *PLDI*, 2003. (Astrée)
+- P. Cousot et al., "The ASTRÉE Analyzer," *ESOP*, 2005. [PDF](https://www.di.ens.fr/~cousot/publications.www/CousotEtAl-ESOP05.pdf)
+
+### Data Structures
+
+- S. Conchon and J.-C. Filliâtre, "A Persistent Union-Find Data Structure," *ML Workshop*, 2007.
+
+### MATLAB-Specific
+
+- P. Joisha and P. Banerjee, "Static Array Storage Optimization in MATLAB," *PLDI*, 2003.
+
+### Constraint and Shape Inference
+
+- G. Zilberstein and D. Dreyer, "A Combination of Abstract Interpretation and Constraint Programming," 2024. [PDF](https://ghilesz.github.io/papers/manuscrit.pdf)
+- MLIR Shape Inference. [Documentation](https://mlir.llvm.org/docs/ShapeInference/)
+
+### Safety Standards
+
+- DO-178C, "Software Considerations in Airborne Systems and Equipment Certification," RTCA, 2011.
+- IEC 61508, "Functional Safety of Electrical/Electronic/Programmable Electronic Safety-Related Systems."
