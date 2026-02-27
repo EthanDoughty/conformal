@@ -35,6 +35,28 @@ let analyzeProgramIr
                 { name = name; parms = parms; outputVars = outputVars; body = body; defLine = line; defCol = col }
         | _ -> ()
 
+    // Pass 1b: scan for classdef metadata in OpaqueStmts, populate classRegistry
+    for item in program.body do
+        match item with
+        | OpaqueStmt(_, _, raw) when raw.StartsWith("classdef:") ->
+            let parts = raw.Split(':')
+            if parts.Length >= 2 then
+                let className = parts.[1]
+                let propNames =
+                    if parts.Length >= 3 && parts.[2] <> "" then
+                        parts.[2].Split(',') |> Array.toList
+                    else []
+                let superName =
+                    if parts.Length >= 4 && parts.[3] <> "" then Some parts.[3] else None
+                // Collect all registered functions as potential methods (safe over-approximation)
+                let methodSigs =
+                    ctx.call.functionRegistry
+                    |> Seq.map (fun kv -> (kv.Key, kv.Value))
+                    |> Map.ofSeq
+                ctx.call.classRegistry.[className] <-
+                    { name = className; properties = propNames; methods = methodSigs; superclass = superName }
+        | _ -> ()
+
     // Pass 2: analyze script statements (non-function bodies)
     try
         for item in program.body do

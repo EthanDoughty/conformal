@@ -455,6 +455,25 @@ and private wiredBuiltinDispatch
         let extSig = ctx.ws.externalFunctions.[fname]
         let outputShapes = analyzeExternalFunctionCall fname extSig args line env warnings ctx 1
         if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
+    elif ctx.call.classRegistry.ContainsKey(fname) then
+        // Constructor call: return Struct with declared properties
+        let classInfo = ctx.call.classRegistry.[fname]
+        if ctx.call.functionRegistry.ContainsKey(fname) then
+            let outputShapes = analyzeFunctionCall fname args line env warnings ctx 1
+            let baseShape = if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
+            match baseShape with
+            | Struct(fields, isOpen) ->
+                let fieldMap = Map.ofList fields
+                let allFields =
+                    classInfo.properties |> List.map (fun p ->
+                        (p, defaultArg (Map.tryFind p fieldMap) UnknownShape))
+                Struct(allFields, isOpen)
+            | _ ->
+                let allFields = classInfo.properties |> List.map (fun p -> (p, UnknownShape))
+                Struct(allFields, false)
+        else
+            let allFields = classInfo.properties |> List.map (fun p -> (p, UnknownShape))
+            Struct(allFields, false)
     else
         warnings.Add(warnUnknownFunction line fname)
         UnknownShape
@@ -506,6 +525,25 @@ and private wiredEvalExprFull
                 let extSig = ctx.ws.externalFunctions.[fname]
                 let outputShapes = analyzeExternalFunctionCall fname extSig args line env warnings ctx 1
                 if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
+            elif ctx.call.classRegistry.ContainsKey(fname) then
+                // Constructor call: return Struct with declared properties
+                let classInfo = ctx.call.classRegistry.[fname]
+                if ctx.call.functionRegistry.ContainsKey(fname) then
+                    let outputShapes = analyzeFunctionCall fname args line env warnings ctx 1
+                    let baseShape = if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
+                    match baseShape with
+                    | Struct(fields, isOpen) ->
+                        let fieldMap = Map.ofList fields
+                        let allFields =
+                            classInfo.properties |> List.map (fun p ->
+                                (p, defaultArg (Map.tryFind p fieldMap) UnknownShape))
+                        Struct(allFields, isOpen)
+                    | _ ->
+                        let allFields = classInfo.properties |> List.map (fun p -> (p, UnknownShape))
+                        Struct(allFields, false)
+                else
+                    let allFields = classInfo.properties |> List.map (fun p -> (p, UnknownShape))
+                    Struct(allFields, false)
             else
                 warnings.Add(warnUnknownFunction line fname)
                 UnknownShape
@@ -945,7 +983,7 @@ and analyzeStmtIr
             [tryRanges; catchRanges] [tryReturned; catchReturned] deferredExc
 
     | OpaqueStmt({ line = line }, targets, raw) ->
-        let firstWord = if raw.Trim() = "" then "" else raw.Trim().Split([| ' '; '\t' |]).[0]
+        let firstWord = if raw.Trim() = "" then "" else raw.Trim().Split([| ' '; '\t'; ':' |]).[0]
         if not (Set.contains firstWord SUPPRESSED_CMD_STMTS) then
             warnings.Add(warnUnsupportedStmt line raw targets)
         for targetName in targets do Env.set env targetName UnknownShape
@@ -1150,6 +1188,28 @@ and private analyzeAssignMulti
                 for target in targets do bindTarget target UnknownShape
             else
                 for (target, shape) in List.zip targets outputShapes do bindTarget target shape
+
+        elif ctx.call.classRegistry.ContainsKey(fname) then
+            // Constructor call: return Struct with declared properties (single output)
+            let classInfo = ctx.call.classRegistry.[fname]
+            let structShape =
+                if ctx.call.functionRegistry.ContainsKey(fname) then
+                    let outputShapes = analyzeFunctionCall fname args line env warnings ctx targets.Length
+                    let baseShape = if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
+                    match baseShape with
+                    | Struct(fields, isOpen) ->
+                        let fieldMap = Map.ofList fields
+                        let allFields =
+                            classInfo.properties |> List.map (fun p ->
+                                (p, defaultArg (Map.tryFind p fieldMap) UnknownShape))
+                        Struct(allFields, isOpen)
+                    | _ ->
+                        let allFields = classInfo.properties |> List.map (fun p -> (p, UnknownShape))
+                        Struct(allFields, false)
+                else
+                    let allFields = classInfo.properties |> List.map (fun p -> (p, UnknownShape))
+                    Struct(allFields, false)
+            for target in targets do bindTarget target structShape
 
         else
             warnings.Add(warnUnknownFunction line fname)
