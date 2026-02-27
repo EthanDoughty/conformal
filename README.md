@@ -7,7 +7,7 @@
 [![Version](https://img.shields.io/badge/version-2.0.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4.svg)](https://dotnet.microsoft.com/download)
-[![Tests](https://img.shields.io/badge/tests-370%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-373%20passing-brightgreen.svg)](#test-suite)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
 *Matrices must be **conformable** before they can perform. Conformal makes sure they are.*
@@ -53,7 +53,7 @@ dotnet run -- ../tests/basics/inner_dim_mismatch.m
 
 ## Performance
 
-The single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and the cross-file workspace analysis runs in about 70ms. The full test suite (370 tests total) finishes in about one second, with no MATLAB runtime involved during any part of the process.
+The single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and the cross-file workspace analysis runs in about 70ms. The full test suite (373 tests total) finishes in about one second, with no MATLAB runtime involved during any part of the process.
 
 The VS Code extension runs the analyzer while you are typing code, since it is compiled to JavaScript, using the Fable tool, so there is no subprocess startup cost and analysis works on every keystroke with a 500ms debounce.
 
@@ -66,6 +66,8 @@ By default, Conformal shows only high-confidence warnings. These include dimensi
 ### Operations
 
 Conformal detects dimension mismatches in `+`, `-`, `*`, `.*`, `./`, `^`, `.^`. Scalar-matrix broadcasting (e.g. `s*A`, `s + A`) is handled. Backslash `A\b` (mldivide) follows the same inner-dimension logic that multiplication does. Element-wise logical `&` and `|` pass shapes through like an element-wise op usually would. Logical NOT `~` and dot-transpose `.'` also carry shapes through. When you use `*` where `.*` was probably intended, Conformal suggests the fix.
+
+Comparison operators (`==`, `~=`, `<`, `<=`, `>`, `>=`) return the broadcast shape of their operands, so `A > 0` where `A` is `matrix[3 x 4]` gives `matrix[3 x 4]` rather than scalar. This means logical indexing `A(A > 0)` is recognized as a matrix-typed operation, and Conformal infers the result as `matrix[None x 1]` (a column vector, since logical indexing in MATLAB always returns a column) rather than treating it as an unknown scalar index. Row vector inputs preserve orientation, giving `matrix[1 x None]` instead.
 
 ### Literals and concatenation
 
@@ -106,6 +108,8 @@ Variables with unknown concrete size get symbolic names like `n`, `m`, `k`, and 
 In parallel with shape inference, Conformal tracks scalar integer variables through an integer interval domain `[lo, hi]`. This is what enables three additional checks: `W_DIVISION_BY_ZERO` when the divisor is provably zero, `W_INDEX_OUT_OF_BOUNDS` when an index is provably outside the matrix dimensions, and `W_POSSIBLY_NEGATIVE_DIM` when a dimension expression is provably non-positive.
 
 Initially, for-loop variables are bound to their range interval, so `for i = 1:n` records `i` in `[1, n]` with a symbolic upper bound. Comparisons against symbolic bounds fall back soundly, and intervals join conservatively across control-flow branches.
+
+When `--fixpoint` widening would ordinarily snap an interval bound to infinity, Conformal instead snaps to the nearest threshold in the set `{-1000, -100, -10, -1, 0, 1, 10, 100, 1000}`. A counter that grows inside a loop widens its upper bound to `1000` rather than `+inf`, so the interval stays finite and downstream index checks remain useful. This is a standard technique from abstract interpretation called threshold widening.
 
 Additionally, branch conditions narrow variable intervals inside the branch body. If you write `if x > 0`, Conformal refines `x` to `[1, +inf]` for the true branch, which can eliminate false-positive out-of-bounds and negative-dim warnings when a guard proves safety. Conformal supports `>`, `>=`, `<`, `<=`, `==`, `~=`, compound `&&` conditions, and operator flipping like `5 >= x`.
 
@@ -161,13 +165,13 @@ src/                    F# analyzer (lexer, parser, shape inference, builtins, d
 vscode-conformal/       VS Code extension (TypeScript client + Fable-compiled analyzer)
   fable/                Fable compilation project (F# to JavaScript, shares src/*.fs files)
   src/                  TypeScript extension and LSP server code
-tests/                  370 self-checking MATLAB programs in 18 categories
+tests/                  373 self-checking MATLAB programs in 18 categories
 .github/                CI workflow (build, test, compile Fable, package VSIX)
 ```
 
 ## Test Suite
 
-Conformal is validated by 370 self-checking MATLAB programs organized into 18 categories. Each test embeds its expected behavior as inline assertions:
+Conformal is validated by 373 self-checking MATLAB programs organized into 18 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -225,9 +229,9 @@ Tests symbolic dimension tracking, arithmetic, and canonical polynomial represen
 </details>
 
 <details open>
-<summary><h3>Indexing (17 tests)</h3></summary>
+<summary><h3>Indexing (21 tests)</h3></summary>
 
-MATLAB-style indexing including scalar, slice, range, linear indexing, and `end` keyword arithmetic.
+MATLAB-style indexing including scalar, slice, range, linear indexing, `end` keyword arithmetic, comparison broadcast shapes, and logical indexing.
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -248,6 +252,10 @@ MATLAB-style indexing including scalar, slice, range, linear indexing, and `end`
 | `index_assign_in_function.m` | Indexed assignment in function body; caller sees correct return shape | 0 |
 | `matrix_literal_index.m` | Matrix literal as index argument `A([1 2 3])` returns the correct shape; colon ranges inside `[...]` index args work | 0 |
 | `colon_in_matrix_index.m` | Colon range inside a matrix literal index arg `A([1:3])` parses correctly via `colon_visible` parameter threading | 0 |
+| `comparison_returns_matrix.m` | Comparison `A > 0` where `A` is `matrix[3 x 4]` returns `matrix[3 x 4]`, not scalar | 1 |
+| `logical_index_basic.m` | Logical indexing `A(A > 0)` infers `matrix[None x 1]` (column vector) | 1 |
+| `logical_index_compound.m` | Compound logical mask `A(A > 0 & A < 1)` still infers column vector output | 2 |
+| `logical_index_variable.m` | Pre-computed mask stored in variable, then used for indexing, infers column vector | 0 |
 
 </details>
 
@@ -597,9 +605,9 @@ Dimension constraint solving: equality constraints recorded during operations, v
 </details>
 
 <details>
-<summary><h3>Intervals (19 tests)</h3></summary>
+<summary><h3>Intervals (21 tests)</h3></summary>
 
-Integer interval domain tracking scalar value ranges for division-by-zero, out-of-bounds indexing, and negative-dimension checks. Conditional interval refinement and symbolic interval bounds.
+Integer interval domain tracking scalar value ranges for division-by-zero, out-of-bounds indexing, and negative-dimension checks. Conditional interval refinement, symbolic interval bounds, and threshold-based widening.
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -622,6 +630,8 @@ Integer interval domain tracking scalar value ranges for division-by-zero, out-o
 | `conditional_refine_while.m` | While loop condition refines interval in loop body | 0 |
 | `symbolic_interval_for_loop.m` | Symbolic upper bound `for i = 1:n` gives `i` in `[1, n]`; no false OOB on `A(i,:)` | 0 |
 | `scalar_propagation.m` | Concrete scalar values propagate into dimension constructors (`m = 3; zeros(m,m)` gives `matrix[3 x 3]`) | 0 |
+| `widen_threshold_upper.m` | Incrementing loop counter: threshold widening snaps upper bound to `1000` rather than `+inf`; variable remains a finite scalar post-loop | 0 |
+| `widen_threshold_lower.m` | Decrementing loop counter: threshold widening snaps lower bound to `-1000` rather than `-inf`; variable remains a finite scalar post-loop | 0 |
 
 >Interval analysis runs in parallel with shape inference. `W_INDEX_OUT_OF_BOUNDS` and `W_DIVISION_BY_ZERO` have Error severity (definite runtime errors). Conditional refinement eliminates false positives when branch guards prove safety; symbolic bounds fall back soundly.
 
@@ -723,7 +733,7 @@ Incorrectness witness generation: concrete proofs that dimension conflict warnin
 ### Running the Tests
 
 ```bash
-# Run all 370 .m tests
+# Run all 373 .m tests
 cd src && dotnet run -- --tests
 
 # Run with fixed-point loop analysis
