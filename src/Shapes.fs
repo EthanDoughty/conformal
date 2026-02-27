@@ -135,19 +135,19 @@ let private dimStrCore (d: Dim) : string =
             | [([_varName, 1], coeff)] when coeff = Rational.One ->
                 fst (List.head (fst s._terms.[0]))
             | _ ->
-                "(" + SymDim.toString s + ")"
+                $"({SymDim.toString s})"
     | Range(lo, hi) ->
         let loStr =
             match lo with
             | BConcrete n -> string n
-            | BSymbolic s -> "(" + SymDim.toString s + ")"
+            | BSymbolic s -> $"({SymDim.toString s})"
             | BUnknown    -> ""
         let hiStr =
             match hi with
             | BConcrete n -> string n
-            | BSymbolic s -> "(" + SymDim.toString s + ")"
+            | BSymbolic s -> $"({SymDim.toString s})"
             | BUnknown    -> ""
-        loStr + ".." + hiStr
+        $"{loStr}..{hiStr}"
 
 let dimStr (d: Dim) : string =
     match dimStrCache.TryGetValue(d) with
@@ -174,7 +174,7 @@ let rec shapeToString (s: Shape) : string =
 and private shapeToStringCore (s: Shape) : string =
     match s with
     | Scalar           -> "scalar"
-    | Matrix(r, c)     -> "matrix[" + dimStr r + " x " + dimStr c + "]"
+    | Matrix(r, c)     -> $"matrix[{dimStr r} x {dimStr c}]"
     | StringShape      -> "string"
     | Struct(fields, isOpen) ->
         // Filter out bottom fields (internal-only)
@@ -182,12 +182,13 @@ and private shapeToStringCore (s: Shape) : string =
             fields
             |> List.choose (fun (name, shape) ->
                 if shape = Bottom then None
-                else Some (name + ": " + shapeToString shape))
+                else Some $"{name}: {shapeToString shape}")
         let allParts =
             if isOpen then fieldStrs @ ["..."] else fieldStrs
-        "struct{" + String.concat ", " allParts + "}"
+        let inner = String.concat ", " allParts
+        $"struct{{{inner}}}"
     | FunctionHandle _ -> "function_handle"
-    | Cell(r, c, _)   -> "cell[" + dimStr r + " x " + dimStr c + "]"
+    | Cell(r, c, _)   -> $"cell[{dimStr r} x {dimStr c}]"
     | UnknownShape     -> "unknown"
     | Bottom           -> "bottom"
 

@@ -129,7 +129,7 @@ let private checkNegativeDimArg
     : unit =
     let iv = getIntervalFn arg env ctx
     if intervalDefinitelyNegative (iv |> Option.map id) then
-        let ivStr = match iv with Some i -> "[" + string i.lo + "," + string i.hi + "]" | None -> "?"
+        let ivStr = match iv with Some i -> $"[{i.lo},{i.hi}]" | None -> "?"
         warnings.Add(warnPossiblyNegativeDim line ivStr)
 
 

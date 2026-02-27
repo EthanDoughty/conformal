@@ -68,7 +68,7 @@ let getHover
     let shape = Env.Env.get env word
     if shape <> Bottom && shape <> UnknownShape then
         let shapeStr = Shapes.shapeToString shape
-        Some (makeHover ("(conformal) `" + word + "`: `" + shapeStr + "`"))
+        Some (makeHover $"(conformal) `{word}`: `{shapeStr}`")
     else
 
     // 2. Check function_registry (same-file user-defined functions)
@@ -76,17 +76,17 @@ let getHover
     | true, sig_ ->
         let paramsStr  = sig_.parms      |> String.concat ", "
         let outputsStr = sig_.outputVars |> String.concat ", "
-        Some (makeHover ("(function) `" + word + "(" + paramsStr + ") -> [" + outputsStr + "]`"))
+        Some (makeHover $"(function) `{word}({paramsStr}) -> [{outputsStr}]`")
     | _ ->
 
     // 3. Check KNOWN_BUILTINS
     if Set.contains word knownBuiltins then
-        Some (makeHover ("(builtin) `" + word + "`"))
+        Some (makeHover $"(builtin) `{word}`")
     else
 
     // 4. Check external_functions (workspace)
     match externalFunctions.TryGetValue(word) with
     | true, extSig ->
         let filename = System.IO.Path.GetFileName(extSig.filename)
-        Some (makeHover ("(external) `" + word + "` from `" + filename + "`"))
+        Some (makeHover $"(external) `{word}` from `{filename}`")
     | _ -> None
