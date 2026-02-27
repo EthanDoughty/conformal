@@ -149,7 +149,7 @@ let private detectAccumulation (loopVar: string) (body: Stmt list) : AccumPatter
 
         | StructAssign({ line = stmtLine }, baseName, [fieldName], MatrixLit(_, rows)) ->
             // Struct field accumulation: s.field = [s.field; row] or s.field = [s.field, col]
-            let key = baseName + "." + fieldName
+            let key = $"{baseName}.{fieldName}"
             let mutable count = 0
             for row in rows do
                 for elem in row do
@@ -369,7 +369,7 @@ let private joinBranchResults
 let private formatDualLocationWarning (funcWarn: Diagnostic) (funcName: string) (callLine: int) : Diagnostic =
     if funcWarn.message.Contains("(in ") then funcWarn
     else
-        let augMsg = funcWarn.message + " (in " + funcName + ", called from line " + string callLine + ")"
+        let augMsg = $"{funcWarn.message} (in {funcName}, called from line {callLine})"
         { funcWarn with message = augMsg; relatedLine = Some callLine }
 
 
@@ -1457,9 +1457,9 @@ and analyzeFunctionCall
                 | _ -> (param, Unknown)) (List.take actualArgCount sig_.parms) args
 
         let cacheKey =
-            funcName + ":n=" + string actualArgCount + ":o=" + string numTargets + ":(" +
-            (argShapes |> List.map shapeToString |> String.concat ",") + "):(" +
-            (argDimAliases |> List.map (fun (p, d) -> p + "=" + dimStr d) |> String.concat ",") + ")"
+            let shapePart = argShapes |> List.map shapeToString |> String.concat ","
+            let aliasPart = argDimAliases |> List.map (fun (p, d) -> $"{p}={dimStr d}") |> String.concat ","
+            $"{funcName}:n={actualArgCount}:o={numTargets}:({shapePart}):({aliasPart})"
 
         match ctx.call.analysisCache.TryGetValue(cacheKey) with
         | true, (:? (Shape list * Diagnostic list) as cached) ->
@@ -1566,9 +1566,9 @@ and analyzeNestedFunctionCall
                 | _ -> (param, Unknown)) (List.take actualArgCount sig_.parms) args
 
         let cacheKey =
-            "nested:" + funcName + ":n=" + string actualArgCount + ":o=" + string numTargets + ":(" +
-            (argShapes |> List.map shapeToString |> String.concat ",") + "):(" +
-            (argDimAliases |> List.map (fun (p, d) -> p + "=" + dimStr d) |> String.concat ",") + ")"
+            let shapePart = argShapes |> List.map shapeToString |> String.concat ","
+            let aliasPart = argDimAliases |> List.map (fun (p, d) -> $"{p}={dimStr d}") |> String.concat ","
+            $"nested:{funcName}:n={actualArgCount}:o={numTargets}:({shapePart}):({aliasPart})"
 
         match ctx.call.analysisCache.TryGetValue(cacheKey) with
         | true, (:? (Shape list * Diagnostic list) as cached) ->
@@ -1682,9 +1682,9 @@ and analyzeExternalFunctionCall
             | _ -> (param, Unknown)) (List.take actualArgCount primarySig.parms) args
 
     let cacheKey =
-        "external:" + fname + ":n=" + string actualArgCount + ":o=" + string numTargets + ":(" +
-        (argShapes |> List.map shapeToString |> String.concat ",") + "):(" +
-        (argDimAliases |> List.map (fun (p, d) -> p + "=" + dimStr d) |> String.concat ",") + ")"
+        let shapePart = argShapes |> List.map shapeToString |> String.concat ","
+        let aliasPart = argDimAliases |> List.map (fun (p, d) -> $"{p}={dimStr d}") |> String.concat ","
+        $"external:{fname}:n={actualArgCount}:o={numTargets}:({shapePart}):({aliasPart})"
 
     match ctx.call.analysisCache.TryGetValue(cacheKey) with
     | true, (:? (Shape list * Diagnostic list) as cached) ->

@@ -100,7 +100,7 @@ let toLspDiagnostic
             let relLoc : Location = { Uri = uri; Range = relRange }
             let relInfo : DiagnosticRelatedInformation = {
                 Location = relLoc
-                Message  = "Related: see line " + string relLine
+                Message  = $"Related: see line {relLine}"
             }
             Some [| relInfo |]
 
@@ -109,16 +109,16 @@ let toLspDiagnostic
         match witness with
         | None -> d.message
         | Some w ->
-            let baseMsg = d.message + "\nWitness: " + w.explanation
+            let baseMsg = $"{d.message}\nWitness: {w.explanation}"
             if w.path.IsEmpty then baseMsg
             else
                 let parts =
                     w.path
                     |> List.map (fun (desc, taken, ln) ->
                         let branchStr = if taken then "true branch" else "false branch"
-                        "line " + string ln + " (if " + desc + ", " + branchStr + ")")
+                        $"line {ln} (if {desc}, {branchStr})")
                     |> String.concat " -> "
-                baseMsg + "\nPath: " + parts
+                $"{baseMsg}\nPath: {parts}"
 
     {
         Range              = range

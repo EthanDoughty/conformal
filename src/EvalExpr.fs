@@ -539,9 +539,9 @@ and private evalHandleCall
                         | _ -> (param, Unknown)) (List.take minLen parms) (List.take minLen args)
 
                 let cacheKey =
-                    "lambda:" + string callableId + ":" +
-                    (argShapes |> List.map (fun s -> shapeToString s) |> String.concat ",") + ":" +
-                    (argDimAliases |> List.map (fun (p, d) -> p + "=" + dimStr d) |> String.concat ",")
+                    let shapePart = argShapes |> List.map shapeToString |> String.concat ","
+                    let aliasPart = argDimAliases |> List.map (fun (p, d) -> $"{p}={dimStr d}") |> String.concat ","
+                    $"lambda:{callableId}:{shapePart}:{aliasPart}"
 
                 match ctx.call.analysisCache.TryGetValue(cacheKey) with
                 | true, (:? (Shape * Diagnostic list) as cached) ->  // analysisCache stays obj-typed
@@ -665,7 +665,7 @@ and private evalIndexing
                 let idxIv = getExprInterval idxExpr env ctx
                 match idxIv with
                 | Some iv ->
-                    let fmt = "[" + string iv.lo + ", " + string iv.hi + "]"
+                    let fmt = $"[{iv.lo}, {iv.hi}]"
                     let dimStr = string ms
                     // Pentagon suppression: if index var has relational bound matching dim, suppress.
                     let suppressedByPentagon =
@@ -691,7 +691,7 @@ and private evalIndexing
                 let idxIv = getExprInterval idxExpr env ctx
                 match idxIv with
                 | Some iv ->
-                    let fmt = "[" + string iv.lo + ", " + string iv.hi + "]"
+                    let fmt = $"[{iv.lo}, {iv.hi}]"
                     let dimStr = string ns
                     // Pentagon suppression: if index var has relational bound matching dim, suppress.
                     let suppressedByPentagon =

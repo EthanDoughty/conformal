@@ -23,8 +23,9 @@ let private printEnv (env: Env.Env) : unit =
         env.bindings
         |> Map.toList
         |> List.sortBy fst
-        |> List.map (fun (k, v) -> k + ": " + Shapes.shapeToString v)
-    let envStr = "Env{" + String.concat ", " pairs + "}"
+        |> List.map (fun (k, v) -> $"{k}: {Shapes.shapeToString v}")
+    let inner = String.concat ", " pairs
+    let envStr = $"Env{{{inner}}}"
     printfn "Final environment:"
     printfn "%s" envStr
 

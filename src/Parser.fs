@@ -151,7 +151,7 @@ type MatlabParser(tokenList: Token list) =
     member private _.Eat(expected: string) : Token =
         let tok = tokens.[pos]
         if tok.kind <> expected && tok.value <> expected then
-            raise (ParseError("Expected " + expected + " at pos " + string tok.pos + ", found " + tok.kind + " '" + tok.value + "'"))
+            raise (ParseError($"Expected {expected} at pos {tok.pos}, found {tok.kind} '{tok.value}'"))
         pos <- pos + 1
         tok
 
@@ -299,7 +299,7 @@ type MatlabParser(tokenList: Token list) =
                     while not (this.AtEnd()) && this.Current().kind = "DOT" do
                         pos <- pos + 1  // skip '.'
                         if not (this.AtEnd()) && this.Current().kind = "ID" then
-                            superName <- superName + "." + this.Current().value
+                            superName <- $"{superName}.{this.Current().value}"
                             pos <- pos + 1
             this.SkipNewlines()
             let mutable properties : string list = []
@@ -318,8 +318,9 @@ type MatlabParser(tokenList: Token list) =
             if not (this.AtEnd()) && this.Current().kind = "END" then pos <- pos + 1
             this.SkipNewlines()
             // Encode metadata in OpaqueStmt raw string
-            let raw = "classdef:" + className + ":" + (properties |> String.concat ",") +
-                      (if superName <> "" then ":" + superName else "")
+            let propPart = properties |> String.concat ","
+            let superPart = if superName <> "" then $":{superName}" else ""
+            let raw = $"classdef:{className}:{propPart}{superPart}"
             let opaque = OpaqueStmt(loc line col, [], raw)
             opaque :: methodDefs
         with
@@ -506,7 +507,8 @@ type MatlabParser(tokenList: Token list) =
                     let mutable tname = this.Eat("ID").value
                     while this.Current().kind = "DOT" do
                         this.Eat("DOT") |> ignore
-                        tname <- tname + "." + this.Eat("ID").value
+                        let nextId = this.Eat("ID").value
+                        tname <- $"{tname}.{nextId}"
                     tname
             let mutable targets = [eatTarget ()]
             while this.Current().value = "," || this.Current().kind = "ID" || this.Current().value = "~" do
@@ -822,7 +824,7 @@ type MatlabParser(tokenList: Token list) =
                 End(loc endTok.line endTok.col)
 
             | _ ->
-                raise (ParseError("Unexpected token " + tok.kind + " '" + tok.value + "' in expression at " + string tok.pos))
+                raise (ParseError($"Unexpected token {tok.kind} '{tok.value}' in expression at {tok.pos}"))
 
     member private this.ParsePostfix(initial: Expr) : Expr =
         let mutable left = initial
@@ -949,7 +951,7 @@ type MatlabParser(tokenList: Token list) =
                     if this.Current().value = endToken then outerStop <- true
                 else
                     let tok = this.Current()
-                    raise (ParseError("Unexpected token " + tok.kind + " '" + tok.value + "' in literal at " + string tok.pos))
+                    raise (ParseError($"Unexpected token {tok.kind} '{tok.value}' in literal at {tok.pos}"))
             (line, col, rows |> Seq.toList)
 
     member private this.ParseMatrixLiteral() : Expr =
