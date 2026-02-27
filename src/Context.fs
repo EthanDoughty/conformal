@@ -20,6 +20,14 @@ type FunctionSignature = {
     defCol:     int
 }
 
+/// Class metadata extracted from a classdef block.
+type ClassInfo = {
+    name:       string
+    properties: string list
+    methods:    Map<string, FunctionSignature>
+    superclass: string option
+}
+
 /// Signature extracted from an external .m file.
 type ExternalSignature = {
     filename:    string
@@ -78,6 +86,9 @@ type CallContext() =
     member val fixpoint       : bool = false with get, set
     /// Current call depth (for recursion limit)
     member val callDepth      : int = 0 with get, set
+    /// Maps class name -> ClassInfo (populated from classdef blocks)
+    member val classRegistry  : System.Collections.Generic.Dictionary<string, ClassInfo>
+                                = System.Collections.Generic.Dictionary<string, ClassInfo>() with get, set
 
 type ConstraintContext() =
     /// Set of (dim1_str, dim2_str) equality constraints (canonicalized)

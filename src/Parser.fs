@@ -192,18 +192,44 @@ type MatlabParser(tokenList: Token list) =
         let targets = extractTargetsFromTokens (consumed |> Seq.toList)
         OpaqueStmt(loc startLine startCol, targets, rawText)
 
-    // Classdef consumer
-    member private this.ConsumeClassdef() : Stmt =
-        let startTok = this.Current()
-        let line = startTok.line
-        let col = startTok.col
-        let mutable depth = 1
-        pos <- pos + 1  // skip 'classdef'
+    // Classdef helpers
+
+    member private this.SkipNewlines() =
+        while not (this.AtEnd()) &&
+              (this.Current().kind = "NEWLINE" || this.Current().kind = ";" || this.Current().value = ";") do
+            pos <- pos + 1
+
+    member private this.SkipToEndOfLine() =
+        while not (this.AtEnd()) && this.Current().kind <> "NEWLINE" &&
+              this.Current().kind <> "EOF" && this.Current().kind <> "END" &&
+              not (this.Current().kind = ";" || this.Current().value = ";") do
+            pos <- pos + 1
+        if not (this.AtEnd()) &&
+           (this.Current().kind = "NEWLINE" || this.Current().kind = ";" || this.Current().value = ";") then
+            pos <- pos + 1
+
+    // Skip optional (Attr = val, ...) attribute block after properties/methods keyword
+    member private this.SkipParenAttributes() =
+        if not (this.AtEnd()) && this.Current().value = "(" then
+            let mutable depth = 0
+            let mutable finished = false
+            while not (this.AtEnd()) && not finished do
+                let tok = this.Current()
+                pos <- pos + 1
+                if tok.value = "(" then depth <- depth + 1
+                elif tok.value = ")" then
+                    depth <- depth - 1
+                    if depth = 0 then finished <- true
+
+    // Depth-count consume of a block that starts AFTER current position (we are on the keyword)
+    // Consumes tokens until the matching END, then consumes the END.
+    member private this.ConsumeBlock() =
+        pos <- pos + 1  // skip keyword
         let blockOpeners = set ["IF"; "FOR"; "WHILE"; "SWITCH"; "TRY"; "FUNCTION"; "PARFOR"]
         let idBlockOpeners = set ["methods"; "properties"; "events"; "enumeration"]
+        let mutable depth = 1
         let mutable parenDepth = 0
-        let mutable finished = false
-        while not (this.AtEnd()) && not finished do
+        while not (this.AtEnd()) && depth > 0 do
             let tok = this.Current()
             pos <- pos + 1
             if tok.value = "(" || tok.value = "[" || tok.value = "{" then
@@ -213,14 +239,114 @@ type MatlabParser(tokenList: Token list) =
             elif parenDepth = 0 then
                 if tok.kind = "END" then
                     depth <- depth - 1
-                    if depth = 0 then finished <- true
                 elif Set.contains tok.kind blockOpeners then
                     depth <- depth + 1
                 elif tok.kind = "ID" && Set.contains tok.value idBlockOpeners then
                     depth <- depth + 1
-        while not (this.AtEnd()) && (this.Current().kind = "NEWLINE" || this.Current().kind = ";" || this.Current().value = ";") do
-            pos <- pos + 1
-        OpaqueStmt(loc line col, [], "classdef")
+
+    member private this.ParsePropertiesBlock() : string list =
+        pos <- pos + 1  // skip 'properties' keyword
+        this.SkipParenAttributes()
+        this.SkipNewlines()
+        let props = System.Collections.Generic.List<string>()
+        while not (this.AtEnd()) && this.Current().kind <> "END" do
+            if this.Current().kind = "ID" then
+                props.Add(this.Current().value)
+                pos <- pos + 1
+                this.SkipToEndOfLine()
+            else
+                pos <- pos + 1
+            this.SkipNewlines()
+        if not (this.AtEnd()) && this.Current().kind = "END" then pos <- pos + 1
+        props |> Seq.toList
+
+    member private this.ParseMethodsBlock() : Stmt list =
+        pos <- pos + 1  // skip 'methods' keyword
+        this.SkipParenAttributes()
+        this.SkipNewlines()
+        let meths = System.Collections.Generic.List<Stmt>()
+        while not (this.AtEnd()) && this.Current().kind <> "END" do
+            if this.Current().kind = "FUNCTION" then
+                meths.Add(this.ParseFunctionDef())
+            else
+                pos <- pos + 1
+            this.SkipNewlines()
+        if not (this.AtEnd()) && this.Current().kind = "END" then pos <- pos + 1
+        meths |> Seq.toList
+
+    member private this.ParseClassdef() : Stmt list =
+        let startTok = this.Current()
+        let line = startTok.line
+        let col = startTok.col
+        try
+            pos <- pos + 1  // skip 'classdef'
+            // Skip optional (Sealed), (Abstract), etc. attribute block before class name
+            this.SkipParenAttributes()
+            // Class name
+            let className =
+                if not (this.AtEnd()) && this.Current().kind = "ID" then
+                    let n = this.Current().value
+                    pos <- pos + 1
+                    n
+                else ""
+            // Optional superclass: classdef Foo < Bar
+            let mutable superName = ""
+            if not (this.AtEnd()) && this.Current().value = "<" then
+                pos <- pos + 1  // skip '<'
+                if not (this.AtEnd()) && this.Current().kind = "ID" then
+                    superName <- this.Current().value
+                    pos <- pos + 1
+                    while not (this.AtEnd()) && this.Current().kind = "DOT" do
+                        pos <- pos + 1  // skip '.'
+                        if not (this.AtEnd()) && this.Current().kind = "ID" then
+                            superName <- superName + "." + this.Current().value
+                            pos <- pos + 1
+            this.SkipNewlines()
+            let mutable properties : string list = []
+            let mutable methodDefs : Stmt list = []
+            while not (this.AtEnd()) && this.Current().kind <> "END" do
+                let cur = this.Current()
+                if cur.kind = "ID" && cur.value = "properties" then
+                    properties <- properties @ this.ParsePropertiesBlock()
+                elif cur.kind = "ID" && cur.value = "methods" then
+                    methodDefs <- methodDefs @ this.ParseMethodsBlock()
+                elif cur.kind = "ID" && (cur.value = "events" || cur.value = "enumeration") then
+                    this.ConsumeBlock()
+                else
+                    pos <- pos + 1
+                this.SkipNewlines()
+            if not (this.AtEnd()) && this.Current().kind = "END" then pos <- pos + 1
+            this.SkipNewlines()
+            // Encode metadata in OpaqueStmt raw string
+            let raw = "classdef:" + className + ":" + (properties |> String.concat ",") +
+                      (if superName <> "" then ":" + superName else "")
+            let opaque = OpaqueStmt(loc line col, [], raw)
+            opaque :: methodDefs
+        with
+        | _ ->
+            // Fallback: depth-count consume the rest as opaque
+            let blockOpeners = set ["IF"; "FOR"; "WHILE"; "SWITCH"; "TRY"; "FUNCTION"; "PARFOR"]
+            let idBlockOpeners = set ["methods"; "properties"; "events"; "enumeration"]
+            let mutable depth = 1
+            let mutable parenDepth = 0
+            let mutable finished = false
+            while not (this.AtEnd()) && not finished do
+                let tok = this.Current()
+                pos <- pos + 1
+                if tok.value = "(" || tok.value = "[" || tok.value = "{" then
+                    parenDepth <- parenDepth + 1
+                elif tok.value = ")" || tok.value = "]" || tok.value = "}" then
+                    parenDepth <- max 0 (parenDepth - 1)
+                elif parenDepth = 0 then
+                    if tok.kind = "END" then
+                        depth <- depth - 1
+                        if depth = 0 then finished <- true
+                    elif Set.contains tok.kind blockOpeners then
+                        depth <- depth + 1
+                    elif tok.kind = "ID" && Set.contains tok.value idBlockOpeners then
+                        depth <- depth + 1
+            this.SkipNewlines()
+            [OpaqueStmt(loc line col, [], "classdef")]
 
     // -------------------------------------------------------------------
     // Top-level program
@@ -239,7 +365,7 @@ type MatlabParser(tokenList: Token list) =
             if not (this.AtEnd()) then
                 let cur = this.Current()
                 if cur.kind = "ID" && cur.value = "classdef" then
-                    items.Add(this.ConsumeClassdef())
+                    for stmt in this.ParseClassdef() do items.Add(stmt)
                 elif cur.kind = "FUNCTION" then
                     items.Add(this.ParseFunctionDef())
                 else
