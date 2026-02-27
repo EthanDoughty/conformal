@@ -1221,6 +1221,46 @@ and private analyzeAssignMulti
 
 
 // ---------------------------------------------------------------------------
+// collectModifiedVars: syntactic scan of loop body for assigned variables.
+// Over-approximates: any variable written anywhere in the body (including
+// nested loops and branches) is considered modified.  Conservative is fine.
+// ---------------------------------------------------------------------------
+
+and private collectModifiedVars (body: Stmt list) : Set<string> =
+    let mutable vars = Set.empty
+    let rec scanStmt (s: Stmt) =
+        match s with
+        | Assign(_, name, _) -> vars <- Set.add name vars
+        | StructAssign(_, baseName, _, _) -> vars <- Set.add baseName vars
+        | CellAssign(_, baseName, _, _) -> vars <- Set.add baseName vars
+        | IndexAssign(_, baseName, _, _) -> vars <- Set.add baseName vars
+        | IndexStructAssign(_, baseName, _, _, _, _) -> vars <- Set.add baseName vars
+        | FieldIndexAssign(_, baseName, _, _, _, _, _) -> vars <- Set.add baseName vars
+        | AssignMulti(_, targets, _) ->
+            for t in targets do if t <> "~" then vars <- Set.add t vars
+        | For(_, var_, _, innerBody) ->
+            vars <- Set.add var_ vars
+            for s2 in innerBody do scanStmt s2
+        | While(_, _, innerBody) ->
+            for s2 in innerBody do scanStmt s2
+        | If(_, _, thenBody, elseBody) ->
+            for s2 in thenBody do scanStmt s2
+            for s2 in elseBody do scanStmt s2
+        | IfChain(_, _, bodies, elseBody) ->
+            for branchBody in bodies do for s2 in branchBody do scanStmt s2
+            for s2 in elseBody do scanStmt s2
+        | Switch(_, _, cases, otherwise) ->
+            for (_, caseBody) in cases do for s2 in caseBody do scanStmt s2
+            for s2 in otherwise do scanStmt s2
+        | Try(_, tryBody, catchBody) ->
+            for s2 in tryBody do scanStmt s2
+            for s2 in catchBody do scanStmt s2
+        | _ -> ()
+    for s in body do scanStmt s
+    vars
+
+
+// ---------------------------------------------------------------------------
 // analyzeLoopBody: 3-phase widening algorithm (fixpoint mode)
 // ---------------------------------------------------------------------------
 
@@ -1241,6 +1281,24 @@ and analyzeLoopBody
         // Snapshot value ranges before loop body (persistent map: O(1) snapshot)
         let preLoopRanges = ctx.cst.valueRanges
 
+        // Scope-limited widening: only widen variables actually assigned in the body.
+        // Stable variables (assigned before loop, never reassigned inside) keep their
+        // exact pre-loop intervals rather than being widened spuriously.
+        let modifiedVars = collectModifiedVars body
+
+        // Helper: restore pre-loop intervals for stable (non-modified) variables.
+        // A stable variable is one that exists in preLoopRanges but was not modified
+        // in the body. After widening/narrowing, we restore stable vars' original intervals.
+        let restoreStableRanges () =
+            ctx.cst.valueRanges <- ctx.cst.valueRanges |> Map.map (fun key iv ->
+                let isModified = Set.contains key modifiedVars
+                let isLoopVar  = Some key = loopVar
+                if isModified || isLoopVar then iv
+                else
+                    match Map.tryFind key preLoopRanges with
+                    | Some origIv -> origIv
+                    | None -> iv)
+
         // Phase 1 (Discover)
         let preLoopEnv = Env.copy env
         try
@@ -1250,8 +1308,9 @@ and analyzeLoopBody
 
         // Widen shapes
         let widened = widenEnv preLoopEnv env
-        // Widen intervals in parallel with shape widening
+        // Widen intervals in parallel with shape widening; then restore stable variables.
         ctx.cst.valueRanges <- widenValueRanges preLoopRanges ctx.cst.valueRanges loopVar
+        restoreStableRanges ()
 
         // Phase 2 (Stabilize): Re-analyze if widening changed shapes OR intervals.
         // Scalar counters (count = count + 1) never change shape, so the old gate
@@ -1276,6 +1335,7 @@ and analyzeLoopBody
         // (scalar counters: shapes are always Scalar), this is the sole widening of the
         // Phase-1 intervals and the counter reaches at most the second threshold hop.
         ctx.cst.valueRanges <- widenValueRanges preLoopRanges ctx.cst.valueRanges loopVar
+        restoreStableRanges ()
 
         // Phase 2.5 (Narrow): One narrowing pass to recover precision lost to widening.
         // Re-run the body with the stabilized (widened) state, then intersect the
@@ -1292,6 +1352,7 @@ and analyzeLoopBody
         with
         | :? EarlyReturn | :? EarlyBreak | :? EarlyContinue -> ()
         ctx.cst.valueRanges <- narrowValueRanges preNarrowRanges ctx.cst.valueRanges loopVar
+        restoreStableRanges ()
         Env.replaceLocal env preNarrowEnv
 
         // Phase 3 (Post-loop join): Model "loop may execute 0 times"
