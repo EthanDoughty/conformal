@@ -754,9 +754,6 @@ and analyzeStmtIr
                 | _ -> ()
         | _ -> ()
 
-        // Pentagon bridge: tighten var_ interval using any known exact bound variable
-        Intervals.applyPentagonBridge ctx
-
         // Fixpoint-only: accumulation refinement
         let (preLoopEnv, iterCount, accumPatterns) =
             if ctx.call.fixpoint then
@@ -1314,6 +1311,8 @@ and analyzeLoopBody
     : unit =
 
     if not ctx.call.fixpoint then
+        // Pentagon bridge: tighten loop var interval before body analysis
+        Intervals.applyPentagonBridge ctx
         try
             for s in body do analyzeStmtIr s env warnings ctx
         with
@@ -1342,6 +1341,8 @@ and analyzeLoopBody
 
         // Phase 1 (Discover)
         let preLoopEnv = Env.copy env
+        // Pentagon bridge: tighten loop var interval before body analysis
+        Intervals.applyPentagonBridge ctx
         try
             for s in body do analyzeStmtIr s env warnings ctx
         with
@@ -1361,6 +1362,8 @@ and analyzeLoopBody
         if shapesChanged then
             Env.replaceLocal env widened
         if shapesChanged || intervalsChanged then
+            // Pentagon bridge: re-tighten before Phase 2 body re-analysis
+            Intervals.applyPentagonBridge ctx
             try
                 for s in body do analyzeStmtIr s env warnings ctx
             with
@@ -1388,6 +1391,8 @@ and analyzeLoopBody
         let preNarrowRanges = ctx.cst.valueRanges
         let preNarrowEnv = Env.copy env
         let throwawayWarnings = ResizeArray<Diagnostic>()
+        // Pentagon bridge: re-tighten before narrowing pass
+        Intervals.applyPentagonBridge ctx
         try
             for s in body do analyzeStmtIr s env throwawayWarnings ctx
         with

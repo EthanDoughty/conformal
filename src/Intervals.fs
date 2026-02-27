@@ -537,6 +537,44 @@ let killUpperBoundsFor (varName: string) (bounds: Map<string, string * int>) : M
     |> Map.filter (fun key (bVar, _) -> key <> varName && bVar <> varName)
 
 
+/// pentagonProvesInBounds: check if the Pentagon upper-bound relation proves
+/// that index variable varName is within matrix dimension matDim.
+/// Returns true if:
+///   (a) upperBounds[varName] = (boundVar, offset) and boundVar has exact interval
+///       [k,k] in valueRanges and k + offset <= concrete matDim size, OR
+///   (b) upperBounds[varName] = (boundVar, offset) and the DimEquiv root of boundVar
+///       matches the DimEquiv root of matDim's symbolic key and offset <= 0.
+let pentagonProvesInBounds
+    (ctx: Context.AnalysisContext)
+    (varName: string)
+    (matDim: Shapes.Dim)
+    : bool =
+    match Map.tryFind varName ctx.cst.upperBounds with
+    | None -> false
+    | Some (boundVar, offset) ->
+        // Case (a): boundVar is concretely known and k + offset <= concrete matDim
+        let concreteProof =
+            match Map.tryFind boundVar ctx.cst.valueRanges with
+            | Some iv ->
+                match iv.lo, iv.hi with
+                | Finite lo, Finite hi when lo = hi ->
+                    match matDim with
+                    | Shapes.Concrete ms -> lo + offset <= ms
+                    | _ -> false
+                | _ -> false
+            | None -> false
+        if concreteProof then true
+        else
+        // Case (b): boundVar's DimEquiv root matches matDim's symbolic key and offset <= 0
+        match matDim with
+        | Shapes.Symbolic _ when offset <= 0 ->
+            let matDimKey = Shapes.dimStr matDim
+            let boundVarRoot = DimEquiv.find ctx.cst.dimEquiv boundVar
+            let matDimRoot = DimEquiv.find ctx.cst.dimEquiv matDimKey
+            boundVarRoot = matDimRoot
+        | _ -> false
+
+
 /// applyPentagonBridge: for each x in upperBounds where upperBounds[x] = (y, c)
 /// and valueRanges[y] = [k,k] (exact), tighten valueRanges[x].hi to min(current_hi, k+c).
 let applyPentagonBridge (ctx: Context.AnalysisContext) : unit =
