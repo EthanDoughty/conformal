@@ -37,6 +37,8 @@ let private matlabConstants : Map<string, Shape> =
         "i", Scalar; "j", Scalar
         "realmin", Scalar; "realmax", Scalar; "intmax", Scalar
         "intmin", Scalar; "flintmax", Scalar
+        // nargin/nargout: fallback for script context (no function binding)
+        "nargin", Scalar; "nargout", Scalar
     ]
 
 
