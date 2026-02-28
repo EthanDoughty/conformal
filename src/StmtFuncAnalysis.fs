@@ -1462,11 +1462,10 @@ and analyzeFunctionCall
             $"{funcName}:n={actualArgCount}:o={numTargets}:({shapePart}):({aliasPart})"
 
         match ctx.call.analysisCache.TryGetValue(cacheKey) with
-        | true, (:? (Shape list * Diagnostic list) as cached) ->
-            let (cachedShapes, cachedWarn) = cached
+        | true, FunctionResult(cachedShapes, cachedWarn) ->
             for fw in cachedWarn do
                 warnings.Add(formatDualLocationWarning fw funcName line)
-            List.ofSeq cachedShapes
+            cachedShapes
         | _ ->
             ctx.call.analyzingFunctions.Add(funcName) |> ignore
             try
@@ -1511,7 +1510,7 @@ and analyzeFunctionCall
                             if isBottom shape then UnknownShape else shape)
                     let result = if resultShapes.IsEmpty then [ UnknownShape ] else resultShapes
 
-                    ctx.call.analysisCache.[cacheKey] <- box (result, Seq.toList funcWarnings)
+                    ctx.call.analysisCache.[cacheKey] <- FunctionResult(result, Seq.toList funcWarnings)
 
                     for fw in funcWarnings do
                         warnings.Add(formatDualLocationWarning fw funcName line)
@@ -1571,11 +1570,10 @@ and analyzeNestedFunctionCall
             $"nested:{funcName}:n={actualArgCount}:o={numTargets}:({shapePart}):({aliasPart})"
 
         match ctx.call.analysisCache.TryGetValue(cacheKey) with
-        | true, (:? (Shape list * Diagnostic list) as cached) ->
-            let (cachedShapes, cachedWarn) = cached
+        | true, FunctionResult(cachedShapes, cachedWarn) ->
             for fw in cachedWarn do
                 warnings.Add(formatDualLocationWarning fw funcName line)
-            List.ofSeq cachedShapes
+            cachedShapes
         | _ ->
             ctx.call.analyzingFunctions.Add(funcName) |> ignore
             try
@@ -1623,7 +1621,7 @@ and analyzeNestedFunctionCall
                             if isBottom shape then UnknownShape else shape)
                     let result = if resultShapes.IsEmpty then [ UnknownShape ] else resultShapes
 
-                    ctx.call.analysisCache.[cacheKey] <- box (result, Seq.toList funcWarnings)
+                    ctx.call.analysisCache.[cacheKey] <- FunctionResult(result, Seq.toList funcWarnings)
 
                     for fw in funcWarnings do
                         warnings.Add(formatDualLocationWarning fw funcName line)
@@ -1687,9 +1685,8 @@ and analyzeExternalFunctionCall
         $"external:{fname}:n={actualArgCount}:o={numTargets}:({shapePart}):({aliasPart})"
 
     match ctx.call.analysisCache.TryGetValue(cacheKey) with
-    | true, (:? (Shape list * Diagnostic list) as cached) ->
-        let (cachedShapes, _) = cached
-        List.ofSeq cachedShapes  // External warnings suppressed
+    | true, FunctionResult(cachedShapes, _) ->
+        cachedShapes
     | _ ->
         // Registry swap + recursion guard
         let savedRegistry = ctx.call.functionRegistry
@@ -1730,7 +1727,7 @@ and analyzeExternalFunctionCall
                         if isBottom shape then UnknownShape else shape)
                 let result = if resultShapes.IsEmpty then [ UnknownShape ] else resultShapes
 
-                ctx.call.analysisCache.[cacheKey] <- box (result, [])
+                ctx.call.analysisCache.[cacheKey] <- FunctionResult(result, [])
                 result)
         finally
             ctx.call.functionRegistry <- savedRegistry

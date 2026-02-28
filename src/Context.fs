@@ -6,6 +6,15 @@ open Env
 open DimEquiv
 open PathConstraints
 open SharedTypes
+open Diagnostics
+
+// ---------------------------------------------------------------------------
+// Analysis cache entry (typed alternative to obj boxing)
+// ---------------------------------------------------------------------------
+
+type CacheEntry =
+    | LambdaResult   of Shape * Diagnostic list
+    | FunctionResult  of Shape list * Diagnostic list
 
 // ---------------------------------------------------------------------------
 // Function signatures
@@ -71,9 +80,9 @@ type CallContext() =
     /// Set of external function names currently being analyzed (cycle guard)
     member val analyzingExternal      : System.Collections.Generic.HashSet<string>
                                         = System.Collections.Generic.HashSet<string>() with get, set
-    /// Cache keyed by (funcName, argShapes tuple string) -> (outputShapes, warnings)
-    member val analysisCache          : System.Collections.Generic.Dictionary<string, obj>
-                                        = System.Collections.Generic.Dictionary<string, obj>() with get, set
+    /// Cache keyed by (funcName, argShapes tuple string) -> CacheEntry
+    member val analysisCache          : System.Collections.Generic.Dictionary<string, CacheEntry>
+                                        = System.Collections.Generic.Dictionary<string, CacheEntry>() with get, set
     /// Lambda metadata: lambda_id -> (params, body_expr, closure_env)
     member val lambdaMetadata         : System.Collections.Generic.Dictionary<int, string list * Expr * Env>
                                         = System.Collections.Generic.Dictionary<int, string list * Expr * Env>() with get, set
