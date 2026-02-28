@@ -544,8 +544,7 @@ and private evalHandleCall
                     $"lambda:{callableId}:{shapePart}:{aliasPart}"
 
                 match ctx.call.analysisCache.TryGetValue(cacheKey) with
-                | true, (:? (Shape * Diagnostic list) as cached) ->  // analysisCache stays obj-typed
-                    let (cachedShape, cachedWarnings) = cached
+                | true, LambdaResult(cachedShape, cachedWarnings) ->
                     warnings.AddRange(cachedWarnings)
                     results.Add(cachedShape)
                 | _ ->
@@ -581,7 +580,7 @@ and private evalHandleCall
                                     let result = evalExprIr bodyExpr callEnv lambdaWarnings ctx None builtinDispatch
 
                                     // Cache result
-                                    ctx.call.analysisCache.[cacheKey] <- box (result, Seq.toList lambdaWarnings)  // analysisCache stays obj-typed
+                                    ctx.call.analysisCache.[cacheKey] <- LambdaResult(result, Seq.toList lambdaWarnings)
                                     warnings.AddRange(lambdaWarnings)
                                     results.Add(result)) |> ignore
                             finally
