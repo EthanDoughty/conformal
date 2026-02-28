@@ -952,23 +952,19 @@ let private handleStruct
     (ctx: AnalysisContext)
     (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
-    if args.IsEmpty then Some (Struct([], false))
-    else
-        let mutable fields : (string * Shape) list = []
-        let mutable i = 0
-        let mutable ok = true
-        while ok && i + 1 < args.Length do
-            match unwrapArg args.[i], unwrapArg args.[i + 1] with
-            | Some keyExpr, Some valExpr ->
-                match keyExpr with
-                | StringLit(_, fieldName) ->
-                    let valShape = evalExprFn valExpr env warnings ctx
-                    fields <- fields @ [ (fieldName, valShape) ]
-                | _ -> ok <- false
-            | _ -> ok <- false
-            i <- i + 2
-        if ok then Some (Struct(fields, false))
-        else Some (Struct([], false))
+    let rec parseStructArgs (remaining: IndexArg list) (acc: (string * Shape) list) =
+        match remaining with
+        | a :: b :: rest ->
+            match unwrapArg a, unwrapArg b with
+            | Some (StringLit(_, fieldName)), Some valExpr ->
+                let valShape = evalExprFn valExpr env warnings ctx
+                parseStructArgs rest ((fieldName, valShape) :: acc)
+            | _ -> None  // malformed: key is not a string literal or arg is not an IndexExpr
+        | [] -> Some (List.rev acc)
+        | _ -> None  // odd number of args
+    match parseStructArgs args [] with
+    | Some fields -> Some (Struct(fields, false))
+    | None        -> Some (Struct([], false))
 
 
 let private handleFieldnames (_args: IndexArg list) : Shape option =
@@ -1712,18 +1708,21 @@ let private handleMultiFsolve
 /// detectUniformOutput: scan name-value pairs starting at index 2 for
 /// 'UniformOutput', false (or 0).  Default is true.
 let private detectUniformOutput (args: IndexArg list) : bool =
-    let mutable result = true
-    let mutable i = 2  // skip first two positional args
-    while i + 1 < args.Length do
-        match unwrapArg args.[i], unwrapArg args.[i + 1] with
-        | Some (StringLit(_, s)), Some (Const(_, v)) when s = "UniformOutput" ->
-            result <- v <> 0.0
-            i <- i + 2
-        | Some (StringLit(_, s)), Some (Var(_, "false")) when s = "UniformOutput" ->
-            result <- false
-            i <- i + 2
-        | _ -> i <- i + 1
-    result
+    // Skip the first two positional args (func, cellArray); scan remaining pairs.
+    let rec scan (remaining: IndexArg list) (result: bool) =
+        match remaining with
+        | a :: b :: rest ->
+            match unwrapArg a, unwrapArg b with
+            | Some (StringLit(_, s)), Some (Const(_, v)) when s = "UniformOutput" ->
+                scan rest (v <> 0.0)
+            | Some (StringLit(_, s)), Some (Var(_, "false")) when s = "UniformOutput" ->
+                scan rest false
+            | _ ->
+                // Not a recognized pair; advance by one to stay in sync with heterogeneous args
+                scan (b :: rest) result
+        | _ -> result  // zero or one remaining: done
+    let nvPairs = if args.Length > 2 then List.skip 2 args else []
+    scan nvPairs true
 
 
 /// resolveHandleOutputShape: given a FunctionHandle shape and element shapes,
