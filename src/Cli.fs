@@ -149,61 +149,81 @@ let runTests (strict: bool) (fixpoint: bool) (benchmark: bool) : int =
 // Main entry point
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Argument parsing types
+// ---------------------------------------------------------------------------
+
+type CliArgs = {
+    tests: bool; testProps: bool; strict: bool; fixpoint: bool
+    bench: bool; coder: bool; file: string; parseJson: bool
+}
+
+let private defaultArgs =
+    { tests = false; testProps = false; strict = false; fixpoint = false
+      bench = false; coder = false; file = ""; parseJson = false }
+
+/// Fold state: Ready accepts flags, ConsumeFile means next arg is a file path,
+/// ConsumeWitness means next arg is an optional witness mode or file path.
+type private ParseState = Ready | ConsumeFile | ConsumeWitness
+
+let private parseArgv (argv: string array) : CliArgs =
+    argv
+    |> Array.fold (fun (acc, state) arg ->
+        match state with
+        | ConsumeFile ->
+            ({ acc with file = arg }, Ready)
+        | ConsumeWitness ->
+            if arg.StartsWith("--") then
+                // Not a mode/file arg; re-parse as a flag on the next fold iteration won't work
+                // since fold has already consumed it. Handle known flags inline.
+                match arg with
+                | "--tests"      -> ({ acc with tests = true }, Ready)
+                | "--test-props" -> ({ acc with testProps = true }, Ready)
+                | "--strict"     -> ({ acc with strict = true }, Ready)
+                | "--fixpoint"   -> ({ acc with fixpoint = true }, Ready)
+                | "--benchmark"  -> ({ acc with bench = true }, Ready)
+                | "--coder"      -> ({ acc with coder = true }, Ready)
+                | "--parse-json" -> ({ acc with parseJson = true }, ConsumeFile)
+                | "--witness"    -> (acc, ConsumeWitness)
+                | _ -> (acc, Ready)
+            else
+                match arg with
+                | "enrich" | "filter" | "tag" -> (acc, Ready)  // witness mode string, ignore
+                | f -> ({ acc with file = f }, Ready)
+        | Ready ->
+            match arg with
+            | "--tests"      -> ({ acc with tests = true }, Ready)
+            | "--test-props" -> ({ acc with testProps = true }, Ready)
+            | "--strict"     -> ({ acc with strict = true }, Ready)
+            | "--fixpoint"   -> ({ acc with fixpoint = true }, Ready)
+            | "--benchmark"  -> ({ acc with bench = true }, Ready)
+            | "--coder"      -> ({ acc with coder = true }, Ready)
+            | "--parse-json" -> ({ acc with parseJson = true }, ConsumeFile)
+            | "--witness"    -> (acc, ConsumeWitness)
+            | a when not (a.StartsWith("--")) -> ({ acc with file = a }, Ready)
+            | _ -> (acc, Ready)
+    ) (defaultArgs, Ready) |> fst
+
 /// run: parse argv and dispatch.
 /// Returns exit code.
 let run (argv: string array) : int =
-    // Manual argv parsing (no external deps)
-    let mutable tests     = false
-    let mutable testProps = false
-    let mutable strict    = false
-    let mutable fixpoint  = false
-    let mutable bench     = false
-    let mutable coder     = false
-    let mutable file      = ""
-    let mutable parseJson = false
+    let args = parseArgv argv
 
-    let mutable i = 0
-    while i < argv.Length do
-        match argv.[i] with
-        | "--tests"       -> tests     <- true
-        | "--test-props"  -> testProps <- true
-        | "--strict"      -> strict    <- true
-        | "--fixpoint"    -> fixpoint <- true
-        | "--benchmark"   -> bench    <- true
-        | "--coder"       -> coder    <- true
-        | "--parse-json"  ->
-            parseJson <- true
-            i <- i + 1
-            if i < argv.Length then file <- argv.[i]
-        | "--witness"     ->
-            // consume optional mode argument
-            i <- i + 1
-            if i < argv.Length && not (argv.[i].StartsWith("--")) then
-                match argv.[i] with
-                | "enrich" | "filter" | "tag" -> ()  // mode string, ignore for F# port
-                | f -> file <- f  // it's a file path
-            else
-                i <- i - 1
-        | arg when not (arg.StartsWith("--")) ->
-            file <- arg
-        | _ -> ()
-        i <- i + 1
-
-    if testProps then
+    if args.testProps then
         PropertyTests.runPropertyTests()
-    elif tests then
-        runTests strict fixpoint bench
-    elif parseJson then
+    elif args.tests then
+        runTests args.strict args.fixpoint args.bench
+    elif args.parseJson then
         // Legacy --parse-json mode: just parse and emit JSON
-        if file = "" then
+        if args.file = "" then
             eprintfn "Usage: conformal-parse --parse-json <file.m>"
             1
-        elif not (File.Exists file) then
-            eprintfn "File not found: %s" file
+        elif not (File.Exists args.file) then
+            eprintfn "File not found: %s" args.file
             1
         else
             try
-                let src = File.ReadAllText(file)
+                let src = File.ReadAllText(args.file)
                 let program = Parser.parseMATLAB src
                 let json = Json.programToJson program
                 printfn "%s" json
@@ -218,8 +238,8 @@ let run (argv: string array) : int =
             | ex ->
                 eprintfn "Error: %s" ex.Message
                 3
-    elif file <> "" then
-        runFile file strict fixpoint bench coder
+    elif args.file <> "" then
+        runFile args.file args.strict args.fixpoint args.bench args.coder
     else
         printfn "Usage: conformal-parse [--tests] [--strict] [--fixpoint] [--benchmark] [--coder] <file.m>"
         printfn ""

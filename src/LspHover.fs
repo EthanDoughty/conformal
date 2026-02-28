@@ -32,25 +32,18 @@ let getHover
 
     // Extract identifier at cursor position using regex
     let identPattern = Regex(@"[A-Za-z_]\w*")
-    let mutable word = ""
-    let mutable matchStart = 0
-    let mutable matchEnd   = 0
-    let mutable found = false
+    let wordMatch =
+        identPattern.Matches(lineText)
+        |> Seq.cast<System.Text.RegularExpressions.Match>
+        |> Seq.tryFind (fun m -> m.Index <= character && character < m.Index + m.Length)
 
-    let mMatches = identPattern.Matches(lineText)
-    let mutable idx = 0
-    while not found && idx < mMatches.Count do
-        let m = mMatches.[idx]
-        let s, e = m.Index, m.Index + m.Length
-        if s <= character && character < e then
-            word       <- m.Value
-            matchStart <- s
-            matchEnd   <- e
-            found      <- true
-        idx <- idx + 1
+    match wordMatch with
+    | None -> None
+    | Some m ->
 
-    if not found then None
-    else
+    let word       = m.Value
+    let matchStart = m.Index
+    let matchEnd   = m.Index + m.Length
 
     // Hover range spanning the matched identifier (uint32 for LSP positions)
     let hoverRange : Range = {
