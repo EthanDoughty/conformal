@@ -50,8 +50,8 @@ let inferMatrixLiteralShape
                 | (firstElem :: _) :: _ -> Some firstElem
                 | _ -> None
 
-            let rowHeights = System.Collections.Generic.List<Dim>()
-            let rowWidths  = System.Collections.Generic.List<Dim>()
+            let rowHeights = ResizeArray<Dim>()
+            let rowWidths  = ResizeArray<Dim>()
 
             for r, row in shapeRows |> List.mapi (fun i row -> (i, row)) do
                 // Empty row (rare/unexpected)
@@ -62,8 +62,8 @@ let inferMatrixLiteralShape
                     rowHeights.Add(Unknown)
                     rowWidths.Add(Unknown)
                 else
-                    let elemRows = System.Collections.Generic.List<Dim>()
-                    let elemCols = System.Collections.Generic.List<Dim>()
+                    let elemRows = ResizeArray<Dim>()
+                    let elemCols = ResizeArray<Dim>()
 
                     for s0 in row do
                         // Type check: warn on mixed kinds if non-numeric mixing

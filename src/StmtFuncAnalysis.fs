@@ -845,12 +845,12 @@ and analyzeStmtIr
         let baselineUpperBounds = ctx.cst.upperBounds
 
         let allBodies = bodies @ [ elseBody ]
-        let mutable branchEnvs : Env list = []
-        let mutable branchConstraints : Set<string * string> list = []
-        let mutable branchDimEquivs : DimEquiv.DimEquiv list = []
-        let mutable branchRanges : Map<string, SharedTypes.Interval> list = []
-        let mutable branchUpperBoundsAcc : Map<string, string * int> list = []
-        let mutable returnedFlags : bool list = []
+        let branchEnvs = ResizeArray<Env>()
+        let branchConstraints = ResizeArray<Set<string * string>>()
+        let branchDimEquivs = ResizeArray<DimEquiv.DimEquiv>()
+        let branchRanges = ResizeArray<Map<string, SharedTypes.Interval>>()
+        let branchUpperBoundsAcc = ResizeArray<Map<string, string * int>>()
+        let returnedFlags = ResizeArray<bool>()
         let mutable deferredExc : System.Exception option = None
 
         for idx in 0 .. allBodies.Length - 1 do
@@ -882,17 +882,18 @@ and analyzeStmtIr
                 deferredExc <- Some (e :> System.Exception)
             if idx < conditions.Length then ctx.cst.pathConstraints.Pop()
 
-            branchEnvs <- branchEnvs @ [branchEnv]
-            branchConstraints <- branchConstraints @ [ snapshotConstraints ctx ]
-            branchDimEquivs <- branchDimEquivs @ [ DimEquiv.snapshot ctx.cst.dimEquiv ]
-            branchRanges <- branchRanges @ [ ctx.cst.valueRanges ]
-            branchUpperBoundsAcc <- branchUpperBoundsAcc @ [ ctx.cst.upperBounds ]
-            returnedFlags <- returnedFlags @ [returned]
+            branchEnvs.Add(branchEnv)
+            branchConstraints.Add(snapshotConstraints ctx)
+            branchDimEquivs.Add(DimEquiv.snapshot ctx.cst.dimEquiv)
+            branchRanges.Add(ctx.cst.valueRanges)
+            branchUpperBoundsAcc.Add(ctx.cst.upperBounds)
+            returnedFlags.Add(returned)
 
         joinBranchResults
             env ctx baselineConstraints baselineDimEquiv baselineRanges baselineUpperBounds
-            branchEnvs branchConstraints branchDimEquivs branchRanges branchUpperBoundsAcc
-            returnedFlags deferredExc
+            (Seq.toList branchEnvs) (Seq.toList branchConstraints) (Seq.toList branchDimEquivs)
+            (Seq.toList branchRanges) (Seq.toList branchUpperBoundsAcc)
+            (Seq.toList returnedFlags) deferredExc
 
     | Switch({ line = line }, expr, cases, otherwise) ->
         wiredEvalExprFull expr env warnings ctx |> ignore
@@ -910,12 +911,12 @@ and analyzeStmtIr
         let baselineUpperBounds = ctx.cst.upperBounds
 
         let allBodies = (cases |> List.map snd) @ [ otherwise ]
-        let mutable branchEnvs : Env list = []
-        let mutable branchConstraints : Set<string * string> list = []
-        let mutable branchDimEquivs : DimEquiv.DimEquiv list = []
-        let mutable branchRanges : Map<string, SharedTypes.Interval> list = []
-        let mutable branchUpperBoundsAcc : Map<string, string * int> list = []
-        let mutable returnedFlags : bool list = []
+        let branchEnvs = ResizeArray<Env>()
+        let branchConstraints = ResizeArray<Set<string * string>>()
+        let branchDimEquivs = ResizeArray<DimEquiv.DimEquiv>()
+        let branchRanges = ResizeArray<Map<string, SharedTypes.Interval>>()
+        let branchUpperBoundsAcc = ResizeArray<Map<string, string * int>>()
+        let returnedFlags = ResizeArray<bool>()
         let mutable deferredExc : System.Exception option = None
 
         for caseIdx in 0 .. allBodies.Length - 1 do
@@ -955,17 +956,18 @@ and analyzeStmtIr
                 deferredExc <- Some (e :> System.Exception)
             if isCase then ctx.cst.pathConstraints.Pop()
 
-            branchEnvs <- branchEnvs @ [branchEnv]
-            branchConstraints <- branchConstraints @ [ snapshotConstraints ctx ]
-            branchDimEquivs <- branchDimEquivs @ [ DimEquiv.snapshot ctx.cst.dimEquiv ]
-            branchRanges <- branchRanges @ [ ctx.cst.valueRanges ]
-            branchUpperBoundsAcc <- branchUpperBoundsAcc @ [ ctx.cst.upperBounds ]
-            returnedFlags <- returnedFlags @ [returned]
+            branchEnvs.Add(branchEnv)
+            branchConstraints.Add(snapshotConstraints ctx)
+            branchDimEquivs.Add(DimEquiv.snapshot ctx.cst.dimEquiv)
+            branchRanges.Add(ctx.cst.valueRanges)
+            branchUpperBoundsAcc.Add(ctx.cst.upperBounds)
+            returnedFlags.Add(returned)
 
         joinBranchResults
             env ctx baselineConstraints baselineDimEquiv baselineRanges baselineUpperBounds
-            branchEnvs branchConstraints branchDimEquivs branchRanges branchUpperBoundsAcc
-            returnedFlags deferredExc
+            (Seq.toList branchEnvs) (Seq.toList branchConstraints) (Seq.toList branchDimEquivs)
+            (Seq.toList branchRanges) (Seq.toList branchUpperBoundsAcc)
+            (Seq.toList returnedFlags) deferredExc
 
     | Try({ line = tryLine }, tryBody, catchBody) ->
         if ctx.cst.coderMode then

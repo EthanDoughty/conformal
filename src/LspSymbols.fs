@@ -16,7 +16,7 @@ let getDocumentSymbols
     (sourceLines: string array)
     : DocumentSymbol array =
 
-    let symbols = System.Collections.Generic.List<DocumentSymbol>()
+    let symbols = ResizeArray<DocumentSymbol>()
 
     for stmt in program.body do
         match stmt with
