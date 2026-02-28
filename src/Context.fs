@@ -53,12 +53,14 @@ type ExternalSignature = {
 }
 
 // ---------------------------------------------------------------------------
-// Control-flow exceptions (mirrors Python EarlyReturn / EarlyBreak / EarlyContinue)
+// Control flow (replaces EarlyReturn/EarlyBreak/EarlyContinue exceptions)
 // ---------------------------------------------------------------------------
 
-exception EarlyReturn
-exception EarlyBreak
-exception EarlyContinue
+type ControlFlow =
+    | Normal
+    | FlowReturn
+    | FlowBreak
+    | FlowContinue
 
 // ---------------------------------------------------------------------------
 // Sub-contexts

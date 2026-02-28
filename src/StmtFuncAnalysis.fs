@@ -305,13 +305,13 @@ let private joinBranchResults
     (branchRanges: Map<string, SharedTypes.Interval> list)
     (branchUpperBounds: Map<string, string * int> list)
     (returnedFlags: bool list)
-    (deferredExc: System.Exception option)
-    : unit =
+    (deferredFlow: ControlFlow option)
+    : ControlFlow =
 
     if List.forall id returnedFlags then
-        match deferredExc with
-        | Some exc -> raise exc
-        | None -> raise EarlyReturn
+        match deferredFlow with
+        | Some flow -> flow
+        | None -> FlowReturn
     else
         let liveEnvs          = List.zip branchEnvs returnedFlags |> List.choose (fun (e, r) -> if not r then Some e else None)
         let liveConstraints   = List.zip branchConstraints returnedFlags |> List.choose (fun (c, r) -> if not r then Some c else None)
@@ -360,6 +360,8 @@ let private joinBranchResults
                 | [] -> baselineUpperBounds
                 | first :: rest -> rest |> List.fold Intervals.joinUpperBounds first
             ctx.cst.upperBounds <- joinedUpperBounds
+
+        Normal
 
 
 // ---------------------------------------------------------------------------
@@ -575,7 +577,7 @@ and analyzeStmtIr
     (env: Env)
     (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    : unit =
+    : ControlFlow =
 
     match stmt with
     | Assign({ line = line }, name, expr) ->
@@ -658,12 +660,14 @@ and analyzeStmtIr
             ctx.cst.valueRanges <- Map.add name exact ctx.cst.valueRanges
             Intervals.bridgeToDimEquiv ctx name exact
         | None -> ()
+        Normal
 
     | StructAssign({ line = line }, baseName, fields, expr) ->
         let rhsShape = wiredEvalExprFull expr env warnings ctx
         let baseShape = Env.get env baseName
         let updated = updateStructField baseShape fields rhsShape line warnings
         Env.set env baseName updated
+        Normal
 
     | FieldIndexAssign({ line = line }, baseName, prefixFields, indexArgs, _, suffixFields, expr) ->
         let rhsShape = wiredEvalExprFull expr env warnings ctx
@@ -674,6 +678,7 @@ and analyzeStmtIr
         let allFields = prefixFields @ suffixFields
         let updated = updateStructField baseShape allFields rhsShape line warnings
         Env.set env baseName updated
+        Normal
 
     | CellAssign({ line = line }, baseName, args, expr) ->
         let rhsShape = wiredEvalExprFull expr env warnings ctx
@@ -691,6 +696,7 @@ and analyzeStmtIr
                     warnings.Add(warnCellAssignNonCell line baseName baseShape)
         else
             analyzeCellAssignArgs baseName args env warnings ctx rhsShape
+        Normal
 
     | IndexAssign(_, baseName, _, expr) ->
         let rhsShape = wiredEvalExprFull expr env warnings ctx
@@ -705,14 +711,17 @@ and analyzeStmtIr
             if not isIndexable then
                 warnings.Add(warnIndexAssignTypeMismatch (stmt.Line) baseName baseShape)
         // No OOB checking: MATLAB auto-expands on indexed assign
+        Normal
 
     | IndexStructAssign(_, baseName, _, _, _, expr) ->
         wiredEvalExprFull expr env warnings ctx |> ignore
         let existing = Env.get env baseName
         if isBottom existing then Env.set env baseName UnknownShape
+        Normal
 
     | ExprStmt(_, expr) ->
         wiredEvalExprFull expr env warnings ctx |> ignore
+        Normal
 
     | While({ line = line }, cond, body) ->
         wiredEvalExprFull cond env warnings ctx |> ignore
@@ -724,6 +733,7 @@ and analyzeStmtIr
         analyzeLoopBody body env warnings ctx None
 
         ctx.cst.valueRanges <- baselineRanges
+        Normal
 
     | For(_, var_, it, body) ->
         Env.set env var_ Scalar
@@ -771,6 +781,7 @@ and analyzeStmtIr
         if ctx.call.fixpoint then
             for accum in accumPatterns do
                 refineAccumulation accum iterCount preLoopEnv env warnings ctx wiredEvalExprFull
+        Normal
 
     | If({ line = line }, cond, thenBody, elseBody) ->
         wiredEvalExprFull cond env warnings ctx |> ignore
@@ -784,18 +795,17 @@ and analyzeStmtIr
         let thenEnv = Env.copy env
         let elseEnv = Env.copy env
 
-        let mutable thenReturned = false
-        let mutable elseReturned = false
-
         // Then branch
         applyRefinements ctx refinements false
         ctx.cst.pathConstraints.Push(cond, true, line)
-        try
-            for s in thenBody do analyzeStmtIr s thenEnv warnings ctx
-        with
-        | :? EarlyReturn -> thenReturned <- true
-        | :? EarlyBreak as e -> thenReturned <- true; ctx.cst.pathConstraints.Pop(); reraise ()
-        | :? EarlyContinue as e -> thenReturned <- true; ctx.cst.pathConstraints.Pop(); reraise ()
+        let thenFlow = runStmts thenBody thenEnv warnings ctx
+        let thenReturned = thenFlow <> Normal
+        // Break/Continue in then-branch: pop pathConstraint and propagate immediately
+        if thenFlow = FlowBreak || thenFlow = FlowContinue then
+            ctx.cst.pathConstraints.Pop()
+            thenFlow
+        else
+
         ctx.cst.pathConstraints.Pop()
         let thenConstraints = snapshotConstraints ctx
         let thenDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
@@ -816,12 +826,14 @@ and analyzeStmtIr
         // Else branch
         applyRefinements ctx refinements true
         ctx.cst.pathConstraints.Push(cond, false, line)
-        try
-            for s in elseBody do analyzeStmtIr s elseEnv warnings ctx
-        with
-        | :? EarlyReturn -> elseReturned <- true
-        | :? EarlyBreak as e -> elseReturned <- true; ctx.cst.pathConstraints.Pop(); reraise ()
-        | :? EarlyContinue as e -> elseReturned <- true; ctx.cst.pathConstraints.Pop(); reraise ()
+        let elseFlow = runStmts elseBody elseEnv warnings ctx
+        let elseReturned = elseFlow <> Normal
+        // Break/Continue in else-branch: pop pathConstraint and propagate immediately
+        if elseFlow = FlowBreak || elseFlow = FlowContinue then
+            ctx.cst.pathConstraints.Pop()
+            elseFlow
+        else
+
         ctx.cst.pathConstraints.Pop()
         let elseConstraints = snapshotConstraints ctx
         let elseDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
@@ -851,7 +863,7 @@ and analyzeStmtIr
         let branchRanges = ResizeArray<Map<string, SharedTypes.Interval>>()
         let branchUpperBoundsAcc = ResizeArray<Map<string, string * int>>()
         let returnedFlags = ResizeArray<bool>()
-        let mutable deferredExc : System.Exception option = None
+        let mutable deferredFlow : ControlFlow option = None
 
         for idx in 0 .. allBodies.Length - 1 do
             ctx.cst.constraints <- baselineConstraints
@@ -869,17 +881,11 @@ and analyzeStmtIr
                 ctx.cst.pathConstraints.Push(conditions.[idx], true, line)
 
             let branchEnv = Env.copy env
-            let mutable returned = false
-            try
-                for s in allBodies.[idx] do analyzeStmtIr s branchEnv warnings ctx
-            with
-            | :? EarlyReturn -> returned <- true
-            | :? EarlyBreak as e ->
-                returned <- true
-                deferredExc <- Some (e :> System.Exception)
-            | :? EarlyContinue as e ->
-                returned <- true
-                deferredExc <- Some (e :> System.Exception)
+            let flow = runStmts allBodies.[idx] branchEnv warnings ctx
+            let returned = flow <> Normal
+            match flow with
+            | FlowBreak | FlowContinue -> deferredFlow <- Some flow
+            | _ -> ()
             if idx < conditions.Length then ctx.cst.pathConstraints.Pop()
 
             branchEnvs.Add(branchEnv)
@@ -893,7 +899,7 @@ and analyzeStmtIr
             env ctx baselineConstraints baselineDimEquiv baselineRanges baselineUpperBounds
             (Seq.toList branchEnvs) (Seq.toList branchConstraints) (Seq.toList branchDimEquivs)
             (Seq.toList branchRanges) (Seq.toList branchUpperBoundsAcc)
-            (Seq.toList returnedFlags) deferredExc
+            (Seq.toList returnedFlags) deferredFlow
 
     | Switch({ line = line }, expr, cases, otherwise) ->
         wiredEvalExprFull expr env warnings ctx |> ignore
@@ -917,7 +923,7 @@ and analyzeStmtIr
         let branchRanges = ResizeArray<Map<string, SharedTypes.Interval>>()
         let branchUpperBoundsAcc = ResizeArray<Map<string, string * int>>()
         let returnedFlags = ResizeArray<bool>()
-        let mutable deferredExc : System.Exception option = None
+        let mutable deferredFlow : ControlFlow option = None
 
         for caseIdx in 0 .. allBodies.Length - 1 do
             ctx.cst.constraints <- baselineConstraints
@@ -943,17 +949,11 @@ and analyzeStmtIr
                 | _ -> ()
 
             let branchEnv = Env.copy env
-            let mutable returned = false
-            try
-                for s in allBodies.[caseIdx] do analyzeStmtIr s branchEnv warnings ctx
-            with
-            | :? EarlyReturn -> returned <- true
-            | :? EarlyBreak as e ->
-                returned <- true
-                deferredExc <- Some (e :> System.Exception)
-            | :? EarlyContinue as e ->
-                returned <- true
-                deferredExc <- Some (e :> System.Exception)
+            let flow = runStmts allBodies.[caseIdx] branchEnv warnings ctx
+            let returned = flow <> Normal
+            match flow with
+            | FlowBreak | FlowContinue -> deferredFlow <- Some flow
+            | _ -> ()
             if isCase then ctx.cst.pathConstraints.Pop()
 
             branchEnvs.Add(branchEnv)
@@ -967,7 +967,7 @@ and analyzeStmtIr
             env ctx baselineConstraints baselineDimEquiv baselineRanges baselineUpperBounds
             (Seq.toList branchEnvs) (Seq.toList branchConstraints) (Seq.toList branchDimEquivs)
             (Seq.toList branchRanges) (Seq.toList branchUpperBoundsAcc)
-            (Seq.toList returnedFlags) deferredExc
+            (Seq.toList returnedFlags) deferredFlow
 
     | Try({ line = tryLine }, tryBody, catchBody) ->
         if ctx.cst.coderMode then
@@ -979,14 +979,12 @@ and analyzeStmtIr
         let preTryEnv = Env.copy env
 
         let tryEnv = Env.copy env
-        let mutable tryReturned = false
-        let mutable deferredExc : System.Exception option = None
-        try
-            for s in tryBody do analyzeStmtIr s tryEnv warnings ctx
-        with
-        | :? EarlyReturn -> tryReturned <- true
-        | :? EarlyBreak as e -> tryReturned <- true; deferredExc <- Some (e :> System.Exception)
-        | :? EarlyContinue as e -> tryReturned <- true; deferredExc <- Some (e :> System.Exception)
+        let mutable deferredFlow : ControlFlow option = None
+        let tryFlow = runStmts tryBody tryEnv warnings ctx
+        let tryReturned = tryFlow <> Normal
+        match tryFlow with
+        | FlowBreak | FlowContinue -> deferredFlow <- Some tryFlow
+        | _ -> ()
         let tryConstraints = snapshotConstraints ctx
         let tryDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
         let tryRanges = ctx.cst.valueRanges
@@ -1003,17 +1001,12 @@ and analyzeStmtIr
         ctx.cst.upperBounds <- baselineUpperBounds
 
         let catchEnv = Env.copy preTryEnv
-        let mutable catchReturned = false
-        try
-            for s in catchBody do analyzeStmtIr s catchEnv warnings ctx
-        with
-        | :? EarlyReturn -> catchReturned <- true
-        | :? EarlyBreak as e ->
-            catchReturned <- true
-            if deferredExc.IsNone then deferredExc <- Some (e :> System.Exception)
-        | :? EarlyContinue as e ->
-            catchReturned <- true
-            if deferredExc.IsNone then deferredExc <- Some (e :> System.Exception)
+        let catchFlow = runStmts catchBody catchEnv warnings ctx
+        let catchReturned = catchFlow <> Normal
+        match catchFlow with
+        | FlowBreak | FlowContinue ->
+            if deferredFlow.IsNone then deferredFlow <- Some catchFlow
+        | _ -> ()
         let catchConstraints = snapshotConstraints ctx
         let catchDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
         let catchRanges = ctx.cst.valueRanges
@@ -1024,24 +1017,44 @@ and analyzeStmtIr
             [tryEnv; catchEnv] [tryConstraints; catchConstraints]
             [tryDimEquiv; catchDimEquiv]
             [tryRanges; catchRanges] [tryUpperBounds; catchUpperBounds]
-            [tryReturned; catchReturned] deferredExc
+            [tryReturned; catchReturned] deferredFlow
 
     | OpaqueStmt({ line = line }, targets, raw) ->
         let firstWord = if raw.Trim() = "" then "" else raw.Trim().Split([| ' '; '\t'; ':' |]).[0]
         if not (Set.contains firstWord SUPPRESSED_CMD_STMTS) then
             warnings.Add(warnUnsupportedStmt line raw targets)
         for targetName in targets do Env.set env targetName UnknownShape
+        Normal
 
-    | Return _ -> raise EarlyReturn
-    | Break _  -> raise EarlyBreak
-    | Continue _ -> raise EarlyContinue
+    | Return _ -> FlowReturn
+    | Break _  -> FlowBreak
+    | Continue _ -> FlowContinue
 
     | FunctionDef _ ->
         // No-op: function defs are pre-scanned in pass 1
-        ()
+        Normal
 
     | AssignMulti({ line = line }, targets, expr) ->
         analyzeAssignMulti line targets expr env warnings ctx
+        Normal
+
+
+// ---------------------------------------------------------------------------
+// runStmts helper: execute a list of statements, propagating the first non-Normal flow
+// ---------------------------------------------------------------------------
+
+and runStmts
+    (stmts: Stmt list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    : ControlFlow =
+    match stmts with
+    | [] -> Normal
+    | s :: rest ->
+        match analyzeStmtIr s env warnings ctx with
+        | Normal -> runStmts rest env warnings ctx
+        | flow -> flow
 
 
 // ---------------------------------------------------------------------------
@@ -1319,10 +1332,7 @@ and analyzeLoopBody
     if not ctx.call.fixpoint then
         // Pentagon bridge: tighten loop var interval before body analysis
         Intervals.applyPentagonBridge ctx
-        try
-            for s in body do analyzeStmtIr s env warnings ctx
-        with
-        | :? EarlyReturn | :? EarlyBreak | :? EarlyContinue -> ()
+        runStmts body env warnings ctx |> ignore
     else
         // Snapshot value ranges before loop body (persistent map: O(1) snapshot)
         let preLoopRanges = ctx.cst.valueRanges
@@ -1349,10 +1359,7 @@ and analyzeLoopBody
         let preLoopEnv = Env.copy env
         // Pentagon bridge: tighten loop var interval before body analysis
         Intervals.applyPentagonBridge ctx
-        try
-            for s in body do analyzeStmtIr s env warnings ctx
-        with
-        | :? EarlyReturn | :? EarlyBreak | :? EarlyContinue -> ()
+        runStmts body env warnings ctx |> ignore
 
         // Widen shapes
         let widened = widenEnv preLoopEnv env
@@ -1370,10 +1377,7 @@ and analyzeLoopBody
         if shapesChanged || intervalsChanged then
             // Pentagon bridge: re-tighten before Phase 2 body re-analysis
             Intervals.applyPentagonBridge ctx
-            try
-                for s in body do analyzeStmtIr s env warnings ctx
-            with
-            | :? EarlyReturn | :? EarlyBreak | :? EarlyContinue -> ()
+            runStmts body env warnings ctx |> ignore
 
         // Widen intervals again before post-loop join (mirrors finalWidened for shapes).
         // This second call widens from preLoopRanges (the pre-loop baseline), NOT from the
@@ -1399,10 +1403,7 @@ and analyzeLoopBody
         let throwawayWarnings = ResizeArray<Diagnostic>()
         // Pentagon bridge: re-tighten before narrowing pass
         Intervals.applyPentagonBridge ctx
-        try
-            for s in body do analyzeStmtIr s env throwawayWarnings ctx
-        with
-        | :? EarlyReturn | :? EarlyBreak | :? EarlyContinue -> ()
+        runStmts body env throwawayWarnings ctx |> ignore
         ctx.cst.valueRanges <- narrowValueRanges preNarrowRanges ctx.cst.valueRanges loopVar
         restoreStableRanges ()
         Env.replaceLocal env preNarrowEnv
@@ -1500,9 +1501,7 @@ and analyzeFunctionCall
                         | _ -> ()
 
                     // Analyze function body
-                    try
-                        for s in sig_.body do analyzeStmtIr s funcEnv funcWarnings ctx
-                    with :? EarlyReturn -> ()
+                    runStmts sig_.body funcEnv funcWarnings ctx |> ignore
 
                     // Extract return values
                     let resultShapes =
@@ -1606,9 +1605,7 @@ and analyzeNestedFunctionCall
                                 { name = nestedName; parms = nestedParms; outputVars = nestedOuts; body = nestedBody; defLine = nLine; defCol = nCol }
                         | _ -> ()
 
-                    try
-                        for s in sig_.body do analyzeStmtIr s funcEnv funcWarnings ctx
-                    with :? EarlyReturn -> ()
+                    runStmts sig_.body funcEnv funcWarnings ctx |> ignore
 
                     // Write-back: flush modified parent-visible variables
                     let paramSet = Set.ofList sig_.parms
@@ -1718,9 +1715,7 @@ and analyzeExternalFunctionCall
                 Env.set funcEnv "nargout" Scalar
                 ctx.cst.valueRanges <- Map.add "nargout" { lo = Finite numTargets; hi = Finite numTargets } ctx.cst.valueRanges
 
-                try
-                    for s in primarySig.body do analyzeStmtIr s funcEnv funcWarnings ctx
-                with :? EarlyReturn -> ()
+                runStmts primarySig.body funcEnv funcWarnings ctx |> ignore
 
                 let resultShapes =
                     primarySig.outputVars
