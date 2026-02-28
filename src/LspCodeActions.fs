@@ -26,7 +26,7 @@ let codeActionsForDiagnostic
     (sourceLines: string array)
     : CodeAction array =
 
-    let actions = System.Collections.Generic.List<CodeAction>()
+    let actions = ResizeArray<CodeAction>()
 
     // Diagnostic.Range.Start.Line is uint32 in Ionide
     let lineNum = int diagnostic.Range.Start.Line

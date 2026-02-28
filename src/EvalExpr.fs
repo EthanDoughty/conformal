@@ -523,7 +523,7 @@ and private evalHandleCall
                 | Colon _ | Ir.Range _ -> UnknownShape
                 | IndexExpr(_, e) -> evalExprIr e env warnings ctx None builtinDispatch)
 
-        let results = System.Collections.Generic.List<Shape>()
+        let results = ResizeArray<Shape>()
 
         for callableId in lambdaIds |> Set.toList |> List.sort do
             match ctx.call.lambdaMetadata.TryGetValue(callableId) with
