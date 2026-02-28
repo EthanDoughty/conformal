@@ -57,16 +57,11 @@ let analyzeProgramIr
                     { name = className; properties = propNames; methods = methodSigs; superclass = superName }
         | _ -> ()
 
-    // Pass 2: analyze script statements (non-function bodies)
-    try
-        for item in program.body do
-            match item with
-            | FunctionDef _ -> ()
-            | _ -> analyzeStmtIr item env warnings ctx
-    with
-    | :? EarlyReturn     -> ()
-    | :? EarlyBreak      -> ()
-    | :? EarlyContinue   -> ()
+    // Pass 2: analyze script statements (non-function bodies); top level eats all control flow
+    for item in program.body do
+        match item with
+        | FunctionDef _ -> ()
+        | _ -> analyzeStmtIr item env warnings ctx |> ignore
 
     // Post-analysis backward propagation pass: resolve symbolic dims via equivalence store.
     // This catches shapes assigned before the constraining operation ran (backward propagation).
