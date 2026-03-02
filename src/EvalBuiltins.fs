@@ -1783,12 +1783,14 @@ let private handleCellfun
         let handleShape = evalArgShape args.[0] env warnings ctx evalExprFn
         let cellShape   = evalArgShape args.[1] env warnings ctx evalExprFn
         let uniformOutput = detectUniformOutput args
-        // Extract element shape from cell elements map (join all tracked elements)
+        // Extract element shape from cell elements map (join all tracked elements).
+        // Use Bottom as fold seed (identity for joinShape) so known elements are preserved.
+        let joinElemMap (m: Map<int, Shape>) =
+            if m.IsEmpty then UnknownShape
+            else m |> Map.toSeq |> Seq.map snd |> Seq.fold joinShape Bottom
         let elemShape =
             match cellShape with
-            | Cell(_, _, Some elemMap) ->
-                if elemMap.IsEmpty then UnknownShape
-                else elemMap |> Map.toSeq |> Seq.map snd |> Seq.fold joinShape UnknownShape
+            | Cell(_, _, Some elemMap) -> joinElemMap elemMap
             | Cell _ -> UnknownShape
             | _      -> UnknownShape
         // Collect element shapes for all cell arguments (args at indices 1, 2, ... up to first string)
@@ -1801,9 +1803,7 @@ let private handleCellfun
                 let s = evalArgShape args.[i] env warnings ctx evalExprFn
                 let elem2 =
                     match s with
-                    | Cell(_, _, Some em) ->
-                        if em.IsEmpty then UnknownShape
-                        else em |> Map.toSeq |> Seq.map snd |> Seq.fold joinShape UnknownShape
+                    | Cell(_, _, Some em) -> joinElemMap em
                     | Cell _ -> UnknownShape
                     | _ -> UnknownShape
                 extraElems <- extraElems @ [ elem2 ]
