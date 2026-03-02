@@ -141,12 +141,17 @@ let private parseExpectations (src: string) (fixpoint: bool) : Expectations =
 
 /// runTest: analyze one .m file, check assertions.
 /// Returns (passed: bool).
-let private runTest (path: string) (fixpoint: bool) (forceCoder: bool) : bool =
-    printfn "===== Analysis for %s" path
+let private runTest (path: string) (fixpoint: bool) (forceCoder: bool) (quiet: bool) : bool =
+    if not quiet then
+        printfn "===== Analysis for %s" path
 
     if not (File.Exists path) then
-        printfn "ERROR: file not found"
-        printfn ""
+        if not quiet then
+            printfn "ERROR: file not found"
+            printfn ""
+        else
+            printfn "FAIL: %s" path
+            printfn "  ERROR: file not found"
         false
     else
 
@@ -167,18 +172,18 @@ let private runTest (path: string) (fixpoint: bool) (forceCoder: bool) : bool =
             Some prog
         with
         | Parser.ParseError msg ->
-            printfn "Error while parsing %s: ParseError: %s" path msg
+            if not quiet then printfn "Error while parsing %s: ParseError: %s" path msg
             None
         | Lexer.LexError msg ->
-            printfn "Error while parsing %s: LexError: %s" path msg
+            if not quiet then printfn "Error while parsing %s: LexError: %s" path msg
             None
         | ex ->
-            printfn "Error while parsing %s: %s" path ex.Message
+            if not quiet then printfn "Error while parsing %s: %s" path ex.Message
             None
 
     match irProgOpt with
     | None ->
-        printfn ""
+        if not quiet then printfn ""
         false
     | Some irProg ->
 
@@ -198,33 +203,36 @@ let private runTest (path: string) (fixpoint: bool) (forceCoder: bool) : bool =
             let (e, w) = analyzeProgramIr irProg ctx
             Some (e, w)
         with ex ->
-            printfn "Error while analyzing %s: %s" path ex.Message
+            if not quiet then printfn "Error while analyzing %s: %s" path ex.Message
             None
 
     match analyzeResult with
     | None ->
-        printfn "ASSERTIONS: FAIL"
-        printfn ""
+        if not quiet then
+            printfn "ASSERTIONS: FAIL"
+            printfn ""
         false
     | Some (env, warnings) ->
 
-    // NOTE: tests see UNFILTERED warnings (strict-only filtering is presentation concern)
-    if warnings.IsEmpty then
-        printfn "No dimension warnings."
-    else
-        printfn "Warnings:"
-        for w in warnings do
-            printfn "- %s" (diagnosticToString w)
+    // Verbose mode: print warnings and env unconditionally
+    if not quiet then
+        if warnings.IsEmpty then
+            printfn "No dimension warnings."
+        else
+            printfn "Warnings:"
+            for w in warnings do
+                printfn "- %s" (diagnosticToString w)
 
-    printfn "Final environment:"
-    let envPairs =
-        env.bindings
-        |> Map.toList
-        |> List.sortBy fst
-        |> List.map (fun (k, v) -> k + ": " + Shapes.shapeToString v)
-    printfn "    Env{%s}" (String.concat ", " envPairs)
+        printfn "Final environment:"
+        let envPairs =
+            env.bindings
+            |> Map.toList
+            |> List.sortBy fst
+            |> List.map (fun (k, v) -> k + ": " + Shapes.shapeToString v)
+        printfn "    Env{%s}" (String.concat ", " envPairs)
 
-    let mutable passed = true
+    // Collect assertion failures into a buffer (used in both modes)
+    let failures = ResizeArray<string>()
 
     // Check warning count (unfiltered)
     match expectations.warningCheck with
@@ -238,8 +246,7 @@ let private runTest (path: string) (fixpoint: bool) (forceCoder: bool) : bool =
             | Le -> actual <= expected
             | Lt -> actual < expected
         if not pass then
-            printfn "ASSERT FAIL: expected warnings %s %d, got %d" (warningOpStr op) expected actual
-            passed <- false
+            failures.Add($"expected warnings {warningOpStr op} {expected}, got {actual}")
     | None -> ()
 
     // Check variable shapes
@@ -249,8 +256,7 @@ let private runTest (path: string) (fixpoint: bool) (forceCoder: bool) : bool =
         let actualShape = Env.Env.get env varName
         let actualStr   = normalizeShapeStr (Shapes.shapeToString actualShape)
         if actualStr <> expectedStr then
-            printfn "ASSERT FAIL: expected %s = %s, got %s" varName expectedStr actualStr
-            passed <- false
+            failures.Add($"expected {varName} = {expectedStr}, got {actualStr}")
 
     // Check line-specific warning code assertions
     let warningSet =
@@ -258,21 +264,44 @@ let private runTest (path: string) (fixpoint: bool) (forceCoder: bool) : bool =
 
     for (line, code) in expectations.expectWarnings do
         if line = -1 then
-            // Parse error for unknown code -- already printed, just fail
-            passed <- false
+            // Parse error for unknown code -- already printed in parseExpectations
+            failures.Add($"unknown warning code (parse error above)")
         elif not (Set.contains (line, code) warningSet) then
-            printfn "ASSERT FAIL: expected %s on line %d, not found" code line
-            passed <- false
+            failures.Add($"expected {code} on line {line}, not found")
 
     for (line, code) in expectations.rejectWarnings do
         if line = -1 then
-            passed <- false
+            failures.Add($"unknown warning code (parse error above)")
         elif Set.contains (line, code) warningSet then
-            printfn "ASSERT FAIL: unexpected %s on line %d" code line
-            passed <- false
+            failures.Add($"unexpected {code} on line {line}")
 
-    printfn "ASSERTIONS: %s" (if passed then "PASS" else "FAIL")
-    printfn ""
+    let passed = failures.Count = 0
+
+    if not quiet then
+        // Verbose mode: emit individual ASSERT FAIL lines then summary
+        for f in failures do
+            printfn "ASSERT FAIL: %s" f
+        printfn "ASSERTIONS: %s" (if passed then "PASS" else "FAIL")
+        printfn ""
+    else
+        // Quiet mode: only print on failure; block is self-contained
+        if not passed then
+            printfn "FAIL: %s" path
+            if not warnings.IsEmpty then
+                let warnSummary =
+                    warnings
+                    |> List.map (fun w -> $"{codeString w.code} line {w.line}")
+                    |> String.concat ", "
+                printfn "  Warnings: %s" warnSummary
+            let envPairs =
+                env.bindings
+                |> Map.toList
+                |> List.sortBy fst
+                |> List.map (fun (k, v) -> k + ": " + Shapes.shapeToString v)
+            printfn "  Env: {%s}" (String.concat ", " envPairs)
+            for f in failures do
+                printfn "  ASSERT FAIL: %s" f
+
     passed
 
 
@@ -294,7 +323,7 @@ let private discoverTestFiles (rootDir: string) : string list =
 // ---------------------------------------------------------------------------
 
 /// run: run all tests, return exit code (0 = all pass, 1 = any fail).
-let run (strict: bool) (fixpoint: bool) (coder: bool) : int =
+let run (strict: bool) (fixpoint: bool) (coder: bool) (quiet: bool) : int =
     // Discover tests relative to cwd (project root when running via `dotnet run`)
     let testsDir =
         let cwd = Directory.GetCurrentDirectory()
@@ -319,7 +348,7 @@ let run (strict: bool) (fixpoint: bool) (coder: bool) : int =
         total <- total + 1
         // Auto-enable coder mode for tests/coder/ directory
         let inCoderDir = path.StartsWith(coderDir + Path.DirectorySeparatorChar.ToString()) || path = coderDir
-        let passed = runTest path fixpoint (coder || inCoderDir)
+        let passed = runTest path fixpoint (coder || inCoderDir) quiet
         if passed then ok <- ok + 1
 
     printfn "===== Summary: %d/%d tests passed =====" ok total
