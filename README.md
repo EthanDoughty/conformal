@@ -7,7 +7,7 @@
 [![Version](https://img.shields.io/badge/version-2.0.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4.svg)](https://dotnet.microsoft.com/download)
-[![Tests](https://img.shields.io/badge/tests-403%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-409%20passing-brightgreen.svg)](#test-suite)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
 *Matrices must be **conformable** before they can perform. Conformal makes sure they are.*
@@ -55,7 +55,7 @@ dotnet run -- ../tests/basics/inner_dim_mismatch.m
 
 ## Performance
 
-The single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and the cross-file workspace analysis runs in about 70ms. The full test suite (403 tests total) finishes in about one second, with no MATLAB runtime involved during any part of the process.
+The single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and the cross-file workspace analysis runs in about 70ms. The full test suite (409 tests total) finishes in about one second, with no MATLAB runtime involved during any part of the process.
 
 The VS Code extension runs the analyzer while you are typing code, since it is compiled to JavaScript, using the Fable tool, so there is no subprocess startup cost and analysis works on every keystroke with a 500ms debounce.
 
@@ -183,26 +183,33 @@ src/                    F# analyzer (lexer, parser, shape inference, builtins, d
 vscode-conformal/       VS Code extension (TypeScript client + Fable-compiled analyzer)
   fable/                Fable compilation project (F# to JavaScript, shares src/*.fs files)
   src/                  TypeScript extension and LSP server code
-tests/                  403 self-checking MATLAB programs in 20 categories
+tests/                  409 self-checking MATLAB programs in 20 categories
 .github/                CI workflow (build, test, compile Fable, package VSIX)
 ```
 
 ## Test Suite
 
-Conformal is validated by 403 self-checking MATLAB programs organized into 20 categories. Each test embeds its expected behavior as inline assertions:
+Conformal is validated by 409 self-checking MATLAB programs organized into 20 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
+% EXPECT: warnings >= 2
 % EXPECT: A = matrix[n x (k+m)]
 % EXPECT_FIXPOINT: A = matrix[None x None]   % Override for --fixpoint mode
+y = A * x;  % EXPECT_WARNING: W_INNER_DIM_MISMATCH
+z = ~f;     % EXPECT_NO_WARNING: W_UNKNOWN_FUNCTION
+% MODE: strict
+% MODE: coder
 ```
+
+The `EXPECT_WARNING` and `EXPECT_NO_WARNING` directives are inline: they go on the same line as the statement they apply to, and they check that the given warning code fires (or doesn't fire) on that exact line. The `% EXPECT: warnings` check also accepts comparison operators, so `warnings >= 1` passes if at least one warning fires rather than requiring an exact count. `% MODE: strict` enables strict mode for that file, and `% MODE: coder` enables the Coder compatibility pass. There are also `EXPECT_FIXPOINT_WARNING:` and `EXPECT_FIXPOINT_NO_WARNING:` variants that only apply when the test runner is in `--fixpoint` mode.
 
 The test runner checks that Conformal's output matches these expectations. In addition to the `.m` test files, the shape domain is validated by 28 property-based tests using FsCheck, covering 6 sections of the lattice (join commutativity, associativity, monotonicity, and lattice ordering for shapes and intervals). These run as part of `dotnet run -- --tests`.
 
 ---
 
 <details open>
-<summary><h3>Basics (17 tests)</h3></summary>
+<summary><h3>Basics (19 tests)</h3></summary>
 
 Foundation tests for core matrix operations and dimension compatibility.
 
@@ -225,6 +232,8 @@ Foundation tests for core matrix operations and dimension compatibility.
 | `space_destructure.m` | Space-separated destructuring `[a b] = expr` without commas | 0 |
 | `scientific_notation.m` | Scientific notation literals (`1e6`, `1.5e-3`, `1E+9`) parsed as scalars | 0 |
 | `matrix_literal_transpose.m` | Transpose of a matrix literal `[1 2; 3 4]'` parses correctly and returns transposed shape | 0 |
+| `expect_warning_demo.m` | Inline `EXPECT_WARNING` directive: `W_INNER_DIM_MISMATCH` fires on the exact line of the mismatch | 1 |
+| `not_type_mismatch.m` | Logical NOT `~` on a function handle emits `W_NOT_TYPE_MISMATCH` | 1 |
 
 </details>
 
@@ -247,7 +256,7 @@ Tests symbolic dimension tracking, arithmetic, and canonical polynomial represen
 </details>
 
 <details open>
-<summary><h3>Indexing (21 tests)</h3></summary>
+<summary><h3>Indexing (22 tests)</h3></summary>
 
 MATLAB-style indexing including scalar, slice, range, linear indexing, `end` keyword arithmetic, comparison broadcast shapes, and logical indexing.
 
@@ -274,6 +283,7 @@ MATLAB-style indexing including scalar, slice, range, linear indexing, `end` key
 | `logical_index_basic.m` | Logical indexing `A(A > 0)` infers `matrix[None x 1]` (column vector) | 1 |
 | `logical_index_compound.m` | Compound logical mask `A(A > 0 & A < 1)` still infers column vector output | 2 |
 | `logical_index_variable.m` | Pre-computed mask stored in variable, then used for indexing, infers column vector | 0 |
+| `index_assign_type_mismatch.m` | Indexed assignment into a non-indexable type (function handle) emits `W_INDEX_ASSIGN_TYPE_MISMATCH` | 1 |
 
 </details>
 
@@ -423,7 +433,7 @@ Loop analysis with single-pass and fixed-point widening modes (via `--fixpoint`)
 </details>
 
 <details>
-<summary><h3>Functions (81 tests)</h3></summary>
+<summary><h3>Functions (82 tests)</h3></summary>
 
 Interprocedural analysis for user-defined functions, anonymous functions (lambdas), nested functions, and workspace-aware external function resolution.
 
@@ -485,6 +495,7 @@ Anonymous Functions / Lambdas (17 tests)
 | `lambda_control_flow_join.m` | Different lambdas in if/else both analyzed, results joined | 0 |
 | `handle_dispatch_builtin.m` | Function handle `@sin` dispatches to builtin | 0 |
 | `handle_dispatch_user_func.m` | Function handle dispatches to user-defined function | 0 |
+| `lambda_call_opaque.m` | Unresolved function handle (opaque `@unknownFunc`) fires `W_LAMBDA_CALL_APPROXIMATE` at the call site | >=1 |
 
 Workspace Awareness (17 tests)
 
@@ -550,7 +561,7 @@ Struct creation, field access, control-flow joins, and open struct lattice behav
 </details>
 
 <details>
-<summary><h3>Cells (27 tests)</h3></summary>
+<summary><h3>Cells (30 tests)</h3></summary>
 
 Cell array literals, curly-brace indexing, element assignment, and per-element shape tracking.
 
@@ -583,6 +594,9 @@ Cell array literals, curly-brace indexing, element assignment, and per-element s
 | `cell_end_assign.m` | `end` keyword in cell assignment LHS (`c{end+1} = val` append pattern) | 0 |
 | `curly_indexing_non_cell.m` | Curly indexing on non-cell value is an error | 1 |
 | `empty_matrix_promotion.m` | `x = []; x{1} = val` promotes `[]` to cell without warning (MATLAB's universal empty initializer) | 0 |
+| `cell_assign_known_index.m` | Cell assignment through a variable with a known concrete interval value preserves per-element tracking | 0 |
+| `cell_element_reassign.m` | Per-element shape tracking survives sequential assignments: `c{1} = zeros(2,2)` then `c{2} = ...` still extracts the right shape for `c{1}` | 0 |
+| `cellfun_non_uniform.m` | `cellfun` with a non-scalar-returning lambda fires `W_CELLFUN_NON_UNIFORM` in strict mode | >=1 |
 
 >Cell arrays use abstract shape `cell[r x c]` with optional per-element tracking. Literal indexing `C{i}` extracts precise element shapes when available. Dynamic indexing joins all elements conservatively. When the index variable has a known concrete value from interval analysis, Conformal can also extract the precise element shape even for variable-index reads. The `end` keyword resolves to the last element index and supports arithmetic (`end-1`, `end/2`).
 
@@ -635,9 +649,9 @@ Basic OOP support via a side-channel approach: `classdef` blocks are parsed for 
 </details>
 
 <details>
-<summary><h3>Constraints (13 tests)</h3></summary>
+<summary><h3>Constraints (19 tests)</h3></summary>
 
-Dimension constraint solving: equality constraints recorded during operations, validated on concrete bindings, and joined path-sensitively across control flow.
+Dimension constraint solving: equality constraints recorded during operations, validated on concrete bindings, joined path-sensitively across control flow, and propagated through dimension equivalence classes.
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -654,8 +668,14 @@ Dimension constraint solving: equality constraints recorded during operations, v
 | `elseif_path_sensitive.m` | Path-sensitive join across elseif chains | 0 |
 | `prebound_dim_name.m` | Pre-bound variable names are excluded from constraint recording | 0 |
 | `function_scope_isolation.m` | Constraints are scoped to functions and don't leak to callers | 0 |
+| `equiv_basic.m` | Matmul inner-dim constraint (`A.cols == B.rows`) recorded in DimEquiv; vertcat downstream benefits with zero warnings | 0 |
+| `equiv_concrete_prop.m` | Concrete value from matmul propagates through equivalence class: `5 == m` resolves `zeros(m, 3)` to `matrix[5 x 3]` | 0 |
+| `equiv_transitive.m` | Transitive propagation: `5 == m` then `m == k` resolves `k` to `5` | 0 |
+| `equiv_branch_join.m` | Equivalences established in only one branch are dropped after join | 0 |
+| `equiv_size_alias.m` | `size(A, 1)` and `size(A, 2)` record DimEquiv entries; `zeros(r, c)` resolves to the concrete dimensions of `A` | 0 |
+| `equiv_function_scope.m` | DimEquiv entries established inside a function are isolated and don't leak to the caller | 0 |
 
->Constraint solving operates on `SymDim` polynomial dimensions. When a concrete value is bound to a variable, recorded equality constraints are checked for conflicts and `W_CONSTRAINT_CONFLICT` is emitted. Path-sensitive joins keep only constraints that hold in all branches.
+>Constraint solving operates on `SymDim` polynomial dimensions. When a concrete value is bound to a variable, recorded equality constraints are checked for conflicts and `W_CONSTRAINT_CONFLICT` is emitted. Path-sensitive joins keep only constraints that hold in all branches. Dimension equivalence classes (DimEquiv, union-find) propagate concrete resolutions transitively and across `size()` aliases.
 
 </details>
 
@@ -796,7 +816,7 @@ Incorrectness witness generation: concrete proofs that dimension conflict warnin
 </details>
 
 <details>
-<summary><h3>Coder (5 tests)</h3></summary>
+<summary><h3>Coder (6 tests)</h3></summary>
 
 MATLAB Coder compatibility checks, enabled with `--coder --strict`. These tests use the `% MODE: coder` directive so the test runner enables the Coder pass automatically.
 
@@ -807,6 +827,7 @@ MATLAB Coder compatibility checks, enabled with `--coder --strict`. These tests 
 | `coder_dynamic_field.m` | `W_CODER_DYNAMIC_FIELD` fires on dynamic struct field access `s.(expr)` | 1 |
 | `coder_try_catch.m` | `W_CODER_TRY_CATCH` fires on try/catch blocks | 1 |
 | `coder_unsupported_builtin.m` | `W_CODER_UNSUPPORTED_BUILTIN` fires when one of the 30 Coder-unsupported builtins is called (e.g., `eval`, `feval`, `disp`, `fprintf`) | 1 |
+| `coder_recursion.m` | `W_CODER_RECURSION` fires on a recursive function call; uses `EXPECT_WARNING` to pin the warning to the recursive call line | >=1 |
 
 >All six `W_CODER_*` codes are strict-only and all six are emitted by a post-analysis pass that runs only when `--coder` is given. This means the Coder pass is completely invisible in normal analysis and CI runs, and adding `--coder` doesn't change how shape inference works, it only adds the compatibility scan on top.
 
@@ -817,7 +838,7 @@ MATLAB Coder compatibility checks, enabled with `--coder --strict`. These tests 
 ### Running the Tests
 
 ```bash
-# Run all 403 .m tests
+# Run all 409 .m tests
 cd src && dotnet run -- --tests
 
 # Run with fixed-point loop analysis
@@ -863,6 +884,8 @@ Run `cd src && dotnet run -- file.m` to analyze a file. The other flags are:
 `--witness [MODE]` attaches incorrectness witnesses to dimension conflict warnings. MODE can be `enrich` (the default, prints the witness below each warning), `filter` (only shows warnings with a confirmed witness), or `tag` (prefixes each warning with `[confirmed]` or `[possible]`). The LSP server always runs witness generation and enriches diagnostics automatically.
 
 `--coder` runs the MATLAB Coder compatibility pass after shape analysis, emitting six `W_CODER_*` warnings for constructs Coder cannot handle (variable-size arrays, cell arrays, dynamic field access, try/catch, unsupported builtins, recursion). These codes are strict-only, so you normally combine `--coder` with `--strict`.
+
+`--quiet` suppresses per-test output during `--tests` runs and only prints failures. Useful when you want to run the full suite without scrolling through 409 passing test blocks.
 
 `--lsp` starts the native .NET Language Server Protocol server.
 
