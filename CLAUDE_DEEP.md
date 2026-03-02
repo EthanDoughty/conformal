@@ -161,7 +161,19 @@ Tests use inline assertions in MATLAB comments:
 % EXPECT_FIXPOINT: A = matrix[None x None]   (override when --fixpoint active)
 ```
 
-The test runner (`TestRunner.fs`) validates these expectations against analysis results. Test files are organized in `tests/` subdirectories by category (20 categories, 403 tests) and discovered dynamically via glob. Run `cd src && dotnet run -- --tests` to see the current count. The TestRunner also recognizes a `% MODE: coder` directive; when present, the Coder compatibility pass is enabled automatically for that test file.
+The test runner (`TestRunner.fs`) validates these expectations against analysis results. Test files are organized in `tests/` subdirectories by category (20 categories, 409 tests) and discovered dynamically via glob. Run `cd src && dotnet run -- --tests` to see the current count.
+
+Additional directive forms:
+- `% EXPECT: warnings >= N` (or `>`, `<`, `<=`): accepts comparison operators, not just `=`
+- `stmt  % EXPECT_WARNING: W_CODE`: inline directive, checks that the given code fires on that exact line
+- `stmt  % EXPECT_NO_WARNING: W_CODE`: inline directive, checks that the given code does NOT fire on that line
+- `% EXPECT_FIXPOINT_WARNING: W_CODE` / `% EXPECT_FIXPOINT_NO_WARNING: W_CODE`: same, but only applies in `--fixpoint` mode; replaces the non-fixpoint inline directives when `--fixpoint` is active
+- `% MODE: coder`: enables the Coder compatibility pass for that file
+- `% MODE: strict`: enables strict mode for that file (same effect as `--strict` on the CLI)
+
+`WarningCodes.fs` exports `codeMap` and `tryParseCode` so the test runner can validate that `W_CODE` strings in directives are real codes; unknown codes cause a `PARSE ERROR` at test load time.
+
+The `--quiet` flag suppresses per-test output and only prints failures.
 
 ## Critical Implementation Details
 

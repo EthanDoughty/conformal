@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-03-02
+### Added
+- **Inline `EXPECT_WARNING` / `EXPECT_NO_WARNING` directives** (`TestRunner.fs`): tests can now assert that a specific warning code fires (or doesn't fire) on an exact source line; `EXPECT_FIXPOINT_WARNING:` and `EXPECT_FIXPOINT_NO_WARNING:` variants override the non-fixpoint directives when `--fixpoint` is active; 103 existing test files backfilled with inline directives
+- **Comparison operators in warning count assertions** (`TestRunner.fs`): `% EXPECT: warnings >= 1` now works alongside the existing `warnings = N` syntax; all five comparison operators (`=`, `>=`, `>`, `<=`, `<`) are supported
+- **`% MODE: strict` directive** (`TestRunner.fs`): test files can opt in to strict mode, analogous to the existing `% MODE: coder`
+- **`--quiet` flag** (`Cli.fs`, `TestRunner.fs`): `dotnet run -- --tests --quiet` suppresses per-test output and prints only failures and the summary line; useful for CI
+- **`tryParseCode`** (`WarningCodes.fs`): validates `W_CODE` strings in inline directives at parse time; unknown codes produce a `PARSE ERROR` rather than silently passing
+- **6 new test files** covering `W_NOT_TYPE_MISMATCH`, `W_CELLFUN_NON_UNIFORM`, `W_CODER_RECURSION`, `W_LAMBDA_CALL_APPROXIMATE`, `W_INDEX_ASSIGN_TYPE_MISMATCH`, and the `EXPECT_WARNING` directive itself; total test count: 409 (was 403)
+
+### Removed
+- **`W_INDEXING_SCALAR`**, **`W_UNSUPPORTED_MULTI_ASSIGN`**, **`W_MULTI_ASSIGN_BUILTIN`**: deleted from `WarningCode` DU and all reference sites; none were emitted in practice; 54 warning codes remain (was 57)
+
+### Fixed
+- **`cellfun` fold seed** (`EvalBuiltins.fs`): the fold over cell element shapes used `UnknownShape` as the seed, which absorbed all joins; changed to `Bottom` so known element shapes propagate correctly
+- **Fable project file**: `WarningCodes.fs` was missing from the Fable compilation includes
+
 ## [2.5.0] - 2026-02-27
 ### Added
 - **Pentagon index-bounds suppression** (`Intervals.fs`, `pentagonProvesInBounds`): `W_INDEX_OUT_OF_BOUNDS` is now suppressed when the Pentagon domain can prove the index stays in bounds; two cases are handled: the concrete case (the index interval's upper bound matches the matrix dimension exactly as an integer) and the symbolic case (the Pentagon bound variable and the matrix dimension name are in the same DimEquiv equivalence class); `for i = 1:5; A(i,1); end` where `A = zeros(5,5)` and `for i = 1:n; A(i,1); end` where `n = size(A,1)` both produce zero warnings; `for i = 1:10` with a 5-row matrix still fires because the Pentagon bound (10) does not match the dimension (5)
