@@ -10,6 +10,6 @@
 A = zeros(3, 2);
 B = ones(4, 4);
 for i = 1:n
-    A = [A; zeros(1, 2)];
+    A = [A; zeros(1, 2)];  % EXPECT_WARNING: W_REASSIGN_INCOMPATIBLE
     B = ones(4, 4);
 end

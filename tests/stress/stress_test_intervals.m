@@ -29,7 +29,7 @@ end
 % ==========================================================================
 small = zeros(3, 3);
 for j = 1:5
-    oob_j = small(j, 1);
+    oob_j = small(j, 1);  % EXPECT_WARNING: W_INDEX_OUT_OF_BOUNDS
 end
 
 % ==========================================================================
@@ -37,7 +37,7 @@ end
 % ==========================================================================
 x = 5;
 x = 0;
-div_zero = 1 / x;
+div_zero = 1 / x;  % EXPECT_WARNING: W_DIVISION_BY_ZERO
 
 % ==========================================================================
 % Division guarded by ~= 0 check
@@ -116,12 +116,12 @@ mn_result = maybe_neg(10);
 % W_INDEX_OUT_OF_BOUNDS: definite OOB
 % ==========================================================================
 fix5 = zeros(5, 5);
-definite_oob = fix5(6, 1);
+definite_oob = fix5(6, 1);  % EXPECT_WARNING: W_INDEX_OUT_OF_BOUNDS
 
 % ==========================================================================
 % W_DIVISION_BY_ZERO: literal zero divisor
 % ==========================================================================
-dz_literal = 10 / 0;
+dz_literal = 10 / 0;  % EXPECT_WARNING: W_DIVISION_BY_ZERO
 
 % ==========================================================================
 % Interval in else branch: if x > 5 → else: x <= 5
@@ -159,5 +159,5 @@ sl = symbolic_loop(10);
 % ==========================================================================
 % Zeros with negative literal dimension
 % ==========================================================================
-neg_dim = zeros(-1, 3);
+neg_dim = zeros(-1, 3);  % EXPECT_WARNING: W_POSSIBLY_NEGATIVE_DIM
 % EXPECT: neg_dim = matrix[None x 3]

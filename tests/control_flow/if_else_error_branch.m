@@ -8,5 +8,5 @@
 if cond
     A = zeros(3, 3);
 else
-    A = unknown_func();
+    A = unknown_func();  % EXPECT_WARNING: W_UNKNOWN_FUNCTION
 end

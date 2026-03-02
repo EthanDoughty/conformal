@@ -4,4 +4,4 @@ A = rand(n, m);
 D = rand(p, q);
 E = [A; D];
 q = 5;
-m = 10;
+m = 10;  % EXPECT_WARNING: W_CONSTRAINT_CONFLICT

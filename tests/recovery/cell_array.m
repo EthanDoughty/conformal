@@ -9,7 +9,7 @@
 
 A = zeros(2, 2);
 if 1
-    B = A{1};
+    B = A{1};  % EXPECT_WARNING: W_CURLY_INDEXING_NON_CELL
 end
 C = A + A;
 D = 5;

@@ -11,7 +11,7 @@
 B = zeros(2, 3);
 for i = 1:10
     if flag
-        B = [B; zeros(1, 3)];
+        B = [B; zeros(1, 3)];  % EXPECT_WARNING: W_REASSIGN_INCOMPATIBLE
     end
 end
 C = [B; zeros(2, 3)];

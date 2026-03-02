@@ -16,7 +16,7 @@ reshape_concrete = reshape(A, 3, 2);
 n = 5;
 m = 4;
 B = ones(6, 1);
-reshape_symbolic = reshape(B, n, m);
+reshape_symbolic = reshape(B, n, m);  % EXPECT_WARNING: W_RESHAPE_MISMATCH
 
 % Test 3: repmat with scalar input and concrete replication factors
 repmat_scalar = repmat(5, 2, 3);
@@ -33,7 +33,7 @@ D = ones(n, m);
 repmat_symbolic = repmat(D, k, k);
 
 % Test 6: reshape from scalar (W_RESHAPE_MISMATCH: 1 != 6, still returns matrix[3 x 2])
-reshape_from_scalar = reshape(5, 3, 2);
+reshape_from_scalar = reshape(5, 3, 2);  % EXPECT_WARNING: W_RESHAPE_MISMATCH
 
 % Test 7: reshape with non-matching element count (W_RESHAPE_MISMATCH warning, still returns matrix[4 x 4])
-reshape_nonmatching = reshape(zeros(2, 3), 4, 4);
+reshape_nonmatching = reshape(zeros(2, 3), 4, 4);  % EXPECT_WARNING: W_RESHAPE_MISMATCH

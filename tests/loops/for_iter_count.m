@@ -7,10 +7,10 @@
 
 A = zeros(1, 2);
 for i = 1:5
-    A = [A; zeros(1, 2)];
+    A = [A; zeros(1, 2)];  % EXPECT_WARNING: W_REASSIGN_INCOMPATIBLE
 end
 
 B = zeros(3, 2);
 for j = 1:n
-    B = [B, zeros(3, 1)];
+    B = [B, zeros(3, 1)];  % EXPECT_WARNING: W_REASSIGN_INCOMPATIBLE
 end

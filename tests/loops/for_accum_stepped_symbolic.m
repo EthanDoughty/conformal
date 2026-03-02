@@ -4,5 +4,5 @@
 
 C = zeros(2, 3);
 for i = 1:2:n
-    C = [C; zeros(1, 3)];
+    C = [C; zeros(1, 3)];  % EXPECT_WARNING: W_REASSIGN_INCOMPATIBLE
 end

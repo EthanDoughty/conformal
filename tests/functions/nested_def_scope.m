@@ -9,4 +9,4 @@ function result = outer(n)
 end
 
 % inner is not visible here: should emit W_UNKNOWN_FUNCTION
-z = inner(5);
+z = inner(5);  % EXPECT_WARNING: W_UNKNOWN_FUNCTION

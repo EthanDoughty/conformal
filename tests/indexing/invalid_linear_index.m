@@ -6,4 +6,4 @@
 
 A = zeros(3, 4);
 idx = zeros(2, 2);
-y = A(idx, 1);
+y = A(idx, 1);  % EXPECT_WARNING: W_NON_SCALAR_INDEX

@@ -6,4 +6,4 @@ function y = one_arg(a)
     y = a * 2;
 end
 
-result = one_arg(1, 2, 3);
+result = one_arg(1, 2, 3);  % EXPECT_WARNING: W_FUNCTION_ARG_COUNT_MISMATCH

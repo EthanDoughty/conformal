@@ -5,7 +5,7 @@
 % EXPECT: B = unknown
 
 function y = inner_mismatch(x)
-    y = x * x;
+    y = x * x;  % EXPECT_WARNING: W_INNER_DIM_MISMATCH  % EXPECT_WARNING: W_INNER_DIM_MISMATCH
 end
 
 A = inner_mismatch(zeros(3, 4));  % Line 10: cache miss, emit warning

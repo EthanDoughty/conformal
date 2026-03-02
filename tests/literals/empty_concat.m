@@ -19,6 +19,6 @@ E = [[] []];
 % (W_REASSIGN_INCOMPATIBLE fires: acc changes from [0x0] to [2x1])
 acc = [];
 for i = 1:3
-    acc = [acc ones(2,1)];
+    acc = [acc ones(2,1)];  % EXPECT_WARNING: W_REASSIGN_INCOMPATIBLE
 end
 % EXPECT: acc = matrix[2 x 1]

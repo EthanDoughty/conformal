@@ -24,4 +24,4 @@ v = zeros(1, 4);
 w = v .^ 2;
 
 % non-square matrix ^ scalar -> warning + unknown
-bad = zeros(2, 3) ^ 2;
+bad = zeros(2, 3) ^ 2;  % EXPECT_WARNING: W_MATRIX_POWER_NON_SQUARE

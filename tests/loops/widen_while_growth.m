@@ -7,5 +7,5 @@
 
 A = zeros(1, 5);
 while cond
-    A = [A; ones(1, 5)];
+    A = [A; ones(1, 5)];  % EXPECT_WARNING: W_REASSIGN_INCOMPATIBLE
 end

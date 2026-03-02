@@ -8,5 +8,5 @@
 
 A = zeros(2, 3);
 for i = 1:n
-    A = [A, zeros(2, 1)];
+    A = [A, zeros(2, 1)];  % EXPECT_WARNING: W_REASSIGN_INCOMPATIBLE
 end

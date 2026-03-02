@@ -1,4 +1,4 @@
 A = rand(4, 4);
-B = A(A > 0 & A < 1);
+B = A(A > 0 & A < 1);  % EXPECT_WARNING: W_SUSPICIOUS_COMPARISON  % EXPECT_WARNING: W_SUSPICIOUS_COMPARISON
 % EXPECT: B = matrix[None x 1]
 % EXPECT: warnings = 2

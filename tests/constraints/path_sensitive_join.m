@@ -7,4 +7,4 @@ else
     F = [A; D];
 end
 q = 3;
-m = 7;
+m = 7;  % EXPECT_WARNING: W_CONSTRAINT_CONFLICT

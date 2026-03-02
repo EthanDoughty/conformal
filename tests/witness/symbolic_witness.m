@@ -4,7 +4,7 @@
 function y = test_sym(n)
     A = zeros(n, n);
     B = zeros(n+1, n);
-    y = A * B;
+    y = A * B;  % EXPECT_WARNING: W_INNER_DIM_MISMATCH
 end
 
 test_sym(5);

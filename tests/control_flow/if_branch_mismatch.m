@@ -21,7 +21,7 @@ A = zeros(n, k);   % n x k
 B = zeros(n, n);   % n x n
 
 if n > 0
-    C = A + B;
+    C = A + B;  % EXPECT_WARNING: W_ELEMENTWISE_MISMATCH
 else
     C = A;
 end

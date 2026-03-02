@@ -9,8 +9,8 @@
 A = zeros(3, 3);
 for i = 1:n
     if cond
-        A = unknown_func();
+        A = unknown_func();  % EXPECT_WARNING: W_UNKNOWN_FUNCTION
     else
-        A = [A; zeros(1, 3)];
+        A = [A; zeros(1, 3)];  % EXPECT_WARNING: W_REASSIGN_INCOMPATIBLE
     end
 end

@@ -4,4 +4,4 @@
 % EXPECT: r = unknown
 
 A = zeros(3, 3);
-r = A + 'error';
+r = A + 'error';  % EXPECT_WARNING: W_STRING_ARITHMETIC

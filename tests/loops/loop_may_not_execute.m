@@ -7,5 +7,5 @@
 
 A = zeros(2, 2);
 for i = 1:n
-    A = ones(3, 3);
+    A = ones(3, 3);  % EXPECT_WARNING: W_REASSIGN_INCOMPATIBLE
 end

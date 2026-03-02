@@ -7,7 +7,7 @@
 
 A = zeros(3, 4);
 for i = 1:5
-    A = zeros(5, 4);
+    A = zeros(5, 4);  % EXPECT_WARNING: W_REASSIGN_INCOMPATIBLE
 end
 B = zeros(7, 4);
-C = A + B;
+C = A + B;  % EXPECT_WARNING: W_ELEMENTWISE_MISMATCH

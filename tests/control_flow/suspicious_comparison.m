@@ -8,7 +8,7 @@
 
 A = zeros(3, 4);
 
-if A == 0
+if A == 0  % EXPECT_WARNING: W_SUSPICIOUS_COMPARISON
     x = 1;
 else
     x = 2;

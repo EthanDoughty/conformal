@@ -10,20 +10,20 @@
 
 D = zeros(2, 3);
 for i = 1:2:2
-    D = [D; zeros(1, 3)];
+    D = [D; zeros(1, 3)];  % EXPECT_WARNING: W_REASSIGN_INCOMPATIBLE
 end
 
 E = zeros(2, 3);
 for i = 1:2:1
-    E = [E; zeros(1, 3)];
+    E = [E; zeros(1, 3)];  % EXPECT_WARNING: W_REASSIGN_INCOMPATIBLE
 end
 
 F = zeros(2, 3);
 for i = 1:5:3
-    F = [F; zeros(1, 3)];
+    F = [F; zeros(1, 3)];  % EXPECT_WARNING: W_REASSIGN_INCOMPATIBLE
 end
 
 G = zeros(2, 3);
 for i = 10:-3:1
-    G = [G; zeros(1, 3)];
+    G = [G; zeros(1, 3)];  % EXPECT_WARNING: W_REASSIGN_INCOMPATIBLE
 end

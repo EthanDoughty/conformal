@@ -4,7 +4,7 @@
 % EXPECT: D = matrix[5 x 5]
 
 function y = square_it(x)
-    y = x * x;
+    y = x * x;  % EXPECT_WARNING: W_INNER_DIM_MISMATCH
 end
 
 A = zeros(3, 4);

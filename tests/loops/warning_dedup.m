@@ -5,5 +5,5 @@
 
 B = zeros(2, 2);
 for i = 1:3
-    A = B * zeros(5, 3);
+    A = B * zeros(5, 3);  % EXPECT_WARNING: W_INNER_DIM_MISMATCH
 end

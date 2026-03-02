@@ -6,4 +6,4 @@
 % EXPECT: A = matrix[2 x 2]
 
 A = zeros(3, 4);
-A = zeros(2, 2);
+A = zeros(2, 2);  % EXPECT_WARNING: W_REASSIGN_INCOMPATIBLE

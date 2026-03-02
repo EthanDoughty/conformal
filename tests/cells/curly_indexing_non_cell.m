@@ -4,4 +4,4 @@
 % EXPECT: x = unknown
 
 A = zeros(3, 3);
-x = A{1};
+x = A{1};  % EXPECT_WARNING: W_CURLY_INDEXING_NON_CELL

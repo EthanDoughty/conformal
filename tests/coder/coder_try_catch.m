@@ -4,7 +4,7 @@
 % EXPECT: warnings = 1
 
 try
-    x = 1;
+    x = 1;  % EXPECT_WARNING: W_CODER_TRY_CATCH
 catch
     x = 0;
 end

@@ -4,7 +4,7 @@
 % EXPECT: A = unknown
 
 function y = bad_func(x)
-    y = unknown_builtin(x);
+    y = unknown_builtin(x);  % EXPECT_WARNING: W_UNKNOWN_FUNCTION
 end
 
 A = bad_func(zeros(3, 3));

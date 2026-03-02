@@ -30,7 +30,7 @@ existing.z = 99;
 % EXPECT: only = struct{second: matrix[3 x 1]}
 
 % Struct targets from unknown function
-[u.a, u.b] = unknown_func();
+[u.a, u.b] = unknown_func();  % EXPECT_WARNING: W_UNKNOWN_FUNCTION
 % EXPECT: u = struct{a: unknown, b: unknown}
 
 % Reading struct fields after multi-return assignment

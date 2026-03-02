@@ -1,7 +1,7 @@
 % Test open struct lattice behavior
 
 % Open struct from unknown base (struct field assign on unknown variable)
-s = some_func();
+s = some_func();  % EXPECT_WARNING: W_UNKNOWN_FUNCTION
 s.x = [1 2 3];
 % EXPECT: s = struct{x: matrix[1 x 3], ...}
 
@@ -14,7 +14,7 @@ z = s.untracked;
 % EXPECT: z = unknown
 
 % Multiple field assignments on unknown base (open flag is preserved)
-t = another_func();
+t = another_func();  % EXPECT_WARNING: W_UNKNOWN_FUNCTION
 t.a = 5;
 t.b = [1; 2; 3];
 % EXPECT: t = struct{a: scalar, b: matrix[3 x 1], ...}
@@ -26,7 +26,7 @@ if cond
     r = struct();
     r.x = 1;
 else
-    r = load_func();
+    r = load_func();  % EXPECT_WARNING: W_UNKNOWN_FUNCTION
     r.y = 2;
 end
 % EXPECT: r = struct{x: unknown, y: scalar, ...}
@@ -34,10 +34,10 @@ end
 % Join: open + open = open
 % x is in both branches with different concrete shapes: join = unknown
 if cond
-    p = load_a();
+    p = load_a();  % EXPECT_WARNING: W_UNKNOWN_FUNCTION
     p.x = [1 2];
 else
-    p = load_b();
+    p = load_b();  % EXPECT_WARNING: W_UNKNOWN_FUNCTION
     p.x = 99;
 end
 % EXPECT: p = struct{x: unknown, ...}

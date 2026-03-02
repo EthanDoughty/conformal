@@ -7,5 +7,5 @@
 % EXPECT: C = scalar
 
 A = zeros(3, 4);
-B = A.field(end);
+B = A.field(end);  % EXPECT_WARNING: W_FIELD_ACCESS_NON_STRUCT
 C = 5;

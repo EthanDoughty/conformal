@@ -4,7 +4,7 @@
 % EXPECT: C = unknown
 
 function y = bad_multiply(x)
-    y = x * x;
+    y = x * x;  % EXPECT_WARNING: W_INNER_DIM_MISMATCH  % EXPECT_WARNING: W_INNER_DIM_MISMATCH
 end
 
 A = zeros(3, 4);

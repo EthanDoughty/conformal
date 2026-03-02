@@ -8,5 +8,5 @@
 
 A = zeros(2, 3);
 for i = 1:n
-    A = ones(4, 5);
+    A = ones(4, 5);  % EXPECT_WARNING: W_REASSIGN_INCOMPATIBLE
 end

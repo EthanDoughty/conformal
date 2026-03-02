@@ -19,4 +19,4 @@ y = 2 \ zeros(4, 1);
 
 % row mismatch -> warning + unknown
 c = zeros(5, 1);
-z = A \ c;
+z = A \ c;  % EXPECT_WARNING: W_MLDIVIDE_DIM_MISMATCH
