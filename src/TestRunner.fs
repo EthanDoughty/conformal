@@ -7,19 +7,31 @@ open Context
 open Diagnostics
 open Analysis
 open Workspace
+open WarningCodes
 
 // ---------------------------------------------------------------------------
 // Expectation parsing
 // ---------------------------------------------------------------------------
 
-let private expectRe          = Regex(@"%\s*EXPECT:\s*(.+)$",          RegexOptions.Multiline)
-let private expectFixpointRe  = Regex(@"%\s*EXPECT_FIXPOINT:\s*(.+)$", RegexOptions.Multiline)
-let private expectWarningsRe  = Regex(@"warnings\s*(=|>=|>|<=|<)\s*(\d+)\s*$", RegexOptions.IgnoreCase)
-let private expectBindingRe   = Regex(@"([A-Za-z_]\w*)\s*=\s*(.+)$")
-let private modeCoderRe       = Regex(@"%\s*MODE:\s*coder",             RegexOptions.Multiline)
+let private expectRe            = Regex(@"%\s*EXPECT:\s*(.+)$",                       RegexOptions.Multiline)
+let private expectFixpointRe    = Regex(@"%\s*EXPECT_FIXPOINT:\s*(.+)$",              RegexOptions.Multiline)
+let private expectWarningsRe    = Regex(@"warnings\s*(=|>=|>|<=|<)\s*(\d+)\s*$",      RegexOptions.IgnoreCase)
+let private expectBindingRe     = Regex(@"([A-Za-z_]\w*)\s*=\s*(.+)$")
+let private modeCoderRe         = Regex(@"%\s*MODE:\s*coder",                          RegexOptions.Multiline)
+let private expectWarningRe     = Regex(@"%\s*EXPECT_WARNING:\s*(W_\w+)",              RegexOptions.Multiline)
+let private expectNoWarningRe   = Regex(@"%\s*EXPECT_NO_WARNING:\s*(W_\w+)",           RegexOptions.Multiline)
+let private expectFpWarningRe   = Regex(@"%\s*EXPECT_FIXPOINT_WARNING:\s*(W_\w+)",    RegexOptions.Multiline)
+let private expectFpNoWarningRe = Regex(@"%\s*EXPECT_FIXPOINT_NO_WARNING:\s*(W_\w+)", RegexOptions.Multiline)
 
 let private normalizeShapeStr (s: string) : string =
     Regex.Replace(s.Trim(), @"\s+", "")
+
+/// Convert a character offset in src to a 1-based line number.
+let private lineOfOffset (src: string) (offset: int) : int =
+    let mutable count = 1
+    for i in 0 .. (min offset (src.Length - 1)) - 1 do
+        if src.[i] = '\n' then count <- count + 1
+    count
 
 type private WarningOp = Eq | Ge | Gt | Le | Lt
 
@@ -32,8 +44,10 @@ let private warningOpStr (op: WarningOp) : string =
     | Eq -> "=" | Ge -> ">=" | Gt -> ">" | Le -> "<=" | Lt -> "<"
 
 type private Expectations = {
-    shapes:       Map<string, string>  // varname -> normalized shape string
-    warningCheck: (WarningOp * int) option
+    shapes:         Map<string, string>     // varname -> normalized shape string
+    warningCheck:   (WarningOp * int) option
+    expectWarnings: (int * string) list     // (line, code) pairs: warning MUST fire here
+    rejectWarnings: (int * string) list     // (line, code) pairs: warning must NOT fire here
 }
 
 let private parseExpectations (src: string) (fixpoint: bool) : Expectations =
@@ -74,7 +88,51 @@ let private parseExpectations (src: string) (fixpoint: bool) : Expectations =
         | Some c -> warningCheck <- Some c
         | None   -> ()
 
-    { shapes = shapes; warningCheck = warningCheck }
+    // Parse inline EXPECT_WARNING / EXPECT_NO_WARNING directives
+    let mutable expectWarns   : (int * string) list = []
+    let mutable rejectWarns   : (int * string) list = []
+    let mutable fpExpectWarns : (int * string) list = []
+    let mutable fpRejectWarns : (int * string) list = []
+    let mutable hasFpWarns    = false
+
+    let parseInlineCode (label: string) (m: Text.RegularExpressions.Match) : (int * string) option =
+        let code = m.Groups.[1].Value
+        match tryParseCode code with
+        | None ->
+            printfn "PARSE ERROR: unknown warning code '%s' in %s" code label
+            Some (-1, code)
+        | Some _ ->
+            Some (lineOfOffset src m.Index, code)
+
+    for m in expectFpWarningRe.Matches(src) do
+        hasFpWarns <- true
+        match parseInlineCode "EXPECT_FIXPOINT_WARNING" m with
+        | Some pair -> fpExpectWarns <- pair :: fpExpectWarns
+        | None      -> ()
+
+    for m in expectFpNoWarningRe.Matches(src) do
+        hasFpWarns <- true
+        match parseInlineCode "EXPECT_FIXPOINT_NO_WARNING" m with
+        | Some pair -> fpRejectWarns <- pair :: fpRejectWarns
+        | None      -> ()
+
+    for m in expectWarningRe.Matches(src) do
+        match parseInlineCode "EXPECT_WARNING" m with
+        | Some pair -> expectWarns <- pair :: expectWarns
+        | None      -> ()
+
+    for m in expectNoWarningRe.Matches(src) do
+        match parseInlineCode "EXPECT_NO_WARNING" m with
+        | Some pair -> rejectWarns <- pair :: rejectWarns
+        | None      -> ()
+
+    // In fixpoint mode, FIXPOINT_WARNING variants completely replace non-fixpoint ones
+    if fixpoint && hasFpWarns then
+        expectWarns <- fpExpectWarns
+        rejectWarns <- fpRejectWarns
+
+    { shapes = shapes; warningCheck = warningCheck
+      expectWarnings = expectWarns; rejectWarnings = rejectWarns }
 
 
 // ---------------------------------------------------------------------------
@@ -192,6 +250,25 @@ let private runTest (path: string) (fixpoint: bool) (forceCoder: bool) : bool =
         let actualStr   = normalizeShapeStr (Shapes.shapeToString actualShape)
         if actualStr <> expectedStr then
             printfn "ASSERT FAIL: expected %s = %s, got %s" varName expectedStr actualStr
+            passed <- false
+
+    // Check line-specific warning code assertions
+    let warningSet =
+        warnings |> List.map (fun w -> (w.line, codeString w.code)) |> Set.ofList
+
+    for (line, code) in expectations.expectWarnings do
+        if line = -1 then
+            // Parse error for unknown code -- already printed, just fail
+            passed <- false
+        elif not (Set.contains (line, code) warningSet) then
+            printfn "ASSERT FAIL: expected %s on line %d, not found" code line
+            passed <- false
+
+    for (line, code) in expectations.rejectWarnings do
+        if line = -1 then
+            passed <- false
+        elif Set.contains (line, code) warningSet then
+            printfn "ASSERT FAIL: unexpected %s on line %d" code line
             passed <- false
 
     printfn "ASSERTIONS: %s" (if passed then "PASS" else "FAIL")
