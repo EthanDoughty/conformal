@@ -131,9 +131,9 @@ let runFile (filePath: string) (strict: bool) (fixpoint: bool) (benchmark: bool)
 // --tests dispatch
 // ---------------------------------------------------------------------------
 
-let runTests (strict: bool) (fixpoint: bool) (benchmark: bool) : int =
+let runTests (strict: bool) (fixpoint: bool) (benchmark: bool) (quiet: bool) : int =
     let tStart = DateTime.UtcNow
-    let result = TestRunner.run strict fixpoint false
+    let result = TestRunner.run strict fixpoint false quiet
     let tEnd = DateTime.UtcNow
 
     if benchmark then
@@ -156,11 +156,13 @@ let runTests (strict: bool) (fixpoint: bool) (benchmark: bool) : int =
 type CliArgs = {
     tests: bool; testProps: bool; strict: bool; fixpoint: bool
     bench: bool; coder: bool; file: string; parseJson: bool
+    quiet: bool
 }
 
 let private defaultArgs =
     { tests = false; testProps = false; strict = false; fixpoint = false
-      bench = false; coder = false; file = ""; parseJson = false }
+      bench = false; coder = false; file = ""; parseJson = false
+      quiet = false }
 
 /// Fold state: Ready accepts flags, ConsumeFile means next arg is a file path,
 /// ConsumeWitness means next arg is an optional witness mode or file path.
@@ -185,6 +187,7 @@ let private parseArgv (argv: string array) : CliArgs =
                 | "--coder"      -> ({ acc with coder = true }, Ready)
                 | "--parse-json" -> ({ acc with parseJson = true }, ConsumeFile)
                 | "--witness"    -> (acc, ConsumeWitness)
+                | "--quiet"      -> ({ acc with quiet = true }, Ready)
                 | _ -> (acc, Ready)
             else
                 match arg with
@@ -200,6 +203,7 @@ let private parseArgv (argv: string array) : CliArgs =
             | "--coder"      -> ({ acc with coder = true }, Ready)
             | "--parse-json" -> ({ acc with parseJson = true }, ConsumeFile)
             | "--witness"    -> (acc, ConsumeWitness)
+            | "--quiet"      -> ({ acc with quiet = true }, Ready)
             | a when not (a.StartsWith("--")) -> ({ acc with file = a }, Ready)
             | _ -> (acc, Ready)
     ) (defaultArgs, Ready) |> fst
@@ -212,7 +216,7 @@ let run (argv: string array) : int =
     if args.testProps then
         PropertyTests.runPropertyTests()
     elif args.tests then
-        runTests args.strict args.fixpoint args.bench
+        runTests args.strict args.fixpoint args.bench args.quiet
     elif args.parseJson then
         // Legacy --parse-json mode: just parse and emit JSON
         if args.file = "" then
