@@ -14,23 +14,33 @@ open Workspace
 
 let private expectRe          = Regex(@"%\s*EXPECT:\s*(.+)$",          RegexOptions.Multiline)
 let private expectFixpointRe  = Regex(@"%\s*EXPECT_FIXPOINT:\s*(.+)$", RegexOptions.Multiline)
-let private expectWarningsRe  = Regex(@"warnings\s*=\s*(\d+)\s*$",     RegexOptions.IgnoreCase)
+let private expectWarningsRe  = Regex(@"warnings\s*(=|>=|>|<=|<)\s*(\d+)\s*$", RegexOptions.IgnoreCase)
 let private expectBindingRe   = Regex(@"([A-Za-z_]\w*)\s*=\s*(.+)$")
 let private modeCoderRe       = Regex(@"%\s*MODE:\s*coder",             RegexOptions.Multiline)
 
 let private normalizeShapeStr (s: string) : string =
     Regex.Replace(s.Trim(), @"\s+", "")
 
+type private WarningOp = Eq | Ge | Gt | Le | Lt
+
+let private parseWarningOp (s: string) : WarningOp =
+    match s with
+    | ">=" -> Ge | ">" -> Gt | "<=" -> Le | "<" -> Lt | _ -> Eq
+
+let private warningOpStr (op: WarningOp) : string =
+    match op with
+    | Eq -> "=" | Ge -> ">=" | Gt -> ">" | Le -> "<=" | Lt -> "<"
+
 type private Expectations = {
     shapes:       Map<string, string>  // varname -> normalized shape string
-    warningCount: int option
+    warningCheck: (WarningOp * int) option
 }
 
 let private parseExpectations (src: string) (fixpoint: bool) : Expectations =
     let mutable shapes        = Map.empty<string, string>
-    let mutable warningCount  = None
+    let mutable warningCheck  : (WarningOp * int) option = None
     let mutable fpShapes      = Map.empty<string, string>
-    let mutable fpWarnCount   = None
+    let mutable fpWarnCheck   : (WarningOp * int) option = None
     let mutable hasFp         = false
 
     // Parse EXPECT_FIXPOINT: lines
@@ -39,7 +49,7 @@ let private parseExpectations (src: string) (fixpoint: bool) : Expectations =
         let payload = m.Groups.[1].Value.Trim()
         let mw = expectWarningsRe.Match(payload)
         if mw.Success then
-            fpWarnCount <- Some (int mw.Groups.[1].Value)
+            fpWarnCheck <- Some (parseWarningOp mw.Groups.[1].Value, int mw.Groups.[2].Value)
         else
             let mb = expectBindingRe.Match(payload)
             if mb.Success then
@@ -50,7 +60,7 @@ let private parseExpectations (src: string) (fixpoint: bool) : Expectations =
         let payload = m.Groups.[1].Value.Trim()
         let mw = expectWarningsRe.Match(payload)
         if mw.Success then
-            warningCount <- Some (int mw.Groups.[1].Value)
+            warningCheck <- Some (parseWarningOp mw.Groups.[1].Value, int mw.Groups.[2].Value)
         else
             let mb = expectBindingRe.Match(payload)
             if mb.Success then
@@ -60,11 +70,11 @@ let private parseExpectations (src: string) (fixpoint: bool) : Expectations =
     if fixpoint && hasFp then
         for kv in fpShapes do
             shapes <- Map.add kv.Key kv.Value shapes
-        match fpWarnCount with
-        | Some c -> warningCount <- Some c
+        match fpWarnCheck with
+        | Some c -> warningCheck <- Some c
         | None   -> ()
 
-    { shapes = shapes; warningCount = warningCount }
+    { shapes = shapes; warningCheck = warningCheck }
 
 
 // ---------------------------------------------------------------------------
@@ -159,11 +169,20 @@ let private runTest (path: string) (fixpoint: bool) (forceCoder: bool) : bool =
     let mutable passed = true
 
     // Check warning count (unfiltered)
-    match expectations.warningCount with
-    | Some expected when expected <> warnings.Length ->
-        printfn "ASSERT FAIL: expected warnings = %d, got %d" expected warnings.Length
-        passed <- false
-    | _ -> ()
+    match expectations.warningCheck with
+    | Some (op, expected) ->
+        let actual = warnings.Length
+        let pass =
+            match op with
+            | Eq -> actual = expected
+            | Ge -> actual >= expected
+            | Gt -> actual > expected
+            | Le -> actual <= expected
+            | Lt -> actual < expected
+        if not pass then
+            printfn "ASSERT FAIL: expected warnings %s %d, got %d" (warningOpStr op) expected actual
+            passed <- false
+    | None -> ()
 
     // Check variable shapes
     for kv in expectations.shapes do
