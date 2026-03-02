@@ -10,6 +10,6 @@
 A = zeros(2, 3);
 B = zeros(3, 2);
 for i = 1:n
-    A = [A; zeros(1, 3)];
-    B = [B, zeros(3, 1)];
+    A = [A; zeros(1, 3)];  % EXPECT_WARNING: W_REASSIGN_INCOMPATIBLE
+    B = [B, zeros(3, 1)];  % EXPECT_WARNING: W_REASSIGN_INCOMPATIBLE
 end

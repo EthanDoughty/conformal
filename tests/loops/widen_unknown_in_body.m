@@ -8,5 +8,5 @@
 
 A = zeros(3, 3);
 for i = 1:n
-    A = unknown_func();
+    A = unknown_func();  % EXPECT_WARNING: W_UNKNOWN_FUNCTION
 end

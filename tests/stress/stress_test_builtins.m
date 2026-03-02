@@ -130,7 +130,7 @@ r2 = reshape(R, 6, 2);
 % EXPECT: r2 = matrix[6 x 2]
 
 % reshape with element count mismatch → W_RESHAPE_MISMATCH
-r_bad = reshape(R, 5, 5);
+r_bad = reshape(R, 5, 5);  % EXPECT_WARNING: W_RESHAPE_MISMATCH
 
 % ==========================================================================
 % diff

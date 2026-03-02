@@ -30,6 +30,6 @@ st.field = 1;
 st(1, 1) = 5;
 
 % Indexed assignment to unknown — WARNING 3 (W_UNKNOWN_FUNCTION)
-u = unknown_func();
+u = unknown_func();  % EXPECT_WARNING: W_UNKNOWN_FUNCTION
 u(1, 1) = 5;
 % EXPECT: u = unknown

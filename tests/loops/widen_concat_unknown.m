@@ -11,5 +11,5 @@
 
 A = zeros(3, 3);
 for i = 1:n
-    A = [A; unknown_func()];
+    A = [A; unknown_func()];  % EXPECT_WARNING: W_UNKNOWN_FUNCTION
 end

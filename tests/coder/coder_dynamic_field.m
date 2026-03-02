@@ -5,4 +5,4 @@
 
 s.x = 1;
 name = 'x';
-v = s.(name);
+v = s.(name);  % EXPECT_WARNING: W_CODER_DYNAMIC_FIELD

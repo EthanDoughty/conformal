@@ -5,7 +5,7 @@
 % EXPECT: B = unknown
 
 function y = square_it(x)
-    y = x * x;
+    y = x * x;  % EXPECT_WARNING: W_INNER_DIM_MISMATCH
 end
 
 A = zeros(3, 4);

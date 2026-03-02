@@ -5,4 +5,4 @@
 
 f = @(x, y) x + y;
 A = zeros(3, 1);
-z = f(A);
+z = f(A);  % EXPECT_WARNING: W_LAMBDA_ARG_COUNT_MISMATCH

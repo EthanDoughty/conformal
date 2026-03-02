@@ -39,7 +39,7 @@ c1 = cell(3, 3);
 c2 = {1, 'two', zeros(3,3); 4, 5, 6};
 
 % Unknown (via unrecognized function)
-u = unknown_func();
+u = unknown_func();  % EXPECT_WARNING: W_UNKNOWN_FUNCTION
 
 % ==========================================================================
 % SECTION 2: Matrix arithmetic — valid operations
@@ -76,13 +76,13 @@ I = B';
 % ==========================================================================
 
 % W_INNER_DIM_MISMATCH: A is 3x4, C is 3x3, inner dim 4 != 3
-err_inner = A * C;
+err_inner = A * C;  % EXPECT_WARNING: W_INNER_DIM_MISMATCH
 
 % W_ELEMENTWISE_MISMATCH: A is 3x4, C is 3x3
-err_elem = A + C;
+err_elem = A + C;  % EXPECT_WARNING: W_ELEMENTWISE_MISMATCH
 
 % W_ELEMENTWISE_MISMATCH with .* operator
-err_elem2 = A .* C;
+err_elem2 = A .* C;  % EXPECT_WARNING: W_ELEMENTWISE_MISMATCH
 
 % ==========================================================================
 % SECTION 4: All warning codes exercised
@@ -90,20 +90,20 @@ err_elem2 = A .* C;
 
 % --- W_REASSIGN_INCOMPATIBLE ---
 reass = zeros(3, 3);
-reass = ones(4, 4);
+reass = ones(4, 4);  % EXPECT_WARNING: W_REASSIGN_INCOMPATIBLE
 
 % --- W_SUSPICIOUS_COMPARISON (matrix vs scalar) ---
-if A == 5
+if A == 5  % EXPECT_WARNING: W_SUSPICIOUS_COMPARISON
     x_susp = 1;
 end
 
 % --- W_MATRIX_COMPARISON ---
-if A == C
+if A == C  % EXPECT_WARNING: W_MATRIX_COMPARISON
     x_matcmp = 1;
 end
 
 % --- W_LOGICAL_OP_NON_SCALAR ---
-if A && B
+if A && B  % EXPECT_WARNING: W_LOGICAL_OP_NON_SCALAR
     x_logic = 1;
 end
 
@@ -111,54 +111,54 @@ end
 err_idx_scalar = a_scalar(1, 1);
 
 % --- W_STRING_ARITHMETIC ---
-err_str_arith = 'abc' + ones(3, 3);
+err_str_arith = 'abc' + ones(3, 3);  % EXPECT_WARNING: W_STRING_ARITHMETIC
 
 % --- W_STRUCT_FIELD_NOT_FOUND ---
-err_field = st.nonexistent;
+err_field = st.nonexistent;  % EXPECT_WARNING: W_STRUCT_FIELD_NOT_FOUND
 
 % --- W_FIELD_ACCESS_NON_STRUCT ---
-err_field2 = a_scalar.field;
+err_field2 = a_scalar.field;  % EXPECT_WARNING: W_FIELD_ACCESS_NON_STRUCT
 
 % --- W_CURLY_INDEXING_NON_CELL ---
-err_curly = A{1};
+err_curly = A{1};  % EXPECT_WARNING: W_CURLY_INDEXING_NON_CELL
 
 % --- W_CELL_ASSIGN_NON_CELL ---
-A{1} = 5;
+A{1} = 5;  % EXPECT_WARNING: W_CELL_ASSIGN_NON_CELL
 
 % --- W_UNKNOWN_FUNCTION ---
-err_unknown = totally_unknown_fn(1, 2, 3);
+err_unknown = totally_unknown_fn(1, 2, 3);  % EXPECT_WARNING: W_UNKNOWN_FUNCTION
 
 % --- W_DIVISION_BY_ZERO ---
 zero_val = 0;
-err_div = 10 / zero_val;
+err_div = 10 / zero_val;  % EXPECT_WARNING: W_DIVISION_BY_ZERO
 
 % --- W_INDEX_OUT_OF_BOUNDS ---
-err_oob = C(5, 1);
+err_oob = C(5, 1);  % EXPECT_WARNING: W_INDEX_OUT_OF_BOUNDS
 
 % --- W_POSSIBLY_NEGATIVE_DIM ---
 neg_dim = -2;
-err_neg = zeros(neg_dim, 3);
+err_neg = zeros(neg_dim, 3);  % EXPECT_WARNING: W_POSSIBLY_NEGATIVE_DIM
 
 % --- W_ARITHMETIC_TYPE_MISMATCH (struct) ---
-err_type1 = st + 5;
+err_type1 = st + 5;  % EXPECT_WARNING: W_ARITHMETIC_TYPE_MISMATCH
 
 % --- W_ARITHMETIC_TYPE_MISMATCH (cell) ---
-err_type2 = c1 * 3;
+err_type2 = c1 * 3;  % EXPECT_WARNING: W_ARITHMETIC_TYPE_MISMATCH
 
 % --- W_ARITHMETIC_TYPE_MISMATCH (function_handle) ---
-err_type3 = fh1 - 1;
+err_type3 = fh1 - 1;  % EXPECT_WARNING: W_ARITHMETIC_TYPE_MISMATCH
 
 % --- W_TRANSPOSE_TYPE_MISMATCH ---
-err_trans = st';
+err_trans = st';  % EXPECT_WARNING: W_TRANSPOSE_TYPE_MISMATCH
 
 % --- W_NEGATE_TYPE_MISMATCH ---
-err_neg_type = -st;
+err_neg_type = -st;  % EXPECT_WARNING: W_NEGATE_TYPE_MISMATCH
 
 % --- W_CONCAT_TYPE_MISMATCH ---
-err_concat = [st; ones(3, 3)];
+err_concat = [st; ones(3, 3)];  % EXPECT_WARNING: W_CONCAT_TYPE_MISMATCH
 
 % --- W_RESHAPE_MISMATCH ---
-err_reshape = reshape(zeros(3, 4), 5, 5);
+err_reshape = reshape(zeros(3, 4), 5, 5);  % EXPECT_WARNING: W_RESHAPE_MISMATCH
 
 % --- W_CONSTRAINT_CONFLICT ---
 function result = constraint_conflict(A, B)
@@ -326,7 +326,7 @@ end
 % --- Try/catch ---
 try
     tc1 = zeros(3, 3);
-    tc2 = tc1 * ones(5, 5);
+    tc2 = tc1 * ones(5, 5);  % EXPECT_WARNING: W_INNER_DIM_MISMATCH
 catch
     tc1 = eye(3);
 end
@@ -365,7 +365,7 @@ end
 [mr1, mr2] = multi_return(ones(3, 3), eye(3));
 sm1 = shape_maker(3, 4);
 sm2 = shape_maker(n, m);
-procedure_only(A);
+procedure_only(A);  % EXPECT_WARNING: W_PROCEDURE_IN_EXPR
 
 % Polymorphic caching: same function, different arg shapes
 sm3 = shape_maker(5, 5);
@@ -465,10 +465,10 @@ mc1 = [1, 2, 3; 4, 5, 6];
 mc2 = [eye(2), zeros(2, 3); ones(1, 2), zeros(1, 3)];
 
 % W_HORZCAT_ROW_MISMATCH
-err_hc = [ones(2, 3), zeros(4, 3)];
+err_hc = [ones(2, 3), zeros(4, 3)];  % EXPECT_WARNING: W_HORZCAT_ROW_MISMATCH
 
 % W_VERTCAT_COL_MISMATCH
-err_vc = [ones(3, 2); zeros(3, 4)];
+err_vc = [ones(3, 2); zeros(3, 4)];  % EXPECT_WARNING: W_VERTCAT_COL_MISMATCH
 
 % String concat in matrix literal
 str_cat = ['hello', ' ', 'world'];
@@ -504,12 +504,12 @@ idx11 = M1(1:n, :);
 
 % Division by zero
 zero = 0;
-err_div2 = 1 / zero;
+err_div2 = 1 / zero;  % EXPECT_WARNING: W_DIVISION_BY_ZERO
 
 % Out of bounds with known interval
 arr = zeros(5, 5);
 idx_var = 7;
-err_oob2 = arr(idx_var, 1);
+err_oob2 = arr(idx_var, 1);  % EXPECT_WARNING: W_INDEX_OUT_OF_BOUNDS
 
 % Conditional refinement — should NOT warn
 wide_var = 3;
@@ -528,12 +528,12 @@ end
 % For loop interval OOB
 small_arr = zeros(3, 3);
 for loop_j = 1:5
-    oob_elem = small_arr(loop_j, 1);
+    oob_elem = small_arr(loop_j, 1);  % EXPECT_WARNING: W_INDEX_OUT_OF_BOUNDS
 end
 
 % Negative dimension
 neg_n = -3;
-err_neg2 = zeros(neg_n, 4);
+err_neg2 = zeros(neg_n, 4);  % EXPECT_WARNING: W_POSSIBLY_NEGATIVE_DIM
 
 % ==========================================================================
 % SECTION 15: Constraint solving
@@ -639,7 +639,7 @@ v19 = abs(v1);
 v20 = sqrt(v1);
 
 % Large literal
-big_lit = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10;
+big_lit = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10;  % EXPECT_WARNING: W_UNSUPPORTED_STMT
            11, 12, 13, 14, 15, 16, 17, 18, 19, 20;
            21, 22, 23, 24, 25, 26, 27, 28, 29, 30;
            31, 32, 33, 34, 35, 36, 37, 38, 39, 40;
@@ -657,13 +657,13 @@ fc3 = ceil(floor(round(sqrt(abs(A)))));
 % Vertical accumulation
 vacc = zeros(0, 3);
 for ai = 1:5
-    vacc = [vacc; ones(1, 3)];
+    vacc = [vacc; ones(1, 3)];  % EXPECT_WARNING: W_REASSIGN_INCOMPATIBLE
 end
 
 % Horizontal accumulation
 hacc = zeros(3, 0);
 for bi = 1:5
-    hacc = [hacc, ones(3, 1)];
+    hacc = [hacc, ones(3, 1)];  % EXPECT_WARNING: W_REASSIGN_INCOMPATIBLE
 end
 
 % ==========================================================================

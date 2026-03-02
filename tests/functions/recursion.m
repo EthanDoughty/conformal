@@ -3,7 +3,7 @@
 % EXPECT: A = unknown
 
 function y = factorial(n)
-    y = n * factorial(n - 1);
+    y = n * factorial(n - 1);  % EXPECT_WARNING: W_RECURSIVE_FUNCTION
 end
 
 A = factorial(5);

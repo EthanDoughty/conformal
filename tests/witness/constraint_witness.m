@@ -3,5 +3,5 @@ n = 3;
 m = 5;
 A = zeros(n, m);
 B = zeros(m+1, n);
-C = A * B;
+C = A * B;  % EXPECT_WARNING: W_INNER_DIM_MISMATCH
 % EXPECT: warnings = 1

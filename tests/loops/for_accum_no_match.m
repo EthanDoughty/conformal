@@ -6,17 +6,17 @@
 
 F = zeros(2, 3);
 for i = 1:n
-    F = [F; F];
+    F = [F; F];  % EXPECT_WARNING: W_REASSIGN_INCOMPATIBLE
 end
 
 G = zeros(2, 3);
 for i = 1:2:n
-    G = [G; zeros(1, 3)];
+    G = [G; zeros(1, 3)];  % EXPECT_WARNING: W_REASSIGN_INCOMPATIBLE
 end
 
 H = zeros(2, 3);
 for i = 1:n
     if i > 1
-        H = [H; zeros(1, 3)];
+        H = [H; zeros(1, 3)];  % EXPECT_WARNING: W_REASSIGN_INCOMPATIBLE
     end
 end

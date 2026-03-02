@@ -13,4 +13,4 @@ A = zeros(2, 3);
 B = zeros(3, 3);
 
 X = [A; B];   % valid (5 x 3)
-Y = [A B];    % invalid, warning expected (row mismatch)
+Y = [A B];    % invalid, warning expected (row mismatch)  % EXPECT_WARNING: W_HORZCAT_ROW_MISMATCH

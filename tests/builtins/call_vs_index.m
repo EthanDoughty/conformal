@@ -11,7 +11,7 @@
 A = [1 2 3 4; 5 6 7 8; 9 10 11 12];
 B = A(:, 2);
 C = zeros(2, 3);
-D = my_func(5);
+D = my_func(5);  % EXPECT_WARNING: W_UNKNOWN_FUNCTION
 E = A(1:2, :);
 M = zeros(3, 4);
 val = M(2, 3);

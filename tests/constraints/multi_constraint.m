@@ -6,4 +6,4 @@ D = rand(p, q);
 E = [A; D];
 F = D * B;
 m = 10;
-q = 5;
+q = 5;  % EXPECT_WARNING: W_CONSTRAINT_CONFLICT

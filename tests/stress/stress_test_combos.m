@@ -101,7 +101,7 @@ gram = TC' * TC;
 % ==========================================================================
 % Operations on unknown — should all return unknown, no warnings
 % ==========================================================================
-u = unknown_func();
+u = unknown_func();  % EXPECT_WARNING: W_UNKNOWN_FUNCTION
 u_add = u + 1;
 u_mul = u * zeros(3, 3);
 u_neg = -u;
@@ -132,7 +132,7 @@ retrieved = cell_st{1};
 % ==========================================================================
 function z = conflict_func(A, B)
     z = A * B;
-    w = A + B;
+    w = A + B;  % EXPECT_WARNING: W_ELEMENTWISE_MISMATCH
 end
 
 cf = conflict_func(zeros(3, 4), ones(4, 3));

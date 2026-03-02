@@ -7,11 +7,11 @@ B = reshape(A, 3, 2);
 % EXPECT: B = matrix[3 x 2]
 
 % Concrete mismatch: 2*3=6 != 4*4=16, warning
-C = reshape(A, 4, 4);
+C = reshape(A, 4, 4);  % EXPECT_WARNING: W_RESHAPE_MISMATCH
 % EXPECT: C = matrix[4 x 4]
 
 % Scalar input: 1 != 3*2=6, warning
-D = reshape(5, 3, 2);
+D = reshape(5, 3, 2);  % EXPECT_WARNING: W_RESHAPE_MISMATCH
 % EXPECT: D = matrix[3 x 2]
 
 % Symbolic input: can't prove mismatch, no warning

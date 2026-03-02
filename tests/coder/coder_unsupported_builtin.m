@@ -3,4 +3,4 @@
 
 % EXPECT: warnings = 1
 
-figure(1);
+figure(1);  % EXPECT_WARNING: W_CODER_UNSUPPORTED_BUILTIN

@@ -8,7 +8,7 @@ function r = outer()
 
     function mr = middle()
         B = zeros(2, 2);
-        inner();
+        inner();  % EXPECT_WARNING: W_PROCEDURE_IN_EXPR
         mr = B;
 
         function inner()

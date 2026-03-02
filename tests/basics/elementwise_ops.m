@@ -8,4 +8,4 @@
 
 A = zeros(3, 4);
 B = zeros(3, 5);
-C = A .* B;
+C = A .* B;  % EXPECT_WARNING: W_ELEMENTWISE_MISMATCH

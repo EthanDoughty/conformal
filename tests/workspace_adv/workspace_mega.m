@@ -56,7 +56,7 @@ lb = res.label;
 % EXPECT: lb = string
 
 % Accessing non-existent field → W_STRUCT_FIELD_NOT_FOUND (WARNING 1)
-bad_field = res.missing_field;
+bad_field = res.missing_field;  % EXPECT_WARNING: W_STRUCT_FIELD_NOT_FOUND
 
 % Cell return from external function
 cp = ws_make_cell_pair(zeros(2, 2), ones(3, 1));
@@ -108,11 +108,11 @@ wrong_args = ws_two_args(zeros(3, 3));
 % Cross-file inner dim mismatch: ws_covariance(5x3) = 3x3, 3x3 * 5x5 → mismatch
 % W_INNER_DIM_MISMATCH (WARNING 2)
 cov_result = ws_covariance(X53);
-bad_mul = cov_result * ones(5, 5);
+bad_mul = cov_result * ones(5, 5);  % EXPECT_WARNING: W_INNER_DIM_MISMATCH
 
 % Multi-assign count mismatch: ws_kalman_predict returns 2, requesting 3
 % W_MULTI_ASSIGN_COUNT_MISMATCH (WARNING 3)
-[ka, kb, kc] = ws_kalman_predict(F, x0, P0, Q);
+[ka, kb, kc] = ws_kalman_predict(F, x0, P0, Q);  % EXPECT_WARNING: W_MULTI_ASSIGN_COUNT_MISMATCH
 
 % ==========================================================================
 % SECTION 5: Builtin Priority (0 warnings)

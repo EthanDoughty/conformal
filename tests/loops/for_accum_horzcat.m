@@ -4,5 +4,5 @@
 
 D = zeros(5, 2);
 for i = 1:k
-    D = [D, zeros(5, 1)];
+    D = [D, zeros(5, 1)];  % EXPECT_WARNING: W_REASSIGN_INCOMPATIBLE
 end

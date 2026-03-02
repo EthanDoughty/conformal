@@ -10,6 +10,6 @@
 A = zeros(3, 3);
 for i = 1:10
     if cond
-        A = [A; zeros(1, 3)];
+        A = [A; zeros(1, 3)];  % EXPECT_WARNING: W_REASSIGN_INCOMPATIBLE
     end
 end

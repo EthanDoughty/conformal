@@ -4,7 +4,7 @@
 
 function result = outer(n)
     M = eye(n);
-    modify_m();
+    modify_m();  % EXPECT_WARNING: W_PROCEDURE_IN_EXPR
     result = M;
     function modify_m()
         M = zeros(3, 3);

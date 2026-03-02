@@ -8,5 +8,5 @@
 % EXPECT: C = matrix[3 x 4]
 
 A = zeros(3, 4);
-B = A.field;
+B = A.field;  % EXPECT_WARNING: W_FIELD_ACCESS_NON_STRUCT
 C = A + A;

@@ -8,7 +8,7 @@
 try
     A = zeros(3, 4);
     B = zeros(5, 3);
-    X = A * B;
+    X = A * B;  % EXPECT_WARNING: W_INNER_DIM_MISMATCH
 catch
     X = zeros(1, 1);
 end

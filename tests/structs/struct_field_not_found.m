@@ -4,4 +4,4 @@
 % EXPECT: r = unknown
 
 s.x = 5;
-r = s.y;
+r = s.y;  % EXPECT_WARNING: W_STRUCT_FIELD_NOT_FOUND

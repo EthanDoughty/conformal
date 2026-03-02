@@ -6,4 +6,4 @@ function myproc(x)
     y = x * x;
 end
 
-A = myproc(zeros(3, 3));
+A = myproc(zeros(3, 3));  % EXPECT_WARNING: W_PROCEDURE_IN_EXPR

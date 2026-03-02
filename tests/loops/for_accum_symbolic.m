@@ -4,5 +4,5 @@
 
 E = zeros(1, 3);
 for i = a:b
-    E = [E; zeros(1, 3)];
+    E = [E; zeros(1, 3)];  % EXPECT_WARNING: W_REASSIGN_INCOMPATIBLE
 end

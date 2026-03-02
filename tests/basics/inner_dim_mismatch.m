@@ -8,4 +8,4 @@
 
 A = zeros(3, 4);
 x = zeros(5, 1);
-y = A * x;
+y = A * x;  % EXPECT_WARNING: W_INNER_DIM_MISMATCH
