@@ -18,6 +18,7 @@ let private expectFixpointRe    = Regex(@"%\s*EXPECT_FIXPOINT:\s*(.+)$",        
 let private expectWarningsRe    = Regex(@"warnings\s*(=|>=|>|<=|<)\s*(\d+)\s*$",      RegexOptions.IgnoreCase)
 let private expectBindingRe     = Regex(@"([A-Za-z_]\w*)\s*=\s*(.+)$")
 let private modeCoderRe         = Regex(@"%\s*MODE:\s*coder",                          RegexOptions.Multiline)
+let private modeStrictRe        = Regex(@"%\s*MODE:\s*strict",                         RegexOptions.Multiline)
 let private expectWarningRe     = Regex(@"%\s*EXPECT_WARNING:\s*(W_\w+)",              RegexOptions.Multiline)
 let private expectNoWarningRe   = Regex(@"%\s*EXPECT_NO_WARNING:\s*(W_\w+)",           RegexOptions.Multiline)
 let private expectFpWarningRe   = Regex(@"%\s*EXPECT_FIXPOINT_WARNING:\s*(W_\w+)",    RegexOptions.Multiline)
@@ -165,6 +166,8 @@ let private runTest (path: string) (fixpoint: bool) (forceCoder: bool) (quiet: b
 
     // Determine coder mode: forced by directory or by % MODE: coder directive
     let coderMode = forceCoder || modeCoderRe.IsMatch(src)
+    // Determine strict mode: enabled by % MODE: strict directive
+    let strictMode = modeStrictRe.IsMatch(src)
 
     let irProgOpt =
         try
@@ -194,6 +197,7 @@ let private runTest (path: string) (fixpoint: bool) (forceCoder: bool) (quiet: b
     let ctx = AnalysisContext()
     ctx.call.fixpoint <- fixpoint
     ctx.cst.coderMode <- coderMode
+    ctx.cst.strictMode <- strictMode
     for kv in extMap do
         ctx.ws.externalFunctions.[kv.Key] <- kv.Value
     ctx.ws.workspaceDir <- dirPath

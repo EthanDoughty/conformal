@@ -9,6 +9,7 @@
     <Compile Include="../../src/Parser.fs" />
     <Compile Include="../../src/Json.fs" />
     <Compile Include="../../src/SymDim.fs" />
+    <Compile Include="../../src/WarningCodes.fs" />
     <Compile Include="../../src/Shapes.fs" />
     <Compile Include="../../src/DimEquiv.fs" />
     <Compile Include="../../src/Env.fs" />

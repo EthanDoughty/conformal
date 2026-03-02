@@ -30,7 +30,6 @@ let ERROR_CODES : Set<WarningCode> =
         W_LAMBDA_ARG_COUNT_MISMATCH
         W_MULTI_ASSIGN_COUNT_MISMATCH
         W_MULTI_ASSIGN_NON_CALL
-        W_MULTI_ASSIGN_BUILTIN
         W_PROCEDURE_IN_EXPR
         W_BREAK_OUTSIDE_LOOP
         W_CONTINUE_OUTSIDE_LOOP
@@ -71,7 +70,7 @@ let toLspDiagnostic
     // Severity mapping
     let isUnsupported =
         match d.code with
-        | W_UNSUPPORTED_STMT | W_UNSUPPORTED_MULTI_ASSIGN -> true
+        | W_UNSUPPORTED_STMT -> true
         | _ -> false
     let severity =
         if Set.contains d.code ERROR_CODES then DiagnosticSeverity.Error

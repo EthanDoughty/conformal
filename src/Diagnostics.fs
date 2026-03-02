@@ -12,7 +12,7 @@ open WarningCodes
 let STRICT_ONLY_CODES : Set<WarningCode> =
     Set.ofList [
         // Parser / recognition limits
-        W_UNSUPPORTED_STMT; W_UNSUPPORTED_MULTI_ASSIGN
+        W_UNSUPPORTED_STMT
         W_UNKNOWN_FUNCTION; W_EXTERNAL_PARSE_ERROR
         // Cascade-prone field / cell warnings
         W_STRUCT_FIELD_NOT_FOUND; W_FIELD_ACCESS_NON_STRUCT
@@ -20,7 +20,7 @@ let STRICT_ONLY_CODES : Set<WarningCode> =
         // Informational (not bugs)
         W_REASSIGN_INCOMPATIBLE; W_RECURSIVE_FUNCTION
         W_RECURSIVE_LAMBDA; W_LAMBDA_CALL_APPROXIMATE
-        W_MULTI_ASSIGN_NON_CALL; W_MULTI_ASSIGN_BUILTIN
+        W_MULTI_ASSIGN_NON_CALL
         // Stylistic / suspicious
         W_SUSPICIOUS_COMPARISON; W_MATRIX_COMPARISON
         W_LOGICAL_OP_NON_SCALAR; W_STRING_ARITHMETIC
@@ -125,7 +125,7 @@ let makeDiagRel line code message relLine =
 let hasUnsupported (diags: Diagnostic list) : bool =
     diags |> List.exists (fun d ->
         match d.code with
-        | W_UNSUPPORTED_STMT | W_UNSUPPORTED_MULTI_ASSIGN -> true
+        | W_UNSUPPORTED_STMT -> true
         | _ -> false)
 
 let warnReassignIncompatible (line: int) (name: string) (newShape: Shape) (oldShape: Shape) : Diagnostic =
@@ -146,10 +146,6 @@ let warnLogicalOpNonScalar
     (line: int) (op: string) (leftExpr: Expr) (rightExpr: Expr) (left: Shape) (right: Shape) : Diagnostic =
     makeDiag line W_LOGICAL_OP_NON_SCALAR
         $"Logical operator {op} used with non-scalar operand(s) in ({prettyExprIr leftExpr} {op} {prettyExprIr rightExpr}) ({shapeToString left} vs {shapeToString right})."
-
-let warnIndexingScalar (line: int) (expr: Expr) : Diagnostic =
-    makeDiag line W_INDEXING_SCALAR
-        $"Indexing applied to scalar in {prettyExprIr expr}. Treating result as unknown."
 
 let warnTooManyIndices (line: int) (expr: Expr) : Diagnostic =
     makeDiag line W_TOO_MANY_INDICES
@@ -194,10 +190,6 @@ let warnUnknownFunction (line: int) (name: string) : Diagnostic =
     makeDiag line W_UNKNOWN_FUNCTION
         $"Function '{name}' is not recognized; treating result as unknown"
 
-let warnUnsupportedMultiAssign (line: int) : Diagnostic =
-    makeDiag line W_UNSUPPORTED_MULTI_ASSIGN
-        "Destructuring assignment not yet supported (Phase C)"
-
 let warnFunctionArgCountMismatch (line: int) (funcName: string) (expected: int) (got: int) : Diagnostic =
     makeDiag line W_FUNCTION_ARG_COUNT_MISMATCH
         $"function {funcName} expects {expected} arguments, got {got}"
@@ -213,10 +205,6 @@ let warnProcedureInExpr (line: int) (funcName: string) : Diagnostic =
 let warnMultiAssignNonCall (line: int) : Diagnostic =
     makeDiag line W_MULTI_ASSIGN_NON_CALL
         "destructuring assignment requires function call on RHS"
-
-let warnMultiAssignBuiltin (line: int) (funcName: string) : Diagnostic =
-    makeDiag line W_MULTI_ASSIGN_BUILTIN
-        $"builtin {funcName} does not support multiple returns"
 
 let warnMultiAssignCountMismatch (line: int) (funcName: string) (expected: int) (got: int) : Diagnostic =
     makeDiag line W_MULTI_ASSIGN_COUNT_MISMATCH
