@@ -1449,8 +1449,12 @@ and analyzeFunctionCall
     else
         let sig_ = ctx.call.functionRegistry.[funcName]
 
-        // Check argument count: too many args = error; too few = optional args (nargin support)
-        if args.Length > sig_.parms.Length then
+        // Detect varargin: last param named "varargin" means the function accepts extra args
+        let hasVarargin = sig_.parms.Length > 0 && List.last sig_.parms = "varargin"
+        let maxFixedParams = if hasVarargin then sig_.parms.Length - 1 else sig_.parms.Length
+
+        // Check argument count: too many args = error unless varargin; too few = optional args (nargin support)
+        if args.Length > maxFixedParams && not hasVarargin then
             warnings.Add(warnFunctionArgCountMismatch line funcName sig_.parms.Length args.Length)
             List.replicate (max sig_.outputVars.Length 1) UnknownShape
         else
@@ -1464,18 +1468,19 @@ and analyzeFunctionCall
             List.replicate (max sig_.outputVars.Length 1) UnknownShape
         else
 
-        // Evaluate arg shapes for cache key (only for actually-passed args)
+        // Evaluate arg shapes for cache key (all args including varargin extras)
         let argShapes =
             args |> List.map (fun arg ->
                 match arg with
                 | IndexExpr(_, e) -> wiredEvalExprFull e env warnings ctx
                 | _ -> UnknownShape)
 
+        let fixedArgCount = min actualArgCount maxFixedParams
         let argDimAliases =
             List.map2 (fun (param: string) arg ->
                 match arg with
                 | IndexExpr(_, e) -> (param, exprToDimIr e env)
-                | _ -> (param, Unknown)) (List.take actualArgCount sig_.parms) args
+                | _ -> (param, Unknown)) (List.take fixedArgCount sig_.parms) (List.take fixedArgCount args)
 
         let cacheKey =
             let shapePart = argShapes |> List.map shapeToString |> String.concat ","
@@ -1494,8 +1499,8 @@ and analyzeFunctionCall
                     let funcEnv = Env.create ()
                     let funcWarnings = ResizeArray<Diagnostic>()
 
-                    // Bind passed parameters; leave extra params unbound (Bottom)
-                    for (param, arg, argShape) in List.zip3 (List.take actualArgCount sig_.parms) args argShapes do
+                    // Bind fixed parameters (not varargin); leave extra params unbound (Bottom)
+                    for (param, arg, argShape) in List.zip3 (List.take fixedArgCount sig_.parms) (List.take fixedArgCount args) (List.take fixedArgCount argShapes) do
                         Env.set funcEnv param argShape
                         match arg with
                         | IndexExpr(_, e) ->
@@ -1503,6 +1508,16 @@ and analyzeFunctionCall
                             if callerDim <> Unknown then
                                 funcEnv.dimAliases <- Map.add param callerDim funcEnv.dimAliases
                         | _ -> ()
+
+                    // Bind varargin as a cell with per-element shape tracking
+                    if hasVarargin then
+                        let extraCount = max 0 (actualArgCount - maxFixedParams)
+                        let elemMap =
+                            argShapes
+                            |> List.skip maxFixedParams
+                            |> List.mapi (fun i shape -> (i, shape))
+                            |> Map.ofList
+                        Env.set funcEnv "varargin" (Cell(Concrete 1, Concrete extraCount, Some elemMap))
 
                     // Inject nargin/nargout into function env
                     Env.set funcEnv "nargin" Scalar
@@ -1527,13 +1542,22 @@ and analyzeFunctionCall
                         if not (isBottom finalShape) then
                             ctx.call.globalStore.[varName] <- finalShape
 
-                    // Extract return values
-                    let resultShapes =
-                        sig_.outputVars
+                    // Extract return values (handle varargout: last output named "varargout")
+                    let hasVarargout = sig_.outputVars.Length > 0 && List.last sig_.outputVars = "varargout"
+                    let fixedOutputVars = if hasVarargout then List.take (sig_.outputVars.Length - 1) sig_.outputVars else sig_.outputVars
+                    let namedShapes =
+                        fixedOutputVars
                         |> List.map (fun outVar ->
                             let shape = Env.get funcEnv outVar
                             if isBottom shape then UnknownShape else shape)
-                    let result = if resultShapes.IsEmpty then [ UnknownShape ] else resultShapes
+                    // If varargout: pad with UnknownShape for extra targets beyond named outputs
+                    let result =
+                        if namedShapes.IsEmpty && not hasVarargout then [ UnknownShape ]
+                        elif hasVarargout then
+                            let extraTargets = max 0 (numTargets - fixedOutputVars.Length)
+                            namedShapes @ List.replicate extraTargets UnknownShape
+                            |> (fun r -> if r.IsEmpty then [ UnknownShape ] else r)
+                        else namedShapes
 
                     // Only cache if function does not declare globals
                     // (globals change between call sites, so caching is unsound)
@@ -1566,8 +1590,12 @@ and analyzeNestedFunctionCall
     else
         let sig_ = ctx.call.nestedFunctionRegistry.[funcName]
 
-        // Too many args = error; too few = optional args (nargin support)
-        if args.Length > sig_.parms.Length then
+        // Detect varargin: last param named "varargin" means the function accepts extra args
+        let hasVarargin = sig_.parms.Length > 0 && List.last sig_.parms = "varargin"
+        let maxFixedParams = if hasVarargin then sig_.parms.Length - 1 else sig_.parms.Length
+
+        // Too many args = error unless varargin; too few = optional args (nargin support)
+        if args.Length > maxFixedParams && not hasVarargin then
             warnings.Add(warnFunctionArgCountMismatch line funcName sig_.parms.Length args.Length)
             List.replicate (max sig_.outputVars.Length 1) UnknownShape
         else
@@ -1586,11 +1614,12 @@ and analyzeNestedFunctionCall
                 | IndexExpr(_, e) -> wiredEvalExprFull e parentEnv warnings ctx
                 | _ -> UnknownShape)
 
+        let fixedArgCount = min actualArgCount maxFixedParams
         let argDimAliases =
             List.map2 (fun (param: string) arg ->
                 match arg with
                 | IndexExpr(_, e) -> (param, exprToDimIr e parentEnv)
-                | _ -> (param, Unknown)) (List.take actualArgCount sig_.parms) args
+                | _ -> (param, Unknown)) (List.take fixedArgCount sig_.parms) (List.take fixedArgCount args)
 
         let cacheKey =
             let shapePart = argShapes |> List.map shapeToString |> String.concat ","
@@ -1609,8 +1638,8 @@ and analyzeNestedFunctionCall
                     let funcEnv = Env.createWithParent parentEnv
                     let funcWarnings = ResizeArray<Diagnostic>()
 
-                    // Bind passed parameters; leave extra params unbound (Bottom)
-                    for (param, arg, argShape) in List.zip3 (List.take actualArgCount sig_.parms) args argShapes do
+                    // Bind fixed parameters (not varargin); leave extra params unbound (Bottom)
+                    for (param, arg, argShape) in List.zip3 (List.take fixedArgCount sig_.parms) (List.take fixedArgCount args) (List.take fixedArgCount argShapes) do
                         Env.set funcEnv param argShape
                         match arg with
                         | IndexExpr(_, e) ->
@@ -1618,6 +1647,16 @@ and analyzeNestedFunctionCall
                             if callerDim <> Unknown then
                                 funcEnv.dimAliases <- Map.add param callerDim funcEnv.dimAliases
                         | _ -> ()
+
+                    // Bind varargin as a cell with per-element shape tracking
+                    if hasVarargin then
+                        let extraCount = max 0 (actualArgCount - maxFixedParams)
+                        let elemMap =
+                            argShapes
+                            |> List.skip maxFixedParams
+                            |> List.mapi (fun i shape -> (i, shape))
+                            |> Map.ofList
+                        Env.set funcEnv "varargin" (Cell(Concrete 1, Concrete extraCount, Some elemMap))
 
                     // Inject nargin/nargout into function env
                     Env.set funcEnv "nargin" Scalar
@@ -1646,12 +1685,21 @@ and analyzeNestedFunctionCall
                         if not (isBottom finalShape) then
                             ctx.call.globalStore.[varName] <- finalShape
 
-                    let resultShapes =
-                        sig_.outputVars
+                    // Extract return values (handle varargout: last output named "varargout")
+                    let hasVarargout = sig_.outputVars.Length > 0 && List.last sig_.outputVars = "varargout"
+                    let fixedOutputVars = if hasVarargout then List.take (sig_.outputVars.Length - 1) sig_.outputVars else sig_.outputVars
+                    let namedShapes =
+                        fixedOutputVars
                         |> List.map (fun outVar ->
                             let shape = Env.get funcEnv outVar
                             if isBottom shape then UnknownShape else shape)
-                    let result = if resultShapes.IsEmpty then [ UnknownShape ] else resultShapes
+                    let result =
+                        if namedShapes.IsEmpty && not hasVarargout then [ UnknownShape ]
+                        elif hasVarargout then
+                            let extraTargets = max 0 (numTargets - fixedOutputVars.Length)
+                            namedShapes @ List.replicate extraTargets UnknownShape
+                            |> (fun r -> if r.IsEmpty then [ UnknownShape ] else r)
+                        else namedShapes
 
                     // Only cache if function does not declare globals
                     if ctx.cst.globalDeclaredVars.Count = 0 then
@@ -1693,8 +1741,12 @@ and analyzeExternalFunctionCall
         List.replicate (max extSig.returnCount 1) UnknownShape
     | Some (primarySig, (subfunctions : Map<string, FunctionSignature>)) ->
 
-    // Too many args = error; too few = optional args (nargin support)
-    if args.Length > primarySig.parms.Length then
+    // Detect varargin: last param named "varargin" means the function accepts extra args
+    let hasVararginExt = primarySig.parms.Length > 0 && List.last primarySig.parms = "varargin"
+    let maxFixedParamsExt = if hasVararginExt then primarySig.parms.Length - 1 else primarySig.parms.Length
+
+    // Too many args = error unless varargin; too few = optional args (nargin support)
+    if args.Length > maxFixedParamsExt && not hasVararginExt then
         warnings.Add(warnFunctionArgCountMismatch line fname primarySig.parms.Length args.Length)
         List.replicate (max primarySig.outputVars.Length 1) UnknownShape
     else
@@ -1707,11 +1759,12 @@ and analyzeExternalFunctionCall
             | IndexExpr(_, e) -> wiredEvalExprFull e env warnings ctx
             | _ -> UnknownShape)
 
+    let fixedArgCountExt = min actualArgCount maxFixedParamsExt
     let argDimAliases =
         List.map2 (fun (param: string) arg ->
             match arg with
             | IndexExpr(_, e) -> (param, exprToDimIr e env)
-            | _ -> (param, Unknown)) (List.take actualArgCount primarySig.parms) args
+            | _ -> (param, Unknown)) (List.take fixedArgCountExt primarySig.parms) (List.take fixedArgCountExt args)
 
     let cacheKey =
         let shapePart = argShapes |> List.map shapeToString |> String.concat ","
@@ -1734,8 +1787,8 @@ and analyzeExternalFunctionCall
                 let funcEnv = Env.create ()
                 let funcWarnings = ResizeArray<Diagnostic>()  // Suppressed
 
-                // Bind passed parameters; leave extra params unbound (Bottom)
-                for (param, arg, argShape) in List.zip3 (List.take actualArgCount primarySig.parms) args argShapes do
+                // Bind fixed parameters (not varargin); leave extra params unbound (Bottom)
+                for (param, arg, argShape) in List.zip3 (List.take fixedArgCountExt primarySig.parms) (List.take fixedArgCountExt args) (List.take fixedArgCountExt argShapes) do
                     Env.set funcEnv param argShape
                     match arg with
                     | IndexExpr(_, e) ->
@@ -1743,6 +1796,16 @@ and analyzeExternalFunctionCall
                         if callerDim <> Unknown then
                             funcEnv.dimAliases <- Map.add param callerDim funcEnv.dimAliases
                     | _ -> ()
+
+                // Bind varargin as a cell with per-element shape tracking
+                if hasVararginExt then
+                    let extraCount = max 0 (actualArgCount - maxFixedParamsExt)
+                    let elemMap =
+                        argShapes
+                        |> List.skip maxFixedParamsExt
+                        |> List.mapi (fun i shape -> (i, shape))
+                        |> Map.ofList
+                    Env.set funcEnv "varargin" (Cell(Concrete 1, Concrete extraCount, Some elemMap))
 
                 // Inject nargin/nargout into function env
                 Env.set funcEnv "nargin" Scalar
@@ -1758,12 +1821,21 @@ and analyzeExternalFunctionCall
                     if not (isBottom finalShape) then
                         ctx.call.globalStore.[varName] <- finalShape
 
-                let resultShapes =
-                    primarySig.outputVars
+                // Extract return values (handle varargout: last output named "varargout")
+                let hasVarargoutExt = primarySig.outputVars.Length > 0 && List.last primarySig.outputVars = "varargout"
+                let fixedOutputVarsExt = if hasVarargoutExt then List.take (primarySig.outputVars.Length - 1) primarySig.outputVars else primarySig.outputVars
+                let namedShapesExt =
+                    fixedOutputVarsExt
                     |> List.map (fun outVar ->
                         let shape = Env.get funcEnv outVar
                         if isBottom shape then UnknownShape else shape)
-                let result = if resultShapes.IsEmpty then [ UnknownShape ] else resultShapes
+                let result =
+                    if namedShapesExt.IsEmpty && not hasVarargoutExt then [ UnknownShape ]
+                    elif hasVarargoutExt then
+                        let extraTargets = max 0 (numTargets - fixedOutputVarsExt.Length)
+                        namedShapesExt @ List.replicate extraTargets UnknownShape
+                        |> (fun r -> if r.IsEmpty then [ UnknownShape ] else r)
+                    else namedShapesExt
 
                 // Only cache if function does not declare globals
                 if ctx.cst.globalDeclaredVars.Count = 0 then
