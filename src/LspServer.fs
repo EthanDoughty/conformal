@@ -132,13 +132,15 @@ type ConformalLspServer(client: ConformalClient) =
             let filePath = uriToPath uri
             let dirPath  = Path.GetDirectoryName(Path.GetFullPath(filePath))
             let fileName = Path.GetFileName(filePath)
-            let extMap   = scanWorkspace dirPath fileName
+            let (extMap, classdefMap) = scanWorkspace dirPath fileName
 
             // Build analysis context
             let ctx = AnalysisContext()
             ctx.call.fixpoint <- settings.fixpoint
             for kv in extMap do
                 ctx.ws.externalFunctions.[kv.Key] <- kv.Value
+            for kv in classdefMap do
+                ctx.ws.externalClassdefs.[kv.Key] <- kv.Value
             ctx.ws.workspaceDir <- dirPath
 
             // Parse and analyze

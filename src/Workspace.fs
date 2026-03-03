@@ -62,11 +62,21 @@ let extractFunctionSignature (source: string) : (string * int * int) option =
 
 
 #if !FABLE_COMPILER
-/// scanWorkspace: scan a directory for .m files and extract function signatures.
-let scanWorkspace (dirPath: string) (excludeFile: string) : Map<string, ExternalSignature> =
-    let result = System.Collections.Generic.Dictionary<string, ExternalSignature>()
+/// Regex to detect classdef files: matches a line starting with 'classdef'
+/// (after optional whitespace), ignoring commented-out occurrences.
+let private classdefRegex =
+    Regex(@"^\s*classdef\s+", RegexOptions.Multiline)
 
-    if not (Directory.Exists(dirPath)) then Map.empty
+/// scanWorkspace: scan a directory for .m files and extract function signatures.
+/// Returns a tuple: (externalFunctions map, externalClassdefs map).
+/// externalFunctions: Maps function name -> ExternalSignature for regular function files.
+/// externalClassdefs: Maps class name -> source file path for classdef files.
+let scanWorkspace (dirPath: string) (excludeFile: string)
+    : Map<string, ExternalSignature> * Map<string, string> =
+    let funcResult  = System.Collections.Generic.Dictionary<string, ExternalSignature>()
+    let classResult = System.Collections.Generic.Dictionary<string, string>()
+
+    if not (Directory.Exists(dirPath)) then Map.empty, Map.empty
     else
         let mFiles = Directory.GetFiles(dirPath, "*.m")
         for filePath in mFiles do
@@ -74,22 +84,30 @@ let scanWorkspace (dirPath: string) (excludeFile: string) : Map<string, External
             if fileName <> excludeFile then
                 try
                     let source = File.ReadAllText(filePath)
-                    match extractFunctionSignature source with
-                    | None -> ()  // Script file or no function found
-                    | Some (funcName, paramCount, returnCount) ->
-                        let key = Path.GetFileNameWithoutExtension(filePath)
-                        result.[key] <- {
-                            filename    = funcName
-                            paramCount  = paramCount
-                            returnCount = returnCount
-                            sourcePath  = filePath
-                            body        = None
-                            parmNames   = []
-                            outputNames = []
-                        }
+                    // Check if this is a classdef file before trying function extraction
+                    if classdefRegex.IsMatch(source) then
+                        // Classdef file: register by stem name (e.g. "Foo.m" -> "Foo")
+                        let className = Path.GetFileNameWithoutExtension(filePath)
+                        classResult.[className] <- filePath
+                    else
+                        match extractFunctionSignature source with
+                        | None -> ()  // Script file or no function found
+                        | Some (funcName, paramCount, returnCount) ->
+                            let key = Path.GetFileNameWithoutExtension(filePath)
+                            funcResult.[key] <- {
+                                filename    = funcName
+                                paramCount  = paramCount
+                                returnCount = returnCount
+                                sourcePath  = filePath
+                                body        = None
+                                parmNames   = []
+                                outputNames = []
+                            }
                 with _ -> ()  // File read failed; skip silently
 
-        result |> Seq.map (fun kv -> (kv.Key, kv.Value)) |> Map.ofSeq
+        let funcMap  = funcResult  |> Seq.map (fun kv -> (kv.Key, kv.Value)) |> Map.ofSeq
+        let classMap = classResult |> Seq.map (fun kv -> (kv.Key, kv.Value)) |> Map.ofSeq
+        funcMap, classMap
 #endif
 
 
@@ -173,4 +191,46 @@ let loadExternalFunction (sig_: ExternalSignature) : (FunctionSignature * Map<st
 let loadExternalFunction (sig_: ExternalSignature) : (FunctionSignature * Map<string, FunctionSignature>) option =
     if sig_.sourcePath = "" then None
     else loadExternalFunctionFromPath sig_.sourcePath buildIrFromSource
+
+
+/// loadExternalClassdef: parse a classdef .m file and extract ClassInfo + method signatures.
+/// Returns (className, propNames, methodSigs, superName) or None if the file cannot be parsed
+/// or does not contain a classdef OpaqueStmt.
+let loadExternalClassdef (sourcePath: string)
+    : (string * string list * Map<string, FunctionSignature> * string option) option =
+    try
+        let source = File.ReadAllText(sourcePath)
+        let program = Parser.parseMATLAB source
+        // Collect all FunctionDef nodes (methods)
+        let methodSigs =
+            program.body
+            |> List.choose (fun stmt ->
+                match stmt with
+                | Ir.FunctionDef({ line = line; col = col }, name, parms, outputVars, body) ->
+                    Some (name, { name = name; parms = parms; outputVars = outputVars
+                                  body = body; defLine = line; defCol = col })
+                | _ -> None)
+            |> Map.ofList
+        // Find the OpaqueStmt that encodes classdef metadata
+        let classdefOpaqueOpt =
+            program.body
+            |> List.tryPick (fun stmt ->
+                match stmt with
+                | Ir.OpaqueStmt(_, _, raw) when raw.StartsWith("classdef:") -> Some raw
+                | _ -> None)
+        match classdefOpaqueOpt with
+        | None -> None
+        | Some raw ->
+            let parts = raw.Split(':')
+            if parts.Length < 2 then None
+            else
+                let className = parts.[1]
+                let propNames =
+                    if parts.Length >= 3 && parts.[2] <> "" then
+                        parts.[2].Split(',') |> Array.toList
+                    else []
+                let superName =
+                    if parts.Length >= 4 && parts.[3] <> "" then Some parts.[3] else None
+                Some (className, propNames, methodSigs, superName)
+    with _ -> None
 #endif

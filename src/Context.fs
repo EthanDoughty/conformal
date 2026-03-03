@@ -145,6 +145,9 @@ type WorkspaceContext() =
     /// Maps function name -> ExternalSignature (workspace-scanned)
     member val externalFunctions : System.Collections.Generic.Dictionary<string, ExternalSignature>
                                    = System.Collections.Generic.Dictionary<string, ExternalSignature>() with get, set
+    /// Maps class name -> source file path for classdef files found in workspace
+    member val externalClassdefs : System.Collections.Generic.Dictionary<string, string>
+                                   = System.Collections.Generic.Dictionary<string, string>() with get, set
     /// Working directory for workspace scanning
     member val workspaceDir : string = "" with get, set
     /// Set of external function names currently being analyzed (cross-file cycle guard)
