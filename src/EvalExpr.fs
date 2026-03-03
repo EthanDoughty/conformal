@@ -492,6 +492,27 @@ and private evalApply
             // Priority 6: bound non-handle variable — treat as indexing
             let baseShape = evalExprIr baseExpr env warnings ctx None builtinDispatch
             evalIndexing baseShape args line env warnings ctx builtinDispatch
+    | FieldAccess(_, Var(_, objName), methodName) ->
+        // Method dispatch: obj.method(args) -- check if objName is a known class instance.
+        // Look up the class in classBindings, then look up the method in classRegistry.
+        // Dispatch as method(obj, args) (MATLAB implicit self-parameter convention).
+        let mutable className = ""
+        if ctx.call.classBindings.TryGetValue(objName, &className) then
+            let mutable classInfo = Unchecked.defaultof<ClassInfo>
+            if ctx.call.classRegistry.TryGetValue(className, &classInfo) &&
+               classInfo.methods.ContainsKey(methodName) then
+                // Prepend obj as first argument: obj.method(a, b) -> method(obj, a, b)
+                let objArg = IndexExpr(loc line 0, Var(loc line 0, objName))
+                let allArgs = objArg :: args
+                builtinDispatch methodName line baseExpr allArgs env warnings ctx
+            else
+                // Method not found in class: graceful fallback
+                let baseShape = evalExprIr baseExpr env warnings ctx None builtinDispatch
+                evalIndexing baseShape args line env warnings ctx builtinDispatch
+        else
+            // objName not in classBindings: evaluate and treat as indexing
+            let baseShape = evalExprIr baseExpr env warnings ctx None builtinDispatch
+            evalIndexing baseShape args line env warnings ctx builtinDispatch
     | _ ->
         // Non-variable base: evaluate and treat as indexing
         let baseShape = evalExprIr baseExpr env warnings ctx None builtinDispatch
