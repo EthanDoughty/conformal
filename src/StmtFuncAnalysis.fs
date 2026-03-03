@@ -299,11 +299,13 @@ let private joinBranchResults
     (baselineDimEquiv: DimEquiv.DimEquiv)
     (baselineRanges: Map<string, SharedTypes.Interval>)
     (baselineUpperBounds: Map<string, string * int>)
+    (baselineLowerBounds: Map<string, string * int>)
     (branchEnvs: Env list)
     (branchConstraints: Set<string * string> list)
     (branchDimEquivs: DimEquiv.DimEquiv list)
     (branchRanges: Map<string, SharedTypes.Interval> list)
     (branchUpperBounds: Map<string, string * int> list)
+    (branchLowerBounds: Map<string, string * int> list)
     (returnedFlags: bool list)
     (deferredFlow: ControlFlow option)
     : ControlFlow =
@@ -318,6 +320,7 @@ let private joinBranchResults
         let liveDimEquivs     = List.zip branchDimEquivs returnedFlags |> List.choose (fun (d, r) -> if not r then Some d else None)
         let liveRanges        = List.zip branchRanges returnedFlags |> List.choose (fun (vr, r) -> if not r then Some vr else None)
         let liveUpperBounds   = List.zip branchUpperBounds returnedFlags |> List.choose (fun (ub, r) -> if not r then Some ub else None)
+        let liveLowerBounds   = List.zip branchLowerBounds returnedFlags |> List.choose (fun (lb, r) -> if not r then Some lb else None)
 
         if not liveEnvs.IsEmpty then
             let joined = liveEnvs |> List.fold (fun acc e -> joinEnv acc e) liveEnvs.[0]
@@ -360,6 +363,13 @@ let private joinBranchResults
                 | [] -> baselineUpperBounds
                 | first :: rest -> rest |> List.fold Intervals.joinUpperBounds first
             ctx.cst.upperBounds <- joinedUpperBounds
+
+            // Pentagon: intersect lower-bound maps across live branches
+            let joinedLowerBounds =
+                match liveLowerBounds with
+                | [] -> baselineLowerBounds
+                | first :: rest -> rest |> List.fold Intervals.joinLowerBounds first
+            ctx.cst.lowerBounds <- joinedLowerBounds
 
         Normal
 
@@ -641,8 +651,9 @@ and analyzeStmtIr
             ctx.call.classBindings.[name] <- ctorName
         | _ -> ()
 
-        // Pentagon: kill stale upper bounds for the assigned variable
+        // Pentagon: kill stale upper/lower bounds for the assigned variable
         ctx.cst.upperBounds <- Intervals.killUpperBoundsFor name ctx.cst.upperBounds
+        ctx.cst.lowerBounds <- Intervals.killLowerBoundsFor name ctx.cst.lowerBounds
 
         // size() dimension aliasing: n = size(A, 1) => union(n, A.rowDim)
         // Records DimEquiv equivalence for backward propagation.
@@ -816,6 +827,11 @@ and analyzeStmtIr
                 | Var(_, boundVarName) ->
                     ctx.cst.upperBounds <- Map.add var_ (boundVarName, 0) ctx.cst.upperBounds
                 | _ -> ()
+                // Pentagon: record relational lower bound when lo endpoint is a variable
+                match left with
+                | Var(_, startVarName) ->
+                    ctx.cst.lowerBounds <- Map.add var_ (startVarName, 0) ctx.cst.lowerBounds
+                | _ -> ()
         | _ -> ()
 
         // Fixpoint-only: accumulation refinement
@@ -843,6 +859,7 @@ and analyzeStmtIr
         let baselineDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
         let baselineRanges = ctx.cst.valueRanges
         let baselineUpperBounds = ctx.cst.upperBounds
+        let baselineLowerBounds = ctx.cst.lowerBounds
 
         let thenEnv = Env.copy env
         let elseEnv = Env.copy env
@@ -863,6 +880,7 @@ and analyzeStmtIr
         let thenDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
         let thenRanges = ctx.cst.valueRanges
         let thenUpperBounds = ctx.cst.upperBounds
+        let thenLowerBounds = ctx.cst.lowerBounds
 
         // Reset to baseline for else branch
         ctx.cst.constraints <- baselineConstraints
@@ -874,6 +892,7 @@ and analyzeStmtIr
         for kv in baselineDimEquiv.concrete do ctx.cst.dimEquiv.concrete.[kv.Key] <- kv.Value
         ctx.cst.valueRanges <- baselineRanges
         ctx.cst.upperBounds <- baselineUpperBounds
+        ctx.cst.lowerBounds <- baselineLowerBounds
 
         // Else branch
         applyRefinements ctx refinements true
@@ -891,12 +910,13 @@ and analyzeStmtIr
         let elseDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
         let elseRanges = ctx.cst.valueRanges
         let elseUpperBounds = ctx.cst.upperBounds
+        let elseLowerBounds = ctx.cst.lowerBounds
 
         joinBranchResults
-            env ctx baselineConstraints baselineDimEquiv baselineRanges baselineUpperBounds
+            env ctx baselineConstraints baselineDimEquiv baselineRanges baselineUpperBounds baselineLowerBounds
             [thenEnv; elseEnv] [thenConstraints; elseConstraints]
             [thenDimEquiv; elseDimEquiv]
-            [thenRanges; elseRanges] [thenUpperBounds; elseUpperBounds]
+            [thenRanges; elseRanges] [thenUpperBounds; elseUpperBounds] [thenLowerBounds; elseLowerBounds]
             [thenReturned; elseReturned] None
 
     | IfChain({ line = line }, conditions, bodies, elseBody) ->
@@ -907,6 +927,7 @@ and analyzeStmtIr
         let baselineDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
         let baselineRanges = ctx.cst.valueRanges
         let baselineUpperBounds = ctx.cst.upperBounds
+        let baselineLowerBounds = ctx.cst.lowerBounds
 
         let allBodies = bodies @ [ elseBody ]
         let branchEnvs = ResizeArray<Env>()
@@ -914,6 +935,7 @@ and analyzeStmtIr
         let branchDimEquivs = ResizeArray<DimEquiv.DimEquiv>()
         let branchRanges = ResizeArray<Map<string, SharedTypes.Interval>>()
         let branchUpperBoundsAcc = ResizeArray<Map<string, string * int>>()
+        let branchLowerBoundsAcc = ResizeArray<Map<string, string * int>>()
         let returnedFlags = ResizeArray<bool>()
         let mutable deferredFlow : ControlFlow option = None
 
@@ -927,6 +949,7 @@ and analyzeStmtIr
             for kv in baselineDimEquiv.concrete do ctx.cst.dimEquiv.concrete.[kv.Key] <- kv.Value
             ctx.cst.valueRanges <- baselineRanges
             ctx.cst.upperBounds <- baselineUpperBounds
+            ctx.cst.lowerBounds <- baselineLowerBounds
 
             if idx < allRefinements.Length then
                 applyRefinements ctx allRefinements.[idx] false
@@ -945,12 +968,13 @@ and analyzeStmtIr
             branchDimEquivs.Add(DimEquiv.snapshot ctx.cst.dimEquiv)
             branchRanges.Add(ctx.cst.valueRanges)
             branchUpperBoundsAcc.Add(ctx.cst.upperBounds)
+            branchLowerBoundsAcc.Add(ctx.cst.lowerBounds)
             returnedFlags.Add(returned)
 
         joinBranchResults
-            env ctx baselineConstraints baselineDimEquiv baselineRanges baselineUpperBounds
+            env ctx baselineConstraints baselineDimEquiv baselineRanges baselineUpperBounds baselineLowerBounds
             (Seq.toList branchEnvs) (Seq.toList branchConstraints) (Seq.toList branchDimEquivs)
-            (Seq.toList branchRanges) (Seq.toList branchUpperBoundsAcc)
+            (Seq.toList branchRanges) (Seq.toList branchUpperBoundsAcc) (Seq.toList branchLowerBoundsAcc)
             (Seq.toList returnedFlags) deferredFlow
 
     | Switch({ line = line }, expr, cases, otherwise) ->
@@ -967,6 +991,7 @@ and analyzeStmtIr
         let baselineDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
         let baselineRanges = ctx.cst.valueRanges
         let baselineUpperBounds = ctx.cst.upperBounds
+        let baselineLowerBounds = ctx.cst.lowerBounds
 
         let allBodies = (cases |> List.map snd) @ [ otherwise ]
         let branchEnvs = ResizeArray<Env>()
@@ -974,6 +999,7 @@ and analyzeStmtIr
         let branchDimEquivs = ResizeArray<DimEquiv.DimEquiv>()
         let branchRanges = ResizeArray<Map<string, SharedTypes.Interval>>()
         let branchUpperBoundsAcc = ResizeArray<Map<string, string * int>>()
+        let branchLowerBoundsAcc = ResizeArray<Map<string, string * int>>()
         let returnedFlags = ResizeArray<bool>()
         let mutable deferredFlow : ControlFlow option = None
 
@@ -987,6 +1013,7 @@ and analyzeStmtIr
             for kv in baselineDimEquiv.concrete do ctx.cst.dimEquiv.concrete.[kv.Key] <- kv.Value
             ctx.cst.valueRanges <- baselineRanges
             ctx.cst.upperBounds <- baselineUpperBounds
+            ctx.cst.lowerBounds <- baselineLowerBounds
 
             let isCase = caseIdx < cases.Length
             if isCase then
@@ -1028,12 +1055,13 @@ and analyzeStmtIr
             branchDimEquivs.Add(DimEquiv.snapshot ctx.cst.dimEquiv)
             branchRanges.Add(ctx.cst.valueRanges)
             branchUpperBoundsAcc.Add(ctx.cst.upperBounds)
+            branchLowerBoundsAcc.Add(ctx.cst.lowerBounds)
             returnedFlags.Add(returned)
 
         joinBranchResults
-            env ctx baselineConstraints baselineDimEquiv baselineRanges baselineUpperBounds
+            env ctx baselineConstraints baselineDimEquiv baselineRanges baselineUpperBounds baselineLowerBounds
             (Seq.toList branchEnvs) (Seq.toList branchConstraints) (Seq.toList branchDimEquivs)
-            (Seq.toList branchRanges) (Seq.toList branchUpperBoundsAcc)
+            (Seq.toList branchRanges) (Seq.toList branchUpperBoundsAcc) (Seq.toList branchLowerBoundsAcc)
             (Seq.toList returnedFlags) deferredFlow
 
     | Try({ line = tryLine }, tryBody, catchBody) ->
@@ -1043,6 +1071,7 @@ and analyzeStmtIr
         let baselineDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
         let baselineRanges = ctx.cst.valueRanges
         let baselineUpperBounds = ctx.cst.upperBounds
+        let baselineLowerBounds = ctx.cst.lowerBounds
         let preTryEnv = Env.copy env
 
         let tryEnv = Env.copy env
@@ -1056,6 +1085,7 @@ and analyzeStmtIr
         let tryDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
         let tryRanges = ctx.cst.valueRanges
         let tryUpperBounds = ctx.cst.upperBounds
+        let tryLowerBounds = ctx.cst.lowerBounds
 
         ctx.cst.constraints <- baselineConstraints
         ctx.cst.dimEquiv.parent.Clear()
@@ -1066,6 +1096,7 @@ and analyzeStmtIr
         for kv in baselineDimEquiv.concrete do ctx.cst.dimEquiv.concrete.[kv.Key] <- kv.Value
         ctx.cst.valueRanges <- baselineRanges
         ctx.cst.upperBounds <- baselineUpperBounds
+        ctx.cst.lowerBounds <- baselineLowerBounds
 
         let catchEnv = Env.copy preTryEnv
         let catchFlow = runStmts catchBody catchEnv warnings ctx
@@ -1078,12 +1109,13 @@ and analyzeStmtIr
         let catchDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
         let catchRanges = ctx.cst.valueRanges
         let catchUpperBounds = ctx.cst.upperBounds
+        let catchLowerBounds = ctx.cst.lowerBounds
 
         joinBranchResults
-            env ctx baselineConstraints baselineDimEquiv baselineRanges baselineUpperBounds
+            env ctx baselineConstraints baselineDimEquiv baselineRanges baselineUpperBounds baselineLowerBounds
             [tryEnv; catchEnv] [tryConstraints; catchConstraints]
             [tryDimEquiv; catchDimEquiv]
-            [tryRanges; catchRanges] [tryUpperBounds; catchUpperBounds]
+            [tryRanges; catchRanges] [tryUpperBounds; catchUpperBounds] [tryLowerBounds; catchLowerBounds]
             [tryReturned; catchReturned] deferredFlow
 
     | OpaqueStmt({ line = line }, targets, raw) ->
@@ -1429,6 +1461,7 @@ and analyzeLoopBody
     if not ctx.call.fixpoint then
         // Pentagon bridge: tighten loop var interval before body analysis
         Intervals.applyPentagonBridge ctx
+        Intervals.applyPentagonLowerBridge ctx
         runStmts body env warnings ctx |> ignore
     else
         // Snapshot value ranges before loop body (persistent map: O(1) snapshot)
@@ -1456,6 +1489,7 @@ and analyzeLoopBody
         let preLoopEnv = Env.copy env
         // Pentagon bridge: tighten loop var interval before body analysis
         Intervals.applyPentagonBridge ctx
+        Intervals.applyPentagonLowerBridge ctx
         runStmts body env warnings ctx |> ignore
 
         // Widen shapes
@@ -1474,6 +1508,7 @@ and analyzeLoopBody
         if shapesChanged || intervalsChanged then
             // Pentagon bridge: re-tighten before Phase 2 body re-analysis
             Intervals.applyPentagonBridge ctx
+            Intervals.applyPentagonLowerBridge ctx
             runStmts body env warnings ctx |> ignore
 
         // Widen intervals again before post-loop join (mirrors finalWidened for shapes).
@@ -1500,6 +1535,7 @@ and analyzeLoopBody
         let throwawayWarnings = ResizeArray<Diagnostic>()
         // Pentagon bridge: re-tighten before narrowing pass
         Intervals.applyPentagonBridge ctx
+        Intervals.applyPentagonLowerBridge ctx
         runStmts body env throwawayWarnings ctx |> ignore
         ctx.cst.valueRanges <- narrowValueRanges preNarrowRanges ctx.cst.valueRanges loopVar
         restoreStableRanges ()

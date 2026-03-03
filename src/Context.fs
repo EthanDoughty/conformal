@@ -136,6 +136,8 @@ type ConstraintContext() =
     member val coderMode    : bool = false with get, set
     /// Pentagon upper-bound map: var -> (boundVar, offset) means var ≤ boundVar + offset
     member val upperBounds  : Map<string, string * int> = Map.empty with get, set
+    /// Pentagon lower-bound map: var -> (boundVar, offset) means var ≥ boundVar + offset
+    member val lowerBounds  : Map<string, string * int> = Map.empty with get, set
     /// Set of variable names declared global in the current function scope.
     /// Saved/restored by SnapshotScope (function-scoped).
     member val globalDeclaredVars : System.Collections.Generic.HashSet<string>
@@ -175,6 +177,7 @@ type AnalysisContext() =
         let savedScalars      = this.cst.scalarBindings
         let savedRanges       = this.cst.valueRanges
         let savedUpperBounds  = this.cst.upperBounds
+        let savedLowerBounds  = this.cst.lowerBounds
         let savedNested       = System.Collections.Generic.Dictionary<string, FunctionSignature>(this.call.nestedFunctionRegistry)
         let savedDimEquiv     = DimEquiv.snapshot this.cst.dimEquiv
         // globalDeclaredVars is function-scoped: save and restore so each function body
@@ -190,6 +193,7 @@ type AnalysisContext() =
             this.cst.scalarBindings      <- savedScalars
             this.cst.valueRanges         <- savedRanges
             this.cst.upperBounds         <- savedUpperBounds
+            this.cst.lowerBounds         <- savedLowerBounds
             this.call.nestedFunctionRegistry.Clear()
             for kv in savedNested do this.call.nestedFunctionRegistry.[kv.Key] <- kv.Value
             // Restore DimEquiv by replacing the store contents

@@ -688,11 +688,15 @@ and private evalIndexing
                     let fmt = $"[{iv.lo}, {iv.hi}]"
                     let dimStr = string ms
                     // Pentagon suppression: if index var has relational bound matching dim, suppress.
-                    let suppressedByPentagon =
+                    let suppressedByUpperPentagon =
                         match idxExpr with
                         | Var(_, varName) -> Intervals.pentagonProvesInBounds ctx varName m
                         | _ -> false
-                    if not suppressedByPentagon then
+                    let suppressedByLowerPentagon =
+                        match idxExpr with
+                        | Var(_, varName) -> Intervals.pentagonProvesLowerBound ctx varName
+                        | _ -> false
+                    if not suppressedByUpperPentagon then
                         match iv.lo, iv.hi with
                         | Finite lo, _ when lo > ms ->
                             warnings.Add(warnIndexOutOfBounds line fmt dimStr true)
@@ -700,7 +704,7 @@ and private evalIndexing
                             warnings.Add(warnIndexOutOfBounds line fmt dimStr true)
                         | _, Finite hi when hi > ms ->
                             warnings.Add(warnIndexOutOfBounds line fmt dimStr false)
-                        | Finite lo, _ when lo < 1 ->
+                        | Finite lo, _ when lo < 1 && not suppressedByLowerPentagon ->
                             warnings.Add(warnIndexOutOfBounds line fmt dimStr false)
                         | _ -> ()
                 | None -> ()
@@ -714,11 +718,15 @@ and private evalIndexing
                     let fmt = $"[{iv.lo}, {iv.hi}]"
                     let dimStr = string ns
                     // Pentagon suppression: if index var has relational bound matching dim, suppress.
-                    let suppressedByPentagon =
+                    let suppressedByUpperPentagon =
                         match idxExpr with
                         | Var(_, varName) -> Intervals.pentagonProvesInBounds ctx varName n
                         | _ -> false
-                    if not suppressedByPentagon then
+                    let suppressedByLowerPentagon =
+                        match idxExpr with
+                        | Var(_, varName) -> Intervals.pentagonProvesLowerBound ctx varName
+                        | _ -> false
+                    if not suppressedByUpperPentagon then
                         match iv.lo, iv.hi with
                         | Finite lo, _ when lo > ns ->
                             warnings.Add(warnIndexOutOfBounds line fmt dimStr true)
@@ -726,7 +734,7 @@ and private evalIndexing
                             warnings.Add(warnIndexOutOfBounds line fmt dimStr true)
                         | _, Finite hi when hi > ns ->
                             warnings.Add(warnIndexOutOfBounds line fmt dimStr false)
-                        | Finite lo, _ when lo < 1 ->
+                        | Finite lo, _ when lo < 1 && not suppressedByLowerPentagon ->
                             warnings.Add(warnIndexOutOfBounds line fmt dimStr false)
                         | _ -> ()
                 | None -> ()
