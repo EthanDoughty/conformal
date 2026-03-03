@@ -953,6 +953,21 @@ and analyzeStmtIr
                     when v = System.Math.Floor(v) && not (System.Double.IsInfinity v) ->
                     let refinements = [ (varName, "==", Shapes.Concrete (int v)) ]
                     Intervals.applyRefinements ctx refinements false
+                | Some varName, Ir.CellLit(_, rows) ->
+                    // Extract all integer constants from the cell literal and apply hull [min, max].
+                    let constants =
+                        rows |> List.collect id
+                        |> List.choose (fun e ->
+                            match e with
+                            | Ir.Const(_, v) when v = System.Math.Floor(v)
+                                                   && not (System.Double.IsInfinity v) -> Some (int v)
+                            | _ -> None)
+                    if constants.Length > 0 then
+                        let lo = List.min constants
+                        let hi = List.max constants
+                        let refinements = [ (varName, ">=", Shapes.Concrete lo)
+                                            (varName, "<=", Shapes.Concrete hi) ]
+                        Intervals.applyRefinements ctx refinements false
                 | _ -> ()
 
             let branchEnv = Env.copy env
