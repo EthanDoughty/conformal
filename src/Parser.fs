@@ -658,7 +658,12 @@ type MatlabParser(tokenList: Token list) =
         let mutable varNames: string list = []
         while this.Current().kind = "ID" do
             varNames <- varNames @ [this.Eat("ID").value]
-        let rawText = "global " + String.concat " " varNames
+        let rawText = kwTok.value + " " + String.concat " " varNames
+        // Consume trailing semicolon or newline so the caller doesn't see a stray token.
+        if not (this.AtEnd()) then
+            let cur = this.Current()
+            if cur.kind = "NEWLINE" then pos <- pos + 1
+            elif cur.value = ";" then pos <- pos + 1
         OpaqueStmt(loc kwTok.line kwTok.col, varNames, rawText)
 
     member private this.ParseWhile() : Stmt =

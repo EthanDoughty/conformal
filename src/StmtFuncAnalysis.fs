@@ -1021,6 +1021,24 @@ and analyzeStmtIr
 
     | OpaqueStmt({ line = line }, targets, raw) ->
         let firstWord = if raw.Trim() = "" then "" else raw.Trim().Split([| ' '; '\t'; ':' |]).[0]
+        if firstWord = "global" then
+            // Bind each declared global from the shared globalStore (or Bottom if unseen).
+            // Record in globalDeclaredVars so the function exit can write shapes back.
+            for varName in targets do
+                match ctx.call.globalStore.TryGetValue(varName) with
+                | true, existingShape -> Env.set env varName existingShape
+                | false, _            -> Env.set env varName Bottom
+                ctx.cst.globalDeclaredVars.Add(varName) |> ignore
+            Normal
+        elif firstWord = "persistent" then
+            // Persistent vars are local to a function but initialised to Bottom.
+            // The common "if isempty(x), x = init; end" pattern then gives the shape.
+            for varName in targets do
+                // Only initialise to Bottom on first encounter (don't overwrite shape).
+                if not (Env.contains env varName) then
+                    Env.set env varName Bottom
+            Normal
+        else
         if not (Set.contains firstWord SUPPRESSED_CMD_STMTS) then
             warnings.Add(warnUnsupportedStmt line raw targets)
         for targetName in targets do Env.set env targetName UnknownShape
@@ -1503,6 +1521,12 @@ and analyzeFunctionCall
                     // Analyze function body
                     runStmts sig_.body funcEnv funcWarnings ctx |> ignore
 
+                    // Write-back: flush global variable shapes to globalStore
+                    for varName in ctx.cst.globalDeclaredVars do
+                        let finalShape = Env.get funcEnv varName
+                        if not (isBottom finalShape) then
+                            ctx.call.globalStore.[varName] <- finalShape
+
                     // Extract return values
                     let resultShapes =
                         sig_.outputVars
@@ -1511,7 +1535,10 @@ and analyzeFunctionCall
                             if isBottom shape then UnknownShape else shape)
                     let result = if resultShapes.IsEmpty then [ UnknownShape ] else resultShapes
 
-                    ctx.call.analysisCache.[cacheKey] <- FunctionResult(result, Seq.toList funcWarnings)
+                    // Only cache if function does not declare globals
+                    // (globals change between call sites, so caching is unsound)
+                    if ctx.cst.globalDeclaredVars.Count = 0 then
+                        ctx.call.analysisCache.[cacheKey] <- FunctionResult(result, Seq.toList funcWarnings)
 
                     for fw in funcWarnings do
                         warnings.Add(formatDualLocationWarning fw funcName line)
@@ -1613,6 +1640,12 @@ and analyzeNestedFunctionCall
                         if not (Set.contains kv.Key paramSet) && Env.contains parentEnv kv.Key then
                             Env.set parentEnv kv.Key kv.Value
 
+                    // Write-back: flush global variable shapes to globalStore
+                    for varName in ctx.cst.globalDeclaredVars do
+                        let finalShape = Env.get funcEnv varName
+                        if not (isBottom finalShape) then
+                            ctx.call.globalStore.[varName] <- finalShape
+
                     let resultShapes =
                         sig_.outputVars
                         |> List.map (fun outVar ->
@@ -1620,7 +1653,9 @@ and analyzeNestedFunctionCall
                             if isBottom shape then UnknownShape else shape)
                     let result = if resultShapes.IsEmpty then [ UnknownShape ] else resultShapes
 
-                    ctx.call.analysisCache.[cacheKey] <- FunctionResult(result, Seq.toList funcWarnings)
+                    // Only cache if function does not declare globals
+                    if ctx.cst.globalDeclaredVars.Count = 0 then
+                        ctx.call.analysisCache.[cacheKey] <- FunctionResult(result, Seq.toList funcWarnings)
 
                     for fw in funcWarnings do
                         warnings.Add(formatDualLocationWarning fw funcName line)
@@ -1717,6 +1752,12 @@ and analyzeExternalFunctionCall
 
                 runStmts primarySig.body funcEnv funcWarnings ctx |> ignore
 
+                // Write-back: flush global variable shapes to globalStore
+                for varName in ctx.cst.globalDeclaredVars do
+                    let finalShape = Env.get funcEnv varName
+                    if not (isBottom finalShape) then
+                        ctx.call.globalStore.[varName] <- finalShape
+
                 let resultShapes =
                     primarySig.outputVars
                     |> List.map (fun outVar ->
@@ -1724,7 +1765,9 @@ and analyzeExternalFunctionCall
                         if isBottom shape then UnknownShape else shape)
                 let result = if resultShapes.IsEmpty then [ UnknownShape ] else resultShapes
 
-                ctx.call.analysisCache.[cacheKey] <- FunctionResult(result, [])
+                // Only cache if function does not declare globals
+                if ctx.cst.globalDeclaredVars.Count = 0 then
+                    ctx.call.analysisCache.[cacheKey] <- FunctionResult(result, [])
                 result)
         finally
             ctx.call.functionRegistry <- savedRegistry
