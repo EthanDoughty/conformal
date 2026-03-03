@@ -383,7 +383,7 @@ type MatlabParser(tokenList: Token list) =
         let funcTok = this.Eat("FUNCTION")
         let line = funcTok.line
         let col = funcTok.col
-        let mutable outputVars: string list = []
+        let outputVars = ResizeArray<string>()
         let mutable name = ""
         let mutable hasParens = true
 
@@ -395,8 +395,7 @@ type MatlabParser(tokenList: Token list) =
                 this.Eat("(") |> ignore
             elif lookahead.value = "=" then
                 // Single return: function result = name(args)
-                let outVar = this.Eat("ID").value
-                outputVars <- [outVar]
+                outputVars.Add(this.Eat("ID").value)
                 this.Eat("=") |> ignore
                 name <- this.Eat("ID").value
                 if this.Current().value = "(" then this.Eat("(") |> ignore
@@ -414,10 +413,10 @@ type MatlabParser(tokenList: Token list) =
             if this.Current().value = "]" then
                 this.Eat("]") |> ignore
             else
-                outputVars <- [this.Eat("ID").value]
+                outputVars.Add(this.Eat("ID").value)
                 while this.Current().value = "," || this.Current().kind = "ID" do
                     if this.Current().value = "," then this.Eat(",") |> ignore
-                    outputVars <- outputVars @ [this.Eat("ID").value]
+                    outputVars.Add(this.Eat("ID").value)
                 this.Eat("]") |> ignore
             this.Eat("=") |> ignore
             name <- this.Eat("ID").value
@@ -427,17 +426,17 @@ type MatlabParser(tokenList: Token list) =
             raise (ParseError("Expected function output or name at " + string (this.Current().pos)))
 
         // Parameters
-        let mutable parms: string list = []
+        let parms = ResizeArray<string>()
         if hasParens then
             let eatParam () =
                 if this.Current().value = "~" then
                     this.Eat("~") |> ignore; "~"
                 else this.Eat("ID").value
             if this.Current().value <> ")" then
-                parms <- [eatParam ()]
+                parms.Add(eatParam ())
                 while this.Current().value = "," do
                     this.Eat(",") |> ignore
-                    parms <- parms @ [eatParam ()]
+                    parms.Add(eatParam ())
             this.Eat(")") |> ignore
 
         // Skip newline/semicolon after signature
@@ -452,7 +451,7 @@ type MatlabParser(tokenList: Token list) =
                 this.Eat("END") |> ignore
                 b
 
-        FunctionDef(loc line col, name, parms, outputVars, body)
+        FunctionDef(loc line col, name, Seq.toList parms, Seq.toList outputVars, body)
 
     // -------------------------------------------------------------------
     // Statements
@@ -510,15 +509,16 @@ type MatlabParser(tokenList: Token list) =
                         let nextId = this.Eat("ID").value
                         tname <- $"{tname}.{nextId}"
                     tname
-            let mutable targets = [eatTarget ()]
+            let targets = ResizeArray<string>()
+            targets.Add(eatTarget ())
             while this.Current().value = "," || this.Current().kind = "ID" || this.Current().value = "~" do
                 if this.Current().value = "," then this.Eat(",") |> ignore
-                targets <- targets @ [eatTarget ()]
+                targets.Add(eatTarget ())
             this.Eat("]") |> ignore
             if this.Current().value = "=" then
                 let eqTok = this.Eat("=")
                 let expr = this.ParseExpr(0, false, true)
-                AssignMulti(loc eqTok.line eqTok.col, targets, expr)
+                AssignMulti(loc eqTok.line eqTok.col, Seq.toList targets, expr)
             else
                 pos <- savedPos
                 let expr = this.ParseExpr(0, false, true)
@@ -655,16 +655,17 @@ type MatlabParser(tokenList: Token list) =
     member private this.ParseGlobal() : Stmt =
         let kwTok = tokens.[pos]
         pos <- pos + 1
-        let mutable varNames: string list = []
+        let varNames = ResizeArray<string>()
         while this.Current().kind = "ID" do
-            varNames <- varNames @ [this.Eat("ID").value]
-        let rawText = kwTok.value + " " + String.concat " " varNames
+            varNames.Add(this.Eat("ID").value)
+        let varNamesList = Seq.toList varNames
+        let rawText = kwTok.value + " " + String.concat " " varNamesList
         // Consume trailing semicolon or newline so the caller doesn't see a stray token.
         if not (this.AtEnd()) then
             let cur = this.Current()
             if cur.kind = "NEWLINE" then pos <- pos + 1
             elif cur.value = ";" then pos <- pos + 1
-        OpaqueStmt(loc kwTok.line kwTok.col, varNames, rawText)
+        OpaqueStmt(loc kwTok.line kwTok.col, varNamesList, rawText)
 
     member private this.ParseWhile() : Stmt =
         this.Eat("WHILE") |> ignore
@@ -677,42 +678,43 @@ type MatlabParser(tokenList: Token list) =
         this.Eat("IF") |> ignore
         let cond = this.ParseExpr(0, false, true)
         let thenBody = this.ParseBlock([| "ELSE"; "ELSEIF"; "END" |])
-        let mutable elseifs: (Expr * Stmt list) list = []
+        let elseifs = ResizeArray<Expr * Stmt list>()
         while this.Current().kind = "ELSEIF" do
             this.Eat("ELSEIF") |> ignore
             let elifCond = this.ParseExpr(0, false, true)
             let elifBody = this.ParseBlock([| "ELSE"; "ELSEIF"; "END" |])
-            elseifs <- elseifs @ [(elifCond, elifBody)]
+            elseifs.Add((elifCond, elifBody))
         let skipStmt = ExprStmt(loc 0 0, Const(loc 0 0, 0.0))
         let mutable elseBody = [skipStmt]
         if this.Current().kind = "ELSE" then
             this.Eat("ELSE") |> ignore
             elseBody <- this.ParseBlock([| "END" |])
         this.Eat("END") |> ignore
-        if elseifs.IsEmpty then
+        if elseifs.Count = 0 then
             If(loc cond.Line cond.Col, cond, thenBody, elseBody)
         else
-            let conditions = cond :: (elseifs |> List.map fst)
-            let bodies = thenBody :: (elseifs |> List.map snd)
+            let elseifsList = Seq.toList elseifs
+            let conditions = cond :: (elseifsList |> List.map fst)
+            let bodies = thenBody :: (elseifsList |> List.map snd)
             IfChain(loc cond.Line cond.Col, conditions, bodies, elseBody)
 
     member private this.ParseSwitch() : Stmt =
         this.Eat("SWITCH") |> ignore
         let expr = this.ParseExpr(0, false, true)
         if this.Current().kind = "NEWLINE" then this.Eat("NEWLINE") |> ignore
-        let mutable cases: (Expr * Stmt list) list = []
+        let cases = ResizeArray<Expr * Stmt list>()
         while this.Current().kind = "CASE" do
             this.Eat("CASE") |> ignore
             let caseVal = this.ParseExpr(0, false, true)
             let caseBody = this.ParseBlock([| "CASE"; "OTHERWISE"; "END" |])
-            cases <- cases @ [(caseVal, caseBody)]
+            cases.Add((caseVal, caseBody))
         let skipStmt = ExprStmt(loc 0 0, Const(loc 0 0, 0.0))
         let mutable otherwiseBody = [skipStmt]
         if this.Current().kind = "OTHERWISE" then
             this.Eat("OTHERWISE") |> ignore
             otherwiseBody <- this.ParseBlock([| "END" |])
         this.Eat("END") |> ignore
-        Switch(loc expr.Line expr.Col, expr, cases, otherwiseBody)
+        Switch(loc expr.Line expr.Col, expr, Seq.toList cases, otherwiseBody)
 
     member private this.ParseTry() : Stmt =
         this.Eat("TRY") |> ignore
@@ -776,15 +778,15 @@ type MatlabParser(tokenList: Token list) =
             let next = this.Current()
             if next.value = "(" then
                 this.Eat("(") |> ignore
-                let mutable parms: string list = []
+                let parms = ResizeArray<string>()
                 if this.Current().value <> ")" then
-                    parms <- [this.Eat("ID").value]
+                    parms.Add(this.Eat("ID").value)
                     while this.Current().value = "," do
                         this.Eat(",") |> ignore
-                        parms <- parms @ [this.Eat("ID").value]
+                        parms.Add(this.Eat("ID").value)
                 this.Eat(")") |> ignore
                 let body = this.ParseExpr(0, false, true)
-                Lambda(loc atTok.line atTok.col, parms, body)
+                Lambda(loc atTok.line atTok.col, Seq.toList parms, body)
             elif next.kind = "ID" then
                 let name = this.Eat("ID").value
                 FuncHandle(loc atTok.line atTok.col, name)

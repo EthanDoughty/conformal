@@ -264,24 +264,34 @@ let intervalDefinitelyNegative (iv: Interval option) : bool =
 
 
 /// joinValueRanges: join value_ranges maps across branches (convex hull per variable).
+/// For each variable in the union of baseline and all branches, collect an interval
+/// from each branch (using the baseline as fallback when a branch doesn't mention
+/// the variable), then compute the convex hull.
 let joinValueRanges
     (baseline: Map<string, Interval>)
     (branchRanges: Map<string, Interval> list)
     : Map<string, Interval> =
 
+    // Collect all variable names from baseline AND all branches.
     let allVars =
-        branchRanges
-        |> List.collect (fun br -> br |> Map.toList |> List.map fst)
-        |> List.distinct
+        let branchKeys =
+            branchRanges
+            |> List.collect (fun br -> br |> Map.toList |> List.map fst)
+        let baselineKeys = baseline |> Map.toList |> List.map fst
+        (branchKeys @ baselineKeys) |> List.distinct
 
     List.fold (fun acc var ->
         let intervals =
             branchRanges
-            |> List.choose (fun br ->
+            |> List.map (fun br ->
                 match Map.tryFind var br with
-                | Some iv -> Some (Some iv)
-                | None    -> None)
-        match intervals with
+                | Some iv -> Some iv
+                | None    ->
+                    // Branch didn't modify this variable: use baseline as fallback
+                    Map.tryFind var baseline)
+        // Filter to only branches that produced an interval
+        let present = intervals |> List.choose (fun iv -> match iv with Some i -> Some (Some i) | None -> None)
+        match present with
         | [] -> acc
         | first :: rest ->
             let joined = List.fold joinInterval first rest

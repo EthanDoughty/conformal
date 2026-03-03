@@ -17,6 +17,7 @@ let private expectRe            = Regex(@"%\s*EXPECT:\s*(.+)$",                 
 let private expectFixpointRe    = Regex(@"%\s*EXPECT_FIXPOINT:\s*(.+)$",              RegexOptions.Multiline)
 let private expectWarningsRe    = Regex(@"warnings\s*(=|>=|>|<=|<)\s*(\d+)\s*$",      RegexOptions.IgnoreCase)
 let private expectBindingRe     = Regex(@"([A-Za-z_]\w*)\s*=\s*(.+)$")
+let private skipTestRe           = Regex(@"%\s*SKIP_TEST",                              RegexOptions.Multiline)
 let private modeCoderRe         = Regex(@"%\s*MODE:\s*coder",                          RegexOptions.Multiline)
 let private modeStrictRe        = Regex(@"%\s*MODE:\s*strict",                         RegexOptions.Multiline)
 let private expectWarningRe     = Regex(@"%\s*EXPECT_WARNING:\s*(W_\w+)",              RegexOptions.Multiline)
@@ -351,6 +352,9 @@ let run (strict: bool) (fixpoint: bool) (coder: bool) (quiet: bool) : int =
     let mutable ok    = 0
 
     for path in testFiles do
+        // Skip helper files marked with % SKIP_TEST
+        let firstLine = try File.ReadLines(path) |> Seq.tryHead |> Option.defaultValue "" with _ -> ""
+        if skipTestRe.IsMatch(firstLine) then () else
         total <- total + 1
         // Auto-enable coder mode for tests/coder/ directory
         let inCoderDir = path.StartsWith(coderDir + Path.DirectorySeparatorChar.ToString()) || path = coderDir

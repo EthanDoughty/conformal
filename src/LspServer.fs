@@ -287,7 +287,7 @@ type ConformalLspServer(client: ConformalClient) =
             MonikerProvider           = None
             TypeHierarchyProvider     = None
             InlineValueProvider       = None
-            InlayHintProvider         = None
+            InlayHintProvider         = Some (U3.C1 true)
             DiagnosticProvider        = None
             Workspace                 = None
             Experimental              = None
@@ -480,6 +480,19 @@ type ConformalLspServer(client: ConformalClient) =
                     // TextDocumentDocumentSymbol returns Option<U2<SymbolInformation[], DocumentSymbol[]>>
                     // We return DocumentSymbol[] wrapped in U2.C2
                     return Ok (Some (U2.C2 symbols))
+    }
+
+    override _.TextDocumentInlayHint(p: InlayHintParams) = async {
+        let uri = p.TextDocument.Uri
+        match analysisCache.TryGetValue(uri) with
+        | false, _ -> return Ok None
+        | true, cached ->
+            match cached.irProg with
+            | None -> return Ok None
+            | Some irProg ->
+                let hints = LspInlayHints.getInlayHints irProg cached.env (int p.Range.Start.Line) (int p.Range.End.Line)
+                if hints.Length = 0 then return Ok None
+                else return Ok (Some hints)
     }
 
     override _.WorkspaceDidChangeConfiguration(p: DidChangeConfigurationParams) = async {

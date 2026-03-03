@@ -125,8 +125,7 @@ let runPhase2Test () : int =
     checkBool "W_INNER_DIM_MISMATCH not pro"     false (Set.contains W_INNER_DIM_MISMATCH PRO_ONLY_CODES)
 
     Console.WriteLine("=== Phase 2: KNOWN_BUILTINS ===")
-    // Python KNOWN_BUILTINS has 323 entries (count from source)
-    let expectedCount = 323
+    let expectedCount = 632
     let actualCount   = KNOWN_BUILTINS.Count
     check "KNOWN_BUILTINS count" (string expectedCount) (string actualCount)
     checkBool "zeros in builtins"  true (Set.contains "zeros"  KNOWN_BUILTINS)
@@ -153,7 +152,7 @@ let runPhase2Test () : int =
     let dUnk = warnUnknownFunction 5 "myFunc"
     check "W_UNKNOWN_FUNCTION code"    "W_UNKNOWN_FUNCTION" (codeString dUnk.code)
     check "W_UNKNOWN_FUNCTION line"    "5" (string dUnk.line)
-    check "W_UNKNOWN_FUNCTION message" "Function 'myFunc' is not recognized; treating result as unknown" dUnk.message
+    check "W_UNKNOWN_FUNCTION message" "'myFunc': unrecognized function. Shape assumed unknown." dUnk.message
 
     let dUnsup = warnUnsupportedStmt 3 "parfor" ["x"; "y"]
     check "W_UNSUPPORTED_STMT code"    "W_UNSUPPORTED_STMT" (codeString dUnsup.code)
@@ -162,7 +161,7 @@ let runPhase2Test () : int =
     let dElem = warnElementwiseMismatch 7 ".+" leftE rightE leftS rightS
     check "W_ELEMENTWISE_MISMATCH code" "W_ELEMENTWISE_MISMATCH" (codeString dElem.code)
     check "W_ELEMENTWISE_MISMATCH toString"
-        "W_ELEMENTWISE_MISMATCH line 7: Elementwise .+ mismatch in (A .+ B): matrix[3 x 4] vs matrix[5 x 2]"
+        "W_ELEMENTWISE_MISMATCH line 7: A .+ B: matrix[3 x 4] vs matrix[5 x 2]"
         (diagnosticToString dElem)
 
     Console.WriteLine("=== Phase 2: hasUnsupported ===")

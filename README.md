@@ -4,10 +4,10 @@
 
 ### Static Shape & Dimension Analysis for MATLAB
 
-[![Version](https://img.shields.io/badge/version-2.0.0-orange.svg)](#motivation-and-future-directions)
+[![Version](https://img.shields.io/badge/version-2.8.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4.svg)](https://dotnet.microsoft.com/download)
-[![Tests](https://img.shields.io/badge/tests-431%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-439%20passing-brightgreen.svg)](#test-suite)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
 *Matrices must be **conformable** before they can perform. Conformal makes sure they are.*
@@ -38,6 +38,20 @@ Final environment:
     Env{A: matrix[3 x 4], B: matrix[5 x 2], C: unknown, D: unknown}
 ```
 
+## Screenshots
+
+Inline diagnostics flag dimension mismatches as you type:
+
+![Inline diagnostics](vscode-conformal/images/Conformal_Example_1.png)
+
+Hover any variable to see its inferred shape:
+
+![Hover shape](vscode-conformal/images/Conformal_Example_2.png)
+
+Inlay hints show shapes on first assignment:
+
+![Inlay hints](vscode-conformal/images/Conformal_Example_3.png)
+
 ## Quick Start
 
 **VS Code** (The recommended option): Install Conformal from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal) by searching "Conformal" in Extensions, or run the following command:
@@ -55,7 +69,7 @@ dotnet run -- ../tests/basics/inner_dim_mismatch.m
 
 ## Performance
 
-The single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and the cross-file workspace analysis runs in about 70ms. The full test suite (431 tests total) finishes in about one second, with no MATLAB runtime involved during any part of the process.
+The single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and the cross-file workspace analysis runs in about 70ms. The full test suite (439 tests total) finishes in about one second, with no MATLAB runtime involved during any part of the process.
 
 The VS Code extension runs the analyzer while you are typing code, since it is compiled to JavaScript, using the Fable tool, so there is no subprocess startup cost and analysis works on every keystroke with a 500ms debounce.
 

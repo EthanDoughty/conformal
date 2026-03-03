@@ -44,7 +44,7 @@ cd src && dotnet run -- --lsp
 
 The project has an F# analyzer and a Fable compilation layer for the VS Code extension:
 
-### F# Analyzer (`src/`) — 36 files, ~11.5K lines
+### F# Analyzer (`src/`) — 38 files, ~13.2K lines
 
 Key files:
 - `Ir.fs`: Discriminated unions for Expr and Stmt (the IR)

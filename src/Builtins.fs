@@ -118,7 +118,7 @@ let KNOWN_BUILTINS : Set<string> =
         "mode"; "kurtosis"; "skewness"; "range"
         "normrnd"; "exprnd"; "unifrnd"; "poissrnd"; "chi2rnd"; "binornd"; "betarnd"
         // Batch 6d: Complex handlers
-        "cov"; "corrcoef"; "rot90"; "conv2"; "num2cell"; "jacobian"
+        "cov"; "corrcoef"; "rot90"; "conv2"; "jacobian"
         // Batch 6e: Multi-return handlers
         "pca"; "ind2sub"; "linprog"; "quadprog"
         // Batch 6f: Recognized-only (no shape rules)

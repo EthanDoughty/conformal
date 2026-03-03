@@ -295,17 +295,9 @@ let private refineAccumulation
 let private joinBranchResults
     (env: Env)
     (ctx: AnalysisContext)
-    (baselineConstraints: Set<string * string>)
-    (baselineDimEquiv: DimEquiv.DimEquiv)
-    (baselineRanges: Map<string, SharedTypes.Interval>)
-    (baselineUpperBounds: Map<string, string * int>)
-    (baselineLowerBounds: Map<string, string * int>)
+    (baseline: ConstraintSnapshot)
     (branchEnvs: Env list)
-    (branchConstraints: Set<string * string> list)
-    (branchDimEquivs: DimEquiv.DimEquiv list)
-    (branchRanges: Map<string, SharedTypes.Interval> list)
-    (branchUpperBounds: Map<string, string * int> list)
-    (branchLowerBounds: Map<string, string * int> list)
+    (branchSnapshots: ConstraintSnapshot list)
     (returnedFlags: bool list)
     (deferredFlow: ControlFlow option)
     : ControlFlow =
@@ -315,16 +307,10 @@ let private joinBranchResults
         | Some flow -> flow
         | None -> FlowReturn
     else
-        let liveEnvs          = List.zip branchEnvs returnedFlags |> List.choose (fun (e, r) -> if not r then Some e else None)
-        let liveConstraints   = List.zip branchConstraints returnedFlags |> List.choose (fun (c, r) -> if not r then Some c else None)
-        let liveDimEquivs     = List.zip branchDimEquivs returnedFlags |> List.choose (fun (d, r) -> if not r then Some d else None)
-        let liveRanges        = List.zip branchRanges returnedFlags |> List.choose (fun (vr, r) -> if not r then Some vr else None)
-        let liveUpperBounds   = List.zip branchUpperBounds returnedFlags |> List.choose (fun (ub, r) -> if not r then Some ub else None)
-        let liveLowerBounds   = List.zip branchLowerBounds returnedFlags |> List.choose (fun (lb, r) -> if not r then Some lb else None)
+        let liveEnvs      = List.zip branchEnvs returnedFlags |> List.choose (fun (e, r) -> if not r then Some e else None)
+        let liveSnapshots = List.zip branchSnapshots returnedFlags |> List.choose (fun (s, r) -> if not r then Some s else None)
 
         if not liveEnvs.IsEmpty then
-            let joined = liveEnvs |> List.fold (fun acc e -> joinEnv acc e) liveEnvs.[0]
-            // joinEnv folds from first, so redo properly
             let joinedFinal =
                 match liveEnvs with
                 | [] -> env
@@ -332,7 +318,8 @@ let private joinBranchResults
             Env.replaceLocal env joinedFinal
 
             // Join constraints
-            let joinedConstraints = joinConstraints baselineConstraints liveConstraints
+            let liveConstraints = liveSnapshots |> List.map (fun s -> s.constraints)
+            let joinedConstraints = joinConstraints baseline.constraints liveConstraints
             ctx.cst.constraints <- joinedConstraints
 
             // Provenance pruning: keep only provenance entries for surviving constraints
@@ -343,33 +330,24 @@ let private joinBranchResults
                     | None      -> acc) Map.empty
 
             // Intersect DimEquiv stores: keep equivalences present in ALL live branches
+            let liveDimEquivs = liveSnapshots |> List.map (fun s -> s.dimEquiv)
             let joinedDimEquiv =
                 match liveDimEquivs with
-                | [] -> baselineDimEquiv
+                | [] -> baseline.dimEquiv
                 | first :: rest -> rest |> List.fold DimEquiv.intersect first
-            ctx.cst.dimEquiv.parent.Clear()
-            for kv in joinedDimEquiv.parent do ctx.cst.dimEquiv.parent.[kv.Key] <- kv.Value
-            ctx.cst.dimEquiv.rank.Clear()
-            for kv in joinedDimEquiv.rank do ctx.cst.dimEquiv.rank.[kv.Key] <- kv.Value
-            ctx.cst.dimEquiv.concrete.Clear()
-            for kv in joinedDimEquiv.concrete do ctx.cst.dimEquiv.concrete.[kv.Key] <- kv.Value
-
-            // Join value_ranges
-            ctx.cst.valueRanges <- joinValueRanges baselineRanges liveRanges
-
-            // Pentagon: intersect upper-bound maps across live branches
-            let joinedUpperBounds =
-                match liveUpperBounds with
-                | [] -> baselineUpperBounds
-                | first :: rest -> rest |> List.fold Intervals.joinUpperBounds first
-            ctx.cst.upperBounds <- joinedUpperBounds
-
-            // Pentagon: intersect lower-bound maps across live branches
-            let joinedLowerBounds =
-                match liveLowerBounds with
-                | [] -> baselineLowerBounds
-                | first :: rest -> rest |> List.fold Intervals.joinLowerBounds first
-            ctx.cst.lowerBounds <- joinedLowerBounds
+            ctx.RestoreConstraintState({
+                constraints = joinedConstraints
+                dimEquiv    = joinedDimEquiv
+                valueRanges = joinValueRanges baseline.valueRanges (liveSnapshots |> List.map (fun s -> s.valueRanges))
+                upperBounds =
+                    match liveSnapshots |> List.map (fun s -> s.upperBounds) with
+                    | [] -> baseline.upperBounds
+                    | first :: rest -> rest |> List.fold Intervals.joinUpperBounds first
+                lowerBounds =
+                    match liveSnapshots |> List.map (fun s -> s.lowerBounds) with
+                    | [] -> baseline.lowerBounds
+                    | first :: rest -> rest |> List.fold Intervals.joinLowerBounds first
+            })
 
         Normal
 
@@ -469,6 +447,28 @@ let private tryLoadExternalClassdef
 
 
 // ---------------------------------------------------------------------------
+// Call resolution: unified dispatch priority for function name resolution
+// ---------------------------------------------------------------------------
+
+type CallResolution =
+    | BuiltinCall
+    | UserFunctionCall of FunctionSignature
+    | NestedFunctionCall of FunctionSignature
+    | ExternalFunctionCall of ExternalSignature
+    | ClassConstructorCall of ClassInfo
+    | ExternalClassdefCall of ClassInfo
+    | UnknownCall
+
+/// Bundled call-site parameters shared by analyzeFunctionCall, analyzeNestedFunctionCall,
+/// and analyzeExternalFunctionCall. Env, warnings, and ctx stay separate.
+type CallConfig = {
+    fname:      string
+    args:       IndexArg list
+    line:       int
+    numTargets: int
+}
+
+// ---------------------------------------------------------------------------
 // Wired eval functions (break circular dependency EvalExpr <-> StmtFuncAnalysis)
 // ---------------------------------------------------------------------------
 
@@ -480,6 +480,78 @@ let rec wiredEvalExpr
     (ctx: AnalysisContext)
     : Shape =
     evalExprIr expr env warnings ctx None wiredBuiltinDispatch
+
+/// resolveCall: determine dispatch target for a function name.
+/// Priority: builtin > same-file function > nested function > external function
+///         > class constructor > external classdef > unknown.
+and private resolveCall (fname: string) (ctx: AnalysisContext) : CallResolution =
+    if Set.contains fname KNOWN_BUILTINS then BuiltinCall
+    elif ctx.call.functionRegistry.ContainsKey(fname) then
+        UserFunctionCall(ctx.call.functionRegistry.[fname])
+    elif ctx.call.nestedFunctionRegistry.ContainsKey(fname) then
+        NestedFunctionCall(ctx.call.nestedFunctionRegistry.[fname])
+    elif ctx.ws.externalFunctions.ContainsKey(fname) then
+        ExternalFunctionCall(ctx.ws.externalFunctions.[fname])
+    elif ctx.call.classRegistry.ContainsKey(fname) then
+        ClassConstructorCall(ctx.call.classRegistry.[fname])
+    else
+        match tryLoadExternalClassdef fname ctx with
+        | Some classInfo -> ExternalClassdefCall(classInfo)
+        | None -> UnknownCall
+
+/// makeClassConstructorShape: build Struct shape from a class constructor call.
+/// If the class has a user-defined constructor in functionRegistry, analyze it
+/// and merge declared properties with analyzed fields.
+and private makeClassConstructorShape
+    (cc: CallConfig) (classInfo: ClassInfo) (env: Env)
+    (warnings: ResizeArray<Diagnostic>) (ctx: AnalysisContext)
+    : Shape =
+    if ctx.call.functionRegistry.ContainsKey(cc.fname) then
+        let outputShapes = analyzeFunctionCall cc env warnings ctx
+        let baseShape = if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
+        match baseShape with
+        | Struct(fields, isOpen) ->
+            let fieldMap = Map.ofList fields
+            let allFields =
+                classInfo.properties |> List.map (fun p ->
+                    (p, defaultArg (Map.tryFind p fieldMap) UnknownShape))
+                |> List.sortBy fst
+            Struct(allFields, isOpen)
+        | _ ->
+            let allFields = classInfo.properties |> List.map (fun p -> (p, UnknownShape)) |> List.sortBy fst
+            Struct(allFields, false)
+    else
+        let allFields = classInfo.properties |> List.map (fun p -> (p, UnknownShape)) |> List.sortBy fst
+        Struct(allFields, false)
+
+/// Extract the target dimension from size(argShape, dimIdx).
+and private resolveSizeDim (argShape: Shape) (dimIdx: Dim) : Dim option =
+    match argShape, dimIdx with
+    | Matrix(rowDim, _), Concrete 1 -> Some rowDim
+    | Matrix(_, colDim), Concrete 2 -> Some colDim
+    | _ -> None
+
+/// Apply size() DimEquiv aliasing for targetName linked to source dimension dim.
+/// Unions targetName with dim in DimEquiv. For Concrete dims, also calls setConcrete.
+/// For Symbolic dims, adds to dimAliases.
+/// When applyNow=true, immediately sets valueRanges and calls bridgeToDimEquiv for Concrete.
+/// Returns Some(exact interval) for Concrete dims, None otherwise.
+and private applySizeAlias
+    (ctx: AnalysisContext) (env: Env) (targetName: string) (dim: Dim) (applyNow: bool)
+    : Interval option =
+    DimEquiv.union ctx.cst.dimEquiv targetName (Shapes.dimStr dim) |> ignore
+    match dim with
+    | Concrete n ->
+        DimEquiv.setConcrete ctx.cst.dimEquiv targetName n |> ignore
+        let exact = { lo = Finite n; hi = Finite n }
+        if applyNow then
+            ctx.cst.valueRanges <- Map.add targetName exact ctx.cst.valueRanges
+            Intervals.bridgeToDimEquiv ctx targetName exact
+        Some exact
+    | Symbolic _ ->
+        env.dimAliases <- Map.add targetName dim env.dimAliases
+        None
+    | _ -> None
 
 and private wiredBuiltinDispatch
     (fname: string)
@@ -493,53 +565,29 @@ and private wiredBuiltinDispatch
     ignore baseExpr
     if ctx.cst.coderMode && Set.contains fname CODER_UNSUPPORTED_BUILTINS then
         warnings.Add(warnCoderUnsupportedBuiltin line fname)
-    if Set.contains fname KNOWN_BUILTINS then
+    let cc1 = { fname = fname; args = args; line = line; numTargets = 1 }
+    match resolveCall fname ctx with
+    | BuiltinCall ->
         evalBuiltinCall fname line args env warnings ctx wiredEvalExprFull wiredGetInterval
-    elif ctx.call.functionRegistry.ContainsKey(fname) then
-        let sig_ = ctx.call.functionRegistry.[fname]
-        if sig_.outputVars.IsEmpty then
-            warnings.Add(warnProcedureInExpr line fname)
-        let outputShapes = analyzeFunctionCall fname args line env warnings ctx 1
+    | UserFunctionCall sig_ ->
+        if sig_.outputVars.IsEmpty then warnings.Add(warnProcedureInExpr line fname)
+        let outputShapes = analyzeFunctionCall cc1 env warnings ctx
         if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
-    elif ctx.call.nestedFunctionRegistry.ContainsKey(fname) then
-        let sig_ = ctx.call.nestedFunctionRegistry.[fname]
-        if sig_.outputVars.IsEmpty then
-            warnings.Add(warnProcedureInExpr line fname)
-        let outputShapes = analyzeNestedFunctionCall fname args line env warnings ctx 1
+    | NestedFunctionCall sig_ ->
+        if sig_.outputVars.IsEmpty then warnings.Add(warnProcedureInExpr line fname)
+        let outputShapes = analyzeNestedFunctionCall cc1 env warnings ctx
         if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
-    elif ctx.ws.externalFunctions.ContainsKey(fname) then
-        // External functions: no W_PROCEDURE_IN_EXPR (only applies to same-file functions)
-        let extSig = ctx.ws.externalFunctions.[fname]
-        let outputShapes = analyzeExternalFunctionCall fname extSig args line env warnings ctx 1
+    | ExternalFunctionCall extSig ->
+        let outputShapes = analyzeExternalFunctionCall cc1 extSig env warnings ctx
         if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
-    elif ctx.call.classRegistry.ContainsKey(fname) then
-        // Constructor call: return Struct with declared properties
-        let classInfo = ctx.call.classRegistry.[fname]
-        if ctx.call.functionRegistry.ContainsKey(fname) then
-            let outputShapes = analyzeFunctionCall fname args line env warnings ctx 1
-            let baseShape = if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
-            match baseShape with
-            | Struct(fields, isOpen) ->
-                let fieldMap = Map.ofList fields
-                let allFields =
-                    classInfo.properties |> List.map (fun p ->
-                        (p, defaultArg (Map.tryFind p fieldMap) UnknownShape))
-                Struct(allFields, isOpen)
-            | _ ->
-                let allFields = classInfo.properties |> List.map (fun p -> (p, UnknownShape))
-                Struct(allFields, false)
-        else
-            let allFields = classInfo.properties |> List.map (fun p -> (p, UnknownShape))
-            Struct(allFields, false)
-    else
-        // Lazy-load external classdef if available
-        match tryLoadExternalClassdef fname ctx with
-        | Some classInfo ->
-            let allFields = classInfo.properties |> List.map (fun p -> (p, UnknownShape))
-            Struct(allFields, false)
-        | None ->
-            warnings.Add(warnUnknownFunction line fname)
-            UnknownShape
+    | ClassConstructorCall classInfo ->
+        makeClassConstructorShape cc1 classInfo env warnings ctx
+    | ExternalClassdefCall classInfo ->
+        let allFields = classInfo.properties |> List.map (fun p -> (p, UnknownShape)) |> List.sortBy fst
+        Struct(allFields, false)
+    | UnknownCall ->
+        warnings.Add(warnUnknownFunction line fname)
+        UnknownShape
 
 and private wiredGetInterval
     (expr: Expr)
@@ -561,64 +609,16 @@ and private wiredEvalExprFull
     : Shape =
     match expr with
     | Apply({ line = line }, Var(_, fname), args) ->
-        // Determine dispatch priority
         let varShape = Env.get env fname
         if isFunctionHandle varShape then
-            // Priority 1: function handle variable
+            // Function handle variable: delegate to evalExprIr handle dispatch
             evalExprIr expr env warnings ctx None wiredBuiltinDispatch
-        elif Set.contains fname KNOWN_BUILTINS then
-            // Priority 2: builtin
-            wiredBuiltinDispatch fname line (Var(loc line 0, fname)) args env warnings ctx
-        elif not (Env.hasLocal env fname) then
-            // Priority 3-5: unbound — user function, nested, external, or unknown
-            if ctx.call.functionRegistry.ContainsKey(fname) then
-                let sig_ = ctx.call.functionRegistry.[fname]
-                if sig_.outputVars.IsEmpty then
-                    warnings.Add(warnProcedureInExpr line fname)
-                let outputShapes = analyzeFunctionCall fname args line env warnings ctx 1
-                if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
-            elif ctx.call.nestedFunctionRegistry.ContainsKey(fname) then
-                let sig_ = ctx.call.nestedFunctionRegistry.[fname]
-                if sig_.outputVars.IsEmpty then
-                    warnings.Add(warnProcedureInExpr line fname)
-                let outputShapes = analyzeNestedFunctionCall fname args line env warnings ctx 1
-                if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
-            elif ctx.ws.externalFunctions.ContainsKey(fname) then
-                // External functions: no W_PROCEDURE_IN_EXPR (only applies to same-file functions)
-                let extSig = ctx.ws.externalFunctions.[fname]
-                let outputShapes = analyzeExternalFunctionCall fname extSig args line env warnings ctx 1
-                if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
-            elif ctx.call.classRegistry.ContainsKey(fname) then
-                // Constructor call: return Struct with declared properties
-                let classInfo = ctx.call.classRegistry.[fname]
-                if ctx.call.functionRegistry.ContainsKey(fname) then
-                    let outputShapes = analyzeFunctionCall fname args line env warnings ctx 1
-                    let baseShape = if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
-                    match baseShape with
-                    | Struct(fields, isOpen) ->
-                        let fieldMap = Map.ofList fields
-                        let allFields =
-                            classInfo.properties |> List.map (fun p ->
-                                (p, defaultArg (Map.tryFind p fieldMap) UnknownShape))
-                        Struct(allFields, isOpen)
-                    | _ ->
-                        let allFields = classInfo.properties |> List.map (fun p -> (p, UnknownShape))
-                        Struct(allFields, false)
-                else
-                    let allFields = classInfo.properties |> List.map (fun p -> (p, UnknownShape))
-                    Struct(allFields, false)
-            else
-                // Lazy-load external classdef if available
-                match tryLoadExternalClassdef fname ctx with
-                | Some classInfo ->
-                    let allFields = classInfo.properties |> List.map (fun p -> (p, UnknownShape))
-                    Struct(allFields, false)
-                | None ->
-                    warnings.Add(warnUnknownFunction line fname)
-                    UnknownShape
+        elif Env.hasLocal env fname && not (Set.contains fname KNOWN_BUILTINS) then
+            // Bound non-handle, non-builtin variable: treat as indexing
+            evalExprIr expr env warnings ctx None wiredBuiltinDispatch
         else
-            // Priority 6: bound non-handle variable — treat as indexing
-            evalExprIr expr env warnings ctx None wiredBuiltinDispatch
+            // Name-based dispatch via resolveCall (builtins, functions, classes, unknown)
+            wiredBuiltinDispatch fname line (Var(loc line 0, fname)) args env warnings ctx
     | _ ->
         evalExprIr expr env warnings ctx None wiredBuiltinDispatch
 
@@ -656,43 +656,17 @@ and analyzeStmtIr
         ctx.cst.lowerBounds <- Intervals.killLowerBoundsFor name ctx.cst.lowerBounds
 
         // size() dimension aliasing: n = size(A, 1) => union(n, A.rowDim)
-        // Records DimEquiv equivalence for backward propagation.
-        // Also sets dimAliases for Symbolic source dims (so zeros(n,...) resolves inline).
-        // For Concrete source dims, DimEquiv is set here; valueRanges is set after interval
-        // tracking (below) so the concrete value takes precedence over the interval tracking
-        // block, which would otherwise remove the entry (size() returns None from getExprInterval).
+        // applyNow=false: valueRanges deferred until after interval tracking (below).
         let sizeConcreteExact : Interval option =
             match expr with
             | Apply(_, Var(_, "size"), [IndexExpr(_, argExpr); IndexExpr(_, dimArgExpr)]) ->
-                let argVarName =
-                    match argExpr with
-                    | Var(_, n) -> Some n
-                    | _ -> None
                 let argShape =
-                    match argVarName with
-                    | Some n -> Env.get env n
-                    | None -> UnknownShape
+                    match argExpr with
+                    | Var(_, n) -> Env.get env n
+                    | _ -> UnknownShape
                 let dimIdx = exprToDimIrCtx dimArgExpr env (Some ctx)
-                let targetDim =
-                    match argShape, dimIdx with
-                    | Matrix(rowDim, _), Concrete 1 -> Some rowDim
-                    | Matrix(_, colDim), Concrete 2 -> Some colDim
-                    | _ -> None
-                match targetDim with
-                | Some dim when dim <> Unknown ->
-                    let nameKey = name
-                    let dimKey  = Shapes.dimStr dim
-                    DimEquiv.union ctx.cst.dimEquiv nameKey dimKey |> ignore
-                    match dim with
-                    | Concrete n ->
-                        // Concrete dim: record in DimEquiv now; valueRanges set after interval tracking.
-                        DimEquiv.setConcrete ctx.cst.dimEquiv nameKey n |> ignore
-                        Some { lo = Finite n; hi = Finite n }
-                    | Symbolic _ ->
-                        // Symbolic dim: set dimAliases so inline resolution works in builtins.
-                        env.dimAliases <- Map.add name dim env.dimAliases
-                        None
-                    | _ -> None
+                match resolveSizeDim argShape dimIdx with
+                | Some dim when dim <> Unknown -> applySizeAlias ctx env name dim false
                 | _ -> None
             | _ -> None
 
@@ -871,101 +845,56 @@ and analyzeStmtIr
         wiredEvalExprFull cond env warnings ctx |> ignore
 
         let refinements = extractConditionRefinements cond env ctx
-        let baselineConstraints = snapshotConstraints ctx
-        let baselineDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
-        let baselineRanges = ctx.cst.valueRanges
-        let baselineUpperBounds = ctx.cst.upperBounds
-        let baselineLowerBounds = ctx.cst.lowerBounds
+        let baseline = ctx.SnapshotConstraintState()
 
         let thenEnv = Env.copy env
         let elseEnv = Env.copy env
+        let mutable deferredFlow : ControlFlow option = None
 
         // Then branch
         applyRefinements ctx refinements false
         ctx.cst.pathConstraints.Push(cond, true, line)
         let thenFlow = runStmts thenBody thenEnv warnings ctx
         let thenReturned = thenFlow <> Normal
-        // Break/Continue in then-branch: pop pathConstraint and propagate immediately
-        if thenFlow = FlowBreak || thenFlow = FlowContinue then
-            ctx.cst.pathConstraints.Pop()
-            thenFlow
-        else
-
+        match thenFlow with
+        | FlowBreak | FlowContinue -> deferredFlow <- Some thenFlow
+        | _ -> ()
         ctx.cst.pathConstraints.Pop()
-        let thenConstraints = snapshotConstraints ctx
-        let thenDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
-        let thenRanges = ctx.cst.valueRanges
-        let thenUpperBounds = ctx.cst.upperBounds
-        let thenLowerBounds = ctx.cst.lowerBounds
+        let thenSnap = ctx.SnapshotConstraintState()
 
         // Reset to baseline for else branch
-        ctx.cst.constraints <- baselineConstraints
-        ctx.cst.dimEquiv.parent.Clear()
-        for kv in baselineDimEquiv.parent do ctx.cst.dimEquiv.parent.[kv.Key] <- kv.Value
-        ctx.cst.dimEquiv.rank.Clear()
-        for kv in baselineDimEquiv.rank do ctx.cst.dimEquiv.rank.[kv.Key] <- kv.Value
-        ctx.cst.dimEquiv.concrete.Clear()
-        for kv in baselineDimEquiv.concrete do ctx.cst.dimEquiv.concrete.[kv.Key] <- kv.Value
-        ctx.cst.valueRanges <- baselineRanges
-        ctx.cst.upperBounds <- baselineUpperBounds
-        ctx.cst.lowerBounds <- baselineLowerBounds
+        ctx.RestoreConstraintState(baseline)
 
         // Else branch
         applyRefinements ctx refinements true
         ctx.cst.pathConstraints.Push(cond, false, line)
         let elseFlow = runStmts elseBody elseEnv warnings ctx
         let elseReturned = elseFlow <> Normal
-        // Break/Continue in else-branch: pop pathConstraint and propagate immediately
-        if elseFlow = FlowBreak || elseFlow = FlowContinue then
-            ctx.cst.pathConstraints.Pop()
-            elseFlow
-        else
-
+        match elseFlow with
+        | FlowBreak | FlowContinue -> deferredFlow <- Some elseFlow
+        | _ -> ()
         ctx.cst.pathConstraints.Pop()
-        let elseConstraints = snapshotConstraints ctx
-        let elseDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
-        let elseRanges = ctx.cst.valueRanges
-        let elseUpperBounds = ctx.cst.upperBounds
-        let elseLowerBounds = ctx.cst.lowerBounds
+        let elseSnap = ctx.SnapshotConstraintState()
 
         joinBranchResults
-            env ctx baselineConstraints baselineDimEquiv baselineRanges baselineUpperBounds baselineLowerBounds
-            [thenEnv; elseEnv] [thenConstraints; elseConstraints]
-            [thenDimEquiv; elseDimEquiv]
-            [thenRanges; elseRanges] [thenUpperBounds; elseUpperBounds] [thenLowerBounds; elseLowerBounds]
-            [thenReturned; elseReturned] None
+            env ctx baseline
+            [thenEnv; elseEnv] [thenSnap; elseSnap]
+            [thenReturned; elseReturned] deferredFlow
 
     | IfChain({ line = line }, conditions, bodies, elseBody) ->
         for cond in conditions do wiredEvalExprFull cond env warnings ctx |> ignore
 
         let allRefinements = conditions |> List.map (fun cond -> extractConditionRefinements cond env ctx)
-        let baselineConstraints = snapshotConstraints ctx
-        let baselineDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
-        let baselineRanges = ctx.cst.valueRanges
-        let baselineUpperBounds = ctx.cst.upperBounds
-        let baselineLowerBounds = ctx.cst.lowerBounds
+        let baseline = ctx.SnapshotConstraintState()
 
         let allBodies = bodies @ [ elseBody ]
         let branchEnvs = ResizeArray<Env>()
-        let branchConstraints = ResizeArray<Set<string * string>>()
-        let branchDimEquivs = ResizeArray<DimEquiv.DimEquiv>()
-        let branchRanges = ResizeArray<Map<string, SharedTypes.Interval>>()
-        let branchUpperBoundsAcc = ResizeArray<Map<string, string * int>>()
-        let branchLowerBoundsAcc = ResizeArray<Map<string, string * int>>()
+        let branchSnapshots = ResizeArray<ConstraintSnapshot>()
         let returnedFlags = ResizeArray<bool>()
         let mutable deferredFlow : ControlFlow option = None
 
         for idx in 0 .. allBodies.Length - 1 do
-            ctx.cst.constraints <- baselineConstraints
-            ctx.cst.dimEquiv.parent.Clear()
-            for kv in baselineDimEquiv.parent do ctx.cst.dimEquiv.parent.[kv.Key] <- kv.Value
-            ctx.cst.dimEquiv.rank.Clear()
-            for kv in baselineDimEquiv.rank do ctx.cst.dimEquiv.rank.[kv.Key] <- kv.Value
-            ctx.cst.dimEquiv.concrete.Clear()
-            for kv in baselineDimEquiv.concrete do ctx.cst.dimEquiv.concrete.[kv.Key] <- kv.Value
-            ctx.cst.valueRanges <- baselineRanges
-            ctx.cst.upperBounds <- baselineUpperBounds
-            ctx.cst.lowerBounds <- baselineLowerBounds
+            ctx.RestoreConstraintState(baseline)
 
             if idx < allRefinements.Length then
                 applyRefinements ctx allRefinements.[idx] false
@@ -980,17 +909,12 @@ and analyzeStmtIr
             if idx < conditions.Length then ctx.cst.pathConstraints.Pop()
 
             branchEnvs.Add(branchEnv)
-            branchConstraints.Add(snapshotConstraints ctx)
-            branchDimEquivs.Add(DimEquiv.snapshot ctx.cst.dimEquiv)
-            branchRanges.Add(ctx.cst.valueRanges)
-            branchUpperBoundsAcc.Add(ctx.cst.upperBounds)
-            branchLowerBoundsAcc.Add(ctx.cst.lowerBounds)
+            branchSnapshots.Add(ctx.SnapshotConstraintState())
             returnedFlags.Add(returned)
 
         joinBranchResults
-            env ctx baselineConstraints baselineDimEquiv baselineRanges baselineUpperBounds baselineLowerBounds
-            (Seq.toList branchEnvs) (Seq.toList branchConstraints) (Seq.toList branchDimEquivs)
-            (Seq.toList branchRanges) (Seq.toList branchUpperBoundsAcc) (Seq.toList branchLowerBoundsAcc)
+            env ctx baseline
+            (Seq.toList branchEnvs) (Seq.toList branchSnapshots)
             (Seq.toList returnedFlags) deferredFlow
 
     | Switch({ line = line }, expr, cases, otherwise) ->
@@ -1003,33 +927,16 @@ and analyzeStmtIr
             | Ir.Var(_, name) -> Some name
             | _ -> None
 
-        let baselineConstraints = snapshotConstraints ctx
-        let baselineDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
-        let baselineRanges = ctx.cst.valueRanges
-        let baselineUpperBounds = ctx.cst.upperBounds
-        let baselineLowerBounds = ctx.cst.lowerBounds
+        let baseline = ctx.SnapshotConstraintState()
 
         let allBodies = (cases |> List.map snd) @ [ otherwise ]
         let branchEnvs = ResizeArray<Env>()
-        let branchConstraints = ResizeArray<Set<string * string>>()
-        let branchDimEquivs = ResizeArray<DimEquiv.DimEquiv>()
-        let branchRanges = ResizeArray<Map<string, SharedTypes.Interval>>()
-        let branchUpperBoundsAcc = ResizeArray<Map<string, string * int>>()
-        let branchLowerBoundsAcc = ResizeArray<Map<string, string * int>>()
+        let branchSnapshots = ResizeArray<ConstraintSnapshot>()
         let returnedFlags = ResizeArray<bool>()
         let mutable deferredFlow : ControlFlow option = None
 
         for caseIdx in 0 .. allBodies.Length - 1 do
-            ctx.cst.constraints <- baselineConstraints
-            ctx.cst.dimEquiv.parent.Clear()
-            for kv in baselineDimEquiv.parent do ctx.cst.dimEquiv.parent.[kv.Key] <- kv.Value
-            ctx.cst.dimEquiv.rank.Clear()
-            for kv in baselineDimEquiv.rank do ctx.cst.dimEquiv.rank.[kv.Key] <- kv.Value
-            ctx.cst.dimEquiv.concrete.Clear()
-            for kv in baselineDimEquiv.concrete do ctx.cst.dimEquiv.concrete.[kv.Key] <- kv.Value
-            ctx.cst.valueRanges <- baselineRanges
-            ctx.cst.upperBounds <- baselineUpperBounds
-            ctx.cst.lowerBounds <- baselineLowerBounds
+            ctx.RestoreConstraintState(baseline)
 
             let isCase = caseIdx < cases.Length
             if isCase then
@@ -1067,27 +974,18 @@ and analyzeStmtIr
             if isCase then ctx.cst.pathConstraints.Pop()
 
             branchEnvs.Add(branchEnv)
-            branchConstraints.Add(snapshotConstraints ctx)
-            branchDimEquivs.Add(DimEquiv.snapshot ctx.cst.dimEquiv)
-            branchRanges.Add(ctx.cst.valueRanges)
-            branchUpperBoundsAcc.Add(ctx.cst.upperBounds)
-            branchLowerBoundsAcc.Add(ctx.cst.lowerBounds)
+            branchSnapshots.Add(ctx.SnapshotConstraintState())
             returnedFlags.Add(returned)
 
         joinBranchResults
-            env ctx baselineConstraints baselineDimEquiv baselineRanges baselineUpperBounds baselineLowerBounds
-            (Seq.toList branchEnvs) (Seq.toList branchConstraints) (Seq.toList branchDimEquivs)
-            (Seq.toList branchRanges) (Seq.toList branchUpperBoundsAcc) (Seq.toList branchLowerBoundsAcc)
+            env ctx baseline
+            (Seq.toList branchEnvs) (Seq.toList branchSnapshots)
             (Seq.toList returnedFlags) deferredFlow
 
     | Try({ line = tryLine }, tryBody, catchBody) ->
         if ctx.cst.coderMode then
             warnings.Add(warnCoderTryCatch tryLine)
-        let baselineConstraints = snapshotConstraints ctx
-        let baselineDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
-        let baselineRanges = ctx.cst.valueRanges
-        let baselineUpperBounds = ctx.cst.upperBounds
-        let baselineLowerBounds = ctx.cst.lowerBounds
+        let baseline = ctx.SnapshotConstraintState()
         let preTryEnv = Env.copy env
 
         let tryEnv = Env.copy env
@@ -1097,22 +995,10 @@ and analyzeStmtIr
         match tryFlow with
         | FlowBreak | FlowContinue -> deferredFlow <- Some tryFlow
         | _ -> ()
-        let tryConstraints = snapshotConstraints ctx
-        let tryDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
-        let tryRanges = ctx.cst.valueRanges
-        let tryUpperBounds = ctx.cst.upperBounds
-        let tryLowerBounds = ctx.cst.lowerBounds
+        let trySnap = ctx.SnapshotConstraintState()
 
-        ctx.cst.constraints <- baselineConstraints
-        ctx.cst.dimEquiv.parent.Clear()
-        for kv in baselineDimEquiv.parent do ctx.cst.dimEquiv.parent.[kv.Key] <- kv.Value
-        ctx.cst.dimEquiv.rank.Clear()
-        for kv in baselineDimEquiv.rank do ctx.cst.dimEquiv.rank.[kv.Key] <- kv.Value
-        ctx.cst.dimEquiv.concrete.Clear()
-        for kv in baselineDimEquiv.concrete do ctx.cst.dimEquiv.concrete.[kv.Key] <- kv.Value
-        ctx.cst.valueRanges <- baselineRanges
-        ctx.cst.upperBounds <- baselineUpperBounds
-        ctx.cst.lowerBounds <- baselineLowerBounds
+        // Reset to baseline for catch branch
+        ctx.RestoreConstraintState(baseline)
 
         let catchEnv = Env.copy preTryEnv
         let catchFlow = runStmts catchBody catchEnv warnings ctx
@@ -1121,17 +1007,11 @@ and analyzeStmtIr
         | FlowBreak | FlowContinue ->
             if deferredFlow.IsNone then deferredFlow <- Some catchFlow
         | _ -> ()
-        let catchConstraints = snapshotConstraints ctx
-        let catchDimEquiv    = DimEquiv.snapshot ctx.cst.dimEquiv
-        let catchRanges = ctx.cst.valueRanges
-        let catchUpperBounds = ctx.cst.upperBounds
-        let catchLowerBounds = ctx.cst.lowerBounds
+        let catchSnap = ctx.SnapshotConstraintState()
 
         joinBranchResults
-            env ctx baselineConstraints baselineDimEquiv baselineRanges baselineUpperBounds baselineLowerBounds
-            [tryEnv; catchEnv] [tryConstraints; catchConstraints]
-            [tryDimEquiv; catchDimEquiv]
-            [tryRanges; catchRanges] [tryUpperBounds; catchUpperBounds] [tryLowerBounds; catchLowerBounds]
+            env ctx baseline
+            [tryEnv; catchEnv] [trySnap; catchSnap]
             [tryReturned; catchReturned] deferredFlow
 
     | OpaqueStmt({ line = line }, targets, raw) ->
@@ -1159,9 +1039,15 @@ and analyzeStmtIr
         for targetName in targets do Env.set env targetName UnknownShape
         Normal
 
-    | Return _ -> FlowReturn
-    | Break _  -> FlowBreak
-    | Continue _ -> FlowContinue
+    | Return({ line = line }) ->
+        if not ctx.call.insideFunction then warnings.Add(warnReturnOutsideFunction line)
+        FlowReturn
+    | Break({ line = line }) ->
+        if not ctx.call.insideLoop then warnings.Add(warnBreakOutsideLoop line)
+        FlowBreak
+    | Continue({ line = line }) ->
+        if not ctx.call.insideLoop then warnings.Add(warnContinueOutsideLoop line)
+        FlowContinue
 
     | FunctionDef _ ->
         // No-op: function defs are pre-scanned in pass 1
@@ -1282,33 +1168,16 @@ and private analyzeAssignMulti
                 bindTarget targets.[0] result
                 // size() single-return aliasing (target = size(A, dim))
                 if fname = "size" then
-                    match args with
-                    | [IndexExpr(_, argExpr); IndexExpr(_, dimArgExpr)] ->
-                        let argShape =
-                            match argExpr with
-                            | Var(_, n) -> Env.get env n
-                            | _ -> UnknownShape
-                        let dimIdx = exprToDimIrCtx dimArgExpr env (Some ctx)
-                        let targetDim =
-                            match argShape, dimIdx with
-                            | Matrix(rowDim, _), Concrete 1 -> Some rowDim
-                            | Matrix(_, colDim), Concrete 2 -> Some colDim
-                            | _ -> None
-                        let tgt = targets.[0]
-                        match targetDim with
-                        | Some dim when dim <> Unknown && tgt <> "~" && not (tgt.Contains(".")) ->
-                            DimEquiv.union ctx.cst.dimEquiv tgt (Shapes.dimStr dim) |> ignore
-                            match dim with
-                            | Concrete n ->
-                                DimEquiv.setConcrete ctx.cst.dimEquiv tgt n |> ignore
-                                let exact = { lo = Finite n; hi = Finite n }
-                                ctx.cst.valueRanges <- Map.add tgt exact ctx.cst.valueRanges
-                                Intervals.bridgeToDimEquiv ctx tgt exact
-                            | Symbolic _ ->
-                                env.dimAliases <- Map.add tgt dim env.dimAliases
+                    let tgt = targets.[0]
+                    if tgt <> "~" && not (tgt.Contains(".")) then
+                        match args with
+                        | [IndexExpr(_, argExpr); IndexExpr(_, dimArgExpr)] ->
+                            let argShape = match argExpr with Var(_, n) -> Env.get env n | _ -> UnknownShape
+                            let dimIdx = exprToDimIrCtx dimArgExpr env (Some ctx)
+                            match resolveSizeDim argShape dimIdx with
+                            | Some dim when dim <> Unknown -> applySizeAlias ctx env tgt dim true |> ignore
                             | _ -> ()
                         | _ -> ()
-                    | _ -> ()
             else
                 match evalMultiBuiltinCall fname line numTargets args env warnings ctx wiredEvalExprFull wiredGetInterval with
                 | Some shapes ->
@@ -1317,36 +1186,15 @@ and private analyzeAssignMulti
                     if fname = "size" && targets.Length = 2 then
                         match args with
                         | [IndexExpr(_, argExpr)] ->
-                            let argShape =
-                                match argExpr with
-                                | Var(_, n) -> Env.get env n
-                                | _ -> UnknownShape
+                            let argShape = match argExpr with Var(_, n) -> Env.get env n | _ -> UnknownShape
                             match argShape with
                             | Matrix(rowDim, colDim) ->
                                 let tgt0 = targets.[0]
                                 let tgt1 = targets.[1]
                                 if rowDim <> Unknown && tgt0 <> "~" && not (tgt0.Contains(".")) then
-                                    DimEquiv.union ctx.cst.dimEquiv tgt0 (Shapes.dimStr rowDim) |> ignore
-                                    match rowDim with
-                                    | Concrete n ->
-                                        DimEquiv.setConcrete ctx.cst.dimEquiv tgt0 n |> ignore
-                                        let exact = { lo = Finite n; hi = Finite n }
-                                        ctx.cst.valueRanges <- Map.add tgt0 exact ctx.cst.valueRanges
-                                        Intervals.bridgeToDimEquiv ctx tgt0 exact
-                                    | Symbolic _ ->
-                                        env.dimAliases <- Map.add tgt0 rowDim env.dimAliases
-                                    | _ -> ()
+                                    applySizeAlias ctx env tgt0 rowDim true |> ignore
                                 if colDim <> Unknown && tgt1 <> "~" && not (tgt1.Contains(".")) then
-                                    DimEquiv.union ctx.cst.dimEquiv tgt1 (Shapes.dimStr colDim) |> ignore
-                                    match colDim with
-                                    | Concrete n ->
-                                        DimEquiv.setConcrete ctx.cst.dimEquiv tgt1 n |> ignore
-                                        let exact = { lo = Finite n; hi = Finite n }
-                                        ctx.cst.valueRanges <- Map.add tgt1 exact ctx.cst.valueRanges
-                                        Intervals.bridgeToDimEquiv ctx tgt1 exact
-                                    | Symbolic _ ->
-                                        env.dimAliases <- Map.add tgt1 colDim env.dimAliases
-                                    | _ -> ()
+                                    applySizeAlias ctx env tgt1 colDim true |> ignore
                             | _ -> ()
                         | _ -> ()
                 | None ->
@@ -1354,66 +1202,37 @@ and private analyzeAssignMulti
                     warnings.Add(warnMultiReturnCount line fname supported numTargets)
                     for target in targets do bindTarget target UnknownShape
 
-        elif ctx.call.functionRegistry.ContainsKey(fname) then
-            let outputShapes = analyzeFunctionCall fname args line env warnings ctx targets.Length
-            if targets.Length <> outputShapes.Length then
-                warnings.Add(warnMultiAssignCountMismatch line fname outputShapes.Length targets.Length)
-                for target in targets do bindTarget target UnknownShape
-            else
-                for (target, shape) in List.zip targets outputShapes do bindTarget target shape
-
-        elif ctx.call.nestedFunctionRegistry.ContainsKey(fname) then
-            let outputShapes = analyzeNestedFunctionCall fname args line env warnings ctx targets.Length
-            if targets.Length <> outputShapes.Length then
-                warnings.Add(warnMultiAssignCountMismatch line fname outputShapes.Length targets.Length)
-                for target in targets do bindTarget target UnknownShape
-            else
-                for (target, shape) in List.zip targets outputShapes do bindTarget target shape
-
-        elif ctx.ws.externalFunctions.ContainsKey(fname) then
-            let extSig = ctx.ws.externalFunctions.[fname]
-            let outputShapes = analyzeExternalFunctionCall fname extSig args line env warnings ctx targets.Length
-            if targets.Length <> outputShapes.Length then
-                warnings.Add(warnMultiAssignCountMismatch line fname outputShapes.Length targets.Length)
-                for target in targets do bindTarget target UnknownShape
-            else
-                for (target, shape) in List.zip targets outputShapes do bindTarget target shape
-
-        elif ctx.call.classRegistry.ContainsKey(fname) then
-            // Constructor call: return Struct with declared properties (single output)
-            let classInfo = ctx.call.classRegistry.[fname]
-            let structShape =
-                if ctx.call.functionRegistry.ContainsKey(fname) then
-                    let outputShapes = analyzeFunctionCall fname args line env warnings ctx targets.Length
-                    let baseShape = if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
-                    match baseShape with
-                    | Struct(fields, isOpen) ->
-                        let fieldMap = Map.ofList fields
-                        let allFields =
-                            classInfo.properties |> List.map (fun p ->
-                                (p, defaultArg (Map.tryFind p fieldMap) UnknownShape))
-                        Struct(allFields, isOpen)
-                    | _ ->
-                        let allFields = classInfo.properties |> List.map (fun p -> (p, UnknownShape))
-                        Struct(allFields, false)
-                else
-                    let allFields = classInfo.properties |> List.map (fun p -> (p, UnknownShape))
-                    Struct(allFields, false)
-            for target in targets do
-                bindTarget target structShape
-                if target <> "~" && not (target.Contains(".")) then
-                    ctx.call.classBindings.[target] <- fname
-
         else
-            // Lazy-load external classdef if available
-            match tryLoadExternalClassdef fname ctx with
-            | Some classInfo ->
-                let structShape = Struct(classInfo.properties |> List.map (fun p -> (p, UnknownShape)), false)
+            // Non-builtin dispatch via resolveCall
+            let bindOutputShapes (outputShapes: Shape list) =
+                if targets.Length <> outputShapes.Length then
+                    warnings.Add(warnMultiAssignCountMismatch line fname outputShapes.Length targets.Length)
+                    for target in targets do bindTarget target UnknownShape
+                else
+                    for (target, shape) in List.zip targets outputShapes do bindTarget target shape
+
+            let ccN = { fname = fname; args = args; line = line; numTargets = targets.Length }
+
+            let bindClassConstructor (classInfo: ClassInfo) =
+                let structShape = makeClassConstructorShape ccN classInfo env warnings ctx
                 for target in targets do
                     bindTarget target structShape
                     if target <> "~" && not (target.Contains(".")) then
                         ctx.call.classBindings.[target] <- fname
-            | None ->
+
+            match resolveCall fname ctx with
+            | BuiltinCall -> ()  // already handled above
+            | UserFunctionCall _ ->
+                bindOutputShapes (analyzeFunctionCall ccN env warnings ctx)
+            | NestedFunctionCall _ ->
+                bindOutputShapes (analyzeNestedFunctionCall ccN env warnings ctx)
+            | ExternalFunctionCall extSig ->
+                bindOutputShapes (analyzeExternalFunctionCall ccN extSig env warnings ctx)
+            | ClassConstructorCall classInfo ->
+                bindClassConstructor classInfo
+            | ExternalClassdefCall classInfo ->
+                bindClassConstructor classInfo
+            | UnknownCall ->
                 warnings.Add(warnUnknownFunction line fname)
                 for target in targets do bindTarget target UnknownShape
 
@@ -1473,6 +1292,10 @@ and analyzeLoopBody
     (ctx: AnalysisContext)
     (loopVar: string option)
     : unit =
+
+    let savedInsideLoop = ctx.call.insideLoop
+    ctx.call.insideLoop <- true
+    try
 
     if not ctx.call.fixpoint then
         // Pentagon bridge: tighten loop var interval before body analysis
@@ -1561,19 +1384,19 @@ and analyzeLoopBody
         let finalWidened = widenEnv preLoopEnv env
         Env.replaceLocal env finalWidened
 
+    finally
+        ctx.call.insideLoop <- savedInsideLoop
+
 
 // ---------------------------------------------------------------------------
 // analyzeFunctionCall: interprocedural analysis with polymorphic caching
 // ---------------------------------------------------------------------------
 
 and analyzeFunctionCall
-    (funcName: string)
-    (args: IndexArg list)
-    (line: int)
+    ({ fname = funcName; args = args; line = line; numTargets = numTargets }: CallConfig)
     (env: Env)
     (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (numTargets: int)
     : Shape list =
 
     if not (ctx.call.functionRegistry.ContainsKey(funcName)) then [ UnknownShape ]
@@ -1627,6 +1450,8 @@ and analyzeFunctionCall
             ctx.call.analyzingFunctions.Add(funcName) |> ignore
             try
                 ctx.SnapshotScope(fun () ->
+                    let savedInsideFunction = ctx.call.insideFunction
+                    ctx.call.insideFunction <- true
                     let funcEnv = Env.create ()
                     let funcWarnings = ResizeArray<Diagnostic>()
 
@@ -1695,6 +1520,8 @@ and analyzeFunctionCall
                     if ctx.cst.globalDeclaredVars.Count = 0 then
                         ctx.call.analysisCache.[cacheKey] <- FunctionResult(result, Seq.toList funcWarnings)
 
+                    ctx.call.insideFunction <- savedInsideFunction
+
                     for fw in funcWarnings do
                         warnings.Add(formatDualLocationWarning fw funcName line)
 
@@ -1708,13 +1535,10 @@ and analyzeFunctionCall
 // ---------------------------------------------------------------------------
 
 and analyzeNestedFunctionCall
-    (funcName: string)
-    (args: IndexArg list)
-    (line: int)
+    ({ fname = funcName; args = args; line = line; numTargets = numTargets }: CallConfig)
     (parentEnv: Env)
     (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (numTargets: int)
     : Shape list =
 
     if not (ctx.call.nestedFunctionRegistry.ContainsKey(funcName)) then [ UnknownShape ]
@@ -1766,6 +1590,8 @@ and analyzeNestedFunctionCall
             ctx.call.analyzingFunctions.Add(funcName) |> ignore
             try
                 ctx.SnapshotScope(fun () ->
+                    let savedInsideFunction = ctx.call.insideFunction
+                    ctx.call.insideFunction <- true
                     let funcEnv = Env.createWithParent parentEnv
                     let funcWarnings = ResizeArray<Diagnostic>()
 
@@ -1836,6 +1662,8 @@ and analyzeNestedFunctionCall
                     if ctx.cst.globalDeclaredVars.Count = 0 then
                         ctx.call.analysisCache.[cacheKey] <- FunctionResult(result, Seq.toList funcWarnings)
 
+                    ctx.call.insideFunction <- savedInsideFunction
+
                     for fw in funcWarnings do
                         warnings.Add(formatDualLocationWarning fw funcName line)
 
@@ -1849,14 +1677,11 @@ and analyzeNestedFunctionCall
 // ---------------------------------------------------------------------------
 
 and analyzeExternalFunctionCall
-    (fname: string)
+    ({ fname = fname; args = args; line = line; numTargets = numTargets }: CallConfig)
     (extSig: ExternalSignature)
-    (args: IndexArg list)
-    (line: int)
     (env: Env)
     (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
-    (numTargets: int)
     : Shape list =
 
     // Cross-file recursion guard
@@ -1915,6 +1740,8 @@ and analyzeExternalFunctionCall
 
         try
             ctx.SnapshotScope(fun () ->
+                let savedInsideFunction = ctx.call.insideFunction
+                ctx.call.insideFunction <- true
                 let funcEnv = Env.create ()
                 let funcWarnings = ResizeArray<Diagnostic>()  // Suppressed
 
@@ -1971,6 +1798,7 @@ and analyzeExternalFunctionCall
                 // Only cache if function does not declare globals
                 if ctx.cst.globalDeclaredVars.Count = 0 then
                     ctx.call.analysisCache.[cacheKey] <- FunctionResult(result, [])
+                ctx.call.insideFunction <- savedInsideFunction
                 result)
         finally
             ctx.call.functionRegistry <- savedRegistry

@@ -223,8 +223,8 @@ let widenDim (old: Dim) (newDim: Dim) : Dim =
         match old, newDim with
         // Point -> Point: create Range (Phase 3 activation)
         | Concrete a, Concrete b -> canonicalizeDim (Range(BConcrete (min a b), BConcrete (max a b)))
-        | Concrete a, Symbolic s -> Range(BConcrete a, BSymbolic s)  // assume symbolic >= concrete
-        | Symbolic s, Concrete a -> Range(BConcrete a, BSymbolic s)
+        | Concrete _, Symbolic _ -> Unknown  // widen >= join: joinDim produces Unknown here
+        | Symbolic _, Concrete _ -> Unknown
         // Point -> Unknown: open-ended range
         | Concrete a, Unknown -> Range(BConcrete a, BUnknown)
         | Symbolic s, Unknown -> Range(BSymbolic s, BUnknown)
