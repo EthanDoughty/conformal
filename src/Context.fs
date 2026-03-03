@@ -100,6 +100,10 @@ type CallContext() =
     /// Maps class name -> ClassInfo (populated from classdef blocks)
     member val classRegistry  : System.Collections.Generic.Dictionary<string, ClassInfo>
                                 = System.Collections.Generic.Dictionary<string, ClassInfo>() with get, set
+    /// Shared global variable store: global_name -> Shape.
+    /// NOT saved/restored by SnapshotScope -- globals survive function boundaries.
+    member val globalStore    : System.Collections.Generic.Dictionary<string, Shape>
+                                = System.Collections.Generic.Dictionary<string, Shape>() with get
 
 type ConstraintContext() =
     /// Set of (dim1_str, dim2_str) equality constraints (canonicalized)
@@ -128,6 +132,10 @@ type ConstraintContext() =
     member val coderMode    : bool = false with get, set
     /// Pentagon upper-bound map: var -> (boundVar, offset) means var ≤ boundVar + offset
     member val upperBounds  : Map<string, string * int> = Map.empty with get, set
+    /// Set of variable names declared global in the current function scope.
+    /// Saved/restored by SnapshotScope (function-scoped).
+    member val globalDeclaredVars : System.Collections.Generic.HashSet<string>
+                                    = System.Collections.Generic.HashSet<string>() with get, set
 
 type WorkspaceContext() =
     /// Maps function name -> ExternalSignature (workspace-scanned)
@@ -162,6 +170,10 @@ type AnalysisContext() =
         let savedUpperBounds  = this.cst.upperBounds
         let savedNested       = System.Collections.Generic.Dictionary<string, FunctionSignature>(this.call.nestedFunctionRegistry)
         let savedDimEquiv     = DimEquiv.snapshot this.cst.dimEquiv
+        // globalDeclaredVars is function-scoped: save and restore so each function body
+        // starts with a fresh set and the caller's set is not polluted.
+        let savedGlobalDeclared = System.Collections.Generic.HashSet<string>(this.cst.globalDeclaredVars)
+        this.cst.globalDeclaredVars <- System.Collections.Generic.HashSet<string>()
         try
             body ()
         finally
@@ -180,6 +192,8 @@ type AnalysisContext() =
             for kv in savedDimEquiv.rank do this.cst.dimEquiv.rank.[kv.Key] <- kv.Value
             this.cst.dimEquiv.concrete.Clear()
             for kv in savedDimEquiv.concrete do this.cst.dimEquiv.concrete.[kv.Key] <- kv.Value
+            // Restore function-scoped global declarations
+            this.cst.globalDeclaredVars <- savedGlobalDeclared
 
 // ---------------------------------------------------------------------------
 // BuiltinEvalContext: callback record to break EvalExpr <-> EvalBuiltins
