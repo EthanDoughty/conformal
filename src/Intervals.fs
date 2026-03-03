@@ -620,6 +620,44 @@ let pentagonProvesLowerBound
         | None -> false
 
 
+/// extractPentagonBoundsFromCondition: parse a while-condition expression and
+/// extract relational bounds of the form (varName, boundVar, offset, isUpper).
+/// Only fires when both sides are simple Var references; constant bounds are
+/// already handled by extractConditionRefinements / applyRefinements.
+///
+/// Patterns recognised:
+///   i <= n  ->  (i, n, 0, true)   -- upper bound: i <= n + 0
+///   i <  n  ->  (i, n, -1, true)  -- upper bound: i <= n + (-1)
+///   i >= n  ->  (i, n, 0, false)  -- lower bound: i >= n + 0
+///   i >  n  ->  (i, n, 1, false)  -- lower bound: i >= n + 1
+///   cond1 && cond2 -> merge both sides
+let rec extractPentagonBoundsFromCondition
+    (cond: Ir.Expr)
+    : (string * string * int * bool) list =
+    match cond with
+    | Ir.BinOp(_, "&&", left, right) | Ir.BinOp(_, "&", left, right) ->
+        extractPentagonBoundsFromCondition left @
+        extractPentagonBoundsFromCondition right
+    | Ir.BinOp(_, "<=", Ir.Var(_, varName), Ir.Var(_, boundVar)) ->
+        [ (varName, boundVar, 0, true) ]
+    | Ir.BinOp(_, "<", Ir.Var(_, varName), Ir.Var(_, boundVar)) ->
+        [ (varName, boundVar, -1, true) ]
+    | Ir.BinOp(_, ">=", Ir.Var(_, varName), Ir.Var(_, boundVar)) ->
+        [ (varName, boundVar, 0, false) ]
+    | Ir.BinOp(_, ">", Ir.Var(_, varName), Ir.Var(_, boundVar)) ->
+        [ (varName, boundVar, 1, false) ]
+    // Flipped sides: n >= i  ->  i <= n
+    | Ir.BinOp(_, ">=", Ir.Var(_, boundVar), Ir.Var(_, varName)) ->
+        [ (varName, boundVar, 0, true) ]
+    | Ir.BinOp(_, ">", Ir.Var(_, boundVar), Ir.Var(_, varName)) ->
+        [ (varName, boundVar, -1, true) ]
+    | Ir.BinOp(_, "<=", Ir.Var(_, boundVar), Ir.Var(_, varName)) ->
+        [ (varName, boundVar, 0, false) ]
+    | Ir.BinOp(_, "<", Ir.Var(_, boundVar), Ir.Var(_, varName)) ->
+        [ (varName, boundVar, 1, false) ]
+    | _ -> []
+
+
 /// applyPentagonBridge: for each x in upperBounds where upperBounds[x] = (y, c)
 /// and valueRanges[y] = [k,k] (exact), tighten valueRanges[x].hi to min(current_hi, k+c).
 let applyPentagonBridge (ctx: Context.AnalysisContext) : unit =
