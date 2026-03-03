@@ -575,6 +575,51 @@ let pentagonProvesInBounds
         | _ -> false
 
 
+/// joinLowerBounds: intersect two lower-bound maps (keep only facts present in both).
+/// Symmetric with joinUpperBounds -- intersection is the sound join for relational facts.
+let joinLowerBounds
+    (a: Map<string, string * int>)
+    (b: Map<string, string * int>)
+    : Map<string, string * int> =
+    a |> Map.filter (fun varName boundA ->
+        match Map.tryFind varName b with
+        | Some boundB -> boundA = boundB
+        | None -> false)
+
+
+/// widenLowerBounds: same as joinLowerBounds (intersection converges trivially).
+let widenLowerBounds
+    (oldMap: Map<string, string * int>)
+    (newMap: Map<string, string * int>)
+    : Map<string, string * int> =
+    joinLowerBounds oldMap newMap
+
+
+/// killLowerBoundsFor: remove all lower bounds that mention varName after an assignment.
+let killLowerBoundsFor (varName: string) (bounds: Map<string, string * int>) : Map<string, string * int> =
+    bounds
+    |> Map.filter (fun key (bVar, _) -> key <> varName && bVar <> varName)
+
+
+/// pentagonProvesLowerBound: check if the Pentagon lower-bound relation proves
+/// that index variable varName is >= 1.
+/// Returns true when lowerBounds[varName] = (boundVar, offset) and boundVar has
+/// exact interval [k,k] and k + offset >= 1.
+let pentagonProvesLowerBound
+    (ctx: Context.AnalysisContext)
+    (varName: string)
+    : bool =
+    match Map.tryFind varName ctx.cst.lowerBounds with
+    | None -> false
+    | Some (boundVar, offset) ->
+        match Map.tryFind boundVar ctx.cst.valueRanges with
+        | Some iv ->
+            match iv.lo, iv.hi with
+            | Finite lo, Finite hi when lo = hi -> lo + offset >= 1
+            | _ -> false
+        | None -> false
+
+
 /// applyPentagonBridge: for each x in upperBounds where upperBounds[x] = (y, c)
 /// and valueRanges[y] = [k,k] (exact), tighten valueRanges[x].hi to min(current_hi, k+c).
 let applyPentagonBridge (ctx: Context.AnalysisContext) : unit =
@@ -596,6 +641,33 @@ let applyPentagonBridge (ctx: Context.AnalysisContext) : unit =
                     | Unbounded -> tightenedHi
                     | SymBound _ -> tightenedHi
                 let newIv = { existing with hi = newHi }
+                if newIv <> existing then
+                    ctx.cst.valueRanges <- Map.add varName newIv ctx.cst.valueRanges
+            | _ -> ()
+        | None -> ()
+
+
+/// applyPentagonLowerBridge: for each x in lowerBounds where lowerBounds[x] = (y, c)
+/// and valueRanges[y] = [k,k] (exact), tighten valueRanges[x].lo to max(current_lo, k+c).
+let applyPentagonLowerBridge (ctx: Context.AnalysisContext) : unit =
+    for kvp in ctx.cst.lowerBounds |> Map.toSeq do
+        let (varName, (boundVar, offset)) = kvp
+        match Map.tryFind boundVar ctx.cst.valueRanges with
+        | Some iv ->
+            match iv.lo, iv.hi with
+            | Finite lo, Finite hi when lo = hi ->
+                // boundVar is exactly known: tighten varName's lower bound
+                let tightenedLo = Finite (lo + offset)
+                let existing =
+                    match Map.tryFind varName ctx.cst.valueRanges with
+                    | Some existing -> existing
+                    | None -> { lo = Unbounded; hi = Unbounded }
+                let newLo =
+                    match existing.lo with
+                    | Finite l -> Finite (max l (lo + offset))
+                    | Unbounded -> tightenedLo
+                    | SymBound _ -> tightenedLo
+                let newIv = { existing with lo = newLo }
                 if newIv <> existing then
                     ctx.cst.valueRanges <- Map.add varName newIv ctx.cst.valueRanges
             | _ -> ()
