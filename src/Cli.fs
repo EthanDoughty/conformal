@@ -35,7 +35,7 @@ let private printEnv (env: Env.Env) : unit =
 
 /// runFile: analyze one .m file and print results.
 /// Returns exit code: 0 = success, 1 = error.
-let runFile (filePath: string) (strict: bool) (fixpoint: bool) (benchmark: bool) (coder: bool) : int =
+let runFile (filePath: string) (strict: bool) (fixpoint: bool) (benchmark: bool) (coder: bool) (pro: bool) : int =
     if not (File.Exists filePath) then
         eprintfn "ERROR: file not found: %s" filePath
         1
@@ -91,18 +91,28 @@ let runFile (filePath: string) (strict: bool) (fixpoint: bool) (benchmark: bool)
 
         let tAnalyze = DateTime.UtcNow
 
-        // Filter strict-only codes in default mode
+        // Count pro-only warnings that will be suppressed
+        let proSuppressed =
+            if pro then 0
+            else warnings |> List.filter (fun w -> Set.contains w.code PRO_ONLY_CODES) |> List.length
+
+        // Two-stage filter: pro tier first, then strict tier
         let displayWarnings =
-            if strict then warnings
-            else warnings |> List.filter (fun w -> not (Set.contains w.code STRICT_ONLY_CODES))
+            warnings
+            |> (if pro then id else List.filter (fun w -> not (Set.contains w.code PRO_ONLY_CODES)))
+            |> (if strict then id else List.filter (fun w -> not (Set.contains w.code STRICT_ONLY_CODES)))
 
         printfn "=== Analysis for %s ===" filePath
-        if displayWarnings.IsEmpty then
+        if displayWarnings.IsEmpty && proSuppressed = 0 then
             printfn "No dimension warnings."
         else
-            printfn "Warnings:"
-            for w in displayWarnings do
-                printfn "  - %s" (formatDiag w)
+            if not displayWarnings.IsEmpty then
+                printfn "Warnings:"
+                for w in displayWarnings do
+                    printfn "  - %s" (formatDiag w)
+            if proSuppressed > 0 then
+                printfn "  [Conformal Pro] %d additional issue%s detected. Use --pro to see all diagnostics."
+                    proSuppressed (if proSuppressed = 1 then "" else "s")
 
         printfn ""
         printEnv env
@@ -155,13 +165,13 @@ let runTests (strict: bool) (fixpoint: bool) (benchmark: bool) (quiet: bool) : i
 
 type CliArgs = {
     tests: bool; testProps: bool; strict: bool; fixpoint: bool
-    bench: bool; coder: bool; file: string; parseJson: bool
+    bench: bool; coder: bool; pro: bool; file: string; parseJson: bool
     quiet: bool
 }
 
 let private defaultArgs =
     { tests = false; testProps = false; strict = false; fixpoint = false
-      bench = false; coder = false; file = ""; parseJson = false
+      bench = false; coder = false; pro = false; file = ""; parseJson = false
       quiet = false }
 
 /// Fold state: Ready accepts flags, ConsumeFile means next arg is a file path,
@@ -185,6 +195,7 @@ let private parseArgv (argv: string array) : CliArgs =
                 | "--fixpoint"   -> ({ acc with fixpoint = true }, Ready)
                 | "--benchmark"  -> ({ acc with bench = true }, Ready)
                 | "--coder"      -> ({ acc with coder = true }, Ready)
+                | "--pro"        -> ({ acc with pro = true }, Ready)
                 | "--parse-json" -> ({ acc with parseJson = true }, ConsumeFile)
                 | "--witness"    -> (acc, ConsumeWitness)
                 | "--quiet"      -> ({ acc with quiet = true }, Ready)
@@ -201,6 +212,7 @@ let private parseArgv (argv: string array) : CliArgs =
             | "--fixpoint"   -> ({ acc with fixpoint = true }, Ready)
             | "--benchmark"  -> ({ acc with bench = true }, Ready)
             | "--coder"      -> ({ acc with coder = true }, Ready)
+            | "--pro"        -> ({ acc with pro = true }, Ready)
             | "--parse-json" -> ({ acc with parseJson = true }, ConsumeFile)
             | "--witness"    -> (acc, ConsumeWitness)
             | "--quiet"      -> ({ acc with quiet = true }, Ready)
@@ -243,9 +255,9 @@ let run (argv: string array) : int =
                 eprintfn "Error: %s" ex.Message
                 3
     elif args.file <> "" then
-        runFile args.file args.strict args.fixpoint args.bench args.coder
+        runFile args.file args.strict args.fixpoint args.bench args.coder args.pro
     else
-        printfn "Usage: conformal-parse [--tests] [--strict] [--fixpoint] [--benchmark] [--coder] <file.m>"
+        printfn "Usage: conformal-parse [--tests] [--strict] [--fixpoint] [--benchmark] [--coder] [--pro] <file.m>"
         printfn ""
         printfn "Options:"
         printfn "  --tests       Run test suite"
@@ -254,5 +266,6 @@ let run (argv: string array) : int =
         printfn "  --fixpoint    Use fixed-point iteration for loop analysis"
         printfn "  --benchmark   Print timing breakdown"
         printfn "  --coder       Enable MATLAB Coder compatibility warnings (W_CODER_*)"
+        printfn "  --pro         Enable Conformal Pro diagnostics (intervals, constraints, cross-file)"
         printfn "  --parse-json  Parse file and emit JSON IR"
         1
