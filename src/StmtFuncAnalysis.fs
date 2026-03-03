@@ -789,13 +789,29 @@ and analyzeStmtIr
     | While({ line = line }, cond, body) ->
         wiredEvalExprFull cond env warnings ctx |> ignore
 
-        let baselineRanges = ctx.cst.valueRanges
+        let baselineRanges      = ctx.cst.valueRanges
+        let baselineUpperBounds = ctx.cst.upperBounds
+        let baselineLowerBounds = ctx.cst.lowerBounds
+
         let refinements = extractConditionRefinements cond env ctx
         applyRefinements ctx refinements false
 
+        // Pentagon: extract relational bounds from while condition and record them.
+        // These are valid at loop entry and during body analysis (i <= n holds throughout).
+        // Both bridges are applied inside analyzeLoopBody (same as for-loop).
+        let pentagonBounds = Intervals.extractPentagonBoundsFromCondition cond
+        for (varName, boundVar, offset, isUpper) in pentagonBounds do
+            if isUpper then
+                ctx.cst.upperBounds <- Map.add varName (boundVar, offset) ctx.cst.upperBounds
+            else
+                ctx.cst.lowerBounds <- Map.add varName (boundVar, offset) ctx.cst.lowerBounds
+
         analyzeLoopBody body env warnings ctx None
 
-        ctx.cst.valueRanges <- baselineRanges
+        // Restore all three maps: while condition does not hold after loop exit.
+        ctx.cst.valueRanges    <- baselineRanges
+        ctx.cst.upperBounds    <- baselineUpperBounds
+        ctx.cst.lowerBounds    <- baselineLowerBounds
         Normal
 
     | For(_, var_, it, body) ->
