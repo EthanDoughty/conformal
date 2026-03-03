@@ -589,6 +589,13 @@ and analyzeStmtIr
 
         Env.set env name newShape
 
+        // Class binding: record which class a variable belongs to when a constructor is called.
+        // This enables obj.method(args) dispatch later.
+        match expr with
+        | Apply(_, Var(_, ctorName), _) when ctx.call.classRegistry.ContainsKey(ctorName) ->
+            ctx.call.classBindings.[name] <- ctorName
+        | _ -> ()
+
         // Pentagon: kill stale upper bounds for the assigned variable
         ctx.cst.upperBounds <- Intervals.killUpperBoundsFor name ctx.cst.upperBounds
 
@@ -1284,7 +1291,10 @@ and private analyzeAssignMulti
                 else
                     let allFields = classInfo.properties |> List.map (fun p -> (p, UnknownShape))
                     Struct(allFields, false)
-            for target in targets do bindTarget target structShape
+            for target in targets do
+                bindTarget target structShape
+                if target <> "~" && not (target.Contains(".")) then
+                    ctx.call.classBindings.[target] <- fname
 
         else
             warnings.Add(warnUnknownFunction line fname)

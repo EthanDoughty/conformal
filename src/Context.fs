@@ -100,6 +100,10 @@ type CallContext() =
     /// Maps class name -> ClassInfo (populated from classdef blocks)
     member val classRegistry  : System.Collections.Generic.Dictionary<string, ClassInfo>
                                 = System.Collections.Generic.Dictionary<string, ClassInfo>() with get, set
+    /// Maps variable name -> class name for variables known to hold a class instance.
+    /// Set when a constructor call result is assigned to a named variable.
+    member val classBindings  : System.Collections.Generic.Dictionary<string, string>
+                                = System.Collections.Generic.Dictionary<string, string>() with get
     /// Shared global variable store: global_name -> Shape.
     /// NOT saved/restored by SnapshotScope -- globals survive function boundaries.
     member val globalStore    : System.Collections.Generic.Dictionary<string, Shape>
