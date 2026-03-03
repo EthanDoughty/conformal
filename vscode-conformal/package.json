@@ -83,6 +83,11 @@
           "default": false,
           "description": "Show all warnings including informational and low-confidence diagnostics"
         },
+        "conformal.pro": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable Conformal Pro diagnostics (intervals, constraints, cross-file analysis)"
+        },
         "conformal.analyzeOnChange": {
           "type": "boolean",
           "default": true,

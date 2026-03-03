@@ -110,12 +110,19 @@ let runPhase2Test () : int =
         check label (string expected) (string actual)
 
     Console.WriteLine("=== Phase 2: STRICT_ONLY_CODES ===")
-    check "STRICT_ONLY_CODES count" "19" (string STRICT_ONLY_CODES.Count)
+    check "STRICT_ONLY_CODES count" "11" (string STRICT_ONLY_CODES.Count)
     checkBool "W_UNSUPPORTED_STMT in strict"     true  (Set.contains W_UNSUPPORTED_STMT STRICT_ONLY_CODES)
-    checkBool "W_UNKNOWN_FUNCTION in strict"     true  (Set.contains W_UNKNOWN_FUNCTION STRICT_ONLY_CODES)
+    checkBool "W_UNKNOWN_FUNCTION not strict"    false (Set.contains W_UNKNOWN_FUNCTION STRICT_ONLY_CODES)
     checkBool "W_TOO_MANY_INDICES in strict"     true  (Set.contains W_TOO_MANY_INDICES STRICT_ONLY_CODES)
     checkBool "W_INNER_DIM_MISMATCH not strict"  false (Set.contains W_INNER_DIM_MISMATCH STRICT_ONLY_CODES)
     checkBool "W_ELEMENTWISE_MISMATCH not strict" false (Set.contains W_ELEMENTWISE_MISMATCH STRICT_ONLY_CODES)
+
+    Console.WriteLine("=== Phase 2: PRO_ONLY_CODES ===")
+    check "PRO_ONLY_CODES count" "11" (string PRO_ONLY_CODES.Count)
+    checkBool "W_INDEX_OUT_OF_BOUNDS in pro"     true  (Set.contains W_INDEX_OUT_OF_BOUNDS PRO_ONLY_CODES)
+    checkBool "W_UNKNOWN_FUNCTION in pro"        true  (Set.contains W_UNKNOWN_FUNCTION PRO_ONLY_CODES)
+    checkBool "W_CONSTRAINT_CONFLICT in pro"     true  (Set.contains W_CONSTRAINT_CONFLICT PRO_ONLY_CODES)
+    checkBool "W_INNER_DIM_MISMATCH not pro"     false (Set.contains W_INNER_DIM_MISMATCH PRO_ONLY_CODES)
 
     Console.WriteLine("=== Phase 2: KNOWN_BUILTINS ===")
     // Python KNOWN_BUILTINS has 323 entries (count from source)
