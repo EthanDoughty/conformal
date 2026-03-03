@@ -963,7 +963,7 @@ let private handleStruct
         | [] -> Some (List.rev acc)
         | _ -> None  // odd number of args
     match parseStructArgs args [] with
-    | Some fields -> Some (Struct(fields, false))
+    | Some fields -> Some (Struct(fields |> List.sortBy fst, false))
     | None        -> Some (Struct([], false))
 
 

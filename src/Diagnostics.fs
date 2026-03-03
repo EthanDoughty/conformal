@@ -142,43 +142,43 @@ let hasUnsupported (diags: Diagnostic list) : bool =
 
 let warnReassignIncompatible (line: int) (name: string) (newShape: Shape) (oldShape: Shape) : Diagnostic =
     makeDiag line W_REASSIGN_INCOMPATIBLE
-        $"Variable '{name}' reassigned with incompatible shape {shapeToString newShape} (previously {shapeToString oldShape})"
+        $"'{name}' reassigned: {shapeToString newShape}, was {shapeToString oldShape}"
 
 let warnSuspiciousComparisonMatrixScalar
     (line: int) (op: string) (leftExpr: Expr) (rightExpr: Expr) (left: Shape) (right: Shape) : Diagnostic =
     makeDiag line W_SUSPICIOUS_COMPARISON
-        $"Suspicious comparison between matrix and scalar in ({prettyExprIr leftExpr} {op} {prettyExprIr rightExpr}) ({shapeToString left} vs {shapeToString right}). In MATLAB this is elementwise and may produce a logical matrix."
+        $"{prettyExprIr leftExpr} {op} {prettyExprIr rightExpr}: matrix vs scalar, returns logical matrix"
 
 let warnMatrixToMatrixComparison
     (line: int) (op: string) (leftExpr: Expr) (rightExpr: Expr) (left: Shape) (right: Shape) : Diagnostic =
     makeDiag line W_MATRIX_COMPARISON
-        $"Matrix-to-matrix comparison in ({prettyExprIr leftExpr} {op} {prettyExprIr rightExpr}) ({shapeToString left} vs {shapeToString right}). In MATLAB this is elementwise and may produce a logical matrix."
+        $"{prettyExprIr leftExpr} {op} {prettyExprIr rightExpr}: matrix vs matrix, returns logical matrix"
 
 let warnLogicalOpNonScalar
     (line: int) (op: string) (leftExpr: Expr) (rightExpr: Expr) (left: Shape) (right: Shape) : Diagnostic =
     makeDiag line W_LOGICAL_OP_NON_SCALAR
-        $"Logical operator {op} used with non-scalar operand(s) in ({prettyExprIr leftExpr} {op} {prettyExprIr rightExpr}) ({shapeToString left} vs {shapeToString right})."
+        $"{prettyExprIr leftExpr} {op} {prettyExprIr rightExpr}: non-scalar operand(s) ({shapeToString left} vs {shapeToString right})"
 
 let warnTooManyIndices (line: int) (expr: Expr) : Diagnostic =
     makeDiag line W_TOO_MANY_INDICES
-        $"Too many indices for 2D matrix in {prettyExprIr expr}. Treating result as unknown."
+        $"{prettyExprIr expr}: too many indices for 2D matrix. Shape assumed unknown."
 
 let warnRangeEndpointsMustBeScalar (line: int) (arg: IndexArg) (startShape: Shape) (endShape: Shape) : Diagnostic =
     makeDiag line W_RANGE_NON_SCALAR
-        $"Range endpoints in indexing must be scalar; got {shapeToString startShape} and {shapeToString endShape} in {prettyIndexArgIr arg}. Treating result as unknown."
+        $"{prettyIndexArgIr arg}: non-scalar range endpoints {shapeToString startShape}, {shapeToString endShape}. Shape assumed unknown."
 
 let warnInvalidRangeEndLtStart (line: int) (arg: IndexArg) : Diagnostic =
     makeDiag line W_INVALID_RANGE
-        $"Invalid range in indexing ({prettyIndexArgIr arg}): end < start."
+        $"{prettyIndexArgIr arg}: end < start"
 
 let warnNonScalarIndexArg (line: int) (arg: IndexArg) (shape: Shape) : Diagnostic =
     makeDiag line W_NON_SCALAR_INDEX
-        $"Non-scalar index argument {prettyIndexArgIr arg} has shape {shapeToString shape}. Treating indexing result as unknown."
+        $"{prettyIndexArgIr arg}: non-scalar index {shapeToString shape}. Shape assumed unknown."
 
 let warnElementwiseMismatch
     (line: int) (op: string) (leftExpr: Expr) (rightExpr: Expr) (left: Shape) (right: Shape) : Diagnostic =
     makeDiag line W_ELEMENTWISE_MISMATCH
-        $"Elementwise {op} mismatch in ({prettyExprIr leftExpr} {op} {prettyExprIr rightExpr}): {shapeToString left} vs {shapeToString right}"
+        $"{prettyExprIr leftExpr} {op} {prettyExprIr rightExpr}: {shapeToString left} vs {shapeToString right}"
 
 let warnMatmulMismatch
     (line: int) (leftExpr: Expr) (rightExpr: Expr) (left: Shape) (right: Shape) (suggestElementwise: bool) : Diagnostic =
@@ -187,9 +187,9 @@ let warnMatmulMismatch
     let rightRows =
         match right with MatrixRows r -> dimStr r | _ -> "?"
     let baseMsg =
-        $"Dimension mismatch in expression ({prettyExprIr leftExpr} * {prettyExprIr rightExpr}): inner dims {leftCols} vs {rightRows} (shapes {shapeToString left} and {shapeToString right})"
+        $"{prettyExprIr leftExpr} * {prettyExprIr rightExpr}: inner dims {leftCols} vs {rightRows}"
     let msg =
-        if suggestElementwise then baseMsg + ". Did you mean elementwise multiplication (.*)?"
+        if suggestElementwise then baseMsg + ". Use .* for elementwise"
         else baseMsg
     makeDiag line W_INNER_DIM_MISMATCH msg
 
@@ -200,35 +200,35 @@ let warnUnsupportedStmt (line: int) (raw: string) (targets: string list) : Diagn
 
 let warnUnknownFunction (line: int) (name: string) : Diagnostic =
     makeDiag line W_UNKNOWN_FUNCTION
-        $"Function '{name}' is not recognized; treating result as unknown"
+        $"'{name}': unrecognized function. Shape assumed unknown."
 
 let warnFunctionArgCountMismatch (line: int) (funcName: string) (expected: int) (got: int) : Diagnostic =
     makeDiag line W_FUNCTION_ARG_COUNT_MISMATCH
-        $"function {funcName} expects {expected} arguments, got {got}"
+        $"{funcName}: expected {expected} args, {got} given"
 
 let warnRecursiveFunction (line: int) (funcName: string) : Diagnostic =
     makeDiag line W_RECURSIVE_FUNCTION
-        $"recursive call to {funcName} not supported (returns unknown)"
+        $"{funcName}: recursive call. Shape assumed unknown."
 
 let warnProcedureInExpr (line: int) (funcName: string) : Diagnostic =
     makeDiag line W_PROCEDURE_IN_EXPR
-        $"procedure {funcName} has no return value, cannot be used in expression"
+        $"{funcName}: no return value, cannot use in expression"
 
 let warnMultiAssignNonCall (line: int) : Diagnostic =
     makeDiag line W_MULTI_ASSIGN_NON_CALL
-        "destructuring assignment requires function call on RHS"
+        "Destructuring requires function call on right side"
 
 let warnMultiAssignCountMismatch (line: int) (funcName: string) (expected: int) (got: int) : Diagnostic =
     makeDiag line W_MULTI_ASSIGN_COUNT_MISMATCH
-        $"function {funcName} returns {expected} values, got {got} targets"
+        $"{funcName}: returns {expected} values, {got} targets"
 
 let warnMultiReturnCount (line: int) (fname: string) (supported: string) (got: int) : Diagnostic =
     makeDiag line W_MULTI_ASSIGN_COUNT_MISMATCH
-        $"builtin {fname} supports {supported} return values, got {got}"
+        $"{fname}: supports {supported} return values, {got} given"
 
 let warnStringArithmetic (line: int) (op: string) (leftShape: Shape) (rightShape: Shape) : Diagnostic =
     makeDiag line W_STRING_ARITHMETIC
-        $"Invalid string arithmetic ({shapeToString leftShape} {op} {shapeToString rightShape})"
+        $"String arithmetic: {shapeToString leftShape} {op} {shapeToString rightShape}"
 
 let warnStructFieldNotFound (line: int) (field: string) (structShape: Shape) : Diagnostic =
     makeDiag line W_STRUCT_FIELD_NOT_FOUND
@@ -236,123 +236,122 @@ let warnStructFieldNotFound (line: int) (field: string) (structShape: Shape) : D
 
 let warnFieldAccessNonStruct (line: int) (baseShape: Shape) : Diagnostic =
     makeDiag line W_FIELD_ACCESS_NON_STRUCT
-        $"Field access on non-struct value ({shapeToString baseShape})"
+        $"Field access on non-struct {shapeToString baseShape}"
 
 let warnCurlyIndexingNonCell (line: int) (baseShape: Shape) : Diagnostic =
     makeDiag line W_CURLY_INDEXING_NON_CELL
-        $"Curly indexing on non-cell value ({shapeToString baseShape})"
+        $"Curly-brace indexing on non-cell {shapeToString baseShape}"
 
 let warnCellAssignNonCell (line: int) (baseName: string) (baseShape: Shape) : Diagnostic =
     makeDiag line W_CELL_ASSIGN_NON_CELL
-        $"Cell assignment to non-cell variable '{baseName}' ({shapeToString baseShape})"
+        $"'{baseName}': cell assignment to non-cell {shapeToString baseShape}"
 
 let warnIndexAssignTypeMismatch (line: int) (baseName: string) (baseShape: Shape) : Diagnostic =
     makeDiag line W_INDEX_ASSIGN_TYPE_MISMATCH
-        $"Indexed assignment to non-indexable variable '{baseName}' ({shapeToString baseShape})"
+        $"'{baseName}': indexed assignment to non-indexable {shapeToString baseShape}"
 
 let warnReturnOutsideFunction (line: int) : Diagnostic =
     makeDiag line W_RETURN_OUTSIDE_FUNCTION
-        "return statement outside function body"
+        "return outside function"
 
 let warnBreakOutsideLoop (line: int) : Diagnostic =
     makeDiag line W_BREAK_OUTSIDE_LOOP
-        "break statement outside loop (treated as no-op)"
+        "break outside loop"
 
 let warnContinueOutsideLoop (line: int) : Diagnostic =
     makeDiag line W_CONTINUE_OUTSIDE_LOOP
-        "continue statement outside loop (treated as no-op)"
+        "continue outside loop"
 
 let warnLambdaCallApproximate (line: int) (varName: string) : Diagnostic =
     makeDiag line W_LAMBDA_CALL_APPROXIMATE
-        $"Calling function handle '{varName}' returns unknown (body analysis deferred to v0.12.1)"
+        $"Handle '{varName}': limited analysis. Shape assumed unknown."
 
 let warnLambdaArgCountMismatch (line: int) (expected: int) (got: int) : Diagnostic =
     makeDiag line W_LAMBDA_ARG_COUNT_MISMATCH
-        $"lambda expects {expected} arguments, got {got}"
+        $"Lambda: expected {expected} args, {got} given"
 
 let warnRecursiveLambda (line: int) : Diagnostic =
     makeDiag line W_RECURSIVE_LAMBDA
-        "recursive lambda call not supported (returns unknown)"
+        "Recursive lambda. Shape assumed unknown."
 
 let warnEndOutsideIndexing (line: int) : Diagnostic =
     makeDiag line W_END_OUTSIDE_INDEXING
-        "'end' keyword only valid inside indexing expressions"
+        "'end' only valid inside indexing"
 
 let warnExternalParseError (line: int) (fname: string) (sourcePath: string) : Diagnostic =
     makeDiag line W_EXTERNAL_PARSE_ERROR
-        $"Cannot analyze {fname} (parse error in {sourcePath}); treating result as unknown"
+        $"{fname}: parse error in {sourcePath}. Shape assumed unknown."
 
 let warnConstraintConflict (line: int) (varName: string) (value: int) (otherDim: string) (sourceLine: int) : Diagnostic =
     makeDiag line W_CONSTRAINT_CONFLICT
-        $"{varName}={value} conflicts with {varName}=={otherDim} (from line {sourceLine})"
+        $"{varName}={value} conflicts with {varName}=={otherDim} (line {sourceLine})"
 
 let warnReshapeMismatch (line: int) (inputShape: Shape) (m: string) (n: string) : Diagnostic =
     makeDiag line W_RESHAPE_MISMATCH
-        $"reshape changes element count: {shapeToString inputShape} has different element count than {m}x{n}"
+        $"reshape: {shapeToString inputShape} cannot fill {m}x{n}"
 
 let warnDivisionByZero (line: int) (leftExpr: Expr) (rightExpr: Expr) : Diagnostic =
-    // leftExpr and rightExpr kept for future use / symmetry with Python
     ignore leftExpr
     ignore rightExpr
     makeDiag line W_DIVISION_BY_ZERO
-        "division by zero: divisor is definitely zero"
+        "Division by zero"
 
 let warnIndexOutOfBounds (line: int) (indexVal: string) (dimSize: string) (definite: bool) : Diagnostic =
     let verb = if definite then "exceeds" else "may exceed"
     makeDiag line W_INDEX_OUT_OF_BOUNDS
-        $"index out of bounds: index range {indexVal} {verb} dimension {dimSize}"
+        $"Index {indexVal} {verb} dimension {dimSize}"
 
 let warnPossiblyNegativeDim (line: int) (dimVal: string) : Diagnostic =
     makeDiag line W_POSSIBLY_NEGATIVE_DIM
-        $"non-positive dimension: {dimVal}"
+        $"Non-positive dimension: {dimVal}"
 
 let warnArithmeticTypeMismatch
     (line: int) (op: string) (leftExpr: Expr) (rightExpr: Expr) (left: Shape) (right: Shape) : Diagnostic =
     ignore leftExpr
     ignore rightExpr
     makeDiag line W_ARITHMETIC_TYPE_MISMATCH
-        $"Arithmetic operator {op} requires numeric operands, got {shapeToString left} and {shapeToString right}"
+        $"{op}: non-numeric operands {shapeToString left}, {shapeToString right}"
 
 let warnTransposeTypeMismatch (line: int) (shape: Shape) : Diagnostic =
     makeDiag line W_TRANSPOSE_TYPE_MISMATCH
-        $"Transpose requires numeric operand, got {shapeToString shape}"
+        $"Transpose: non-numeric operand {shapeToString shape}"
 
 let warnNegateTypeMismatch (line: int) (shape: Shape) : Diagnostic =
     makeDiag line W_NEGATE_TYPE_MISMATCH
-        $"Negation requires numeric operand, got {shapeToString shape}"
+        $"Negation: non-numeric operand {shapeToString shape}"
 
 let warnNotTypeMismatch (line: int) (shape: Shape) : Diagnostic =
     makeDiag line W_NOT_TYPE_MISMATCH
-        $"Logical NOT requires numeric operand, got {shapeToString shape}"
+        $"~: non-numeric operand {shapeToString shape}"
 
 let warnConcatTypeMismatch (line: int) (shape: Shape) : Diagnostic =
     makeDiag line W_CONCAT_TYPE_MISMATCH
-        $"Concatenation requires numeric elements, got {shapeToString shape}"
+        $"Concatenation: non-numeric element {shapeToString shape}"
 
 let warnMldivideDimMismatch
     (line: int) (leftExpr: Expr) (rightExpr: Expr) (left: Shape) (right: Shape) : Diagnostic =
     let leftRows  = match left  with MatrixRows r -> dimStr r | _ -> "?"
     let rightRows = match right with MatrixRows r -> dimStr r | _ -> "?"
     makeDiag line W_MLDIVIDE_DIM_MISMATCH
-        $"Dimension mismatch in mldivide ({prettyExprIr leftExpr} \\ {prettyExprIr rightExpr}): A has {leftRows} rows but b has {rightRows} rows (shapes {shapeToString left} and {shapeToString right})"
+        $"{prettyExprIr leftExpr} \\ {prettyExprIr rightExpr}: {leftRows} rows vs {rightRows} rows"
 
 let warnMatrixPowerNonSquare (line: int) (expr: Expr) (shape: Shape) : Diagnostic =
     let rows = match shape with MatrixRows r -> dimStr r | _ -> "?"
     let cols = match shape with MatrixCols c -> dimStr c | _ -> "?"
     makeDiag line W_MATRIX_POWER_NON_SQUARE
-        $"Matrix power (^) requires square matrix; {prettyExprIr expr} has shape {shapeToString shape} ({rows} rows, {cols} cols)"
+        $"{prettyExprIr expr}^n: non-square {shapeToString shape} ({rows}x{cols})"
 
 let warnHorzcatRowMismatch (line: int) (rowA: Dim) (rowB: Dim) : Diagnostic =
     makeDiag line W_HORZCAT_ROW_MISMATCH
-        $"Horizontal concatenation row count mismatch: {dimStr rowA} vs {dimStr rowB}"
+        $"horzcat: row count {dimStr rowA} vs {dimStr rowB}"
 
 let warnVertcatColMismatch (line: int) (colA: Dim) (colB: Dim) : Diagnostic =
     makeDiag line W_VERTCAT_COL_MISMATCH
-        $"Vertical concatenation column count mismatch: {dimStr colA} vs {dimStr colB}"
+        $"vertcat: col count {dimStr colA} vs {dimStr colB}"
 
 let warnCellfunNonUniform (line: int) : Diagnostic =
     makeDiag line W_CELLFUN_NON_UNIFORM
-        "cellfun returns non-scalar elements; set 'UniformOutput',false to collect into a cell array"
+        "cellfun: non-scalar output, use 'UniformOutput',false"
 
 // ---------------------------------------------------------------------------
 // Coder-mode warning builders (W_CODER_* family)

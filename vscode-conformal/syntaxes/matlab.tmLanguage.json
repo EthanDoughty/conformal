@@ -45,11 +45,11 @@
     },
     "keyword": {
       "name": "keyword.control.matlab",
-      "match": "\\b(function|end|if|elseif|else|for|while|switch|case|otherwise|try|catch|return|break|continue)\\b"
+      "match": "\\b(function|end|if|elseif|else|for|while|switch|case|otherwise|try|catch|return|break|continue|classdef|properties|methods|events|enumeration|persistent|global|parfor|spmd)\\b"
     },
     "builtin": {
       "name": "support.function.matlab",
-      "match": "\\b(zeros|ones|eye|size|length|diag|transpose|inv|reshape|repmat|linspace|rand|randn|horzcat|vertcat|blkdiag|numel|isscalar|isvector|isempty|iscell|cell|struct|fieldnames|true|false|fprintf|error|warning|class|isa|deal)\\b"
+      "match": "\\b(zeros|ones|eye|size|length|diag|transpose|inv|reshape|repmat|linspace|rand|randn|horzcat|vertcat|blkdiag|numel|isscalar|isvector|isempty|iscell|cell|struct|fieldnames|true|false|fprintf|error|warning|class|isa|deal|abs|max|min|sum|prod|mean|std|var|sqrt|exp|log|log10|sin|cos|tan|atan2|ceil|floor|round|mod|rem|sort|find|unique|cat|num2str|str2num|sprintf|strcmp|double|single|int32|uint8|logical|real|imag|conj|norm|cross|dot|kron|trace|det|eig|svd|qr|lu|chol|pinv|rank)\\b"
     },
     "operator": {
       "name": "keyword.operator.matlab",

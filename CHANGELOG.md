@@ -7,8 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.8.0] - 2026-03-02
+## [2.8.0] - 2026-03-03
+### Changed
+- **Terse diagnostic messages** (`Diagnostics.fs`): all 47 non-coder warning messages rewritten to GCC/Clang style; messages lead with expression/construct, use colons to separate context from fact; "Treating result as unknown" replaced with "Shape assumed unknown"; "RHS" replaced with "right side"; no sentence-case preambles; internal version references removed
+- **Related information phrasing** (`LspDiagnostics.fs`, `server.ts`): "Related: see line N" replaced with "Related definition (line N)" in both native and Fable LSP servers
+- **Status bar text** (`extension.ts`): "Ready" changed to "No issues" when file has zero diagnostics
+
 ### Added
+- **Build pipeline smoke test** (`vscode-conformal/scripts/smoke-test.cjs`): Node script that loads Fable-compiled analyzer directly and verifies: inner dim mismatch detection, clean code produces zero diagnostics, pro-tier gating filters correctly, result structure has all required arrays; exits 1 on any failure
+- **Build script** (`vscode-conformal/scripts/build-vsix.sh`): sequential pipeline: Fable compile, esbuild bundle, smoke test, VSIX package; fails fast on any step
+- **Warning documentation** (`docs/warnings/`): 53 markdown files, one per warning code; each includes severity, tier, example, explanation, and fix suggestions; codeDescription URLs link diagnostics to documentation in both LSP servers
+- **Syntax highlighting expansion** (`matlab.tmLanguage.json`): keywords added: classdef, properties, methods, events, enumeration, persistent, global, parfor, spmd; builtins expanded from 31 to 80+ common functions
+- **BOM handling** (`Lexer.fs`): UTF-8 BOM (U+FEFF) stripped at start of lexing
+- **Edge case tests**: `tests/edge_cases/empty_file.m` (0 bytes), `tests/edge_cases/bom_file.m` (UTF-8 BOM + assignment)
+- **CHANGELOG.md** for VS Code marketplace (`vscode-conformal/CHANGELOG.md`)
+- **CI smoke test step** (`.github/workflows/ci.yml`): smoke test runs after esbuild, before VSIX packaging
+- **Analyze File command** (`extension.ts`): sends explicit didSave notification to force re-analysis on already-saved files
+- Total test count: 433 (was 431); `edge_cases/` added with 2 tests
 - **Switch/case multi-value cell refinement** (`StmtFuncAnalysis.fs`): `case {1, 5}` now extracts all integer literals from the cell list, computes the hull interval, and narrows the switch variable to that hull inside the case body; `switch n; case {1, 5}` refines `n` to `[1, 5]`, so downstream uses like `zeros(n, n)` can see a bounded size; previously multi-value cases fell through without any refinement
 - **Cross-file classdef resolution** (`Workspace.fs`, `Context.fs`, `StmtFuncAnalysis.fs`, `Cli.fs`, `LspServer.fs`, `TestRunner.fs`): the workspace scanner now detects classdef files via regex and routes them to an `externalClassdefs` map; `loadExternalClassdef` parses the classdef file and extracts `ClassInfo` plus method signatures; `tryLoadExternalClassdef` lazy-loads into the `classRegistry` at the first constructor reference; constructor calls and `obj.method(args)` dispatch both work across file boundaries; `scanWorkspace` returns a `(funcMap, classdefMap)` tuple
 - **Pentagon lower-bound tracking** (`Intervals.fs`, `Context.fs`, `EvalExpr.fs`, `StmtFuncAnalysis.fs`): `lowerBounds: Map<string, string * int>` added to `ConstraintContext`, mirroring the existing `upperBounds`; `joinLowerBounds` intersects lower-bound maps at control-flow joins; `killLowerBoundsFor` clears stale entries on assignment; `applyPentagonLowerBridge` fires when the bound variable has an exact interval, tightening the constrained variable's lower bound; for-loops record `i >= start` when the range start is a named variable; `pentagonProvesLowerBound` in `EvalExpr.fs` suppresses `W_INDEX_OUT_OF_BOUNDS` when the Pentagon domain can prove the index is at least 1

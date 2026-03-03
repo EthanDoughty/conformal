@@ -168,13 +168,13 @@ let runTests (strict: bool) (fixpoint: bool) (benchmark: bool) (quiet: bool) : i
 type CliArgs = {
     tests: bool; testProps: bool; strict: bool; fixpoint: bool
     bench: bool; coder: bool; pro: bool; file: string; parseJson: bool
-    quiet: bool
+    quiet: bool; help: bool; version: bool
 }
 
 let private defaultArgs =
     { tests = false; testProps = false; strict = false; fixpoint = false
       bench = false; coder = false; pro = false; file = ""; parseJson = false
-      quiet = false }
+      quiet = false; help = false; version = false }
 
 /// Fold state: Ready accepts flags, ConsumeFile means next arg is a file path,
 /// ConsumeWitness means next arg is an optional witness mode or file path.
@@ -201,6 +201,8 @@ let private parseArgv (argv: string array) : CliArgs =
                 | "--parse-json" -> ({ acc with parseJson = true }, ConsumeFile)
                 | "--witness"    -> (acc, ConsumeWitness)
                 | "--quiet"      -> ({ acc with quiet = true }, Ready)
+                | "--help" | "-h" -> ({ acc with help = true }, Ready)
+                | "--version"    -> ({ acc with version = true }, Ready)
                 | _ -> (acc, Ready)
             else
                 match arg with
@@ -218,16 +220,39 @@ let private parseArgv (argv: string array) : CliArgs =
             | "--parse-json" -> ({ acc with parseJson = true }, ConsumeFile)
             | "--witness"    -> (acc, ConsumeWitness)
             | "--quiet"      -> ({ acc with quiet = true }, Ready)
+            | "--help" | "-h" -> ({ acc with help = true }, Ready)
+            | "--version"    -> ({ acc with version = true }, Ready)
             | a when not (a.StartsWith("--")) -> ({ acc with file = a }, Ready)
             | _ -> (acc, Ready)
     ) (defaultArgs, Ready) |> fst
 
 /// run: parse argv and dispatch.
 /// Returns exit code.
+let private printUsage () =
+    printfn "Usage: conformal [--tests] [--strict] [--fixpoint] [--benchmark] [--coder] [--pro] <file.m>"
+    printfn ""
+    printfn "Options:"
+    printfn "  --tests       Run test suite"
+    printfn "  --test-props  Run property-based tests (FsCheck)"
+    printfn "  --strict      Show all warnings including informational diagnostics"
+    printfn "  --fixpoint    Use fixed-point iteration for loop analysis"
+    printfn "  --benchmark   Print timing breakdown"
+    printfn "  --coder       Enable MATLAB Coder compatibility warnings (W_CODER_*)"
+    printfn "  --pro         Enable Conformal Pro diagnostics (intervals, constraints, cross-file)"
+    printfn "  --parse-json  Parse file and emit JSON IR"
+    printfn "  --help, -h    Show this help message"
+    printfn "  --version     Show version"
+
 let run (argv: string array) : int =
     let args = parseArgv argv
 
-    if args.testProps then
+    if args.version then
+        printfn "Conformal 2.8.0"
+        0
+    elif args.help then
+        printUsage ()
+        0
+    elif args.testProps then
         PropertyTests.runPropertyTests()
     elif args.tests then
         runTests args.strict args.fixpoint args.bench args.quiet
@@ -259,15 +284,5 @@ let run (argv: string array) : int =
     elif args.file <> "" then
         runFile args.file args.strict args.fixpoint args.bench args.coder args.pro
     else
-        printfn "Usage: conformal-parse [--tests] [--strict] [--fixpoint] [--benchmark] [--coder] [--pro] <file.m>"
-        printfn ""
-        printfn "Options:"
-        printfn "  --tests       Run test suite"
-        printfn "  --test-props  Run property-based tests (FsCheck)"
-        printfn "  --strict      Show all warnings including informational diagnostics"
-        printfn "  --fixpoint    Use fixed-point iteration for loop analysis"
-        printfn "  --benchmark   Print timing breakdown"
-        printfn "  --coder       Enable MATLAB Coder compatibility warnings (W_CODER_*)"
-        printfn "  --pro         Enable Conformal Pro diagnostics (intervals, constraints, cross-file)"
-        printfn "  --parse-json  Parse file and emit JSON IR"
+        printUsage ()
         1

@@ -43,6 +43,7 @@
     <Compile Include="LspSymbols.fs" />
     <Compile Include="LspCodeActions.fs" />
     <Compile Include="LspDefinition.fs" />
+    <Compile Include="LspInlayHints.fs" />
     <Compile Include="LspServer.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

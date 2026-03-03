@@ -2,7 +2,7 @@
   "name": "conformal",
   "displayName": "Conformal - MATLAB Shape Analyzer",
   "description": "Static shape and dimension analysis for MATLAB. Catch matrix dimension errors before runtime. No MATLAB license required.",
-  "version": "2.0.0",
+  "version": "2.8.0",
   "keywords": [
     "matlab",
     "static analysis",
@@ -17,6 +17,10 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/EthanDoughty/conformal.git"
+  },
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
   },
   "engines": {
     "vscode": "^1.80.0"
@@ -92,6 +96,11 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Analyze as you type (500ms debounce). Conformal analyzes most files in under 100ms, so this is fast enough for real-time feedback."
+        },
+        "conformal.inlayHints": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show inferred shapes as inlay hints on first assignment of each variable"
         }
       }
     }

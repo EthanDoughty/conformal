@@ -13,12 +13,14 @@ let outputChannel: vscode.OutputChannel;
 
 // --- Configuration ---
 
-function getConformalSettings(): { fixpoint: boolean; strict: boolean; analyzeOnChange: boolean } {
+function getConformalSettings(): { fixpoint: boolean; strict: boolean; pro: boolean; analyzeOnChange: boolean; inlayHints: boolean } {
     const config = vscode.workspace.getConfiguration('conformal');
     return {
         fixpoint: config.get<boolean>('fixpoint', false),
         strict: config.get<boolean>('strict', false),
+        pro: config.get<boolean>('pro', false),
         analyzeOnChange: config.get<boolean>('analyzeOnChange', true),
+        inlayHints: config.get<boolean>('inlayHints', true),
     };
 }
 
@@ -52,7 +54,7 @@ function updateStatusBar(): void {
         statusBarItem.text = `$(warning) Conformal: ${warnings} warning${warnings > 1 ? 's' : ''}${modeStr}`;
         statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
     } else {
-        statusBarItem.text = `$(check) Conformal: Ready${modeStr}`;
+        statusBarItem.text = `$(check) Conformal: No issues${modeStr}`;
         statusBarItem.backgroundColor = undefined;
     }
 
@@ -103,6 +105,10 @@ export async function activate(context: vscode.ExtensionContext) {
             const editor = vscode.window.activeTextEditor;
             if (editor && editor.document.languageId === 'matlab') {
                 await editor.document.save();
+                // Force re-analysis even on already-saved files
+                client.sendNotification('textDocument/didSave', {
+                    textDocument: { uri: editor.document.uri.toString() },
+                });
             }
         }),
 

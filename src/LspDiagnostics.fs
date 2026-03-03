@@ -99,7 +99,7 @@ let toLspDiagnostic
             let relLoc : Location = { Uri = uri; Range = relRange }
             let relInfo : DiagnosticRelatedInformation = {
                 Location = relLoc
-                Message  = $"Related: see line {relLine}"
+                Message  = $"Related definition (line {relLine})"
             }
             Some [| relInfo |]
 
@@ -127,6 +127,6 @@ let toLspDiagnostic
         Message            = message
         Tags               = tags
         RelatedInformation = relatedInformation
-        CodeDescription    = None
+        CodeDescription    = Some { Href = $"https://github.com/EthanDoughty/conformal/blob/main/docs/warnings/{codeString d.code}.md" }
         Data               = None
     }

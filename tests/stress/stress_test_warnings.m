@@ -1,7 +1,7 @@
 % Stress Test: Warning Code Coverage
 % Exercises thin-coverage and rarely-triggered warning codes.
 % Each section targets a specific W_* code.
-% EXPECT: warnings = 27
+% EXPECT: warnings = 30
 
 % ==========================================================================
 % W_TOO_MANY_INDICES: 3+ indices on a 2D matrix
@@ -109,7 +109,7 @@ neg_fh = -fh2;  % EXPECT_WARNING: W_NEGATE_TYPE_MISMATCH
 x_switch = 2;
 switch x_switch
     case 1
-        return;
+        return; % EXPECT_WARNING: W_RETURN_OUTSIDE_FUNCTION
     case 2
         y_sw = 10;
 end
@@ -198,11 +198,8 @@ mat_cmp = H > I_mat;  % EXPECT_WARNING: W_MATRIX_COMPARISON
 
 % ==========================================================================
 % W_BREAK_OUTSIDE_LOOP / W_CONTINUE_OUTSIDE_LOOP
-% NOTE: break/continue at program level raise EarlyBreak/EarlyContinue
-% which halt subsequent analysis. Placed last to avoid cutting off tests.
-% GAP: W_BREAK_OUTSIDE_LOOP / W_CONTINUE_OUTSIDE_LOOP are defined but
-% not emitted — the Break/Continue IR nodes raise exceptions directly
-% without a warning, so the stmt handler never calls the warn functions.
+% NOTE: break/continue at program level are invalid MATLAB. Placed last
+% because FlowBreak/FlowContinue halt subsequent analysis.
 % ==========================================================================
-break;
-continue;
+break; % EXPECT_WARNING: W_BREAK_OUTSIDE_LOOP
+continue; % EXPECT_WARNING: W_CONTINUE_OUTSIDE_LOOP

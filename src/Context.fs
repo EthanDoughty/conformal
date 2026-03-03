@@ -79,9 +79,6 @@ type CallContext() =
     /// Set of lambda IDs currently being analyzed (recursion guard)
     member val analyzingLambdas       : System.Collections.Generic.HashSet<int>
                                         = System.Collections.Generic.HashSet<int>() with get, set
-    /// Set of external function names currently being analyzed (cycle guard)
-    member val analyzingExternal      : System.Collections.Generic.HashSet<string>
-                                        = System.Collections.Generic.HashSet<string>() with get, set
     /// Cache keyed by (funcName, argShapes tuple string) -> CacheEntry
     member val analysisCache          : System.Collections.Generic.Dictionary<string, CacheEntry>
                                         = System.Collections.Generic.Dictionary<string, CacheEntry>() with get, set
@@ -108,6 +105,10 @@ type CallContext() =
     /// NOT saved/restored by SnapshotScope -- globals survive function boundaries.
     member val globalStore    : System.Collections.Generic.Dictionary<string, Shape>
                                 = System.Collections.Generic.Dictionary<string, Shape>() with get
+    /// Whether analysis is currently inside a loop body (for break/continue validation)
+    member val insideLoop     : bool = false with get, set
+    /// Whether analysis is currently inside a function body (for return validation)
+    member val insideFunction : bool = false with get, set
 
 type ConstraintContext() =
     /// Set of (dim1_str, dim2_str) equality constraints (canonicalized)
@@ -157,6 +158,19 @@ type WorkspaceContext() =
                                      = System.Collections.Generic.HashSet<string>() with get, set
 
 // ---------------------------------------------------------------------------
+// ConstraintSnapshot: captures the 5 branch-sensitive fields for save/restore.
+// Used by branch handlers (If, IfChain, Switch, TryCatch) and joinBranchResults.
+// ---------------------------------------------------------------------------
+
+type ConstraintSnapshot = {
+    constraints: Set<string * string>
+    dimEquiv:    DimEquiv.DimEquiv
+    valueRanges: Map<string, Interval>
+    upperBounds: Map<string, string * int>
+    lowerBounds: Map<string, string * int>
+}
+
+// ---------------------------------------------------------------------------
 // AnalysisContext: root container for all analysis state
 // ---------------------------------------------------------------------------
 
@@ -167,19 +181,39 @@ type AnalysisContext() =
     /// Accumulated diagnostics
     member val diagnostics : Diagnostics.Diagnostic list = [] with get, set
 
+    /// Snapshot the 5 branch-sensitive fields (constraints, dimEquiv, valueRanges,
+    /// upperBounds, lowerBounds). DimEquiv is deep-copied; the rest are persistent/O(1).
+    member this.SnapshotConstraintState() : ConstraintSnapshot = {
+        constraints = this.cst.constraints
+        dimEquiv    = DimEquiv.snapshot this.cst.dimEquiv
+        valueRanges = this.cst.valueRanges
+        upperBounds = this.cst.upperBounds
+        lowerBounds = this.cst.lowerBounds
+    }
+
+    /// Restore the 5 branch-sensitive fields from a snapshot.
+    member this.RestoreConstraintState(snap: ConstraintSnapshot) =
+        this.cst.constraints <- snap.constraints
+        this.cst.dimEquiv.parent.Clear()
+        for kv in snap.dimEquiv.parent do this.cst.dimEquiv.parent.[kv.Key] <- kv.Value
+        this.cst.dimEquiv.rank.Clear()
+        for kv in snap.dimEquiv.rank do this.cst.dimEquiv.rank.[kv.Key] <- kv.Value
+        this.cst.dimEquiv.concrete.Clear()
+        for kv in snap.dimEquiv.concrete do this.cst.dimEquiv.concrete.[kv.Key] <- kv.Value
+        this.cst.valueRanges <- snap.valueRanges
+        this.cst.upperBounds <- snap.upperBounds
+        this.cst.lowerBounds <- snap.lowerBounds
+
     /// Save and restore scope-sensitive fields around function/lambda body analysis.
     /// Mirrors Python's snapshot_scope() context manager.
     /// Usage: ctx.SnapshotScope(fun () -> analyzeBody())
     member this.SnapshotScope (body: unit -> 'T) : 'T =
-        // Save (persistent maps: O(1) snapshot)
-        let savedConstraints  = this.cst.constraints
+        // Save branch-sensitive state via ConstraintSnapshot
+        let savedSnap         = this.SnapshotConstraintState()
+        // Save additional scope-sensitive fields not in ConstraintSnapshot
         let savedProvenance   = this.cst.constraintProvenance
         let savedScalars      = this.cst.scalarBindings
-        let savedRanges       = this.cst.valueRanges
-        let savedUpperBounds  = this.cst.upperBounds
-        let savedLowerBounds  = this.cst.lowerBounds
         let savedNested       = System.Collections.Generic.Dictionary<string, FunctionSignature>(this.call.nestedFunctionRegistry)
-        let savedDimEquiv     = DimEquiv.snapshot this.cst.dimEquiv
         // globalDeclaredVars is function-scoped: save and restore so each function body
         // starts with a fresh set and the caller's set is not polluted.
         let savedGlobalDeclared = System.Collections.Generic.HashSet<string>(this.cst.globalDeclaredVars)
@@ -187,41 +221,14 @@ type AnalysisContext() =
         try
             body ()
         finally
-            // Restore (direct assignment for persistent maps)
-            this.cst.constraints         <- savedConstraints
+            // Restore branch-sensitive state
+            this.RestoreConstraintState(savedSnap)
+            // Restore additional scope-sensitive fields
             this.cst.constraintProvenance <- savedProvenance
             this.cst.scalarBindings      <- savedScalars
-            this.cst.valueRanges         <- savedRanges
-            this.cst.upperBounds         <- savedUpperBounds
-            this.cst.lowerBounds         <- savedLowerBounds
             this.call.nestedFunctionRegistry.Clear()
             for kv in savedNested do this.call.nestedFunctionRegistry.[kv.Key] <- kv.Value
-            // Restore DimEquiv by replacing the store contents
-            this.cst.dimEquiv.parent.Clear()
-            for kv in savedDimEquiv.parent do this.cst.dimEquiv.parent.[kv.Key] <- kv.Value
-            this.cst.dimEquiv.rank.Clear()
-            for kv in savedDimEquiv.rank do this.cst.dimEquiv.rank.[kv.Key] <- kv.Value
-            this.cst.dimEquiv.concrete.Clear()
-            for kv in savedDimEquiv.concrete do this.cst.dimEquiv.concrete.[kv.Key] <- kv.Value
             // Restore function-scoped global declarations
             this.cst.globalDeclaredVars <- savedGlobalDeclared
 
-// ---------------------------------------------------------------------------
-// BuiltinEvalContext: callback record to break EvalExpr <-> EvalBuiltins
-// circular dependency (populated in Phase 3/4).
-// ---------------------------------------------------------------------------
 
-type BuiltinEvalContext = {
-    /// evalExprIr: Expr -> Env -> AnalysisContext -> Shape
-    evalExprIr         : Expr -> Env -> AnalysisContext -> Shapes.Shape
-    /// exprToDimIr: Expr -> Env -> Dim
-    exprToDimIr        : Expr -> Env -> Shapes.Dim
-    /// exprToDimWithEnd: Expr -> Env -> Dim -> Dim  (End substitution)
-    exprToDimWithEnd   : Expr -> Env -> Shapes.Dim -> Shapes.Dim
-    /// getExprInterval: Expr -> Env -> AnalysisContext -> Interval option
-    getExprInterval    : Expr -> Env -> AnalysisContext -> Interval option
-    /// getConcreteDimSize: Dim -> AnalysisContext -> int option
-    getConcreteDimSize : Shapes.Dim -> AnalysisContext -> int option
-    /// unwrapArg: IndexArg -> Expr option  (extract scalar expr from IndexExpr)
-    unwrapArg          : IndexArg -> Expr option
-}

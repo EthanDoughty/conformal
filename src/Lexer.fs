@@ -103,6 +103,8 @@ let private masterRe = Regex(masterPatternSimple, RegexOptions.Compiled)
 let lex (src: string) : Token list =
     // Normalize line endings.
     let src = src.Replace("\r\n", "\n").Replace("\r", "\n")
+    // Strip UTF-8 BOM if present.
+    let src = if src.Length > 0 && src.[0] = '\uFEFF' then src.[1..] else src
 
     let tokens = System.Collections.Generic.List<Token>()
     let mutable pos = 0

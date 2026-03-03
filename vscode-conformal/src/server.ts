@@ -46,8 +46,16 @@ interface SerializedDiagnostic {
 interface FunctionSymbol {
     name: string;
     line: number;
+    col: number;
     parms: string[];
     outputs: string[];
+}
+
+interface AssignmentHint {
+    name: string;
+    line: number;
+    col: number;
+    shape: string;
 }
 
 interface AnalysisResult {
@@ -55,6 +63,7 @@ interface AnalysisResult {
     env: [string, string][];         // [varName, shapeString]
     symbols: FunctionSymbol[];
     parseError: string | undefined;
+    assignments: AssignmentHint[];
 }
 
 // ---------------------------------------------------------------------------
@@ -80,7 +89,7 @@ const ERROR_CODES = new Set([
     'W_LAMBDA_ARG_COUNT_MISMATCH',
     'W_MULTI_ASSIGN_COUNT_MISMATCH',
     'W_MULTI_ASSIGN_NON_CALL',
-    'W_MULTI_ASSIGN_BUILTIN',
+    'W_MULTI_ASSIGN_BUILTIN',  // dead code (kept for backward compat)
     'W_PROCEDURE_IN_EXPR',
     'W_BREAK_OUTSIDE_LOOP',
     'W_CONTINUE_OUTSIDE_LOOP',
@@ -100,6 +109,7 @@ interface CachedAnalysis {
     env: [string, string][];
     diagnostics: SerializedDiagnostic[];
     symbols: FunctionSymbol[];
+    assignments: AssignmentHint[];
     sourceHash: string;
     settingsHash: string;
 }
@@ -110,7 +120,9 @@ const debounceTimers = new Map<string, NodeJS.Timeout>();
 let serverSettings = {
     fixpoint: false,
     strict: false,
+    pro: false,
     analyzeOnChange: true,
+    inlayHints: true,
 };
 
 // ---------------------------------------------------------------------------
@@ -122,7 +134,7 @@ function computeHash(text: string): string {
 }
 
 function settingsHash(): string {
-    return computeHash(`${serverSettings.fixpoint}${serverSettings.strict}`);
+    return computeHash(`${serverSettings.fixpoint}${serverSettings.strict}${serverSettings.pro}`);
 }
 
 function uriToPath(uri: string): string {
@@ -197,7 +209,7 @@ function toLspDiagnostic(d: SerializedDiagnostic, sourceLines: string[], uri: st
                     end: { line: relLineNum, character: relEndChar },
                 },
             },
-            message: `Related: see line ${d.relatedLine}`,
+            message: `Related definition (line ${d.relatedLine})`,
         }];
     }
 
@@ -205,6 +217,9 @@ function toLspDiagnostic(d: SerializedDiagnostic, sourceLines: string[], uri: st
         range,
         severity,
         code: d.code,
+        codeDescription: {
+            href: `https://github.com/EthanDoughty/conformal/blob/main/docs/warnings/${d.code}.md`,
+        },
         source: 'conformal',
         message: d.message,
         tags,
@@ -242,6 +257,7 @@ function validate(uri: string, source: string, force = false): void {
             source,
             serverSettings.fixpoint,
             serverSettings.strict,
+            serverSettings.pro,
             externalFiles
         );
 
@@ -266,6 +282,7 @@ function validate(uri: string, source: string, force = false): void {
             env: result.env,
             diagnostics: result.diagnostics,
             symbols: result.symbols,
+            assignments: result.assignments || [],
             sourceHash: srcHash,
             settingsHash: setHash,
         });
@@ -367,7 +384,7 @@ function getCodeActions(uri: string, diagnostics: Diagnostic[], sourceLines: str
         const code = typeof diag.code === 'string' ? diag.code : '';
 
         // * -> .* (elementwise multiplication)
-        if (code === 'W_INNER_DIM_MISMATCH' && diag.message.includes('elementwise multiplication')) {
+        if (code === 'W_INNER_DIM_MISMATCH' && diag.message.includes('.* for elementwise')) {
             const newText = lineText.replace(/(?<!\.)\*/g, '.*');
             if (newText !== lineText) {
                 actions.push({
@@ -475,7 +492,9 @@ connection.onInitialize((params: InitializeParams) => {
     if (opts && typeof opts === 'object') {
         if ('fixpoint' in opts) serverSettings.fixpoint = Boolean(opts.fixpoint);
         if ('strict' in opts) serverSettings.strict = Boolean(opts.strict);
+        if ('pro' in opts) serverSettings.pro = Boolean(opts.pro);
         if ('analyzeOnChange' in opts) serverSettings.analyzeOnChange = Boolean(opts.analyzeOnChange);
+        if ('inlayHints' in opts) serverSettings.inlayHints = Boolean(opts.inlayHints);
     }
 
     return {
@@ -486,6 +505,8 @@ connection.onInitialize((params: InitializeParams) => {
                 codeActionKinds: [CodeActionKind.QuickFix],
             },
             documentSymbolProvider: true,
+            definitionProvider: true,
+            inlayHintProvider: true,
         },
     };
 });
@@ -557,6 +578,78 @@ connection.onDocumentSymbol(params => {
     return getDocumentSymbols(params.textDocument.uri);
 });
 
+// Inlay hints
+connection.languages.inlayHint.on(params => {
+    if (!serverSettings.inlayHints) return null;
+    const cached = analysisCache.get(params.textDocument.uri);
+    if (!cached?.assignments) return null;
+
+    const start = params.range.start.line;
+    const end = params.range.end.line;
+
+    const hints = cached.assignments
+        .filter(a => (a.line - 1) >= start && (a.line - 1) <= end)
+        .map(a => ({
+            position: { line: a.line - 1, character: a.col - 1 + a.name.length },
+            label: `: ${a.shape}`,
+            kind: 1 as const,  // InlayHintKind.Type
+            paddingLeft: true,
+        }));
+
+    return hints.length > 0 ? hints : null;
+});
+
+// Go-to-definition
+connection.onDefinition(params => {
+    const cached = analysisCache.get(params.textDocument.uri);
+    if (!cached) return null;
+
+    const doc = documents.get(params.textDocument.uri);
+    if (!doc) return null;
+
+    const lines = doc.getText().split('\n');
+    const line = params.position.line;
+    const character = params.position.character;
+
+    if (line < 0 || line >= lines.length) return null;
+
+    const lineText = lines[line];
+    if (character < 0 || character > lineText.length) return null;
+
+    // Extract identifier at cursor (same logic as getHover)
+    const identRe = /[A-Za-z_]\w*/g;
+    let match: RegExpExecArray | null;
+    let word = '';
+
+    while ((match = identRe.exec(lineText)) !== null) {
+        const s = match.index;
+        const e = s + match[0].length;
+        if (s <= character && character < e) {
+            word = match[0];
+            break;
+        }
+    }
+
+    if (!word) return null;
+
+    // Check same-file function symbols
+    for (const sym of cached.symbols) {
+        if (sym.name === word) {
+            const defLine = sym.line - 1;
+            const defCol = sym.col > 0 ? sym.col - 1 : 0;
+            return {
+                uri: params.textDocument.uri,
+                range: {
+                    start: { line: defLine, character: defCol },
+                    end: { line: defLine, character: defCol + word.length },
+                },
+            } as Location;
+        }
+    }
+
+    return null;
+});
+
 // Configuration changes
 connection.onDidChangeConfiguration(params => {
     const settings = params?.settings;
@@ -566,7 +659,9 @@ connection.onDidChangeConfiguration(params => {
             const c = conformal as Record<string, unknown>;
             if ('fixpoint' in c) serverSettings.fixpoint = Boolean(c.fixpoint);
             if ('strict' in c) serverSettings.strict = Boolean(c.strict);
+            if ('pro' in c) serverSettings.pro = Boolean(c.pro);
             if ('analyzeOnChange' in c) serverSettings.analyzeOnChange = Boolean(c.analyzeOnChange);
+            if ('inlayHints' in c) serverSettings.inlayHints = Boolean(c.inlayHints);
         }
     }
 

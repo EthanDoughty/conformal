@@ -46,8 +46,7 @@ type WarningCode =
     | W_FIELD_ACCESS_NON_STRUCT
     | W_CURLY_INDEXING_NON_CELL
     | W_CELL_ASSIGN_NON_CELL
-    // Control flow (not currently emitted; break/continue/return use exceptions)
-    // TODO: wire up after ControlFlow DU (Sprint E S2)
+    // Control flow
     | W_RETURN_OUTSIDE_FUNCTION
     | W_BREAK_OUTSIDE_LOOP
     | W_CONTINUE_OUTSIDE_LOOP

@@ -49,10 +49,19 @@ jobs:
           cd vscode-conformal
           npm ci
 
+      - name: TypeScript type check
+        run: cd vscode-conformal && npx tsc --noEmit
+        continue-on-error: true
+
       - name: Build extension
         run: |
           cd vscode-conformal
           node esbuild.mjs --minify
+
+      - name: Smoke test Fable output
+        run: |
+          cd vscode-conformal
+          node scripts/smoke-test.cjs
 
       - name: Package VSIX
         run: |

@@ -3,6 +3,7 @@ module Interop
 open Ir
 open Shapes
 open Context
+open WarningCodes
 open Diagnostics
 open Analysis
 
@@ -21,10 +22,18 @@ type SerializedDiagnostic = {
 }
 
 type FunctionSymbol = {
-    name:   string
-    line:   int
-    parms:  string array
+    name:    string
+    line:    int
+    col:     int
+    parms:   string array
     outputs: string array
+}
+
+type AssignmentHint = {
+    name:  string
+    line:  int
+    col:   int
+    shape: string
 }
 
 type AnalysisResult = {
@@ -32,6 +41,7 @@ type AnalysisResult = {
     env:         (string * string) array   // (varName, shapeString)
     symbols:     FunctionSymbol array
     parseError:  string option
+    assignments: AssignmentHint array
 }
 
 // ---------------------------------------------------------------------------
@@ -94,6 +104,7 @@ let analyzeSource
     (source: string)
     (fixpoint: bool)
     (strict: bool)
+    (pro: bool)
     (externalFiles: (string * string) array)
     : AnalysisResult =
 
@@ -116,7 +127,7 @@ let analyzeSource
             | Parser.ParseError msg -> msg
             | Lexer.LexError msg -> msg
             | ex -> ex.Message
-        { diagnostics = [||]; env = [||]; symbols = [||]; parseError = Some errMsg }
+        { diagnostics = [||]; env = [||]; symbols = [||]; parseError = Some errMsg; assignments = [||] }
 
     | Some irProg ->
 
@@ -125,8 +136,8 @@ let analyzeSource
         irProg.body
         |> List.choose (fun stmt ->
             match stmt with
-            | FunctionDef({ line = line }, name, parms, outputVars, _) ->
-                Some { name = name; line = line; parms = Array.ofList parms; outputs = Array.ofList outputVars }
+            | FunctionDef({ line = line; col = col }, name, parms, outputVars, _) ->
+                Some { name = name; line = line; col = col; parms = Array.ofList parms; outputs = Array.ofList outputVars }
             | _ -> None)
         |> Array.ofList
 
@@ -146,16 +157,17 @@ let analyzeSource
             // Analysis crash — return what we have
             (Env.Env.create (), [])
 
-    // Filter strict-only codes in default mode
+    // Two-stage filter: pro tier, then strict tier
     let displayWarnings =
-        if strict then warnings
-        else warnings |> List.filter (fun w -> not (Set.contains w.code STRICT_ONLY_CODES))
+        warnings
+        |> (if pro then id else List.filter (fun w -> not (Set.contains w.code PRO_ONLY_CODES)))
+        |> (if strict then id else List.filter (fun w -> not (Set.contains w.code STRICT_ONLY_CODES)))
 
     // Serialize diagnostics
     let diags =
         displayWarnings
         |> List.map (fun w ->
-            { line = w.line; col = w.col; code = w.code; message = w.message
+            { line = w.line; col = w.col; code = codeString w.code; message = w.message
               relatedLine = w.relatedLine; relatedCol = w.relatedCol })
         |> Array.ofList
 
@@ -165,4 +177,33 @@ let analyzeSource
         |> Map.toArray
         |> Array.map (fun (k, v) -> (k, shapeToString v))
 
-    { diagnostics = diags; env = envPairs; symbols = symbols; parseError = None }
+    // Collect first-assignment hints (same algorithm as LspInlayHints.fs)
+    let seen = System.Collections.Generic.HashSet<string>()
+    let hintList = ResizeArray<AssignmentHint>()
+
+    let tryEmitHint (loc: Ir.SrcLoc) (name: string) =
+        if seen.Add(name) then
+            let shape = Env.Env.get env name
+            match shape with
+            | Bottom | UnknownShape -> ()
+            | _ -> hintList.Add({ name = name; line = loc.line; col = loc.col; shape = shapeToString shape })
+
+    let rec walkStmts stmts =
+        for stmt in stmts do walkStmt stmt
+    and walkStmt stmt =
+        match stmt with
+        | Ir.Assign(loc, name, _) -> tryEmitHint loc name
+        | Ir.AssignMulti(loc, targets, _) ->
+            for name in targets do tryEmitHint loc name
+        | Ir.For(loc, var_, _, body) -> tryEmitHint loc var_; walkStmts body
+        | Ir.If(_, _, tb, eb) -> walkStmts tb; walkStmts eb
+        | Ir.IfChain(_, _, bodies, eb) -> for b in bodies do walkStmts b; walkStmts eb
+        | Ir.While(_, _, body) -> walkStmts body
+        | Ir.Switch(_, _, cases, ow) -> for (_, cb) in cases do walkStmts cb; walkStmts ow
+        | Ir.Try(_, tb, cb) -> walkStmts tb; walkStmts cb
+        | Ir.FunctionDef _ -> ()
+        | _ -> ()
+
+    walkStmts irProg.body
+
+    { diagnostics = diags; env = envPairs; symbols = symbols; parseError = None; assignments = hintList.ToArray() }

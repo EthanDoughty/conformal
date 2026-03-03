@@ -1,0 +1,30 @@
+# Changelog
+
+## 2.8.0
+
+- Terse diagnostic messages (GCC/Clang style)
+- Warning documentation: each diagnostic code links to an explanation page
+- Expanded syntax highlighting: classdef, persistent, global, parfor, 50+ builtins
+- Build pipeline smoke test prevents shipping stale Fable output
+- BOM handling for UTF-8 files with byte order marks
+- Status bar shows "No issues" instead of "Ready" for clean files
+
+## 2.7.0
+
+- Inlay hints: shape annotations on first assignment (`: matrix[3 x 4]`)
+- Fable/JS server at full parity with native .NET server
+- Go-to-definition, hover, code actions, document symbols in both servers
+- Pro-tier filtering in VS Code extension
+
+## 2.0.0
+
+- Complete rewrite: F# analyzer with Fable-compiled JS server
+- In-process LSP via IPC transport (no Python subprocess)
+- 190KB VSIX package
+- 500ms debounced analyze-on-change
+
+## 1.0.0
+
+- Initial release with Python-based analyzer
+- Shape tracking for matrix operations
+- Basic LSP integration
