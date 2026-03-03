@@ -20,11 +20,12 @@ cd src && dotnet run -- --tests
 cd src && dotnet run -- ../tests/basics/inner_dim_mismatch.m
 ```
 
-**Strict / fixpoint / witness modes**:
+**Strict / fixpoint / witness / pro modes**:
 ```bash
 cd src && dotnet run -- --strict ../tests/recovery/struct_field.m
 cd src && dotnet run -- --fixpoint ../tests/loops/matrix_growth.m
 cd src && dotnet run -- --witness ../tests/basics/inner_dim_mismatch.m
+cd src && dotnet run -- --pro ../tests/intervals/index_out_of_bounds.m
 ```
 
 **Build VS Code extension (Fable)**:
@@ -109,7 +110,7 @@ Fable compiles 27 core F# files to JavaScript for the VS Code extension:
 All warnings are structured as `Diagnostic` record instances:
 - **Fields**: `line`, `col`, `code` (W_* prefix), `message`, optional `related_line`, `related_col`
 - **Warning codes**: All warnings have stable W_* codes
-- **Warning tiers**: `STRICT_ONLY_CODES` in `Diagnostics.fs` defines codes suppressed in default mode (shown only with `--strict`). Filtering is a post-analysis presentation concern applied in CLI and LSP. Tests receive unfiltered warnings.
+- **Warning tiers**: `STRICT_ONLY_CODES` in `Diagnostics.fs` defines 11 codes suppressed in default mode (shown only with `--strict`); `PRO_ONLY_CODES` defines 11 codes that require the advanced analysis domains and are suppressed unless `--pro` is active (the CLI prints an upsell count when pro-tier warnings exist but `--pro` is not set); the LSP reads `conformal.pro` and silently filters pro-tier codes when the setting is false. Filtering is a post-analysis presentation concern applied in CLI and LSP. Tests receive unfiltered warnings.
 - **Severity mapping** (LSP): Error-severity codes defined in `LspDiagnostics.fs` and `server.ts`. W_UNSUPPORTED_* codes get DiagnosticTag.Unnecessary.
 
 ## Shape System
@@ -161,7 +162,7 @@ Tests use inline assertions in MATLAB comments:
 % EXPECT_FIXPOINT: A = matrix[None x None]   (override when --fixpoint active)
 ```
 
-The test runner (`TestRunner.fs`) validates these expectations against analysis results. Test files are organized in `tests/` subdirectories by category (20 categories, 409 tests) and discovered dynamically via glob. Run `cd src && dotnet run -- --tests` to see the current count.
+The test runner (`TestRunner.fs`) validates these expectations against analysis results. Test files are organized in `tests/` subdirectories by category (20 categories, 421 tests) and discovered dynamically via glob. Run `cd src && dotnet run -- --tests` to see the current count.
 
 Additional directive forms:
 - `% EXPECT: warnings >= N` (or `>`, `<`, `<=`): accepts comparison operators, not just `=`
@@ -218,6 +219,18 @@ When analyzing a `.m` file, the analyzer scans sibling `.m` files in the same di
 - The cache key includes the argument count, so optional-arg functions called with different argc values are analyzed separately
 - Interval refinement inside the body can then prune dead branches: `if nargin < 2` with `nargin = [2, 2]` has a provably false condition, so the true branch is effectively dead
 
+**`varargin`/`varargout` semantics**:
+- When the last declared parameter is `varargin`, extra call arguments beyond the named ones are bundled into a `Cell` with per-element shape tracking; `varargin{1}` returns the actual shape of the first extra argument via the existing `CurlyApply` element-map lookup
+- The arg-count warning is suppressed when `hasVarargin` is detected on the callee
+- `varargout`: extra output targets beyond the named return variables receive `UnknownShape`
+
+**`global`/`persistent` semantics**:
+- `globalStore: Dictionary<string, Shape>` on `CallContext` holds live global values; it is NOT saved or restored by `SnapshotScope` so changes persist across function analysis boundaries
+- `globalDeclaredVars: HashSet<string>` on `ConstraintContext` IS snapshotted so the declaration set can be restored after branch joins
+- `global x`: reads from `globalStore` if present (else `Bottom`); at function exit, the current value of `x` is written back to `globalStore`
+- `persistent x`: binds as `Bottom` initially; the `if isempty(x), x = init; end` idiom resolves via `join(Bottom, shape) = shape`
+- Functions that declare globals skip the analysis cache (their results are side-effecting and not safe to replay)
+
 **Nested function semantics**:
 - Nested functions are visible only within their enclosing function (not at top-level script scope)
 - They have read access to parent workspace variables via `ScopedEnv` parent-pointer scope chains
@@ -260,16 +273,17 @@ When a definite mismatch is detected (e.g., inner dimension mismatch in `A*B`), 
 - When `UniformOutput` is `true` (the default), a scalar per-element result produces a matrix matching the cell/matrix dimensions; named handles (`@func`) and lambdas (`@(x) expr`) both go through normal handle dispatch
 - `arrayfun` follows the same logic applied to matrix inputs rather than cell inputs
 
-**`classdef` support** (`Parser.fs`, `ClassInfo` registry):
+**`classdef` support** (`Parser.fs`, `ClassInfo` registry, `Context.fs`):
 - `ParseClassdef` extracts property names from `properties` blocks (bare names and `name = default` forms) and method `FunctionDef` nodes from `methods` blocks into a `ClassInfo` record
 - The `ClassInfo` registry maps class names to their `ClassInfo`; when a call site matches a registered class name, the constructor body is analyzed and the result is a struct carrying the declared property fields
 - Superclass syntax `classdef Foo < Bar` is parsed: the `< Bar` part is consumed and stored but the superclass is not resolved or analyzed
-- Method dispatch (calling `obj.method(...)`) is not yet supported; method definitions are extracted but not called from outside the constructor flow
+- **Method dispatch**: `classBindings: Dictionary<string, string>` on `CallContext` maps variable names to class names; constructor calls populate `classBindings`; when `evalApply` sees `obj.method(args)` and `obj` is in `classBindings`, it looks up the class in the `ClassInfo` registry and dispatches the call as `method(obj, args)` through the normal builtin dispatch path
 
 ## Known Behaviors and Gotchas
 
 - Test discovery is dynamic via glob in `TestRunner.fs`
 - `--strict` mode shows all warnings including low-confidence diagnostics; default mode suppresses strict-only codes
+- `--pro` enables the pro-tier codes (`PRO_ONLY_CODES` in `Diagnostics.fs`); without it, the CLI prints an upsell count and the LSP silently filters them; tests receive unfiltered warnings regardless of `--pro`
 - `--coder` runs a post-analysis pass that checks for MATLAB Coder incompatibilities; all six `W_CODER_*` codes are strict-only, so `--coder` without `--strict` will emit nothing; the Coder pass does not change shape inference, it only adds a compatibility scan on top; tests in `tests/coder/` use a `% MODE: coder` directive and the TestRunner enables the pass automatically for those files
 - Indexed assignment (`M(i,j) = val`) does not check bounds because MATLAB auto-expands arrays on write
 - Empty matrix `[]` (`matrix[0 x 0]`) is the identity element for concatenation: `[[] x]` produces `x`

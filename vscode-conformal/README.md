@@ -8,7 +8,7 @@ Conformal finds matrix dimension errors before you run your code. If `A` is `3x4
 
 Most of what Conformal catches comes down to dimension mismatches, whether that's in multiplication, concatenation, element-wise operations, or backslash solves. It can also flag type errors when you use structs or cells where numbers are expected, and it checks for index out of bounds, division by zero, and negative dimensions when it can prove them from the code. It follows shapes through user-defined functions (including pre-2016 end-less definitions and no-arg procedures), anonymous functions with closure capture, and cross-file calls to sibling `.m` files.
 
-By default, Conformal shows only high-confidence warnings. There are 19 codes that only appear in strict mode, mostly low-confidence things like `W_UNKNOWN_FUNCTION` and `W_STRUCT_FIELD_NOT_FOUND`, so you can run default mode in CI without false-positive noise.
+By default, Conformal shows only high-confidence warnings. The `strict` setting adds 11 low-confidence codes like `W_SUSPICIOUS_COMPARISON`, mostly things that could be false positives. The `pro` setting adds a further 11 codes that depend on the advanced analysis domains, like `W_INDEX_OUT_OF_BOUNDS`, `W_DIVISION_BY_ZERO`, `W_CONSTRAINT_CONFLICT`, and `W_STRUCT_FIELD_NOT_FOUND`. Without `pro` enabled, those codes are silently filtered so you don't need to think about them unless you want them.
 
 ## In the editor
 
@@ -30,7 +30,7 @@ You shouldn't need to configure anything. The extension bundles the analyzer dir
 
 Initially, the analyzer runs in-process inside the VS Code extension's Node.js host, since it is compiled to JavaScript from F# using Fable. When you open or save a `.m` file, the server analyzes it and publishes diagnostics back to the editor. If you save a file that other files in the same directory might depend on, those are re-analyzed too. If the server crashes, it can auto-recover up to 3 times.
 
-Under the hood, there are around 315 builtin shape rules (out of 635 recognized builtins total, covering core MATLAB plus Control System, Signal Processing, Aerospace, Optimization, Mapping, Image Processing, Robotics, Statistics, Communications, Computer Vision, Deep Learning, and Symbolic Math Toolbox functions), symbolic dimension tracking, constraint solving, interval analysis, switch/case interval refinement, and fixed-point loop convergence, all validated by 370 tests across 18 categories. Finally, the parser has been tested against 139 `.m` files drawn from 8 real open-source MATLAB repos, covering robotics, signal processing, and scientific computing, and produces zero warnings on all of them in default mode.
+Under the hood, there are around 315 builtin shape rules (out of 635 recognized builtins total, covering core MATLAB plus Control System, Signal Processing, Aerospace, Optimization, Mapping, Image Processing, Robotics, Statistics, Communications, Computer Vision, Deep Learning, and Symbolic Math Toolbox functions), symbolic dimension tracking, constraint solving, interval analysis, switch/case interval refinement, and fixed-point loop convergence, all validated by 421 tests across 20 categories. The parser has also been tested against 139 `.m` files drawn from 8 real open-source MATLAB repos, covering robotics, signal processing, and scientific computing, and produces zero warnings on all of them in default mode.
 
 ## Commands
 
@@ -47,6 +47,7 @@ Under the hood, there are around 315 builtin shape rules (out of 635 recognized 
 |---------|---------|-------------|
 | `conformal.fixpoint` | `false` | Fixed-point loop analysis for convergence in loops |
 | `conformal.strict` | `false` | Show all warnings including informational and low-confidence diagnostics |
+| `conformal.pro` | `false` | Enable pro-tier diagnostics (interval bounds, constraint conflicts, cross-file analysis, deep type tracking) |
 | `conformal.analyzeOnChange` | `true` | Keystroke analysis with a 500ms debounce |
 
 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal) · [GitHub](https://github.com/EthanDoughty/conformal)

@@ -7,7 +7,7 @@
 [![Version](https://img.shields.io/badge/version-2.0.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4.svg)](https://dotnet.microsoft.com/download)
-[![Tests](https://img.shields.io/badge/tests-409%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-421%20passing-brightgreen.svg)](#test-suite)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
 *Matrices must be **conformable** before they can perform. Conformal makes sure they are.*
@@ -55,7 +55,7 @@ dotnet run -- ../tests/basics/inner_dim_mismatch.m
 
 ## Performance
 
-The single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and the cross-file workspace analysis runs in about 70ms. The full test suite (409 tests total) finishes in about one second, with no MATLAB runtime involved during any part of the process.
+The single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and the cross-file workspace analysis runs in about 70ms. The full test suite (421 tests total) finishes in about one second, with no MATLAB runtime involved during any part of the process.
 
 The VS Code extension runs the analyzer while you are typing code, since it is compiled to JavaScript, using the Fable tool, so there is no subprocess startup cost and analysis works on every keystroke with a 500ms debounce.
 
@@ -63,7 +63,7 @@ The VS Code extension runs the analyzer while you are typing code, since it is c
 
 All warnings include source line numbers. When Conformal finds a definite error, it marks the result as unknown and keeps going so you get as many diagnostics as possible in a single pass.
 
-By default, Conformal shows only high-confidence warnings. These include dimension mismatches, type errors, bounds violations, division by zero, and constraint conflicts. There are 19 warning codes that only appear in the --strict mode, mostly things that are low-confidence, like `W_UNKNOWN_FUNCTION`, `W_STRUCT_FIELD_NOT_FOUND`, and `W_SUSPICIOUS_COMPARISON`. The idea is that you can run default mode in CI without false-positive noise, and use --strict when you want a full picture analysis.
+By default, Conformal shows only high-confidence warnings. These include dimension mismatches and type errors, with two additional tiers for more specialized diagnostics. The `--strict` flag adds 11 low-confidence codes like `W_SUSPICIOUS_COMPARISON`, `W_REASSIGN_INCOMPATIBLE`, and `W_LAMBDA_CALL_APPROXIMATE`, so you can run default mode in CI without false-positive noise and use `--strict` when you want a fuller picture. The `--pro` flag adds a further 11 codes that require the advanced analysis domains, including `W_INDEX_OUT_OF_BOUNDS`, `W_DIVISION_BY_ZERO`, `W_CONSTRAINT_CONFLICT`, `W_STRUCT_FIELD_NOT_FOUND`, and `W_UNKNOWN_FUNCTION`, among others. Without `--pro`, the CLI shows a count of how many additional issues were suppressed so you know whether it's worth enabling.
 
 ### Operations
 
@@ -91,6 +91,8 @@ Conformal analyzes user-defined functions at each call site with the caller's ar
 
 Optional argument patterns using `nargin` and `nargout` are supported. When a function is called with fewer arguments than it declares, the call isn't flagged as an error, since the missing arguments could be optional. Inside the function body, `nargin` is bound to the exact argument count as a concrete interval `[n, n]`, so `if nargin < 3` can be refined precisely and the default-value branch is analyzed correctly. `nargout` works the same way: it carries the number of requested outputs, so `if nargout > 1` can prune dead branches. Calling with more arguments than the function declares is still an error.
 
+Functions using `varargin` as the last parameter are also supported. Extra call arguments beyond the named ones are bundled into a cell with per-element shape tracking, so `varargin{1}` returns the actual shape of the first extra argument, not just unknown. The arg-count warning is suppressed when `varargin` is present. `varargout` works at the call site: output targets beyond the named return variables receive unknown shape.
+
 When analyzing a file, Conformal also scans sibling `.m` files in the same directory and fully analyzes their bodies (parse -> analyze) to infer real return shapes. Dimension aliasing works across file boundaries, subfunctions in external files are supported, and cross-file cycles (A->B->A) are detected and handled gracefully. Unparseable external files emit `W_EXTERNAL_PARSE_ERROR`.
 
 ### Data structures
@@ -99,7 +101,7 @@ Conformal tracks struct field assignment (`s.x = A`), field access, and chained 
 
 Cell arrays work with `cell(n)` and `cell(m,n)` constructors, curly-brace indexing, and element assignment. Literal indexing `C{i}` extracts the precise shape of element `i` when available, and dynamic indexing joins all element shapes conservatively. Curly-brace indexing on a non-cell emits a warning.
 
-Basic `classdef` support is included through a side-channel approach. When the parser encounters a `classdef` block, it extracts the property names and the constructor method body. A class registry maps the class name to its property list and constructor definition, so when you call the constructor, Conformal analyzes the constructor body and returns a struct with the declared fields. You can then access fields like `obj.x` and Conformal will track their shapes the same way it does for regular structs. Superclass syntax (`classdef Foo < Bar`) parses correctly, and the superclass name is stored, but inheritance and method dispatch are not resolved.
+Basic `classdef` support is included through a side-channel approach. When the parser encounters a `classdef` block, it extracts the property names and the constructor method body. A class registry maps the class name to its property list and constructor definition, so when you call the constructor, Conformal analyzes the constructor body and returns a struct with the declared fields. You can then access fields like `obj.x` and Conformal will track their shapes the same way it does for regular structs. When you call `obj.method(args)`, Conformal checks whether `obj` was created by a known class constructor, and if so dispatches the call as `method(obj, args)` through the class's registered method definitions. Superclass syntax (`classdef Foo < Bar`) parses correctly, and the superclass name is stored, but inheritance is not resolved.
 
 ### Control flow
 
@@ -151,10 +153,10 @@ Conformal parses and tracks shapes through:
 | Literals | `[1 2; 3 4]`, `{1, 2; 3, 4}`, `'string'`, `"string"`, `1:n` |
 | Indexing | `A(i,j)`, `A(:,j)`, `A(2:5,:)`, `C{i}`, `C{i} = x` |
 | Assignment | `x = expr`, `s.field = expr`, `C{i} = expr`, `M(i,j) = expr`, `[a, b] = f(x)`, `[~, b] = f(x)`, `[s.x, s.y] = f(x)` |
-| Functions | `function y = f(x)`, `function name` (no-arg), nested `function` blocks, `@(x) expr`, `@funcName`, `nargin`/`nargout`, `cellfun`/`arrayfun` dispatch, 635 recognized builtins (315 with shape rules) |
+| Functions | `function y = f(x)`, `function name` (no-arg), nested `function` blocks, `@(x) expr`, `@funcName`, `nargin`/`nargout`, `varargin`/`varargout`, `global`/`persistent` variables, `cellfun`/`arrayfun` dispatch, 635 recognized builtins (315 with shape rules) |
 | Control flow | `if`/`elseif`/`else`, `for`, `while`, `switch`/`case`, `try`/`catch` |
 | Statements | `break`, `continue`, `return` |
-| Data types | scalars, matrices, strings, structs, cell arrays, function handles, classdef objects (as structs) |
+| Data types | scalars, matrices, strings, structs, cell arrays, function handles, classdef objects (constructor + method dispatch) |
 
 ## Shape System
 
@@ -183,13 +185,13 @@ src/                    F# analyzer (lexer, parser, shape inference, builtins, d
 vscode-conformal/       VS Code extension (TypeScript client + Fable-compiled analyzer)
   fable/                Fable compilation project (F# to JavaScript, shares src/*.fs files)
   src/                  TypeScript extension and LSP server code
-tests/                  409 self-checking MATLAB programs in 20 categories
+tests/                  421 self-checking MATLAB programs in 20 categories
 .github/                CI workflow (build, test, compile Fable, package VSIX)
 ```
 
 ## Test Suite
 
-Conformal is validated by 409 self-checking MATLAB programs organized into 20 categories. Each test embeds its expected behavior as inline assertions:
+Conformal is validated by 421 self-checking MATLAB programs organized into 20 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -433,11 +435,11 @@ Loop analysis with single-pass and fixed-point widening modes (via `--fixpoint`)
 </details>
 
 <details>
-<summary><h3>Functions (82 tests)</h3></summary>
+<summary><h3>Functions (91 tests)</h3></summary>
 
 Interprocedural analysis for user-defined functions, anonymous functions (lambdas), nested functions, and workspace-aware external function resolution.
 
-Named Functions (32 tests)
+Named Functions (41 tests)
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -473,6 +475,15 @@ Named Functions (32 tests)
 | `nargin_interval.m` | `nargin` interval refinement: called with 2 args -> `nargin=[2,2]`, so `if nargin < 2` branch is dead | 0 |
 | `nargin_too_many.m` | Calling with more arguments than declared still emits a warning | 1 |
 | `nargout_basic.m` | `nargout` bound to requested output count; `if nargout > 1` branch pruned for single-return call | 0 |
+| `varargin_basic.m` | `varargin` as last param; extra args bundled into a cell, no arg-count warning | 0 |
+| `varargin_perelement.m` | `varargin{1}` extracts the actual shape of the first extra argument via per-element cell tracking | 0 |
+| `varargout_basic.m` | `varargout` at call site: extra output targets beyond named returns receive unknown shape | 0 |
+| `varargin_nargin_guard.m` | `varargin` combined with `nargin` guard: arg-count suppression coexists with interval refinement | 0 |
+| `persistent_basic.m` | `persistent x` binds as bottom; use before initialization returns bottom | 0 |
+| `persistent_isempty_init.m` | `if isempty(x), x = init; end` pattern with persistent resolves via `join(Bottom, shape) = shape` | 0 |
+| `global_basic.m` | `global x` reads from and writes to the global store | 0 |
+| `global_cross_function.m` | `global x` declared in two functions; write in one is visible as a read in the other | 0 |
+| `global_write_read.m` | Global variable written then read across function boundaries | 0 |
 
 Anonymous Functions / Lambdas (17 tests)
 
@@ -622,7 +633,7 @@ Parser error recovery and unsupported construct handling (graceful degradation).
 | `void_return.m` | `function [] = name(x)` void-return function syntax | 0 |
 | `bracket_string_concat.m` | Transpose-vs-string disambiguation inside `[]` (space before `'` means string, not transpose) | 0 |
 | `parfor_loop.m` | `parfor` loops parsed and analyzed identically to `for` loops | 0 |
-| `global_decl.m` | `global` and `persistent` declarations parsed; declared variables treated as `unknown` | 0 |
+| `global_decl.m` | `global` and `persistent` declarations parsed without spurious warnings | 0 |
 | `dynamic_field.m` | Dynamic field access `s.(expr)` parses correctly and evaluates to `unknown` | 0 |
 | `classdef_suppress.m` | `classdef` blocks consumed without spurious `W_END_OUTSIDE_INDEXING` | 0 |
 | `chained_index_struct.m` | Chained indexed struct assignment `A(i).field = val` parses without triggering recovery | 0 |
@@ -633,9 +644,9 @@ Parser error recovery and unsupported construct handling (graceful degradation).
 </details>
 
 <details>
-<summary><h3>Classdef (4 tests)</h3></summary>
+<summary><h3>Classdef (7 tests)</h3></summary>
 
-Basic OOP support via a side-channel approach: `classdef` blocks are parsed for property names and method bodies, and constructor calls return a struct carrying the declared fields.
+Basic OOP support via a side-channel approach: `classdef` blocks are parsed for property names and method bodies, constructor calls return a struct carrying the declared fields, and `obj.method(args)` dispatches through the class's registered method definitions.
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -643,8 +654,11 @@ Basic OOP support via a side-channel approach: `classdef` blocks are parsed for 
 | `properties_only.m` | `classdef` with only a `properties` block and no constructor; fields are extracted but shapes are unknown | 0 |
 | `properties_defaults.m` | Properties with default values (`x = 0`, `y = []`) are handled; property names extracted even with initializers | 0 |
 | `superclass_syntax.m` | `classdef Foo < Bar` inheritance syntax parses without error; superclass name stored but not resolved | 0 |
+| `method_dispatch.m` | `obj.method(args)` dispatches to the registered method body when `obj` was created by a known constructor | 0 |
+| `method_return_shape.m` | Method return shape is inferred from the method body and propagated back to the caller | 0 |
+| `method_no_such.m` | Calling a method not defined in the class emits `W_STRUCT_FIELD_NOT_FOUND` | 1 |
 
->Method dispatch and inheritance are not analyzed, but property extraction means Conformal can track which fields exist on objects created by constructor calls. The result is a struct, so all the usual field-access and shape-tracking machinery applies.
+>Property extraction means Conformal can track which fields exist on objects created by constructor calls. The object is treated as a struct, so all the usual field-access and shape-tracking machinery applies. Method dispatch maps `obj.method(args)` to the class's registered method via `classBindings` on the call context, which records which variable names hold instances of which class.
 
 </details>
 
@@ -838,7 +852,7 @@ MATLAB Coder compatibility checks, enabled with `--coder --strict`. These tests 
 ### Running the Tests
 
 ```bash
-# Run all 409 .m tests
+# Run all 421 .m tests
 cd src && dotnet run -- --tests
 
 # Run with fixed-point loop analysis
@@ -864,6 +878,7 @@ Configuration settings:
 |---------|---------|-------------|
 | `conformal.fixpoint` | `false` | Enable fixed-point loop analysis (iterative convergence) |
 | `conformal.strict` | `false` | Show all warnings including informational and low-confidence diagnostics |
+| `conformal.pro` | `false` | Enable Conformal Pro diagnostics (interval bounds, constraint conflicts, cross-file, deep type tracking) |
 | `conformal.analyzeOnChange` | `true` | Analyze as you type (500ms debounce) |
 
 For editors that can launch a .NET process directly, you can also run the native LSP server:
@@ -883,9 +898,11 @@ Run `cd src && dotnet run -- file.m` to analyze a file. The other flags are:
 
 `--witness [MODE]` attaches incorrectness witnesses to dimension conflict warnings. MODE can be `enrich` (the default, prints the witness below each warning), `filter` (only shows warnings with a confirmed witness), or `tag` (prefixes each warning with `[confirmed]` or `[possible]`). The LSP server always runs witness generation and enriches diagnostics automatically.
 
+`--pro` enables the pro-tier warning codes, including `W_INDEX_OUT_OF_BOUNDS`, `W_DIVISION_BY_ZERO`, `W_CONSTRAINT_CONFLICT`, `W_STRUCT_FIELD_NOT_FOUND`, `W_UNKNOWN_FUNCTION`, and six others. Without this flag, the CLI prints a line like `[Conformal Pro] N additional issues detected. Use --pro to see all diagnostics.` when any pro-tier warnings exist.
+
 `--coder` runs the MATLAB Coder compatibility pass after shape analysis, emitting six `W_CODER_*` warnings for constructs Coder cannot handle (variable-size arrays, cell arrays, dynamic field access, try/catch, unsupported builtins, recursion). These codes are strict-only, so you normally combine `--coder` with `--strict`.
 
-`--quiet` suppresses per-test output during `--tests` runs and only prints failures. Useful when you want to run the full suite without scrolling through 409 passing test blocks.
+`--quiet` suppresses per-test output during `--tests` runs and only prints failures. Useful when you want to run the full suite without scrolling through 421 passing test blocks.
 
 `--lsp` starts the native .NET Language Server Protocol server.
 
@@ -904,12 +921,12 @@ Conformal analyzes a subset of MATLAB. Here's what it doesn't cover:
 | Category | What's missing |
 |----------|---------------|
 | Scope | Workspace analysis covers sibling `.m` files in the same directory. No `addpath` handling or cross-directory resolution yet. |
-| Functions | No `varargin`/`varargout`. No `eval`, `feval`, or `str2func`. `nargin`/`nargout` are tracked with concrete intervals at each call site. Nested functions are supported (read/write parent scope, sibling calls, forward references). |
+| Functions | `varargin` and `varargout` are supported. No `eval`, `feval`, or `str2func`. `nargin`/`nargout` are tracked with concrete intervals at each call site. Nested functions are supported (read/write parent scope, sibling calls, forward references). `global` and `persistent` variables are tracked. |
 | Builtins | 635 builtins recognized (including Control System, Signal Processing, Aerospace, Optimization, Mapping, Image Processing, Robotics, Statistics, Communications, Computer Vision, Deep Learning, and Symbolic Math Toolbox functions); 315 have explicit shape rules. Unrecognized calls produce a `W_UNKNOWN_FUNCTION` warning (strict-only by default). |
 | Cell arrays | Per-element tracking available for literal-indexed cells. Dynamic indexing conservatively joins all elements. |
 | Indexing | `end` keyword supported with arithmetic (`C{end}`, `C{end-1}`, `A(1:end)`, `A(end-2:end, :)`). Variable operands in `end` arithmetic fall through to conservative join. |
-| Data types | Basic `classdef` support: properties extracted, constructor analyzed as a struct-returning function. Method dispatch and inheritance not resolved. No maps, no tables, no N-D arrays (only 2-D matrices). No complex number tracking. |
-| Syntax | No command-style calls (`save file.mat`). `global`/`persistent` declarations are parsed (targets get `unknown` shape). `parfor` is treated as a regular `for` loop. |
+| Data types | Basic `classdef` support: properties extracted, constructor analyzed as a struct-returning function, and `obj.method(args)` dispatched through registered method definitions. Inheritance not resolved. No maps, no tables, no N-D arrays (only 2-D matrices). No complex number tracking. |
+| Syntax | No command-style calls (`save file.mat`). `global`/`persistent` variables are tracked across function boundaries. `parfor` is treated as a regular `for` loop. |
 | I/O and graphics | `load`, `save`, `fprintf`, `plot`, and other side-effecting functions are recognized (no spurious `W_UNKNOWN_FUNCTION`) but their return shapes are not tracked. |
 | Dynamic features | No `eval`, no `feval`, no `str2func`. Dynamic field access `s.(expr)` is parsed and evaluates to `unknown`. Runtime type introspection beyond type predicates (`iscell`, `isscalar`, `isnumeric`, etc.) is not tracked. |
 

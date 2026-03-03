@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-03-02
+### Added
+- **Pro-tier gating** (`Diagnostics.fs`, `Cli.fs`, `LspServer.fs`, `Program.fs`): `--pro` flag (CLI) and `conformal.pro` setting (LSP/VS Code) gate 11 warning codes at the display layer; without `--pro`, those codes are filtered and the CLI prints an upsell line counting how many additional issues were suppressed; the LSP silently filters them; `PRO_ONLY_CODES` includes `W_UNKNOWN_FUNCTION`, `W_EXTERNAL_PARSE_ERROR`, `W_RECURSIVE_FUNCTION`, `W_INDEX_OUT_OF_BOUNDS`, `W_DIVISION_BY_ZERO`, `W_POSSIBLY_NEGATIVE_DIM`, `W_CONSTRAINT_CONFLICT`, `W_STRUCT_FIELD_NOT_FOUND`, `W_FIELD_ACCESS_NON_STRUCT`, `W_CURLY_INDEXING_NON_CELL`, and `W_CELL_ASSIGN_NON_CELL`; `STRICT_ONLY_CODES` now has 11 entries (7 codes moved to the new pro tier)
+- **Global/persistent variable tracking** (`Context.fs`, `Parser.fs`, `StmtFuncAnalysis.fs`): `globalStore: Dictionary<string, Shape>` on `CallContext` holds live global values across function boundaries and is not saved or restored by `SnapshotScope`; `globalDeclaredVars: HashSet<string>` on `ConstraintContext` IS snapshotted; `global x` reads from `globalStore` if present, else `Bottom`, and writes back at function exit; `persistent x` binds as `Bottom` so the `if isempty(x), x = init; end` idiom resolves via `join(Bottom, shape) = shape`; functions that declare globals skip the analysis cache; parser fix: `ParseGlobal` uses `kwTok.value` instead of hardcoded `"global"` so `persistent` declarations parse correctly
+- **`varargin`/`varargout` support** (`StmtFuncAnalysis.fs`): when the last declared parameter is `varargin`, extra call arguments are bundled into a `Cell` with per-element shape tracking so `varargin{1}` returns the actual shape of the first extra argument via the existing `CurlyApply` element-map lookup; `varargout` assigns `UnknownShape` to extra output targets beyond the named return values; the arg-count warning is suppressed when the callee uses `varargin`
+- **Classdef method dispatch** (`Context.fs`, `EvalExpr.fs`, `StmtFuncAnalysis.fs`): `classBindings: Dictionary<string, string>` on `CallContext` maps variable names to their class names; constructor calls populate `classBindings`; `obj.method(args)` in `evalApply` checks `classBindings`, looks up the class in the `ClassInfo` registry, and dispatches as `method(obj, args)` through the normal builtin dispatch path
+- **5 new function tests** in `tests/functions/`: `persistent_basic.m`, `global_basic.m`, `persistent_isempty_init.m`, `global_cross_function.m`, `global_write_read.m`
+- **4 new function tests** in `tests/functions/`: `varargin_basic.m`, `varargin_perelement.m`, `varargout_basic.m`, `varargin_nargin_guard.m`
+- **3 new classdef tests** in `tests/classdef/`: `method_dispatch.m`, `method_return_shape.m`, `method_no_such.m`
+- Total test count: 421 (was 409); `functions/` grew by 9 (global/persistent + varargin); `classdef/` grew by 3 (method dispatch)
+
 ## [2.6.0] - 2026-03-02
 ### Added
 - **Inline `EXPECT_WARNING` / `EXPECT_NO_WARNING` directives** (`TestRunner.fs`): tests can now assert that a specific warning code fires (or doesn't fire) on an exact source line; `EXPECT_FIXPOINT_WARNING:` and `EXPECT_FIXPOINT_NO_WARNING:` variants override the non-fixpoint directives when `--fixpoint` is active; 103 existing test files backfilled with inline directives
