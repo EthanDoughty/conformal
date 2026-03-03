@@ -426,6 +426,39 @@ let rec private updateStructField
 
 
 // ---------------------------------------------------------------------------
+// External classdef lazy-loading helper
+// ---------------------------------------------------------------------------
+
+/// tryLoadExternalClassdef: check externalClassdefs for fname, parse on first access,
+/// populate classRegistry + functionRegistry, and return the struct shape.
+/// Returns Some shape on success, None if not found or parse failed.
+/// Only active in the native (.NET) path; always returns None under Fable.
+let private tryLoadExternalClassdef
+    (fname: string)
+    (ctx: AnalysisContext)
+    : ClassInfo option =
+#if !FABLE_COMPILER
+    if ctx.ws.externalClassdefs.ContainsKey(fname) then
+        let sourcePath = ctx.ws.externalClassdefs.[fname]
+        match Workspace.loadExternalClassdef sourcePath with
+        | Some (className, props, methods, super) ->
+            let info = { name = className; properties = props; methods = methods; superclass = super }
+            ctx.call.classRegistry.[className] <- info
+            // Register methods into functionRegistry so constructor body analysis works
+            for kv in methods do
+                if not (ctx.call.functionRegistry.ContainsKey(kv.Key)) then
+                    ctx.call.functionRegistry.[kv.Key] <- kv.Value
+            Some info
+        | None -> None
+    else None
+#else
+    ignore fname
+    ignore ctx
+    None
+#endif
+
+
+// ---------------------------------------------------------------------------
 // Wired eval functions (break circular dependency EvalExpr <-> StmtFuncAnalysis)
 // ---------------------------------------------------------------------------
 
@@ -489,8 +522,14 @@ and private wiredBuiltinDispatch
             let allFields = classInfo.properties |> List.map (fun p -> (p, UnknownShape))
             Struct(allFields, false)
     else
-        warnings.Add(warnUnknownFunction line fname)
-        UnknownShape
+        // Lazy-load external classdef if available
+        match tryLoadExternalClassdef fname ctx with
+        | Some classInfo ->
+            let allFields = classInfo.properties |> List.map (fun p -> (p, UnknownShape))
+            Struct(allFields, false)
+        | None ->
+            warnings.Add(warnUnknownFunction line fname)
+            UnknownShape
 
 and private wiredGetInterval
     (expr: Expr)
@@ -559,8 +598,14 @@ and private wiredEvalExprFull
                     let allFields = classInfo.properties |> List.map (fun p -> (p, UnknownShape))
                     Struct(allFields, false)
             else
-                warnings.Add(warnUnknownFunction line fname)
-                UnknownShape
+                // Lazy-load external classdef if available
+                match tryLoadExternalClassdef fname ctx with
+                | Some classInfo ->
+                    let allFields = classInfo.properties |> List.map (fun p -> (p, UnknownShape))
+                    Struct(allFields, false)
+                | None ->
+                    warnings.Add(warnUnknownFunction line fname)
+                    UnknownShape
         else
             // Priority 6: bound non-handle variable — treat as indexing
             evalExprIr expr env warnings ctx None wiredBuiltinDispatch
@@ -1312,8 +1357,17 @@ and private analyzeAssignMulti
                     ctx.call.classBindings.[target] <- fname
 
         else
-            warnings.Add(warnUnknownFunction line fname)
-            for target in targets do bindTarget target UnknownShape
+            // Lazy-load external classdef if available
+            match tryLoadExternalClassdef fname ctx with
+            | Some classInfo ->
+                let structShape = Struct(classInfo.properties |> List.map (fun p -> (p, UnknownShape)), false)
+                for target in targets do
+                    bindTarget target structShape
+                    if target <> "~" && not (target.Contains(".")) then
+                        ctx.call.classBindings.[target] <- fname
+            | None ->
+                warnings.Add(warnUnknownFunction line fname)
+                for target in targets do bindTarget target UnknownShape
 
     | _ ->
         warnings.Add(warnMultiAssignNonCall line)

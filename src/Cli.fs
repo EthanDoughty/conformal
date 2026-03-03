@@ -76,7 +76,7 @@ let runFile (filePath: string) (strict: bool) (fixpoint: bool) (benchmark: bool)
 
         let dirPath = Path.GetDirectoryName(Path.GetFullPath(filePath))
         let fileName = Path.GetFileName(filePath)
-        let extMap = scanWorkspace dirPath fileName
+        let (extMap, classdefMap) = scanWorkspace dirPath fileName
 
         let tScan = DateTime.UtcNow
 
@@ -85,6 +85,8 @@ let runFile (filePath: string) (strict: bool) (fixpoint: bool) (benchmark: bool)
         ctx.cst.coderMode <- coder
         for kv in extMap do
             ctx.ws.externalFunctions.[kv.Key] <- kv.Value
+        for kv in classdefMap do
+            ctx.ws.externalClassdefs.[kv.Key] <- kv.Value
         ctx.ws.workspaceDir <- dirPath
 
         let (env, warnings) = analyzeProgramIr irProg ctx
