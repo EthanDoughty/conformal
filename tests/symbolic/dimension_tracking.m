@@ -5,7 +5,7 @@
 % EXPECT: warnings = 0
 % EXPECT: A = matrix[5 x 5]
 % EXPECT: n = scalar
-% EXPECT: v = matrix[1 x None]
+% EXPECT: v = matrix[1 x 5]
 % EXPECT: y = matrix[5 x 1]
 
 n = 5;

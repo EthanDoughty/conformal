@@ -7,7 +7,7 @@
 % EXPECT: D = matrix[3 x 5]
 % EXPECT: E = matrix[10 x 3]
 % EXPECT: F = scalar
-% EXPECT: G = matrix[1 x None]
+% EXPECT: G = matrix[1 x 4]
 % EXPECT: warnings = 0
 
 A = rand(10, 5);

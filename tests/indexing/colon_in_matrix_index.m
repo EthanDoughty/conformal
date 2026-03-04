@@ -9,7 +9,7 @@
 %
 % EXPECT: A = matrix[5 x 6]
 % EXPECT: p = matrix[3 x 6]
-% EXPECT: q = matrix[1 x None]
+% EXPECT: q = matrix[1 x 3]
 % EXPECT: r = matrix[3 x None]
 % EXPECT: s = matrix[5 x 3]
 % EXPECT: warnings = 0
