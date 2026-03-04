@@ -44,7 +44,7 @@ cd src && dotnet run -- --lsp
 
 The project has an F# analyzer and a Fable compilation layer for the VS Code extension:
 
-### F# Analyzer (`src/`) — 38 files, ~13.2K lines
+### F# Analyzer (`src/`) — 38 files, ~13.2K lines (Sprint I+J)
 
 Key files:
 - `Ir.fs`: Discriminated unions for Expr and Stmt (the IR)
@@ -94,15 +94,15 @@ Fable compiles 27 core F# files to JavaScript for the VS Code extension:
 - Output: `vscode-conformal/src/fable-out/` (gitignored)
 - Cross-file body analysis: external files are pre-parsed by `tryParseExternalBody` in `Interop.fs`, bodies stored on `ExternalSignature`, used by `loadExternalFunction` in the Fable path
 
-### VS Code Extension (`vscode-conformal/`) — v2.0.0, Fable-powered
+### VS Code Extension (`vscode-conformal/`) — v2.8.0, Fable-powered
 
 - Runs F#-compiled-to-JavaScript analyzer in-process via Node.js module transport (no external dependencies)
 - `src/extension.ts`: LanguageClient with TransportKind.ipc, status bar, commands
 - `src/server.ts`: LSP server using `vscode-languageserver` + Fable-compiled analyzer (`require('./fable-out/Interop.js')`)
 - `esbuild.mjs`: Bundles client + server into `out/extension.js` and `out/server.js`
-- Configuration settings: fixpoint, strict, analyzeOnChange
+- Configuration settings: fixpoint, strict, pro, analyzeOnChange, inlayHints
 - Commands: analyzeFile, toggleFixpoint, toggleStrict, restartServer
-- 181KB VSIX; registers `.m` language with TextMate grammar
+- 190KB VSIX; registers `.m` language with TextMate grammar (expanded: classdef, persistent, global, parfor, spmd keywords, 80+ builtins)
 - Auto-reclassifies `.m` files from Objective-C to MATLAB via `firstLine` + `reclassifyIfMatlab()`
 
 ### Diagnostic System
@@ -162,7 +162,7 @@ Tests use inline assertions in MATLAB comments:
 % EXPECT_FIXPOINT: A = matrix[None x None]   (override when --fixpoint active)
 ```
 
-The test runner (`TestRunner.fs`) validates these expectations against analysis results. Test files are organized in `tests/` subdirectories by category (20 categories, 431 tests) and discovered dynamically via glob. Run `cd src && dotnet run -- --tests` to see the current count.
+The test runner (`TestRunner.fs`) validates these expectations against analysis results. Test files are organized in `tests/` subdirectories by category (21 categories, 439 tests) and discovered dynamically via glob. Run `cd src && dotnet run -- --tests` to see the current count.
 
 Additional directive forms:
 - `% EXPECT: warnings >= N` (or `>`, `<`, `<=`): accepts comparison operators, not just `=`
@@ -171,6 +171,7 @@ Additional directive forms:
 - `% EXPECT_FIXPOINT_WARNING: W_CODE` / `% EXPECT_FIXPOINT_NO_WARNING: W_CODE`: same, but only applies in `--fixpoint` mode; replaces the non-fixpoint inline directives when `--fixpoint` is active
 - `% MODE: coder`: enables the Coder compatibility pass for that file
 - `% MODE: strict`: enables strict mode for that file (same effect as `--strict` on the CLI)
+- `% SKIP_TEST`: silently skips the file; intended for tests that require external resources or are temporarily disabled
 
 `WarningCodes.fs` exports `codeMap` and `tryParseCode` so the test runner can validate that `W_CODE` strings in directives are real codes; unknown codes cause a `PARSE ERROR` at test load time.
 
@@ -286,6 +287,9 @@ When a definite mismatch is detected (e.g., inner dimension mismatch in `A*B`), 
 - `--strict` mode shows all warnings including low-confidence diagnostics; default mode suppresses strict-only codes
 - `--pro` enables the pro-tier codes (`PRO_ONLY_CODES` in `Diagnostics.fs`); without it, the CLI prints an upsell count and the LSP silently filters them; tests receive unfiltered warnings regardless of `--pro`
 - `--coder` runs a post-analysis pass that checks for MATLAB Coder incompatibilities; all six `W_CODER_*` codes are strict-only, so `--coder` without `--strict` will emit nothing; the Coder pass does not change shape inference, it only adds a compatibility scan on top; tests in `tests/coder/` use a `% MODE: coder` directive and the TestRunner enables the pass automatically for those files
+- `--help` prints usage and exits 0; `--version` prints `conformal 2.8.0` and exits 0
+- Struct field output is sorted alphabetically in both `shapeToString` and `printEnv`, making CLI output deterministic
+- `% SKIP_TEST` in a test file causes the test runner to skip it silently (no pass, no fail)
 - Indexed assignment (`M(i,j) = val`) does not check bounds because MATLAB auto-expands arrays on write
 - Empty matrix `[]` (`matrix[0 x 0]`) is the identity element for concatenation: `[[] x]` produces `x`
 - When editing the parser, check delimiter syncing and token precedence carefully (the parser emits IR nodes directly, so changes there affect both parse and IR structure)
