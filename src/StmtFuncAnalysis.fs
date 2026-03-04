@@ -651,13 +651,29 @@ and analyzeStmtIr
             ctx.call.classBindings.[name] <- ctorName
         | _ -> ()
 
+        // 3D array metadata: detect 3-arg constructors, propagate on simple assign, clear on reassignment
+        let nd3Constructors = Set.ofList ["zeros"; "ones"; "rand"; "randn"; "true"; "false"]
+        match expr with
+        | Apply(_, Var(_, ctorName), [arg1; arg2; arg3]) when Set.contains ctorName nd3Constructors ->
+            match EvalBuiltins.unwrapArg arg1, EvalBuiltins.unwrapArg arg2, EvalBuiltins.unwrapArg arg3 with
+            | Some e1, Some e2, Some e3 ->
+                let d1 = DimExtract.exprToDimIrCtx e1 env (Some ctx)
+                let d2 = DimExtract.exprToDimIrCtx e2 env (Some ctx)
+                let d3 = DimExtract.exprToDimIrCtx e3 env (Some ctx)
+                ctx.call.ndArraySlices.[name] <- (Matrix(d1, d2), d3)
+            | _ -> ctx.call.ndArraySlices.Remove(name) |> ignore
+        | Var(_, srcName) when ctx.call.ndArraySlices.ContainsKey(srcName) ->
+            ctx.call.ndArraySlices.[name] <- ctx.call.ndArraySlices.[srcName]
+        | _ ->
+            ctx.call.ndArraySlices.Remove(name) |> ignore
+
         // Pentagon: kill stale upper/lower bounds for the assigned variable
         ctx.cst.upperBounds <- Intervals.killUpperBoundsFor name ctx.cst.upperBounds
         ctx.cst.lowerBounds <- Intervals.killLowerBoundsFor name ctx.cst.lowerBounds
 
-        // size() dimension aliasing: n = size(A, 1) => union(n, A.rowDim)
+        // size()/length()/numel() dimension aliasing.
         // applyNow=false: valueRanges deferred until after interval tracking (below).
-        let sizeConcreteExact : Interval option =
+        let builtinConcreteExact : Interval option =
             match expr with
             | Apply(_, Var(_, "size"), [IndexExpr(_, argExpr); IndexExpr(_, dimArgExpr)]) ->
                 let argShape =
@@ -667,6 +683,30 @@ and analyzeStmtIr
                 let dimIdx = exprToDimIrCtx dimArgExpr env (Some ctx)
                 match resolveSizeDim argShape dimIdx with
                 | Some dim when dim <> Unknown -> applySizeAlias ctx env name dim false
+                | _ ->
+                    // size(A, 3): check ndArraySlices metadata for third dimension
+                    match dimIdx, argExpr with
+                    | Concrete 3, Var(_, varName) ->
+                        let mutable sliceInfo = Unchecked.defaultof<Shape * Dim>
+                        if ctx.call.ndArraySlices.TryGetValue(varName, &sliceInfo) then
+                            let _, thirdDim = sliceInfo
+                            if thirdDim <> Unknown then applySizeAlias ctx env name thirdDim false
+                            else None
+                        else None
+                    | _ -> None
+            | Apply(_, Var(_, "length"), [IndexExpr(_, argExpr)]) ->
+                let argShape = match argExpr with Var(_, n) -> Env.get env n | _ -> UnknownShape
+                match argShape with
+                | Scalar -> Some { lo = Finite 1; hi = Finite 1 }
+                | Matrix(Concrete 1, d) when d <> Unknown -> applySizeAlias ctx env name d false
+                | Matrix(d, Concrete 1) when d <> Unknown -> applySizeAlias ctx env name d false
+                | Matrix(Concrete m, Concrete n) -> Some { lo = Finite (max m n); hi = Finite (max m n) }
+                | _ -> None
+            | Apply(_, Var(_, "numel"), [IndexExpr(_, argExpr)]) ->
+                let argShape = match argExpr with Var(_, n) -> Env.get env n | _ -> UnknownShape
+                match argShape with
+                | Scalar -> Some { lo = Finite 1; hi = Finite 1 }
+                | Matrix(Concrete m, Concrete n) -> Some { lo = Finite (m * n); hi = Finite (m * n) }
                 | _ -> None
             | _ -> None
 
@@ -692,7 +732,7 @@ and analyzeStmtIr
 
         // Post-interval: apply concrete valueRanges from size() aliasing (takes precedence).
         // This runs after interval tracking so it is not overwritten by Map.remove.
-        match sizeConcreteExact with
+        match builtinConcreteExact with
         | Some exact ->
             ctx.cst.valueRanges <- Map.add name exact ctx.cst.valueRanges
             Intervals.bridgeToDimEquiv ctx name exact
@@ -1210,6 +1250,48 @@ and private analyzeAssignMulti
                             let dimIdx = exprToDimIrCtx dimArgExpr env (Some ctx)
                             match resolveSizeDim argShape dimIdx with
                             | Some dim when dim <> Unknown -> applySizeAlias ctx env tgt dim true |> ignore
+                            | _ ->
+                                // size(A, 3): check ndArraySlices metadata
+                                match dimIdx, argExpr with
+                                | Concrete 3, Var(_, varName) ->
+                                    let mutable sliceInfo = Unchecked.defaultof<Shape * Dim>
+                                    if ctx.call.ndArraySlices.TryGetValue(varName, &sliceInfo) then
+                                        let _, thirdDim = sliceInfo
+                                        if thirdDim <> Unknown then applySizeAlias ctx env tgt thirdDim true |> ignore
+                                | _ -> ()
+                        | _ -> ()
+                // length() propagation: inject interval and dim alias
+                elif fname = "length" then
+                    let tgt = targets.[0]
+                    if tgt <> "~" && not (tgt.Contains(".")) then
+                        match args with
+                        | [IndexExpr(_, argExpr)] ->
+                            let argShape = match argExpr with Var(_, n) -> Env.get env n | _ -> UnknownShape
+                            match argShape with
+                            | Scalar ->
+                                ctx.cst.valueRanges <- Map.add tgt { lo = Finite 1; hi = Finite 1 } ctx.cst.valueRanges
+                            | Matrix(Concrete 1, d) when d <> Unknown -> applySizeAlias ctx env tgt d true |> ignore
+                            | Matrix(d, Concrete 1) when d <> Unknown -> applySizeAlias ctx env tgt d true |> ignore
+                            | Matrix(Concrete m, Concrete n) ->
+                                let len = max m n
+                                ctx.cst.valueRanges <- Map.add tgt { lo = Finite len; hi = Finite len } ctx.cst.valueRanges
+                                Intervals.bridgeToDimEquiv ctx tgt { lo = Finite len; hi = Finite len }
+                            | _ -> ()
+                        | _ -> ()
+                // numel() propagation: inject concrete interval
+                elif fname = "numel" then
+                    let tgt = targets.[0]
+                    if tgt <> "~" && not (tgt.Contains(".")) then
+                        match args with
+                        | [IndexExpr(_, argExpr)] ->
+                            let argShape = match argExpr with Var(_, n) -> Env.get env n | _ -> UnknownShape
+                            match argShape with
+                            | Scalar ->
+                                ctx.cst.valueRanges <- Map.add tgt { lo = Finite 1; hi = Finite 1 } ctx.cst.valueRanges
+                            | Matrix(Concrete m, Concrete n) ->
+                                let count = m * n
+                                ctx.cst.valueRanges <- Map.add tgt { lo = Finite count; hi = Finite count } ctx.cst.valueRanges
+                                Intervals.bridgeToDimEquiv ctx tgt { lo = Finite count; hi = Finite count }
                             | _ -> ()
                         | _ -> ()
             else
