@@ -8,6 +8,10 @@
 - Build pipeline smoke test prevents shipping stale Fable output
 - BOM handling for UTF-8 files with byte order marks
 - Status bar shows "No issues" instead of "Ready" for clean files
+- `conformal.inlayHints` setting: toggle shape inlay hints on first assignment (default: on)
+- Sorted struct field output in hover and diagnostics for deterministic display
+- Soundness fixes: `joinValueRanges`, If/IfChain break alignment, `widenDim` lattice contract
+- `resolveCall` dispatch unification: all call sites route through a single discriminated union
 
 ## 2.7.0
 

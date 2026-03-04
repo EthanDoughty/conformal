@@ -199,13 +199,13 @@ src/                    F# analyzer (lexer, parser, shape inference, builtins, d
 vscode-conformal/       VS Code extension (TypeScript client + Fable-compiled analyzer)
   fable/                Fable compilation project (F# to JavaScript, shares src/*.fs files)
   src/                  TypeScript extension and LSP server code
-tests/                  431 self-checking MATLAB programs in 20 categories
+tests/                  439 self-checking MATLAB programs in 21 categories
 .github/                CI workflow (build, test, compile Fable, package VSIX)
 ```
 
 ## Test Suite
 
-Conformal is validated by 431 self-checking MATLAB programs organized into 20 categories. Each test embeds its expected behavior as inline assertions:
+Conformal is validated by 439 self-checking MATLAB programs organized into 21 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -216,9 +216,10 @@ y = A * x;  % EXPECT_WARNING: W_INNER_DIM_MISMATCH
 z = ~f;     % EXPECT_NO_WARNING: W_UNKNOWN_FUNCTION
 % MODE: strict
 % MODE: coder
+% SKIP_TEST
 ```
 
-The `EXPECT_WARNING` and `EXPECT_NO_WARNING` directives are inline: they go on the same line as the statement they apply to, and they check that the given warning code fires (or doesn't fire) on that exact line. The `% EXPECT: warnings` check also accepts comparison operators, so `warnings >= 1` passes if at least one warning fires rather than requiring an exact count. `% MODE: strict` enables strict mode for that file, and `% MODE: coder` enables the Coder compatibility pass. There are also `EXPECT_FIXPOINT_WARNING:` and `EXPECT_FIXPOINT_NO_WARNING:` variants that only apply when the test runner is in `--fixpoint` mode.
+The `EXPECT_WARNING` and `EXPECT_NO_WARNING` directives are inline: they go on the same line as the statement they apply to, and they check that the given warning code fires (or doesn't fire) on that exact line. The `% EXPECT: warnings` check also accepts comparison operators, so `warnings >= 1` passes if at least one warning fires rather than requiring an exact count. `% MODE: strict` enables strict mode for that file, and `% MODE: coder` enables the Coder compatibility pass. There are also `EXPECT_FIXPOINT_WARNING:` and `EXPECT_FIXPOINT_NO_WARNING:` variants that only apply when the test runner is in `--fixpoint` mode. A file containing `% SKIP_TEST` anywhere in its body is silently skipped by the test runner, which is useful for tests that require external resources or are temporarily disabled.
 
 The test runner checks that Conformal's output matches these expectations. In addition to the `.m` test files, the shape domain is validated by 28 property-based tests using FsCheck, covering 6 sections of the lattice (join commutativity, associativity, monotonicity, and lattice ordering for shapes and intervals). These run as part of `dotnet run -- --tests`.
 
@@ -304,9 +305,9 @@ MATLAB-style indexing including scalar, slice, range, linear indexing, `end` key
 </details>
 
 <details open>
-<summary><h3>Control Flow (17 tests)</h3></summary>
+<summary><h3>Control Flow (22 tests)</h3></summary>
 
-Control-flow join semantics for if/elseif/else, switch/case, try/catch, break, and continue.
+Control-flow join semantics for if/elseif/else, switch/case, try/catch, break, continue, and return.
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -327,6 +328,11 @@ Control-flow join semantics for if/elseif/else, switch/case, try/catch, break, a
 | `try_nested.m` | Nested try/catch blocks work correctly | 0 |
 | `break_in_if_else.m` | Break in if-inside-loop correctly propagates; else branch shape used when break taken | 0 |
 | `try_catch_break.m` | Break inside try/catch block propagates correctly out of the enclosing loop | 0 |
+| `break_outside_loop.m` | `break` outside a loop emits `W_BREAK_OUTSIDE_LOOP` | 1 |
+| `continue_outside_loop.m` | `continue` outside a loop emits `W_CONTINUE_OUTSIDE_LOOP` | 1 |
+| `return_outside_function.m` | `return` at script level emits `W_RETURN_OUTSIDE_FUNCTION` | 1 |
+| `return_inside_function.m` | `return` inside a function body exits the function early; shape inferred from pre-return env | 0 |
+| `if_break_both_branches.m` | Break in both branches of an if inside a loop; post-if environment is the loop-exit join | 0 |
 
 >Conservative join semantics. When branches disagree on a variable's shape, the analyzer joins to the least upper bound (often `unknown`).
 
@@ -760,7 +766,7 @@ Integer interval domain tracking scalar value ranges for division-by-zero, out-o
 </details>
 
 <details>
-<summary><h3>Workspace Adversarial (3 tests, 21 helpers)</h3></summary>
+<summary><h3>Workspace Adversarial (3 tests, 21 helpers, 24 files total)</h3></summary>
 
 Adversarial cross-file analysis scenarios: error propagation, struct/cell returns, builtin shadowing, procedure handling, conditional shape joins, subfunctions, accumulation refinement, polymorphic caching stress, domain-authentic patterns (Kalman, covariance, gradient descent), and cross-file classdef resolution.
 
@@ -796,13 +802,15 @@ Adversarial cross-file analysis scenarios: error propagation, struct/cell return
 </details>
 
 <details>
-<summary><h3>Workspace (27 tests)</h3></summary>
+<summary><h3>Workspace (29 tests)</h3></summary>
 
-Cross-file workspace scaling tests: chains, diamond patterns, fan-out/fan-in, polymorphic caching, symbolic dimensions, multi-return, and cycle detection across 26 helper files.
+Cross-file workspace scaling tests: chains, diamond patterns, fan-out/fan-in, polymorphic caching, symbolic dimensions, multi-return, cycle detection, and external parse error handling across 28 helper files.
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
-| `workspace_scaling.m` | Comprehensive cross-file stress test across all 26 helpers (chains, diamonds, fan-out, linear algebra patterns, cycle detection) | 0 |
+| `workspace_scaling.m` | Comprehensive cross-file stress test across all 28 helpers (chains, diamonds, fan-out, linear algebra patterns, cycle detection) | 0 |
+| `ws_external_parse_error.m` | Verifies `W_EXTERNAL_PARSE_ERROR` fires when a sibling file (`broken_helper.m`) cannot be parsed | >=1 |
+| `broken_helper.m` | Helper: intentionally malformed file used by `ws_external_parse_error.m` | - |
 | `ws_add_matrices.m` | Helper: element-wise matrix addition across file boundary | - |
 | `ws_chain_add.m` | Helper: chained cross-file call (depth 2) | - |
 | `ws_compose.m` | Helper: function composition across file boundary | - |
@@ -871,12 +879,26 @@ MATLAB Coder compatibility checks, enabled with `--coder --strict`. These tests 
 
 </details>
 
+<details>
+<summary><h3>Edge Cases (2 tests)</h3></summary>
+
+Parser and lexer edge cases that don't fit naturally into other categories.
+
+| Test | What It Validates | Warnings |
+|------|-------------------|----------|
+| `empty_file.m` | A 0-byte file parses and analyzes cleanly with no warnings | 0 |
+| `bom_file.m` | A UTF-8 BOM at the start of the file is stripped by the lexer before parsing | 0 |
+
+>These tests were added with Sprint I to cover cases where the input itself is unusual rather than the MATLAB constructs inside it.
+
+</details>
+
 ---
 
 ### Running the Tests
 
 ```bash
-# Run all 431 .m tests
+# Run all 439 .m tests
 cd src && dotnet run -- --tests
 
 # Run with fixed-point loop analysis
@@ -904,6 +926,7 @@ Configuration settings:
 | `conformal.strict` | `false` | Show all warnings including informational and low-confidence diagnostics |
 | `conformal.pro` | `false` | Enable Conformal Pro diagnostics (interval bounds, constraint conflicts, cross-file, deep type tracking) |
 | `conformal.analyzeOnChange` | `true` | Analyze as you type (500ms debounce) |
+| `conformal.inlayHints` | `true` | Show inferred shapes as inlay hints on first assignment of each variable |
 
 For editors that can launch a .NET process directly, you can also run the native LSP server:
 ```bash
@@ -926,7 +949,11 @@ Run `cd src && dotnet run -- file.m` to analyze a file. The other flags are:
 
 `--coder` runs the MATLAB Coder compatibility pass after shape analysis, emitting six `W_CODER_*` warnings for constructs Coder cannot handle (variable-size arrays, cell arrays, dynamic field access, try/catch, unsupported builtins, recursion). These codes are strict-only, so you normally combine `--coder` with `--strict`.
 
-`--quiet` suppresses per-test output during `--tests` runs and only prints failures. Useful when you want to run the full suite without scrolling through 431 passing test blocks.
+`--quiet` suppresses per-test output during `--tests` runs and only prints failures. Useful when you want to run the full suite without scrolling through 439 passing test blocks.
+
+`--help` prints usage and exits 0.
+
+`--version` prints `conformal 2.8.0` and exits 0.
 
 `--lsp` starts the native .NET Language Server Protocol server.
 
