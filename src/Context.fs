@@ -109,6 +109,11 @@ type CallContext() =
     member val insideLoop     : bool = false with get, set
     /// Whether analysis is currently inside a function body (for return validation)
     member val insideFunction : bool = false with get, set
+    /// 3D array slice metadata: variable name -> (2D slice shape, third dimension).
+    /// Stored when 3-arg constructors (zeros, ones, rand, etc.) are detected.
+    /// Consumed when A(:,:,k) indexing is detected on an UnknownShape variable.
+    member val ndArraySlices  : System.Collections.Generic.Dictionary<string, Shape * Dim>
+                                = System.Collections.Generic.Dictionary<string, Shape * Dim>() with get
 
 type ConstraintContext() =
     /// Set of (dim1_str, dim2_str) equality constraints (canonicalized)
