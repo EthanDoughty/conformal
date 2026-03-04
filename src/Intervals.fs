@@ -499,7 +499,25 @@ let applyRefinements
         let guardOpt = intervalFromComparison actualOp bound
 
         match guardOpt with
-        | None -> ()
+        | None ->
+            // Special case: ~= with concrete bound at endpoint of current interval
+            if actualOp = "~=" then
+                match bound with
+                | Shapes.Concrete c ->
+                    match baseIv.lo, baseIv.hi with
+                    | Finite lo, Finite hi when lo = c && hi = c ->
+                        // var in [c,c] and var ~= c: dead branch — use guard to prevent FPs
+                        ctx.cst.valueRanges <- Map.add varName { lo = Finite c; hi = Finite c } ctx.cst.valueRanges
+                    | Finite lo, _ when lo = c ->
+                        let r = { baseIv with lo = Finite (c + 1) }
+                        ctx.cst.valueRanges <- Map.add varName r ctx.cst.valueRanges
+                        bridgeToDimEquiv ctx varName r
+                    | _, Finite hi when hi = c ->
+                        let r = { baseIv with hi = Finite (c - 1) }
+                        ctx.cst.valueRanges <- Map.add varName r ctx.cst.valueRanges
+                        bridgeToDimEquiv ctx varName r
+                    | _ -> ()  // interior exclusion: can't represent as single interval
+                | _ -> ()
         | Some guard ->
             let refined = meetInterval baseIv guard
             match refined with
