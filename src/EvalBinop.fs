@@ -29,12 +29,13 @@ let evalBinopIr
 
     // Comparison operators: return broadcast shape (logical array matching operand shape)
     if Set.contains op (Set.ofList ["=="; "~="; "<"; "<="; ">"; ">="]) then
+        let isFullyUnknown s = match s with Matrix(Unknown, Unknown) -> true | _ -> false
         match left, right with
-        | Matrix _, Scalar | Scalar, Matrix _ ->
+        | Matrix _, Scalar | Scalar, Matrix _ when not (isFullyUnknown left || isFullyUnknown right) ->
             warnings.Add(warnSuspiciousComparisonMatrixScalar line op leftExpr rightExpr left right)
-        | Matrix _, Matrix _ ->
+        | Matrix _, Matrix _ when not (isFullyUnknown left || isFullyUnknown right) ->
             warnings.Add(warnMatrixToMatrixComparison line op leftExpr rightExpr left right)
-        | _ -> ()  // all other Shape pairs: no warning emitted
+        | _ -> ()  // all other Shape pairs (or fully-unknown matrix): no warning
         // Return shape reflects MATLAB broadcast semantics: A > 0 where A is matrix[m x n]
         // returns a logical matrix[m x n], not a scalar.
         match left, right with

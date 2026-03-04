@@ -1040,7 +1040,7 @@ and analyzeStmtIr
         Normal
 
     | Return({ line = line }) ->
-        if not ctx.call.insideFunction then warnings.Add(warnReturnOutsideFunction line)
+        // return is valid in both functions and scripts (terminates execution)
         FlowReturn
     | Break({ line = line }) ->
         if not ctx.call.insideLoop then warnings.Add(warnBreakOutsideLoop line)

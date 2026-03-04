@@ -2,21 +2,6 @@
 
 **Severity**: Warning
 **Tier**: Free
+**Status**: Retired (2.8.0)
 
-Return statement found outside a function body.
-
-## Example
-
-```matlab
-x = 1;
-return;
-```
-
-## What this means
-
-A `return` statement was found in a script context rather than inside a function.
-
-## How to fix
-
-1. Move the return statement inside a function.
-2. Remove it from the script if it was added by mistake.
+This warning was removed in version 2.8.0. MATLAB allows `return` in scripts, where it terminates execution and returns control to the caller or command window. The warning was a false positive on valid MATLAB code.

@@ -1,7 +1,7 @@
 % Stress Test: Warning Code Coverage
 % Exercises thin-coverage and rarely-triggered warning codes.
 % Each section targets a specific W_* code.
-% EXPECT: warnings = 30
+% EXPECT: warnings = 29
 
 % ==========================================================================
 % W_TOO_MANY_INDICES: 3+ indices on a 2D matrix
@@ -104,12 +104,12 @@ fh2 = @sin;
 neg_fh = -fh2;  % EXPECT_WARNING: W_NEGATE_TYPE_MISMATCH
 
 % ==========================================================================
-% W_RETURN_OUTSIDE_FUNCTION: return in switch inside script
+% return in switch inside script (valid MATLAB, no warning)
 % ==========================================================================
 x_switch = 2;
 switch x_switch
     case 1
-        return; % EXPECT_WARNING: W_RETURN_OUTSIDE_FUNCTION
+        return;
     case 2
         y_sw = 10;
 end
