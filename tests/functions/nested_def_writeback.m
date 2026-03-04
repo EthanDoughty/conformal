@@ -1,10 +1,10 @@
 % Test: Nested function writes back to parent workspace
-% EXPECT: warnings = 1
+% EXPECT: warnings = 0
 % EXPECT: result = matrix[3 x 3]
 
 function result = outer(n)
     M = eye(n);
-    modify_m();  % EXPECT_WARNING: W_PROCEDURE_IN_EXPR
+    modify_m();
     result = M;
     function modify_m()
         M = zeros(3, 3);

@@ -1,6 +1,6 @@
 % Two-level nesting: innermost writes to middle scope variable.
 % After inner() returns, middle sees the updated value of B.
-% EXPECT: warnings = 1
+% EXPECT: warnings = 0
 % EXPECT: result = matrix[5 x 5]
 
 function r = outer()
@@ -8,7 +8,7 @@ function r = outer()
 
     function mr = middle()
         B = zeros(2, 2);
-        inner();  % EXPECT_WARNING: W_PROCEDURE_IN_EXPR
+        inner();
         mr = B;
 
         function inner()
