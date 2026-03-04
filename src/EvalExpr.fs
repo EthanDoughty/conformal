@@ -505,7 +505,16 @@ and private evalApply
         else
             // Priority 6: bound non-handle variable — treat as indexing
             let baseShape = evalExprIr baseExpr env warnings ctx None builtinDispatch
-            evalIndexing baseShape args line env warnings ctx builtinDispatch
+            // 3D slice extraction: A(:,:,k) on a variable with ndArraySlices metadata
+            if baseShape = UnknownShape && args.Length >= 3 then
+                let mutable sliceInfo = Unchecked.defaultof<Shape * Dim>
+                if ctx.call.ndArraySlices.TryGetValue(baseVarName, &sliceInfo) &&
+                   isColon args.[0] && isColon args.[1] then
+                    fst sliceInfo
+                else
+                    evalIndexing baseShape args line env warnings ctx builtinDispatch
+            else
+                evalIndexing baseShape args line env warnings ctx builtinDispatch
     | FieldAccess(_, Var(_, objName), methodName) ->
         // Method dispatch: obj.method(args) -- check if objName is a known class instance.
         // Look up the class in classBindings, then look up the method in classRegistry.

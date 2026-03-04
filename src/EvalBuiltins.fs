@@ -95,7 +95,7 @@ let SCALAR_NARY_BUILTINS : Set<string> =
 // Helper: unwrap an IndexArg to Expr (raises on Colon/Range without expr)
 // ---------------------------------------------------------------------------
 
-let private unwrapArg (arg: IndexArg) : Expr option =
+let unwrapArg (arg: IndexArg) : Expr option =
     match arg with
     | IndexExpr(_, e) -> Some e
     | _ -> None
