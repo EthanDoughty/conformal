@@ -8,7 +8,7 @@ C = A(1:k, :);
 
 % Variable both endpoints: extent = j-k+1
 D = B(k:j, :);
-% EXPECT: D = matrix[(j-k+1) x m]
+% EXPECT: D = matrix[(j + 1 - k) x m]
 
 % Symbolic cancellation: k:k+2 -> extent 3
 E = B(k:k+2, :);

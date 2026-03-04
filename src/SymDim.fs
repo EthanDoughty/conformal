@@ -178,28 +178,33 @@ module SymDim =
     let toString (s: SymDim) : string =
         if s._terms.IsEmpty then "0"
         else
-            let parts =
+            // Format each term as (isNegative, absoluteValueString)
+            let termParts =
                 s._terms |> List.map (fun (mono, coeff) ->
-                    if mono = [] then
-                        // Constant term
-                        if coeff.IsInteger then string coeff.Numerator
-                        else "(" + string coeff.Numerator + "/" + string coeff.Denominator + ")"
-                    else
-                        let varStr = formatMono mono
-                        // Special case: single-var rational n/d where numerator=1 -> "n/d"
-                        if not coeff.IsInteger && mono.Length = 1 && snd mono.[0] = 1 && coeff.Numerator = 1L then
-                            varStr + "/" + string coeff.Denominator
-                        elif coeff = Rational.One then
-                            varStr
-                        elif coeff = -Rational.One then
-                            "-" + varStr
-                        elif coeff.IsInteger then
-                            string coeff.Numerator + "*" + varStr
+                    let isNeg = coeff.Numerator < 0L
+                    let absCoeff = if isNeg then -coeff else coeff
+                    let absStr =
+                        if mono = [] then
+                            if absCoeff.IsInteger then string absCoeff.ToInt64
+                            else "(" + string absCoeff.Numerator + "/" + string absCoeff.Denominator + ")"
                         else
-                            "(" + string coeff.Numerator + "/" + string coeff.Denominator + ")*" + varStr
-                )
-            let mutable result = parts.[0]
-            for part in parts |> List.tail do
-                if part.StartsWith("-") then result <- result + part
-                else result <- result + "+" + part
+                            let varStr = formatMono mono
+                            if not absCoeff.IsInteger && mono.Length = 1 && snd mono.[0] = 1 && absCoeff.Numerator = 1L then
+                                varStr + "/" + string absCoeff.Denominator
+                            elif absCoeff = Rational.One then varStr
+                            elif absCoeff.IsInteger then string absCoeff.ToInt64 + "*" + varStr
+                            else "(" + string absCoeff.Numerator + "/" + string absCoeff.Denominator + ")*" + varStr
+                    (isNeg, absStr))
+            // Stable sort: positive terms first, preserving degree ordering within each group
+            let sorted = termParts |> List.sortBy (fun (isNeg, _) -> if isNeg then 1 else 0)
+            let mutable first = true
+            let mutable result = ""
+            for (isNeg, absStr) in sorted do
+                if first then
+                    if isNeg then result <- "-" + absStr
+                    else result <- absStr
+                    first <- false
+                else
+                    if isNeg then result <- result + " - " + absStr
+                    else result <- result + " + " + absStr
             result

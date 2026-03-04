@@ -53,9 +53,18 @@ let evalBinopIr
         | _ -> ()  // all other Shape pairs: no warning emitted
         Scalar
 
-    // Colon range: always 1 x unknown
+    // Colon range: try symbolic dimension extraction, fallback to 1 x unknown
     elif op = ":" then
-        Matrix(Concrete 1, Unknown)
+        match left with
+        | Matrix _ -> Matrix(Concrete 1, Unknown)  // stepped range (inner colon already evaluated)
+        | _ ->
+            let a = DimExtract.exprToDimIrCtx leftExpr env (Some ctx)
+            let b = DimExtract.exprToDimIrCtx rightExpr env (Some ctx)
+            match a, b with
+            | Unknown, _ | _, Unknown -> Matrix(Concrete 1, Unknown)
+            | _ ->
+                let cols = addDim (subDim b a) (Concrete 1)
+                Matrix(Concrete 1, cols)
 
     // String + string = numeric row vector (MATLAB behavior)
     elif op = "+" && isString left && isString right then
