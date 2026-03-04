@@ -3,7 +3,7 @@
 % Purpose: performance benchmarking and stability testing.
 %
 % This file intentionally contains many errors to trigger every warning path.
-% EXPECT: warnings = 35
+% EXPECT: warnings = 34
 
 % ==========================================================================
 % SECTION 1: Shape kinds — all 7 types
@@ -365,7 +365,7 @@ end
 [mr1, mr2] = multi_return(ones(3, 3), eye(3));
 sm1 = shape_maker(3, 4);
 sm2 = shape_maker(n, m);
-procedure_only(A);  % EXPECT_WARNING: W_PROCEDURE_IN_EXPR
+procedure_only(A);  % procedure as statement: no warning
 
 % Polymorphic caching: same function, different arg shapes
 sm3 = shape_maker(5, 5);

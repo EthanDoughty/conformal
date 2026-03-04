@@ -1,7 +1,7 @@
 % Test: global variable set by one function is visible in another.
 % set_global_x writes global x; read_global_x reads it.
-% The void call to set_global_x at script level emits W_PROCEDURE_IN_EXPR (expected).
-% EXPECT: warnings = 1
+% Calling a procedure as a statement is valid MATLAB (no warning).
+% EXPECT: warnings = 0
 % EXPECT: result = matrix[3 x 3]
 
 function set_global_x()
@@ -14,5 +14,5 @@ function y = read_global_x()
     y = x;
 end
 
-set_global_x();  % EXPECT_WARNING: W_PROCEDURE_IN_EXPR
+set_global_x();
 result = read_global_x();

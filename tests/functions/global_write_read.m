@@ -1,6 +1,6 @@
 % Test: Script calls setGlobal() then readGlobal(); reader sees shape set by writer.
-% The void call to setGlobal at script level emits W_PROCEDURE_IN_EXPR (expected).
-% EXPECT: warnings = 1
+% Calling a procedure as a statement is valid MATLAB (no warning).
+% EXPECT: warnings = 0
 % EXPECT: result = matrix[5 x 5]
 
 function setGlobal()
@@ -13,5 +13,5 @@ function y = readGlobal()
     y = gmat;
 end
 
-setGlobal();  % EXPECT_WARNING: W_PROCEDURE_IN_EXPR
+setGlobal();
 result = readGlobal();

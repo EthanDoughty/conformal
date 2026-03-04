@@ -756,8 +756,14 @@ and analyzeStmtIr
         if isBottom existing then Env.set env baseName UnknownShape
         Normal
 
-    | ExprStmt(_, expr) ->
+    | ExprStmt({ line = stmtLine }, expr) ->
+        let beforeCount = warnings.Count
         wiredEvalExprFull expr env warnings ctx |> ignore
+        // Calling a procedure as a statement is valid MATLAB — suppress W_PROCEDURE_IN_EXPR
+        // for this line only (nested calls at different lines have their own ExprStmt handlers)
+        for i in warnings.Count - 1 .. -1 .. beforeCount do
+            if warnings.[i].code = WarningCodes.WarningCode.W_PROCEDURE_IN_EXPR && warnings.[i].line = stmtLine then
+                warnings.RemoveAt(i)
         Normal
 
     | While({ line = line }, cond, body) ->
