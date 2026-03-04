@@ -1110,8 +1110,8 @@ and private analyzeCellAssignArgs
                     let currentElems = defaultArg elemMap Map.empty
                     let newElems = Map.add idx0 rhsShape currentElems
                     Env.set env baseName (Cell(rows, cols, Some newElems))
-                | IndexExpr(_, Var(_, varName)) ->
-                    match Map.tryFind varName ctx.cst.valueRanges with
+                | IndexExpr(_, idxExpr) ->
+                    match EvalExpr.getExprInterval idxExpr env ctx with
                     | Some iv when iv.lo = iv.hi ->
                         match iv.lo with
                         | SharedTypes.Finite k ->
@@ -1123,8 +1123,36 @@ and private analyzeCellAssignArgs
                             for arg in args do evalArgShapeHelper arg env warnings ctx baseShape |> ignore
                             Env.set env baseName (Cell(rows, cols, None))
                     | _ ->
-                        for arg in args do evalArgShapeHelper arg env warnings ctx baseShape |> ignore
-                        Env.set env baseName (Cell(rows, cols, None))
+                        // Non-singleton interval: preserve existing elements, don't destroy map
+                        let currentElems = defaultArg elemMap Map.empty
+                        if currentElems.IsEmpty then
+                            for arg in args do evalArgShapeHelper arg env warnings ctx baseShape |> ignore
+                            Env.set env baseName (Cell(rows, cols, None))
+                        else
+                            // Join rhs into all tracked elements (sound: any slot could be written)
+                            let joinedElems = currentElems |> Map.map (fun _ existing -> joinShape existing rhsShape)
+                            for arg in args do evalArgShapeHelper arg env warnings ctx baseShape |> ignore
+                            Env.set env baseName (Cell(rows, cols, Some joinedElems))
+                | _ ->
+                    for arg in args do evalArgShapeHelper arg env warnings ctx baseShape |> ignore
+                    Env.set env baseName (Cell(rows, cols, None))
+            elif args.Length = 2 then
+                // 2D cell assignment: c{r, k} = expr
+                let tryResolveArg (arg: Ir.IndexArg) =
+                    match arg with
+                    | Ir.IndexExpr(_, idxExpr) ->
+                        match EvalExpr.getExprInterval idxExpr env ctx with
+                        | Some iv when iv.lo = iv.hi ->
+                            match iv.lo with Finite k -> Some k | _ -> None
+                        | _ -> None
+                    | _ -> None
+                match tryResolveArg args.[0], tryResolveArg args.[1], rows with
+                | Some ri, Some ci, Concrete nr ->
+                    let linearIdx = (ci - 1) * nr + (ri - 1)
+                    let currentElems = defaultArg elemMap Map.empty
+                    let newElems = Map.add linearIdx rhsShape currentElems
+                    for arg in args do evalArgShapeHelper arg env warnings ctx baseShape |> ignore
+                    Env.set env baseName (Cell(rows, cols, Some newElems))
                 | _ ->
                     for arg in args do evalArgShapeHelper arg env warnings ctx baseShape |> ignore
                     Env.set env baseName (Cell(rows, cols, None))

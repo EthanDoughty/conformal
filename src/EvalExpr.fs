@@ -320,28 +320,42 @@ let rec evalExprIr
                         evalIndexArgToShape arg env warnings ctx (Some baseShape) (fun e en w c cs -> evalExprIr e en w c cs builtinDispatch)
                         |> ignore
                         joinAllElements elemMap
-                    | _ ->
-                        evalIndexArgToShape arg env warnings ctx (Some baseShape) (fun e en w c cs -> evalExprIr e en w c cs builtinDispatch)
-                        |> ignore
-                        joinAllElements elemMap
+                    | IndexExpr(_, idxExpr) ->
+                        // Try resolving via getExprInterval (handles Var, Const, BinOp like i+1)
+                        match getExprInterval idxExpr env ctx with
+                        | Some iv when iv.lo = iv.hi ->
+                            match iv.lo with
+                            | Finite k ->
+                                let idx0 = k - 1
+                                match Map.tryFind idx0 elemMap with
+                                | Some s -> s
+                                | None   -> UnknownShape
+                            | _ -> joinAllElements elemMap
+                        | _ ->
+                            evalIndexArgToShape arg env warnings ctx (Some baseShape) (fun e en w c cs -> evalExprIr e en w c cs builtinDispatch)
+                            |> ignore
+                            joinAllElements elemMap
 
                 elif args.Length = 2 then
                     let argRow = args.[0]
                     let argCol = args.[1]
 
-                    let tryGetRowIdx () =
-                        match argRow with
+                    let tryResolveIdx (arg: IndexArg) (endDim: Dim) =
+                        match arg with
                         | IndexExpr(_, Const(_, v)) -> Some (int v - 1)
                         | IndexExpr(_, End _) ->
-                            match rows with Concrete nr -> Some (nr - 1) | _ -> None
+                            match endDim with Concrete n -> Some (n - 1) | _ -> None
+                        | IndexExpr(_, idxExpr) ->
+                            match getExprInterval idxExpr env ctx with
+                            | Some iv when iv.lo = iv.hi ->
+                                match iv.lo with
+                                | Finite k -> Some (k - 1)
+                                | _ -> None
+                            | _ -> None
                         | _ -> None
 
-                    let tryGetColIdx () =
-                        match argCol with
-                        | IndexExpr(_, Const(_, v)) -> Some (int v - 1)
-                        | IndexExpr(_, End _) ->
-                            match cols with Concrete nc -> Some (nc - 1) | _ -> None
-                        | _ -> None
+                    let tryGetRowIdx () = tryResolveIdx argRow rows
+                    let tryGetColIdx () = tryResolveIdx argCol cols
 
                     match tryGetRowIdx (), tryGetColIdx (), rows with
                     | Some ri, Some ci, Concrete nr ->
