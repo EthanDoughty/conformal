@@ -193,7 +193,8 @@ let private runTest (path: string) (fixpoint: bool) (forceCoder: bool) (quiet: b
 
     let dirPath = Path.GetDirectoryName(Path.GetFullPath(path))
     let fileName = Path.GetFileName(path)
-    let (extMap, classdefMap) = scanWorkspace dirPath fileName
+    let (extMap, classdefMap) = scanWorkspace dirPath fileName 1
+    let privateMap = scanPrivateDir dirPath
 
     let ctx = AnalysisContext()
     ctx.call.fixpoint <- fixpoint
@@ -203,6 +204,8 @@ let private runTest (path: string) (fixpoint: bool) (forceCoder: bool) (quiet: b
         ctx.ws.externalFunctions.[kv.Key] <- kv.Value
     for kv in classdefMap do
         ctx.ws.externalClassdefs.[kv.Key] <- kv.Value
+    for kv in privateMap do
+        ctx.ws.privateFunctions.[kv.Key] <- kv.Value
     ctx.ws.workspaceDir <- dirPath
 
     let analyzeResult =

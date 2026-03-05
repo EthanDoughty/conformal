@@ -143,26 +143,50 @@ function uriToPath(uri: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Workspace scanning: read sibling .m files for cross-file analysis
+// Workspace scanning: read .m files from directory tree for cross-file analysis
 // ---------------------------------------------------------------------------
 
 function readExternalFiles(filePath: string): [string, string][] {
     const dir = path.dirname(filePath);
     const fileName = path.basename(filePath);
     const result: [string, string][] = [];
+    const seen = new Set<string>();
 
-    try {
-        if (!fs.existsSync(dir)) return result;
-        const files = fs.readdirSync(dir);
-        for (const f of files) {
-            if (f.endsWith('.m') && f !== fileName) {
-                try {
-                    const content = fs.readFileSync(path.join(dir, f), 'utf-8');
-                    result.push([f, content]);
-                } catch { /* skip unreadable files */ }
+    function scanDir(d: string, depth: number): void {
+        if (depth > 3) return;
+        try {
+            const entries = fs.readdirSync(d, { withFileTypes: true });
+            // Sort entries for determinism
+            entries.sort((a, b) => a.name.localeCompare(b.name));
+            // Process files at this level first (breadth-first priority: shallower wins)
+            for (const e of entries) {
+                if (e.isFile() && e.name.endsWith('.m')) {
+                    if (d === dir && e.name === fileName) continue;
+                    const key = e.name.replace(/\.m$/, '');
+                    if (!seen.has(key)) {
+                        seen.add(key);
+                        try {
+                            const content = fs.readFileSync(path.join(d, e.name), 'utf-8');
+                            result.push([e.name, content]);
+                        } catch { /* skip unreadable files */ }
+                    }
+                }
             }
-        }
-    } catch { /* skip if dir listing fails */ }
+            // Recurse into subdirectories (skip hidden, node_modules, private)
+            for (const e of entries) {
+                if (e.isDirectory()
+                    && !e.name.startsWith('.')
+                    && e.name !== 'node_modules'
+                    && e.name !== 'private') {
+                    scanDir(path.join(d, e.name), depth + 1);
+                }
+            }
+        } catch { /* skip unreadable directories */ }
+    }
+
+    if (fs.existsSync(dir)) {
+        scanDir(dir, 0);
+    }
 
     return result;
 }

@@ -161,6 +161,9 @@ type WorkspaceContext() =
     /// Set of external function names currently being analyzed (cross-file cycle guard)
     member val analyzingExternal   : System.Collections.Generic.HashSet<string>
                                      = System.Collections.Generic.HashSet<string>() with get, set
+    /// Maps funcName -> ExternalSignature for functions in <workspaceDir>/private/
+    member val privateFunctions : System.Collections.Generic.Dictionary<string, ExternalSignature>
+                                  = System.Collections.Generic.Dictionary<string, ExternalSignature>() with get, set
 
 // ---------------------------------------------------------------------------
 // ConstraintSnapshot: captures the 5 branch-sensitive fields for save/restore.

@@ -482,7 +482,7 @@ let rec wiredEvalExpr
     evalExprIr expr env warnings ctx None wiredBuiltinDispatch
 
 /// resolveCall: determine dispatch target for a function name.
-/// Priority: builtin > same-file function > nested function > external function
+/// Priority: builtin > same-file function > nested function > private > external function
 ///         > class constructor > external classdef > unknown.
 and private resolveCall (fname: string) (ctx: AnalysisContext) : CallResolution =
     if Set.contains fname KNOWN_BUILTINS then BuiltinCall
@@ -490,6 +490,8 @@ and private resolveCall (fname: string) (ctx: AnalysisContext) : CallResolution 
         UserFunctionCall(ctx.call.functionRegistry.[fname])
     elif ctx.call.nestedFunctionRegistry.ContainsKey(fname) then
         NestedFunctionCall(ctx.call.nestedFunctionRegistry.[fname])
+    elif ctx.ws.privateFunctions.ContainsKey(fname) then
+        ExternalFunctionCall(ctx.ws.privateFunctions.[fname])
     elif ctx.ws.externalFunctions.ContainsKey(fname) then
         ExternalFunctionCall(ctx.ws.externalFunctions.[fname])
     elif ctx.call.classRegistry.ContainsKey(fname) then
