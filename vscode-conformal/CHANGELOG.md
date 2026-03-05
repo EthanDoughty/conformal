@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.9.0
+
+- License key system: `conformal.licenseKey` setting replaces `conformal.pro` boolean
+- "Enter License Key" command in the command palette with validation
+- Status bar shows "Conformal Pro" when a valid license is active
+- Symbolic colon range tracking: `1:n` infers `matrix[1 x n]`
+- `length()`/`numel()` propagation with symbolic dim aliasing
+- 3D array slice extraction: `A(:,:,k)` from `zeros(m, n, T)` returns the 2D slice shape
+- Cell variable-index read/write and 2D assignment tracking
+- Multi-level nested function support (4+ levels)
+- Dogfood-driven false positive fixes
+
 ## 2.8.0
 
 - Terse diagnostic messages (GCC/Clang style)
