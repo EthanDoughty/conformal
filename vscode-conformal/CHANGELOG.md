@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.0.0
+
+- Recursive workspace scanning (resolves cross-directory function calls up to 3 levels deep)
+- feval/str2func dispatch (resolves string literal and function handle arguments)
+- private/ directory function resolution
+- Cross-file classdef constructor body analysis (property shapes now propagate)
+- 462 tests
+
 ## 2.9.0
 
 - License key system: `conformal.licenseKey` setting replaces `conformal.pro` boolean
