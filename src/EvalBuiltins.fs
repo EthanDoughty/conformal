@@ -1993,6 +1993,30 @@ let evalBuiltinCall
         | "jacobian"         -> handleJacobian args env warnings ctx evalExprFn
         | "cellfun"          -> handleCellfun  line args env warnings ctx evalExprFn
         | "arrayfun"         -> handleArrayfun line args env warnings ctx evalExprFn
+        | "feval" ->
+            match args with
+            | IndexExpr(_, StringLit(_, funcName)) :: restArgs ->
+                // String literal first arg: synthesize Apply(Var(funcName), restArgs)
+                let callExpr = Apply(loc line 0, Var(loc line 0, funcName), restArgs)
+                Some (evalExprFn callExpr env warnings ctx)
+            | IndexExpr(_, Var(_, varName)) :: restArgs ->
+                let varShape = Env.get env varName
+                if isFunctionHandle varShape then
+                    // FunctionHandle variable: synthesize Apply(Var(varName), restArgs)
+                    let callExpr = Apply(loc line 0, Var(loc line 0, varName), restArgs)
+                    Some (evalExprFn callExpr env warnings ctx)
+                else
+                    Some UnknownShape
+            | _ -> Some UnknownShape
+        | "str2func" ->
+            match args with
+            | [IndexExpr(_, StringLit(_, funcName))] ->
+                // Allocate a handle ID and register the function name
+                let handleId = ctx.call.nextLambdaId
+                ctx.call.nextLambdaId <- handleId + 1
+                ctx.call.handleRegistry.[handleId] <- funcName
+                Some (FunctionHandle(Some (Set.singleton handleId)))
+            | _ -> Some UnknownShape
         | _                -> None
 
     match complexResult with
@@ -2026,7 +2050,7 @@ let evalBuiltinCall
 
 
 /// evalMultiBuiltinCall: dispatch a multi-return builtin call, returning shape list.
-let evalMultiBuiltinCall
+let rec evalMultiBuiltinCall
     (fname: string)
     (line: int)
     (numTargets: int)
@@ -2067,4 +2091,10 @@ let evalMultiBuiltinCall
     | "quadprog" -> handleMultiQuadprog args env warnings ctx numTargets evalExprFn
     | "fmincon"  -> handleMultiFmincon  args env warnings ctx numTargets evalExprFn
     | "fsolve"   -> handleMultiFsolve   args env warnings ctx numTargets evalExprFn
+    | "feval" ->
+        match args with
+        | IndexExpr(_, StringLit(_, funcName)) :: restArgs ->
+            // Rewrite feval('funcName', args...) -> funcName(args...) and re-dispatch
+            evalMultiBuiltinCall funcName line numTargets restArgs env warnings ctx evalExprFn getIntervalFn
+        | _ -> None  // Dynamic feval: fall through to UnknownShape per-target
     | _          -> None

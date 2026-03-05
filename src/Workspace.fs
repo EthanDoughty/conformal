@@ -71,43 +71,90 @@ let private classdefRegex =
 /// Returns a tuple: (externalFunctions map, externalClassdefs map).
 /// externalFunctions: Maps function name -> ExternalSignature for regular function files.
 /// externalClassdefs: Maps class name -> source file path for classdef files.
-let scanWorkspace (dirPath: string) (excludeFile: string)
+/// maxDepth: how many levels of subdirectories to descend (0 = flat, matching old behavior).
+/// First-found wins on name collisions (shallower directory takes priority).
+/// Hidden directories (starting with '.') and 'private/' are skipped at depth > 0.
+let scanWorkspace (dirPath: string) (excludeFile: string) (maxDepth: int)
     : Map<string, ExternalSignature> * Map<string, string> =
     let funcResult  = System.Collections.Generic.Dictionary<string, ExternalSignature>()
     let classResult = System.Collections.Generic.Dictionary<string, string>()
 
     if not (Directory.Exists(dirPath)) then Map.empty, Map.empty
     else
-        let mFiles = Directory.GetFiles(dirPath, "*.m")
-        for filePath in mFiles do
-            let fileName = Path.GetFileName(filePath)
-            if fileName <> excludeFile then
-                try
-                    let source = File.ReadAllText(filePath)
-                    // Check if this is a classdef file before trying function extraction
-                    if classdefRegex.IsMatch(source) then
-                        // Classdef file: register by stem name (e.g. "Foo.m" -> "Foo")
-                        let className = Path.GetFileNameWithoutExtension(filePath)
-                        classResult.[className] <- filePath
-                    else
-                        match extractFunctionSignature source with
-                        | None -> ()  // Script file or no function found
-                        | Some (funcName, paramCount, returnCount) ->
-                            let key = Path.GetFileNameWithoutExtension(filePath)
-                            funcResult.[key] <- {
-                                filename    = funcName
-                                paramCount  = paramCount
-                                returnCount = returnCount
-                                sourcePath  = filePath
-                                body        = None
-                                parmNames   = []
-                                outputNames = []
-                            }
-                with _ -> ()  // File read failed; skip silently
+        let excludeFullPath =
+            if excludeFile <> "" then Path.GetFullPath(Path.Combine(dirPath, excludeFile)) else ""
 
+        let rec scanDir (dir: string) (depth: int) =
+            if depth > maxDepth then ()
+            else
+                let dirName = Path.GetFileName(dir)
+                // Skip hidden dirs (except root at depth 0) and private/ (reserved for P1)
+                if depth > 0 && (dirName.StartsWith(".") || dirName = "private") then ()
+                else
+                    // Process files at this level first; sort for determinism
+                    let mFiles = Directory.GetFiles(dir, "*.m") |> Array.sort
+                    for filePath in mFiles do
+                        let fullPath = Path.GetFullPath(filePath)
+                        if fullPath <> excludeFullPath then
+                            try
+                                let source = File.ReadAllText(filePath)
+                                let key = Path.GetFileNameWithoutExtension(filePath)
+                                // First-found wins: shallower directory takes priority
+                                if not (funcResult.ContainsKey(key)) && not (classResult.ContainsKey(key)) then
+                                    if classdefRegex.IsMatch(source) then
+                                        classResult.[key] <- filePath
+                                    else
+                                        match extractFunctionSignature source with
+                                        | None -> ()  // Script file or no function found
+                                        | Some (funcName, paramCount, returnCount) ->
+                                            funcResult.[key] <- {
+                                                filename    = funcName
+                                                paramCount  = paramCount
+                                                returnCount = returnCount
+                                                sourcePath  = filePath
+                                                body        = None
+                                                parmNames   = []
+                                                outputNames = []
+                                            }
+                            with _ -> ()  // File read failed; skip silently
+                    // Recurse into subdirectories; sort for determinism
+                    let subDirs = Directory.GetDirectories(dir) |> Array.sort
+                    for subDir in subDirs do
+                        scanDir subDir (depth + 1)
+
+        scanDir dirPath 0
         let funcMap  = funcResult  |> Seq.map (fun kv -> (kv.Key, kv.Value)) |> Map.ofSeq
         let classMap = classResult |> Seq.map (fun kv -> (kv.Key, kv.Value)) |> Map.ofSeq
         funcMap, classMap
+
+
+/// scanPrivateDir: scan <dirPath>/private/*.m and return a map of ExternalSignature.
+/// Returns Map.empty if the private/ directory does not exist.
+/// Private functions are visible only to callers in the parent directory (MATLAB convention).
+let scanPrivateDir (dirPath: string) : Map<string, ExternalSignature> =
+    let privatePath = Path.Combine(dirPath, "private")
+    if not (Directory.Exists(privatePath)) then Map.empty
+    else
+        let result = System.Collections.Generic.Dictionary<string, ExternalSignature>()
+        let mFiles = Directory.GetFiles(privatePath, "*.m") |> Array.sort
+        for filePath in mFiles do
+            try
+                let source = File.ReadAllText(filePath)
+                match extractFunctionSignature source with
+                | None -> ()
+                | Some (funcName, paramCount, returnCount) ->
+                    let key = Path.GetFileNameWithoutExtension(filePath)
+                    result.[key] <- {
+                        filename    = funcName
+                        paramCount  = paramCount
+                        returnCount = returnCount
+                        sourcePath  = filePath
+                        body        = None
+                        parmNames   = []
+                        outputNames = []
+                    }
+            with _ -> ()
+        result |> Seq.map (fun kv -> (kv.Key, kv.Value)) |> Map.ofSeq
 #endif
 
 

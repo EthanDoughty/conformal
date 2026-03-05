@@ -64,7 +64,7 @@ let KNOWN_BUILTINS : Set<string> =
         "save"; "saveas"; "setdiff"; "setfield"; "setxor"; "sgolayfilt"; "shiftdim"; "squeeze"
         "secd"; "sign"; "sin"; "sind"; "single"; "sinh"; "size"; "sort"; "sparse"; "spline"; "sprank"
         "shaperead"
-        "sprintf"; "sqrt"; "sqrtm"; "std"; "str2double"; "strcmp"; "strcmpi"; "strfind"
+        "sprintf"; "sqrt"; "sqrtm"; "std"; "str2double"; "str2func"; "strcmp"; "strcmpi"; "strfind"
         "strjoin"; "strmatch"; "strrep"; "strsplit"; "strtrim"; "string"; "struct"
         "struct2cell"; "structfun"; "sub2ind"; "sum"; "svd"; "svds"
         "tan"; "tand"; "tanh"; "textscan"; "tinv"; "trace"; "transpose"; "tril"; "triu"; "true"; "ttest"; "ttest2"; "tukeywin"; "typecast"
