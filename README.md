@@ -77,7 +77,7 @@ The VS Code extension runs the analyzer while you are typing code, since it is c
 
 All warnings include source line numbers. When Conformal finds a definite error, it marks the result as unknown and keeps going so you get as many diagnostics as possible in a single pass.
 
-By default, Conformal shows only high-confidence warnings. These include dimension mismatches and type errors, with two additional tiers for more specialized diagnostics. The `--strict` flag adds 11 low-confidence codes like `W_SUSPICIOUS_COMPARISON`, `W_REASSIGN_INCOMPATIBLE`, and `W_LAMBDA_CALL_APPROXIMATE`, so you can run default mode in CI without false-positive noise and use `--strict` when you want a fuller picture. The `--pro` flag adds a further 11 codes that require the advanced analysis domains, including `W_INDEX_OUT_OF_BOUNDS`, `W_DIVISION_BY_ZERO`, `W_CONSTRAINT_CONFLICT`, `W_STRUCT_FIELD_NOT_FOUND`, and `W_UNKNOWN_FUNCTION`, among others. Without `--pro`, the CLI shows a count of how many additional issues were suppressed so you know whether it's worth enabling.
+By default, Conformal shows only high-confidence warnings. These include dimension mismatches and type errors, with two additional tiers for more specialized diagnostics. The `--strict` flag adds 11 low-confidence codes like `W_SUSPICIOUS_COMPARISON`, `W_REASSIGN_INCOMPATIBLE`, and `W_LAMBDA_CALL_APPROXIMATE`, so you can run default mode in CI without false-positive noise and use `--strict` when you want a fuller picture. A valid Conformal Pro license key (via `--license KEY` or the `conformal.licenseKey` VS Code setting) unlocks a further 11 codes that require the advanced analysis domains, including `W_INDEX_OUT_OF_BOUNDS`, `W_DIVISION_BY_ZERO`, `W_CONSTRAINT_CONFLICT`, `W_STRUCT_FIELD_NOT_FOUND`, and `W_UNKNOWN_FUNCTION`, among others. Without a license, the CLI shows a count of how many additional issues were suppressed.
 
 ### Operations
 
@@ -924,7 +924,7 @@ Configuration settings:
 |---------|---------|-------------|
 | `conformal.fixpoint` | `false` | Enable fixed-point loop analysis (iterative convergence) |
 | `conformal.strict` | `false` | Show all warnings including informational and low-confidence diagnostics |
-| `conformal.pro` | `false` | Enable Conformal Pro diagnostics (interval bounds, constraint conflicts, cross-file, deep type tracking) |
+| `conformal.licenseKey` | `""` | Conformal Pro license key (format: `CONF-xxx.yyy`). Get one at [conformal.dev](https://conformal.dev) |
 | `conformal.analyzeOnChange` | `true` | Analyze as you type (500ms debounce) |
 | `conformal.inlayHints` | `true` | Show inferred shapes as inlay hints on first assignment of each variable |
 
@@ -945,7 +945,9 @@ Run `cd src && dotnet run -- file.m` to analyze a file. The other flags are:
 
 `--witness [MODE]` attaches incorrectness witnesses to dimension conflict warnings. MODE can be `enrich` (the default, prints the witness below each warning), `filter` (only shows warnings with a confirmed witness), or `tag` (prefixes each warning with `[confirmed]` or `[possible]`). The LSP server always runs witness generation and enriches diagnostics automatically.
 
-`--pro` enables the pro-tier warning codes, including `W_INDEX_OUT_OF_BOUNDS`, `W_DIVISION_BY_ZERO`, `W_CONSTRAINT_CONFLICT`, `W_STRUCT_FIELD_NOT_FOUND`, `W_UNKNOWN_FUNCTION`, and six others. Without this flag, the CLI prints a line like `[Conformal Pro] N additional issues detected. Use --pro to see all diagnostics.` when any pro-tier warnings exist.
+`--license KEY` provides a Conformal Pro license key for the current run, unlocking 11 pro-tier warning codes including `W_INDEX_OUT_OF_BOUNDS`, `W_DIVISION_BY_ZERO`, `W_CONSTRAINT_CONFLICT`, `W_STRUCT_FIELD_NOT_FOUND`, and `W_UNKNOWN_FUNCTION`. The key can also be set via the `CONFORMAL_LICENSE` environment variable or a `~/.conformal/license.key` file. Without a valid license, the CLI shows a count of suppressed pro-tier diagnostics.
+
+`--generate-key` interactively generates a new Ed25519-signed license key (for use by the project maintainer).
 
 `--coder` runs the MATLAB Coder compatibility pass after shape analysis, emitting six `W_CODER_*` warnings for constructs Coder cannot handle (variable-size arrays, cell arrays, dynamic field access, try/catch, unsupported builtins, recursion). These codes are strict-only, so you normally combine `--coder` with `--strict`.
 
