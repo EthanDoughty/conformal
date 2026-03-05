@@ -37,9 +37,9 @@ type AnalysisCache = {
 // ---------------------------------------------------------------------------
 
 type ServerSettings() =
-    member val fixpoint      : bool = false with get, set
-    member val strict        : bool = false with get, set
-    member val pro           : bool = false with get, set
+    member val fixpoint      : bool   = false with get, set
+    member val strict        : bool   = false with get, set
+    member val licenseKey    : string = ""    with get, set
     member val analyzeOnChange : bool = false with get, set
 
 // ---------------------------------------------------------------------------
@@ -84,7 +84,7 @@ type ConformalLspServer(client: ConformalClient) =
         BitConverter.ToString(bytes).Replace("-", "").ToLowerInvariant()
 
     let computeSettingsHash () : string =
-        computeHash (string settings.fixpoint + string settings.strict + string settings.pro)
+        computeHash (string settings.fixpoint + string settings.strict + settings.licenseKey)
 
     let uriToPath (uri: string) : string =
         try
@@ -147,10 +147,17 @@ type ConformalLspServer(client: ConformalClient) =
             let irProg = Parser.parseMATLAB source
             let (env, warnings) = analyzeProgramIr irProg ctx
 
+            // Validate license for pro tier
+            let proEnabled =
+                if settings.licenseKey = "" then false
+                else match License.validateLicense settings.licenseKey with
+                     | License.Valid _ | License.GracePeriod _ -> true
+                     | _ -> false
+
             // Two-stage filter: pro tier, then strict tier
             let filteredWarnings =
                 warnings
-                |> (if settings.pro then id else List.filter (fun w -> not (Set.contains w.code PRO_ONLY_CODES)))
+                |> (if proEnabled then id else List.filter (fun w -> not (Set.contains w.code PRO_ONLY_CODES)))
                 |> (if settings.strict then id else List.filter (fun w -> not (Set.contains w.code STRICT_ONLY_CODES)))
 
             // Generate witnesses from conflict sites
@@ -237,8 +244,8 @@ type ConformalLspServer(client: ConformalClient) =
                 match jobj.TryGetValue("strict") with
                 | true, v -> settings.strict <- v.Value<bool>()
                 | _ -> ()
-                match jobj.TryGetValue("pro") with
-                | true, v -> settings.pro <- v.Value<bool>()
+                match jobj.TryGetValue("licenseKey") with
+                | true, v -> settings.licenseKey <- v.Value<string>()
                 | _ -> ()
                 match jobj.TryGetValue("analyzeOnChange") with
                 | true, v -> settings.analyzeOnChange <- v.Value<bool>()
@@ -509,8 +516,8 @@ type ConformalLspServer(client: ConformalClient) =
             match conformal.TryGetValue("strict") with
             | true, v -> settings.strict <- v.Value<bool>()
             | _ -> ()
-            match conformal.TryGetValue("pro") with
-            | true, v -> settings.pro <- v.Value<bool>()
+            match conformal.TryGetValue("licenseKey") with
+            | true, v -> settings.licenseKey <- v.Value<string>()
             | _ -> ()
             match conformal.TryGetValue("analyzeOnChange") with
             | true, v -> settings.analyzeOnChange <- v.Value<bool>()

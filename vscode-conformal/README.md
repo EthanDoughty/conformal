@@ -58,7 +58,7 @@ Under the hood, there are around 315 builtin shape rules (out of 635 recognized 
 |---------|---------|-------------|
 | `conformal.fixpoint` | `false` | Fixed-point loop analysis for convergence in loops |
 | `conformal.strict` | `false` | Show all warnings including informational and low-confidence diagnostics |
-| `conformal.pro` | `false` | Enable pro-tier diagnostics (interval bounds, constraint conflicts, cross-file analysis, deep type tracking) |
+| `conformal.licenseKey` | `""` | Conformal Pro license key (format: `CONF-xxx.yyy`). Get one at [conformal.dev](https://conformal.dev) |
 | `conformal.analyzeOnChange` | `true` | Keystroke analysis with a 500ms debounce |
 | `conformal.inlayHints` | `true` | Show inferred shapes as inlay hints on first assignment |
 
