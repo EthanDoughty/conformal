@@ -27,7 +27,7 @@ let STRICT_ONLY_CODES : Set<WarningCode> =
     ]
 
 /// Pro-tier codes: require advanced analysis domains (intervals, constraints,
-/// cross-file, deep type tracking). Suppressed unless --pro is active;
+/// cross-file, deep type tracking). Suppressed unless a valid license key is present;
 /// an upsell count is shown in their place.
 let PRO_ONLY_CODES : Set<WarningCode> =
     Set.ofList [

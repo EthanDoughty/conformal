@@ -6,6 +6,7 @@ import {
     ServerOptions,
     TransportKind,
 } from 'vscode-languageclient/node';
+import { validateLicense } from './license';
 
 let client: LanguageClient;
 let statusBarItem: vscode.StatusBarItem;
@@ -13,12 +14,12 @@ let outputChannel: vscode.OutputChannel;
 
 // --- Configuration ---
 
-function getConformalSettings(): { fixpoint: boolean; strict: boolean; pro: boolean; analyzeOnChange: boolean; inlayHints: boolean } {
+function getConformalSettings(): { fixpoint: boolean; strict: boolean; licenseKey: string; analyzeOnChange: boolean; inlayHints: boolean } {
     const config = vscode.workspace.getConfiguration('conformal');
     return {
         fixpoint: config.get<boolean>('fixpoint', false),
         strict: config.get<boolean>('strict', false),
-        pro: config.get<boolean>('pro', false),
+        licenseKey: config.get<string>('licenseKey', ''),
         analyzeOnChange: config.get<boolean>('analyzeOnChange', true),
         inlayHints: config.get<boolean>('inlayHints', true),
     };
@@ -42,19 +43,24 @@ function updateStatusBar(): void {
     const warnings = diagnostics.filter(d => d.severity === vscode.DiagnosticSeverity.Warning).length;
 
     const settings = getConformalSettings();
+    const licenseResult = validateLicense(settings.licenseKey);
+    const tierStr = licenseResult.kind === 'valid' ? ' Pro'
+        : licenseResult.kind === 'grace' ? ` Pro (${licenseResult.daysLeft}d left)`
+        : '';
+
     const modes: string[] = [];
     if (settings.fixpoint) { modes.push('fixpoint'); }
     if (settings.strict) { modes.push('strict'); }
     const modeStr = modes.length > 0 ? ` [${modes.join(', ')}]` : '';
 
     if (errors > 0) {
-        statusBarItem.text = `$(error) Conformal: ${errors} error${errors > 1 ? 's' : ''}${modeStr}`;
+        statusBarItem.text = `$(error) Conformal${tierStr}: ${errors} error${errors > 1 ? 's' : ''}${modeStr}`;
         statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
     } else if (warnings > 0) {
-        statusBarItem.text = `$(warning) Conformal: ${warnings} warning${warnings > 1 ? 's' : ''}${modeStr}`;
+        statusBarItem.text = `$(warning) Conformal${tierStr}: ${warnings} warning${warnings > 1 ? 's' : ''}${modeStr}`;
         statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
     } else {
-        statusBarItem.text = `$(check) Conformal: No issues${modeStr}`;
+        statusBarItem.text = `$(check) Conformal${tierStr}: No issues${modeStr}`;
         statusBarItem.backgroundColor = undefined;
     }
 
@@ -132,6 +138,27 @@ export async function activate(context: vscode.ExtensionContext) {
                 await client.stop();
                 await client.start();
                 vscode.window.showInformationMessage('Conformal: Server restarted');
+            }
+        }),
+
+        vscode.commands.registerCommand('conformal.enterLicenseKey', async () => {
+            const key = await vscode.window.showInputBox({
+                prompt: 'Enter your Conformal Pro license key',
+                placeHolder: 'CONF-...',
+                ignoreFocusOut: true,
+            });
+            if (key) {
+                const result = validateLicense(key);
+                if (result.kind === 'valid' || result.kind === 'grace') {
+                    const cfg = vscode.workspace.getConfiguration('conformal');
+                    await cfg.update('licenseKey', key, vscode.ConfigurationTarget.Global);
+                    vscode.window.showInformationMessage('Conformal Pro license activated.');
+                } else {
+                    const reason = result.kind === 'expired' ? 'License expired.'
+                        : result.kind === 'invalid' ? `Invalid license: ${result.reason}`
+                        : 'Unknown error.';
+                    vscode.window.showErrorMessage(`License validation failed: ${reason}`);
+                }
             }
         }),
     );

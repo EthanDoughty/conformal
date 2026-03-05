@@ -26,6 +26,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
+import { validateLicense } from './license';
 
 // ---------------------------------------------------------------------------
 // Import Fable-compiled analyzer
@@ -120,7 +121,7 @@ const debounceTimers = new Map<string, NodeJS.Timeout>();
 let serverSettings = {
     fixpoint: false,
     strict: false,
-    pro: false,
+    licenseKey: '',
     analyzeOnChange: true,
     inlayHints: true,
 };
@@ -134,7 +135,7 @@ function computeHash(text: string): string {
 }
 
 function settingsHash(): string {
-    return computeHash(`${serverSettings.fixpoint}${serverSettings.strict}${serverSettings.pro}`);
+    return computeHash(`${serverSettings.fixpoint}${serverSettings.strict}${serverSettings.licenseKey}`);
 }
 
 function uriToPath(uri: string): string {
@@ -252,12 +253,16 @@ function validate(uri: string, source: string, force = false): void {
         const filePath = uriToPath(uri);
         const externalFiles = readExternalFiles(filePath);
 
+        // Derive pro from license validation
+        const licenseResult = validateLicense(serverSettings.licenseKey);
+        const proEnabled = licenseResult.kind === 'valid' || licenseResult.kind === 'grace';
+
         // Run Fable-compiled analyzer
         const result: AnalysisResult = analyzer.analyzeSource(
             source,
             serverSettings.fixpoint,
             serverSettings.strict,
-            serverSettings.pro,
+            proEnabled,
             externalFiles
         );
 
@@ -492,7 +497,7 @@ connection.onInitialize((params: InitializeParams) => {
     if (opts && typeof opts === 'object') {
         if ('fixpoint' in opts) serverSettings.fixpoint = Boolean(opts.fixpoint);
         if ('strict' in opts) serverSettings.strict = Boolean(opts.strict);
-        if ('pro' in opts) serverSettings.pro = Boolean(opts.pro);
+        if ('licenseKey' in opts) serverSettings.licenseKey = String(opts.licenseKey ?? '');
         if ('analyzeOnChange' in opts) serverSettings.analyzeOnChange = Boolean(opts.analyzeOnChange);
         if ('inlayHints' in opts) serverSettings.inlayHints = Boolean(opts.inlayHints);
     }
@@ -659,7 +664,7 @@ connection.onDidChangeConfiguration(params => {
             const c = conformal as Record<string, unknown>;
             if ('fixpoint' in c) serverSettings.fixpoint = Boolean(c.fixpoint);
             if ('strict' in c) serverSettings.strict = Boolean(c.strict);
-            if ('pro' in c) serverSettings.pro = Boolean(c.pro);
+            if ('licenseKey' in c) serverSettings.licenseKey = String(c.licenseKey ?? '');
             if ('analyzeOnChange' in c) serverSettings.analyzeOnChange = Boolean(c.analyzeOnChange);
             if ('inlayHints' in c) serverSettings.inlayHints = Boolean(c.inlayHints);
         }
