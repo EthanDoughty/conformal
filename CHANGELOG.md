@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-03-05
+### Added
+- **Recursive workspace scanning** (`Workspace.fs`, `Cli.fs`): cross-directory function call resolution up to 3 levels deep
+- **feval/str2func dispatch** (`EvalBuiltins.fs`, `StmtFuncAnalysis.fs`): string literal and function handle arguments resolved to tracked function definitions
+- **private/ directory function resolution** (`Workspace.fs`): `private/` subdirectory functions registered and resolved during workspace scan
+- **Cross-file classdef constructor body analysis** (`StmtFuncAnalysis.fs`): `ExternalClassdefCall` path now invokes `makeClassConstructorShape` instead of emitting an all-unknown stub; property shapes propagate from constructor arguments into method bodies
+- Total test count: 462 (was 452)
+
 ## [2.9.0] - 2026-03-05
 ### Changed
 - **License key system** (`License.fs`, `Cli.fs`, `LspServer.fs`, `license.ts`, `server.ts`, `extension.ts`, `package.json`): `--pro` flag and `conformal.pro` setting replaced with Ed25519-signed license key validation; `--license KEY` CLI flag, `CONFORMAL_LICENSE` env var, and `~/.conformal/license.key` file provide the key; `conformal.licenseKey` VS Code setting with "Enter License Key" command; 14-day grace period after expiry; status bar shows tier ("Conformal Pro" / "Conformal Pro (Nd left)")
