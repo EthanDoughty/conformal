@@ -25,7 +25,7 @@ cd src && dotnet run -- ../tests/basics/inner_dim_mismatch.m
 cd src && dotnet run -- --strict ../tests/recovery/struct_field.m
 cd src && dotnet run -- --fixpoint ../tests/loops/matrix_growth.m
 cd src && dotnet run -- --witness ../tests/basics/inner_dim_mismatch.m
-cd src && dotnet run -- --pro ../tests/intervals/index_out_of_bounds.m
+cd src && dotnet run -- --license CONF-xxx.yyy ../tests/intervals/index_out_of_bounds.m
 ```
 
 **Build VS Code extension (Fable)**:
@@ -110,7 +110,7 @@ Fable compiles 27 core F# files to JavaScript for the VS Code extension:
 All warnings are structured as `Diagnostic` record instances:
 - **Fields**: `line`, `col`, `code` (W_* prefix), `message`, optional `related_line`, `related_col`
 - **Warning codes**: All warnings have stable W_* codes
-- **Warning tiers**: `STRICT_ONLY_CODES` in `Diagnostics.fs` defines 11 codes suppressed in default mode (shown only with `--strict`); `PRO_ONLY_CODES` defines 11 codes that require the advanced analysis domains and are suppressed unless `--pro` is active (the CLI prints an upsell count when pro-tier warnings exist but `--pro` is not set); the LSP reads `conformal.pro` and silently filters pro-tier codes when the setting is false. Filtering is a post-analysis presentation concern applied in CLI and LSP. Tests receive unfiltered warnings.
+- **Warning tiers**: `STRICT_ONLY_CODES` in `Diagnostics.fs` defines 11 codes suppressed in default mode (shown only with `--strict`); `PRO_ONLY_CODES` defines 11 codes that require the advanced analysis domains and are suppressed unless a valid license key is provided via `--license` (the CLI prints an upsell count when pro-tier warnings exist but no license is active); the LSP reads `conformal.licenseKey` and validates it via Ed25519 signature to determine pro access. Filtering is a post-analysis presentation concern applied in CLI and LSP. Tests receive unfiltered warnings.
 - **Severity mapping** (LSP): Error-severity codes defined in `LspDiagnostics.fs` and `server.ts`. W_UNSUPPORTED_* codes get DiagnosticTag.Unnecessary.
 
 ## Shape System
@@ -285,7 +285,7 @@ When a definite mismatch is detected (e.g., inner dimension mismatch in `A*B`), 
 
 - Test discovery is dynamic via glob in `TestRunner.fs`
 - `--strict` mode shows all warnings including low-confidence diagnostics; default mode suppresses strict-only codes
-- `--pro` enables the pro-tier codes (`PRO_ONLY_CODES` in `Diagnostics.fs`); without it, the CLI prints an upsell count and the LSP silently filters them; tests receive unfiltered warnings regardless of `--pro`
+- `--license KEY` enables the pro-tier codes (`PRO_ONLY_CODES` in `Diagnostics.fs`) via Ed25519-signed license key validation; without a valid license, the CLI prints an upsell count and the LSP silently filters them; tests receive unfiltered warnings regardless of license status
 - `--coder` runs a post-analysis pass that checks for MATLAB Coder incompatibilities; all six `W_CODER_*` codes are strict-only, so `--coder` without `--strict` will emit nothing; the Coder pass does not change shape inference, it only adds a compatibility scan on top; tests in `tests/coder/` use a `% MODE: coder` directive and the TestRunner enables the pass automatically for those files
 - `--help` prints usage and exits 0; `--version` prints `conformal 2.8.0` and exits 0
 - Struct field output is sorted alphabetically in both `shapeToString` and `printEnv`, making CLI output deterministic
