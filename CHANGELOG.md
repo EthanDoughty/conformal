@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-03-05
+### Changed
+- **License key system** (`License.fs`, `Cli.fs`, `LspServer.fs`, `license.ts`, `server.ts`, `extension.ts`, `package.json`): `--pro` flag and `conformal.pro` setting replaced with Ed25519-signed license key validation; `--license KEY` CLI flag, `CONFORMAL_LICENSE` env var, and `~/.conformal/license.key` file provide the key; `conformal.licenseKey` VS Code setting with "Enter License Key" command; 14-day grace period after expiry; status bar shows tier ("Conformal Pro" / "Conformal Pro (Nd left)")
+- **`--generate-key` CLI command** (`Cli.fs`, `License.fs`): interactive key generation for the project maintainer using Ed25519 via NSec.Cryptography
+
+### Added
+- **Symbolic colon ranges** (`EvalBinop.fs`, `SymDim.fs`): `1:n` now infers `matrix[1 x n]` instead of `matrix[1 x None]`; `SymDim.toString` pretty-printer sorts positive terms first with spaces around operators
+- **`length()`/`numel()` propagation** (`StmtFuncAnalysis.fs`): concrete interval injection for known-size matrices; symbolic dim aliasing for vectors so `k = length(v); idx = 1:k` chains correctly
+- **3D array slice extraction** (`Context.fs`, `EvalExpr.fs`, `StmtFuncAnalysis.fs`): `ndArraySlices` metadata on `CallContext` tracks 3-argument constructor calls; `A(:,:,k)` returns the stored 2D slice shape; `size(A, 3)` returns the third dimension; metadata survives simple assignment and clears on non-3D reassignment
+- **Cell variable-index read/write** (`EvalExpr.fs`, `StmtFuncAnalysis.fs`): `c{i}` where `i` has a known interval joins elements in range; 2D cell assignment tracking via linear index; dynamic-assign preserves tracked elements via join instead of destroying the map
+- **Multi-level nested functions** (`StmtFuncAnalysis.fs`): fixed spurious `W_PROCEDURE_IN_EXPR` on statement-position calls in nested functions; 4-level nesting test added
+- **Dogfood false positive fixes**: `W_RETURN_OUTSIDE_FUNCTION` retired (MATLAB allows `return` in scripts); `~=` endpoint narrowing in `Intervals.fs`; unknown-matrix comparison suppression in `EvalBinop.fs`
+- **License smoke tests** (`Program.fs`): 17 assertions covering key format, signature verification, expiry, grace period, round-trip generation
+- Total test count: 452 (was 433)
+
 ## [2.8.0] - 2026-03-03
 ### Changed
 - **Terse diagnostic messages** (`Diagnostics.fs`): all 47 non-coder warning messages rewritten to GCC/Clang style; messages lead with expression/construct, use colons to separate context from fact; "Treating result as unknown" replaced with "Shape assumed unknown"; "RHS" replaced with "right side"; no sentence-case preambles; internal version references removed

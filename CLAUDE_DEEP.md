@@ -94,7 +94,7 @@ Fable compiles 27 core F# files to JavaScript for the VS Code extension:
 - Output: `vscode-conformal/src/fable-out/` (gitignored)
 - Cross-file body analysis: external files are pre-parsed by `tryParseExternalBody` in `Interop.fs`, bodies stored on `ExternalSignature`, used by `loadExternalFunction` in the Fable path
 
-### VS Code Extension (`vscode-conformal/`) — v2.8.0, Fable-powered
+### VS Code Extension (`vscode-conformal/`) — v2.9.0, Fable-powered
 
 - Runs F#-compiled-to-JavaScript analyzer in-process via Node.js module transport (no external dependencies)
 - `src/extension.ts`: LanguageClient with TransportKind.ipc, status bar, commands
@@ -287,7 +287,7 @@ When a definite mismatch is detected (e.g., inner dimension mismatch in `A*B`), 
 - `--strict` mode shows all warnings including low-confidence diagnostics; default mode suppresses strict-only codes
 - `--license KEY` enables the pro-tier codes (`PRO_ONLY_CODES` in `Diagnostics.fs`) via Ed25519-signed license key validation; without a valid license, the CLI prints an upsell count and the LSP silently filters them; tests receive unfiltered warnings regardless of license status
 - `--coder` runs a post-analysis pass that checks for MATLAB Coder incompatibilities; all six `W_CODER_*` codes are strict-only, so `--coder` without `--strict` will emit nothing; the Coder pass does not change shape inference, it only adds a compatibility scan on top; tests in `tests/coder/` use a `% MODE: coder` directive and the TestRunner enables the pass automatically for those files
-- `--help` prints usage and exits 0; `--version` prints `conformal 2.8.0` and exits 0
+- `--help` prints usage and exits 0; `--version` prints `conformal 2.9.0` and exits 0
 - Struct field output is sorted alphabetically in both `shapeToString` and `printEnv`, making CLI output deterministic
 - `% SKIP_TEST` in a test file causes the test runner to skip it silently (no pass, no fail)
 - Indexed assignment (`M(i,j) = val`) does not check bounds because MATLAB auto-expands arrays on write

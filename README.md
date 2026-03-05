@@ -4,7 +4,7 @@
 
 ### Static Shape & Dimension Analysis for MATLAB
 
-[![Version](https://img.shields.io/badge/version-2.8.0-orange.svg)](#motivation-and-future-directions)
+[![Version](https://img.shields.io/badge/version-2.9.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4.svg)](https://dotnet.microsoft.com/download)
 [![Tests](https://img.shields.io/badge/tests-439%20passing-brightgreen.svg)](#test-suite)
@@ -955,7 +955,7 @@ Run `cd src && dotnet run -- file.m` to analyze a file. The other flags are:
 
 `--help` prints usage and exits 0.
 
-`--version` prints `conformal 2.8.0` and exits 0.
+`--version` prints `conformal 2.9.0` and exits 0.
 
 `--lsp` starts the native .NET Language Server Protocol server.
 
