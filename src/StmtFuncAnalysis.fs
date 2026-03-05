@@ -585,8 +585,7 @@ and private wiredBuiltinDispatch
     | ClassConstructorCall classInfo ->
         makeClassConstructorShape cc1 classInfo env warnings ctx
     | ExternalClassdefCall classInfo ->
-        let allFields = classInfo.properties |> List.map (fun p -> (p, UnknownShape)) |> List.sortBy fst
-        Struct(allFields, false)
+        makeClassConstructorShape cc1 classInfo env warnings ctx
     | UnknownCall ->
         warnings.Add(warnUnknownFunction line fname)
         UnknownShape
