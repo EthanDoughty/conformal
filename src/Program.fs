@@ -488,6 +488,94 @@ let runPhase4Test () : int =
         1
 
 
+// ---------------------------------------------------------------------------
+// Smoke test for license key system (Phase 1)
+// ---------------------------------------------------------------------------
+
+let runLicenseTest () : int =
+    let mutable failures = 0
+
+    let check (label: string) (expected: string) (actual: string) =
+        if expected = actual then
+            Console.WriteLine("  PASS  " + label + " => " + actual)
+        else
+            Console.Error.WriteLine("  FAIL  " + label + ": expected \"" + expected + "\" got \"" + actual + "\"")
+            failures <- failures + 1
+
+    let checkBool (label: string) (expected: bool) (actual: bool) =
+        check label (string expected) (string actual)
+
+    Console.WriteLine("=== License: base64url round-trip ===")
+    // A round-trip test via generateKey + validateLicense covers encoding implicitly.
+
+    Console.WriteLine("=== License: Invalid format ===")
+    let badFormat = License.validateLicense "not-a-key"
+    check "bad format -> Invalid" "invalid" (match badFormat with License.Invalid _ -> "invalid" | _ -> "other")
+
+    let missingPrefix = License.validateLicense "eyJzdWIiOiJ4In0.abc"
+    check "missing CONF- prefix -> Invalid" "invalid" (match missingPrefix with License.Invalid _ -> "invalid" | _ -> "other")
+
+    let missingDot = License.validateLicense "CONF-eyJzdWIiOiJ4In0abc"
+    check "missing dot -> Invalid" "invalid" (match missingDot with License.Invalid _ -> "invalid" | _ -> "other")
+
+    Console.WriteLine("=== License: Bad signature ===")
+    let validPayloadB64 = "eyJzdWIiOiJ0ZXN0QGV4YW1wbGUuY29tIiwiZXhwIjowLCJ0aWVyIjoicHJvIiwia2lkIjoiazEifQ"
+    let fakeSig = String.replicate 86 "A"
+    let badSig = License.validateLicense ("CONF-" + validPayloadB64 + "." + fakeSig)
+    check "bad signature -> Invalid" "invalid" (match badSig with License.Invalid _ -> "invalid" | _ -> "other")
+
+    Console.WriteLine("=== License: Empty string ===")
+    let emptyKey = License.validateLicense ""
+    check "empty string -> Invalid" "invalid" (match emptyKey with License.Invalid _ -> "invalid" | _ -> "other")
+
+    Console.WriteLine("=== License: generateKey + validateLicense round-trip ===")
+    let key1 = License.generateKey "test@example.com" 0L "pro"
+    checkBool "generated key starts with CONF-" true (key1.StartsWith("CONF-"))
+    let status1 = License.validateLicense key1
+    check "perpetual key -> Valid" "valid" (match status1 with License.Valid _ -> "valid" | _ -> "other")
+    match status1 with
+    | License.Valid p ->
+        check "payload sub" "test@example.com" p.sub
+        check "payload tier" "pro" p.tier
+        check "payload kid" "k1" p.kid
+        check "payload exp" "0" (string p.exp)
+    | _ -> ()
+
+    Console.WriteLine("=== License: expired key ===")
+    // exp = 1 (long past)
+    let keyExpired = License.generateKey "expired@example.com" 1L "pro"
+    let statusExpired = License.validateLicense keyExpired
+    check "expired key -> Expired" "expired" (match statusExpired with License.Expired _ -> "expired" | _ -> "other")
+
+    Console.WriteLine("=== License: grace period key ===")
+    // exp = 7 days ago
+    let sevenDaysAgo = DateTimeOffset.UtcNow.AddDays(-7.0).ToUnixTimeSeconds()
+    let keyGrace = License.generateKey "grace@example.com" sevenDaysAgo "pro"
+    let statusGrace = License.validateLicense keyGrace
+    check "grace period key -> GracePeriod" "grace" (match statusGrace with License.GracePeriod _ -> "grace" | _ -> "other")
+
+    Console.WriteLine("=== License: tampered payload ===")
+    // Take a valid key, change a character in the payload section
+    let keyValid = License.generateKey "tamper@example.com" 0L "pro"
+    let parts = keyValid.Substring(5).Split('.')
+    let tamperedPayload =
+        let p = parts.[0]
+        // Flip a character
+        let arr = p.ToCharArray()
+        arr.[5] <- if arr.[5] = 'A' then 'B' else 'A'
+        System.String(arr)
+    let tamperedKey = "CONF-" + tamperedPayload + "." + parts.[1]
+    let statusTampered = License.validateLicense tamperedKey
+    check "tampered payload -> Invalid" "invalid" (match statusTampered with License.Invalid _ -> "invalid" | _ -> "other")
+
+    Console.WriteLine("")
+    if failures = 0 then
+        Console.WriteLine("All license smoke tests PASSED")
+        0
+    else
+        Console.Error.WriteLine(string failures + " license smoke test(s) FAILED")
+        1
+
 [<EntryPoint>]
 let main argv =
     // Smoke tests handled here (Program.fs is last in compilation order)
@@ -499,6 +587,8 @@ let main argv =
         runPhase3Test ()
     elif argv.Length >= 1 && argv.[0] = "--test-phase4" then
         runPhase4Test ()
+    elif argv.Length >= 1 && argv.[0] = "--test-license" then
+        runLicenseTest ()
     elif argv |> Array.contains "--lsp" then
         // Start F# LSP server (JSON-RPC over stdio)
         LspServer.startLsp ()
