@@ -25,3 +25,6 @@ FINDINGS-*.md
 
 # Dogfood corpus (third-party MATLAB files for testing)
 dogfood/
+
+# Local NuGet package cache (sandbox workaround)
+.nuget-packages/

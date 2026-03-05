@@ -6,3 +6,4 @@ fable/.tools/
 fable/bin/
 fable/obj/
 src/fable-out/
+.env
