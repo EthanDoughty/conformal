@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.2.0
+
+- Fix spurious W_END_OUTSIDE_INDEXING from parenthesized `for(i = 1:n)` syntax
+- Fix switch parsing when blank lines appear before first case
+- Add `?ClassName` metaclass operator support (no longer crashes lexer)
+- Fix string-operator collision: `'*'` inside `[T '*']` no longer misparses as multiply
+- PARFOR added to endless-function block-opener detection
+- Dogfood corpus expanded to 1197 files, 0 crashes, 0 false positives
+- 469 tests
+
 ## 3.1.0
 
 - Workspace files correctly shadow builtins (MATLAB dispatch order: local > workspace > builtin)
