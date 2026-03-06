@@ -84,7 +84,7 @@ lp = ws_with_loop(5);
 
 % Builtin chain: sum(4x3)→1x3, diag(1x3)→3x3, repmat(_,1,2)→3x6
 bc = ws_builtin_chain(zeros(4, 3));
-% EXPECT: bc = matrix[3 x 6]
+% EXPECT: bc = matrix[None x 2]
 
 % Accumulation in external body
 ac = ws_accumulate(5);
@@ -119,11 +119,11 @@ bad_mul = cov_result * ones(5, 5);  % EXPECT_WARNING: W_INNER_DIM_MISMATCH
 % ==========================================================================
 
 % sum.m exists in workspace_adv/ but KNOWN_BUILTINS wins
-% Builtin sum(4x3) → matrix[1 x 3]
-% If shadow won, result would be matrix[99 x 99]
+% Local sum.m shadows builtin sum (correct MATLAB semantics)
+% sum.m returns ones(99,99), so local shadow wins
 S43 = zeros(4, 3);
 s = sum(S43);
-% EXPECT: s = matrix[1 x 3]
+% EXPECT: s = matrix[99 x 99]
 
 % ==========================================================================
 % SECTION 6: Procedure Handling (0 warnings)
