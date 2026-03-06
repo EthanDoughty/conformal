@@ -4,10 +4,10 @@
 
 ### Static Shape & Dimension Analysis for MATLAB
 
-[![Version](https://img.shields.io/badge/version-3.0.0-orange.svg)](#motivation-and-future-directions)
+[![Version](https://img.shields.io/badge/version-3.2.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4.svg)](https://dotnet.microsoft.com/download)
-[![Tests](https://img.shields.io/badge/tests-439%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-469%20passing-brightgreen.svg)](#test-suite)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
 *Matrices must be **conformable** before they can perform. Conformal makes sure they are.*
@@ -69,7 +69,7 @@ dotnet run -- ../tests/basics/inner_dim_mismatch.m
 
 ## Performance
 
-The single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and the cross-file workspace analysis runs in about 70ms. The full test suite (439 tests total) finishes in about one second, with no MATLAB runtime involved during any part of the process.
+The single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and the cross-file workspace analysis runs in about 70ms. The full test suite (469 tests total) finishes in about one second, with no MATLAB runtime involved during any part of the process.
 
 The VS Code extension runs the analyzer while you are typing code, since it is compiled to JavaScript, using the Fable tool, so there is no subprocess startup cost and analysis works on every keystroke with a 500ms debounce.
 
@@ -199,13 +199,13 @@ src/                    F# analyzer (lexer, parser, shape inference, builtins, d
 vscode-conformal/       VS Code extension (TypeScript client + Fable-compiled analyzer)
   fable/                Fable compilation project (F# to JavaScript, shares src/*.fs files)
   src/                  TypeScript extension and LSP server code
-tests/                  439 self-checking MATLAB programs in 21 categories
+tests/                  469 self-checking MATLAB programs in 22 categories
 .github/                CI workflow (build, test, compile Fable, package VSIX)
 ```
 
 ## Test Suite
 
-Conformal is validated by 439 self-checking MATLAB programs organized into 21 categories. Each test embeds its expected behavior as inline assertions:
+Conformal is validated by 469 self-checking MATLAB programs organized into 22 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -898,7 +898,7 @@ Parser and lexer edge cases that don't fit naturally into other categories.
 ### Running the Tests
 
 ```bash
-# Run all 439 .m tests
+# Run all 469 .m tests
 cd src && dotnet run -- --tests
 
 # Run with fixed-point loop analysis
@@ -951,11 +951,11 @@ Run `cd src && dotnet run -- file.m` to analyze a file. The other flags are:
 
 `--coder` runs the MATLAB Coder compatibility pass after shape analysis, emitting six `W_CODER_*` warnings for constructs Coder cannot handle (variable-size arrays, cell arrays, dynamic field access, try/catch, unsupported builtins, recursion). These codes are strict-only, so you normally combine `--coder` with `--strict`.
 
-`--quiet` suppresses per-test output during `--tests` runs and only prints failures. Useful when you want to run the full suite without scrolling through 439 passing test blocks.
+`--quiet` suppresses per-test output during `--tests` runs and only prints failures. Useful when you want to run the full suite without scrolling through 469 passing test blocks.
 
 `--help` prints usage and exits 0.
 
-`--version` prints `conformal 3.0.0` and exits 0.
+`--version` prints `conformal 3.2.0` and exits 0.
 
 `--lsp` starts the native .NET Language Server Protocol server.
 

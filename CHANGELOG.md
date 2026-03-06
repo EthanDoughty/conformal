@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-03-05
+### Added
+- **`MetaClass` IR node** (`Ir.fs`, `Parser.fs`, `EvalExpr.fs`, `Diagnostics.fs`, `Json.fs`, `StmtFuncAnalysis.fs`): represents the MATLAB metaclass operator `?ClassName`; parser emits `MetaClass of loc * name` when `?` is followed by an identifier; evaluates to `UnknownShape`; covered by `prettyExprIr`, `exprMentionsVar`, `exprMentionsFieldAccess`, and JSON serialization
+- **`?` operator support** (`Lexer.fs`, `Parser.fs`): `?` added to `masterPattern`/`masterPatternSimple` OP regex; `?` added to `StartsExpr` token set; `ParsePrefix` handles `?` case producing `MetaClass`
+- **`precision/` test category**: 6 tests covering metaclass operator, `for(...)` optional parens, multiline matrix literals, string-operator collision, switch with blank lines, and empty struct concat
+- Total test count: 469 (was 465)
+
+### Fixed
+- **`ParseFor` optional parentheses** (`Parser.fs`): `for(i = 1:n)` (parenthesized loop header) now parses correctly; applies to both `for` and `parfor`
+- **`ParseSwitch` blank-line skip** (`Parser.fs`): uses a `while` loop to skip ALL newlines before the first `case`; previously a single `if` meant two or more blank lines caused a parse failure
+- **`ParseExprRest` STRING/DOTOP guard** (`Parser.fs`): `isOp` check requires `tok.kind = op || tok.kind = "DOTOP"` before treating a token as an infix operator; prevents STRING tokens whose value happens to be a punctuation character (e.g., `'*'`) from being misread as operators
+- **`PARFOR` in `blockOpeners`** (`Parser.fs`): added to the `detectEndlessFunctions` block-opener set so `parfor` blocks are counted correctly in end-less function detection
+
+## [3.1.0] - 2026-03-05
+### Added
+- **Builtin shadowing** (`EvalBuiltins.fs`, `StmtFuncAnalysis.fs`): workspace-defined functions now shadow builtins with the same name, matching correct MATLAB dispatch order (workspace > builtin)
+- **Multi-return builtins** (`EvalBuiltins.fs`): `kmeans` (1 to 4 return values), `intersect`, `union`, `setdiff`, `ismember` added to `BUILTIN_MULTI_HANDLERS`
+- **Dogfood corpus expansion**: 139 files -> 358 files (added prmlt/150 files, vlfeat/208 files; pruned 4 dead repos); 0 crashes, 0 false positives
+- Total test count: 465 (was 462)
+
+### Fixed
+- **Multiline matrix literal parsing** (`Parser.fs`): newlines after semicolons inside `[...]` are now skipped correctly
+- **Empty matrix concat type check** (`EvalBinop.fs`): `[]` is type-neutral and does not produce `W_CONCAT_TYPE_MISMATCH`
+- **Fewer assignment targets than return values** (`StmtFuncAnalysis.fs`): `[a, b] = f()` when `f` returns 3 values is valid MATLAB; no longer a false positive
+
 ## [3.0.0] - 2026-03-05
 ### Added
 - **Recursive workspace scanning** (`Workspace.fs`, `Cli.fs`): cross-directory function call resolution up to 3 levels deep
