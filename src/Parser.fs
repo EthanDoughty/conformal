@@ -122,10 +122,13 @@ type MatlabParser(tokenList: Token list) =
                     result <- blockDepth >= 1
                     finished <- true
                 else
-                    if tok.value = "(" || tok.value = "[" || tok.value = "{" then
-                        delimDepth <- delimDepth + 1
-                    elif tok.value = ")" || tok.value = "]" || tok.value = "}" then
-                        delimDepth <- max 0 (delimDepth - 1)
+                    // Only count actual delimiter tokens, not STRING tokens whose value
+                    // happens to be a bracket character (e.g. STRING "(")
+                    if tok.kind <> "STRING" then
+                        if tok.value = "(" || tok.value = "[" || tok.value = "{" then
+                            delimDepth <- delimDepth + 1
+                        elif tok.value = ")" || tok.value = "]" || tok.value = "}" then
+                            delimDepth <- max 0 (delimDepth - 1)
                     if delimDepth = 0 then
                         if Set.contains tok.kind blockOpeners then
                             blockDepth <- blockDepth + 1
@@ -179,13 +182,16 @@ type MatlabParser(tokenList: Token list) =
                     pos <- pos + 1
                     stop <- true
                 else
-                    if tok.value = "(" || tok.value = "[" || tok.value = "{" then depth <- depth + 1
-                    elif tok.value = ")" || tok.value = "]" || tok.value = "}" then depth <- max 0 (depth - 1)
+                    // Only count actual delimiters, not STRING tokens with bracket values
+                    if tok.kind <> "STRING" then
+                        if tok.value = "(" || tok.value = "[" || tok.value = "{" then depth <- depth + 1
+                        elif tok.value = ")" || tok.value = "]" || tok.value = "}" then depth <- max 0 (depth - 1)
                     consumed.Add(tok)
                     pos <- pos + 1
             else
-                if tok.value = "(" || tok.value = "[" || tok.value = "{" then depth <- depth + 1
-                elif tok.value = ")" || tok.value = "]" || tok.value = "}" then depth <- max 0 (depth - 1)
+                if tok.kind <> "STRING" then
+                    if tok.value = "(" || tok.value = "[" || tok.value = "{" then depth <- depth + 1
+                    elif tok.value = ")" || tok.value = "]" || tok.value = "}" then depth <- max 0 (depth - 1)
                 consumed.Add(tok)
                 pos <- pos + 1
         let rawText = consumed |> Seq.map (fun t -> t.value) |> String.concat " "
@@ -759,91 +765,92 @@ type MatlabParser(tokenList: Token list) =
 
     member private this.ParsePrefix(matrixContext: bool, colonVisible: bool) : Expr =
         let tok = this.Current()
-        match tok.value with
-        | "+" ->
+        // Check kind-based literal types first to prevent STRING/NUMBER values
+        // from matching operator arms (e.g. STRING "(" matching the "(" case).
+        match tok.kind with
+        | "NUMBER" ->
+            let numTok = tokens.[pos]
             pos <- pos + 1
-            // unary + is identity
-            this.ParseExpr(precedenceTable.["+"], matrixContext, colonVisible)
+            Const(loc numTok.line numTok.col, float numTok.value)
 
-        | "-" ->
-            let minusTok = tokens.[pos]
+        | "STRING" ->
+            let strTok = tokens.[pos]
             pos <- pos + 1
-            let operand = this.ParseExpr(precedenceTable.["-"], matrixContext, colonVisible)
-            Neg(loc minusTok.line minusTok.col, operand)
+            StringLit(loc strTok.line strTok.col, strTok.value)
 
-        | "~" ->
-            let notTok = tokens.[pos]
+        | "ID" ->
+            let idTok = tokens.[pos]
             pos <- pos + 1
-            let operand = this.ParseExpr(precedenceTable.["+"], matrixContext, colonVisible)
-            Not(loc notTok.line notTok.col, operand)
+            let left: Expr = Var(loc idTok.line idTok.col, idTok.value)
+            this.ParsePostfix(left)
 
-        | "@" ->
-            let atTok = tokens.[pos]
+        | "END" ->
+            let endTok = tokens.[pos]
             pos <- pos + 1
-            let next = this.Current()
-            if next.value = "(" then
-                this.Eat("(") |> ignore
-                let parms = ResizeArray<string>()
-                if this.Current().value <> ")" then
-                    parms.Add(this.Eat("ID").value)
-                    while this.Current().value = "," do
-                        this.Eat(",") |> ignore
-                        parms.Add(this.Eat("ID").value)
-                this.Eat(")") |> ignore
-                let body = this.ParseExpr(0, false, true)
-                Lambda(loc atTok.line atTok.col, Seq.toList parms, body)
-            elif next.kind = "ID" then
-                let name = this.Eat("ID").value
-                FuncHandle(loc atTok.line atTok.col, name)
-            else
-                raise (ParseError("Expected '(' or function name after '@' at " + string next.pos))
-
-        | "?" ->
-            // MATLAB metaclass operator: ?ClassName
-            let qTok = tokens.[pos]
-            pos <- pos + 1
-            if this.Current().kind = "ID" then
-                let name = this.Eat("ID").value
-                MetaClass(loc qTok.line qTok.col, name)
-            else
-                Var(loc qTok.line qTok.col, "?")
-
-        | "[" ->
-            let ml = this.ParseMatrixLiteral()
-            this.ParsePostfix(ml)
-
-        | "{" ->
-            let cl = this.ParseCellLiteral()
-            this.ParsePostfix(cl)
-
-        | "(" ->
-            this.Eat("(") |> ignore
-            let inner = this.ParseExpr(0, false, true)
-            this.Eat(")") |> ignore
-            this.ParsePostfix(inner)
+            End(loc endTok.line endTok.col)
 
         | _ ->
-            match tok.kind with
-            | "NUMBER" ->
-                let numTok = tokens.[pos]
+            // Value-based matching for operators (safe now: STRING/NUMBER/ID/END handled above)
+            match tok.value with
+            | "+" ->
                 pos <- pos + 1
-                Const(loc numTok.line numTok.col, float numTok.value)
+                this.ParseExpr(precedenceTable.["+"], matrixContext, colonVisible)
 
-            | "STRING" ->
-                let strTok = tokens.[pos]
+            | "-" ->
+                let minusTok = tokens.[pos]
                 pos <- pos + 1
-                StringLit(loc strTok.line strTok.col, strTok.value)
+                let operand = this.ParseExpr(precedenceTable.["-"], matrixContext, colonVisible)
+                Neg(loc minusTok.line minusTok.col, operand)
 
-            | "ID" ->
-                let idTok = tokens.[pos]
+            | "~" ->
+                let notTok = tokens.[pos]
                 pos <- pos + 1
-                let left: Expr = Var(loc idTok.line idTok.col, idTok.value)
-                this.ParsePostfix(left)
+                let operand = this.ParseExpr(precedenceTable.["+"], matrixContext, colonVisible)
+                Not(loc notTok.line notTok.col, operand)
 
-            | "END" ->
-                let endTok = tokens.[pos]
+            | "@" ->
+                let atTok = tokens.[pos]
                 pos <- pos + 1
-                End(loc endTok.line endTok.col)
+                let next = this.Current()
+                if next.value = "(" then
+                    this.Eat("(") |> ignore
+                    let parms = ResizeArray<string>()
+                    if this.Current().value <> ")" then
+                        parms.Add(this.Eat("ID").value)
+                        while this.Current().value = "," do
+                            this.Eat(",") |> ignore
+                            parms.Add(this.Eat("ID").value)
+                    this.Eat(")") |> ignore
+                    let body = this.ParseExpr(0, false, true)
+                    Lambda(loc atTok.line atTok.col, Seq.toList parms, body)
+                elif next.kind = "ID" then
+                    let name = this.Eat("ID").value
+                    FuncHandle(loc atTok.line atTok.col, name)
+                else
+                    raise (ParseError("Expected '(' or function name after '@' at " + string next.pos))
+
+            | "?" ->
+                let qTok = tokens.[pos]
+                pos <- pos + 1
+                if this.Current().kind = "ID" then
+                    let name = this.Eat("ID").value
+                    MetaClass(loc qTok.line qTok.col, name)
+                else
+                    Var(loc qTok.line qTok.col, "?")
+
+            | "[" ->
+                let ml = this.ParseMatrixLiteral()
+                this.ParsePostfix(ml)
+
+            | "{" ->
+                let cl = this.ParseCellLiteral()
+                this.ParsePostfix(cl)
+
+            | "(" ->
+                this.Eat("(") |> ignore
+                let inner = this.ParseExpr(0, false, true)
+                this.Eat(")") |> ignore
+                this.ParsePostfix(inner)
 
             | _ ->
                 raise (ParseError($"Unexpected token {tok.kind} '{tok.value}' in expression at {tok.pos}"))
