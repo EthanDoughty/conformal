@@ -27,6 +27,7 @@ type Expr =
     | CurlyApply  of loc: SrcLoc * base_: Expr * args: IndexArg list
     | MatrixLit   of loc: SrcLoc * rows: Expr list list
     | CellLit     of loc: SrcLoc * rows: Expr list list
+    | MetaClass   of loc: SrcLoc * name: string
 
     member this.Loc =
         match this with
@@ -35,7 +36,7 @@ type Expr =
         | Transpose(l,_) | FieldAccess(l,_,_)
         | Lambda(l,_,_) | FuncHandle(l,_) | End l
         | Apply(l,_,_) | CurlyApply(l,_,_)
-        | MatrixLit(l,_) | CellLit(l,_) -> l
+        | MatrixLit(l,_) | CellLit(l,_) | MetaClass(l,_) -> l
 
     member this.Line = this.Loc.line
     member this.Col  = this.Loc.col

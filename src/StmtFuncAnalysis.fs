@@ -65,7 +65,7 @@ let rec private exprMentionsVar (expr: Expr) (varName: string) : bool =
     | Transpose(_, op) -> exprMentionsVar op varName
     | BinOp(_, _, l, r) -> exprMentionsVar l varName || exprMentionsVar r varName
     | FieldAccess(_, b, _) -> exprMentionsVar b varName
-    | Lambda _ | FuncHandle _ -> false
+    | Lambda _ | FuncHandle _ | MetaClass _ -> false
     | MatrixLit(_, rows) ->
         rows |> List.exists (fun row -> row |> List.exists (fun e -> exprMentionsVar e varName))
     | CellLit(_, rows) ->
@@ -84,7 +84,7 @@ let rec private exprMentionsVar (expr: Expr) (varName: string) : bool =
 let rec private exprMentionsFieldAccess (expr: Expr) (baseName: string) (fieldName: string) : bool =
     match expr with
     | FieldAccess(_, Var(_, bn), fn) -> bn = baseName && fn = fieldName
-    | Var _ | Const _ | StringLit _ | End _ -> false
+    | Var _ | Const _ | StringLit _ | End _ | MetaClass _ -> false
     | Neg(_, op)       -> exprMentionsFieldAccess op baseName fieldName
     | Not(_, op)       -> exprMentionsFieldAccess op baseName fieldName
     | Transpose(_, op) -> exprMentionsFieldAccess op baseName fieldName
@@ -92,7 +92,7 @@ let rec private exprMentionsFieldAccess (expr: Expr) (baseName: string) (fieldNa
         exprMentionsFieldAccess l baseName fieldName ||
         exprMentionsFieldAccess r baseName fieldName
     | FieldAccess(_, b, _) -> exprMentionsFieldAccess b baseName fieldName
-    | Lambda _ | FuncHandle _ -> false
+    | Lambda _ | FuncHandle _ | MetaClass _ -> false
     | MatrixLit(_, rows) ->
         rows |> List.exists (fun row -> row |> List.exists (fun e -> exprMentionsFieldAccess e baseName fieldName))
     | CellLit(_, rows) ->
