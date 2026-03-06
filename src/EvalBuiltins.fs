@@ -1897,7 +1897,8 @@ let MULTI_SUPPORTED_FORMS : Map<string, string> =
         "butter", "1 or 2"; "cheby1", "1 or 2"; "cheby2", "1 or 2"; "ellip", "1 or 2"; "besself", "1 or 2"
         "dcm2angle", "1 or 3"
         "pca", "1-3"; "ind2sub", "any"; "linprog", "1-3"; "quadprog", "1-3"
-        "fmincon", "1-3"; "fsolve", "1-2"
+        "fmincon", "1-3"; "fsolve", "1-2"; "kmeans", "1-4"
+        "intersect", "1-3"; "union", "1-3"; "setdiff", "1-2"; "ismember", "1-2"
     ]
 
 
@@ -2078,7 +2079,8 @@ let rec evalMultiBuiltinCall
     | "meshgrid" -> handleMultiMeshgrid args numTargets
     | "cellfun"  -> handleMultiCellfun  line args env warnings ctx numTargets evalExprFn
     | "arrayfun" -> handleMultiArrayfun line args env warnings ctx numTargets evalExprFn
-    | "ndgrid" | "regexp" | "regexpi" -> handleMultiAny numTargets
+    | "ndgrid" | "regexp" | "regexpi" | "kmeans" -> handleMultiAny numTargets
+    | "intersect" | "union" | "setdiff" | "ismember" -> handleMultiAny numTargets
     | "lqr" | "dlqr"   -> handleMultiLqr  args env warnings ctx numTargets evalExprFn
     | "care" | "dare"   -> handleMultiCare args env warnings ctx numTargets evalExprFn
     | "butter" | "cheby1" | "cheby2" | "ellip" | "besself" ->
