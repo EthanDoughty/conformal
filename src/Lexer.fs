@@ -265,7 +265,19 @@ let lex (src: string) : Token list =
             // Do NOT update prevKind for whitespace/comments.
 
         | "MISMATCH" ->
-            raise (LexError("Unexpected character '" + value + "' at " + string startPos))
+            // MATLAB shell escape: !command runs the rest of the line as an OS command.
+            // Valid at statement level (after NEWLINE, ";", or start-of-file).
+            if value = "!" && (prevKind = "NEWLINE" || prevKind = "" || prevKind = ";") then
+                let mutable endPos = startPos + 1
+                while endPos < src.Length && src.[endPos] <> '\n' do
+                    endPos <- endPos + 1
+                let cmd = src.[startPos + 1 .. endPos - 1].Trim()
+                tokens.Add(makeToken "SHELL_ESCAPE" cmd startPos)
+                prevKind <- "SHELL_ESCAPE"
+                sawSpace <- false
+                pos <- endPos  // stop before \n so NEWLINE is lexed normally
+            else
+                raise (LexError("Unexpected character '" + value + "' at " + string startPos))
 
         | _ ->
             pos <- m.Index + m.Length
