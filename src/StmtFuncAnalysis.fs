@@ -482,11 +482,11 @@ let rec wiredEvalExpr
     evalExprIr expr env warnings ctx None wiredBuiltinDispatch
 
 /// resolveCall: determine dispatch target for a function name.
-/// Priority: builtin > same-file function > nested function > private > external function
-///         > class constructor > external classdef > unknown.
+/// Priority: same-file function > nested function > private > external function
+///         > builtin > class constructor > external classdef > unknown.
+/// Note: workspace files shadow builtins (MATLAB semantics).
 and private resolveCall (fname: string) (ctx: AnalysisContext) : CallResolution =
-    if Set.contains fname KNOWN_BUILTINS then BuiltinCall
-    elif ctx.call.functionRegistry.ContainsKey(fname) then
+    if ctx.call.functionRegistry.ContainsKey(fname) then
         UserFunctionCall(ctx.call.functionRegistry.[fname])
     elif ctx.call.nestedFunctionRegistry.ContainsKey(fname) then
         NestedFunctionCall(ctx.call.nestedFunctionRegistry.[fname])
@@ -494,6 +494,7 @@ and private resolveCall (fname: string) (ctx: AnalysisContext) : CallResolution 
         ExternalFunctionCall(ctx.ws.privateFunctions.[fname])
     elif ctx.ws.externalFunctions.ContainsKey(fname) then
         ExternalFunctionCall(ctx.ws.externalFunctions.[fname])
+    elif Set.contains fname KNOWN_BUILTINS then BuiltinCall
     elif ctx.call.classRegistry.ContainsKey(fname) then
         ClassConstructorCall(ctx.call.classRegistry.[fname])
     else
@@ -1234,9 +1235,16 @@ and private analyzeAssignMulti
         else
             Env.set env target shape
 
+    // Check if a workspace file shadows a builtin (MATLAB semantics: local files win)
+    let isBuiltinShadowed (fname: string) =
+        ctx.call.functionRegistry.ContainsKey(fname)
+        || ctx.call.nestedFunctionRegistry.ContainsKey(fname)
+        || ctx.ws.privateFunctions.ContainsKey(fname)
+        || ctx.ws.externalFunctions.ContainsKey(fname)
+
     match expr with
     | Apply(_, Var(_, fname), args) ->
-        if Set.contains fname KNOWN_BUILTINS then
+        if Set.contains fname KNOWN_BUILTINS && not (isBuiltinShadowed fname) then
             let numTargets = targets.Length
             if numTargets = 1 then
                 let result = evalBuiltinCall fname line args env warnings ctx wiredEvalExprFull wiredGetInterval
