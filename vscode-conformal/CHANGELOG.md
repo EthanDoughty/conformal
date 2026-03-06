@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.1.0
+
+- Workspace files correctly shadow builtins (MATLAB dispatch order: local > workspace > builtin)
+- Multi-return support for kmeans, intersect, union, setdiff, ismember
+- Multiline matrix literal parsing fix (semicolons followed by newlines)
+- Empty matrix [] now type-neutral in concatenation (no false W_CONCAT_TYPE_MISMATCH)
+- Fewer targets than outputs is valid MATLAB (e.g. [a, b] = f() when f returns 3)
+- Dogfood corpus expanded to 358 files (added 208-file vlfeat, 150-file prmlt)
+- 465 tests
+
 ## 3.0.0
 
 - Recursive workspace scanning (resolves cross-directory function calls up to 3 levels deep)
