@@ -133,10 +133,15 @@ type MatlabParser(tokenList: Token list) =
                         if Set.contains tok.kind blockOpeners then
                             blockDepth <- blockDepth + 1
                         elif tok.kind = "END" then
-                            blockDepth <- blockDepth - 1
-                            if blockDepth = 0 then
-                                result <- false
-                                finished <- true
+                            // END followed by ( is a function name (e.g. function x = end(...)),
+                            // not a block closer — skip it.
+                            let nextIdx = idx + 1
+                            let nextIsCall = nextIdx < tokens.Length && tokens.[nextIdx].value = "("
+                            if not nextIsCall then
+                                blockDepth <- blockDepth - 1
+                                if blockDepth = 0 then
+                                    result <- false
+                                    finished <- true
                         elif tok.kind = "FUNCTION" then
                             if blockDepth >= 1 then blockDepth <- blockDepth + 1
                             else
@@ -385,6 +390,16 @@ type MatlabParser(tokenList: Token list) =
     // Function definition
     // -------------------------------------------------------------------
 
+    // Eat a function name: accepts ID or END (MATLAB allows `end` as a function name
+    // for operator overloading, e.g. @classname/end.m).
+    member private this.EatFuncName() : string =
+        let tok = this.Current()
+        if tok.kind = "ID" || tok.kind = "END" then
+            pos <- pos + 1
+            tok.value
+        else
+            raise (ParseError($"Expected function name at pos {tok.pos}, found {tok.kind} '{tok.value}'"))
+
     member private this.ParseFunctionDef() : Stmt =
         let funcTok = this.Eat("FUNCTION")
         let line = funcTok.line
@@ -393,23 +408,24 @@ type MatlabParser(tokenList: Token list) =
         let mutable name = ""
         let mutable hasParens = true
 
-        if this.Current().kind = "ID" then
+        if this.Current().kind = "ID" || this.Current().kind = "END" then
             let lookahead = if pos + 1 < tokens.Length then tokens.[pos + 1] else tokens.[tokens.Length - 1]
             if lookahead.value = "(" then
-                // Procedure form: function name(args)
-                name <- this.Eat("ID").value
+                // Procedure form: function name(args) — or function end(args)
+                name <- this.EatFuncName()
                 this.Eat("(") |> ignore
-            elif lookahead.value = "=" then
+            elif lookahead.value = "=" && this.Current().kind = "ID" then
                 // Single return: function result = name(args)
+                // Note: only ID can be an output var (not END)
                 outputVars.Add(this.Eat("ID").value)
                 this.Eat("=") |> ignore
-                name <- this.Eat("ID").value
+                name <- this.EatFuncName()
                 if this.Current().value = "(" then this.Eat("(") |> ignore
                 else hasParens <- false
             elif lookahead.kind = "NEWLINE" || lookahead.kind = "EOF" || lookahead.value = ";" ||
                  lookahead.kind = "FUNCTION" then
                 // No-arg procedure
-                name <- this.Eat("ID").value
+                name <- this.EatFuncName()
                 hasParens <- false
             else
                 raise (ParseError("Expected '=' or '(' after function name at " + string (this.Current().pos)))
@@ -425,7 +441,7 @@ type MatlabParser(tokenList: Token list) =
                     outputVars.Add(this.Eat("ID").value)
                 this.Eat("]") |> ignore
             this.Eat("=") |> ignore
-            name <- this.Eat("ID").value
+            name <- this.EatFuncName()
             if this.Current().value = "(" then this.Eat("(") |> ignore
             else hasParens <- false
         else
@@ -481,6 +497,12 @@ type MatlabParser(tokenList: Token list) =
             | "CONTINUE" -> let t = this.Eat("CONTINUE") in Continue(loc t.line t.col)
             | "RETURN" -> let t = this.Eat("RETURN") in Return(loc t.line t.col)
             | "FUNCTION" -> this.ParseFunctionDef()
+            | "SHELL_ESCAPE" ->
+                // !command — skip the token and any trailing newline
+                let t = tokens.[pos]
+                pos <- pos + 1
+                if not (this.AtEnd()) && this.Current().kind = "NEWLINE" then pos <- pos + 1
+                ExprStmt(loc t.line t.col, Const(loc t.line t.col, 0.0))
             | "NEWLINE" ->
                 this.Eat("NEWLINE") |> ignore
                 ExprStmt(loc 0 0, Const(loc 0 0, 0.0))
