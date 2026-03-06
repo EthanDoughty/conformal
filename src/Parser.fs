@@ -110,7 +110,7 @@ type MatlabParser(tokenList: Token list) =
             si <- si + 1
         if start = -1 then false
         else
-            let blockOpeners = set ["IF"; "FOR"; "WHILE"; "SWITCH"; "TRY"]
+            let blockOpeners = set ["IF"; "FOR"; "PARFOR"; "WHILE"; "SWITCH"; "TRY"]
             let mutable blockDepth = 1
             let mutable delimDepth = 0
             let mutable result = true
@@ -158,7 +158,7 @@ type MatlabParser(tokenList: Token list) =
     member private _.StartsExpr(tok: Token) : bool =
         tok.kind = "NUMBER" || tok.kind = "ID" || tok.kind = "STRING" || tok.kind = "END" ||
         tok.value = "(" || tok.value = "-" || tok.value = "+" || tok.value = "~" ||
-        tok.value = "[" || tok.value = "{" || tok.value = "@"
+        tok.value = "[" || tok.value = "{" || tok.value = "@" || tok.value = "?"
 
     // Recovery: consume tokens until statement boundary
     member private this.RecoverToStmtBoundary(startLine: int, startCol: int) : Stmt =
@@ -645,9 +645,13 @@ type MatlabParser(tokenList: Token list) =
 
     member private this.ParseFor(isParfor: bool) : Stmt =
         this.Eat(if isParfor then "PARFOR" else "FOR") |> ignore
+        // MATLAB allows optional parens: for(i = 1:n) ... end
+        let hasParen = this.Current().value = "("
+        if hasParen then pos <- pos + 1
         let varTok = this.Eat("ID")
         this.Eat("=") |> ignore
         let it = this.ParseExpr(0, false, true)
+        if hasParen then this.Eat(")") |> ignore
         let body = this.ParseBlock([| "END" |])
         this.Eat("END") |> ignore
         For(loc it.Line it.Col, varTok.value, it, body)
@@ -701,7 +705,8 @@ type MatlabParser(tokenList: Token list) =
     member private this.ParseSwitch() : Stmt =
         this.Eat("SWITCH") |> ignore
         let expr = this.ParseExpr(0, false, true)
-        if this.Current().kind = "NEWLINE" then this.Eat("NEWLINE") |> ignore
+        // Skip all newlines (blank lines, comment-only lines stripped by lexer)
+        while this.Current().kind = "NEWLINE" do pos <- pos + 1
         let cases = ResizeArray<Expr * Stmt list>()
         while this.Current().kind = "CASE" do
             this.Eat("CASE") |> ignore
@@ -792,6 +797,16 @@ type MatlabParser(tokenList: Token list) =
                 FuncHandle(loc atTok.line atTok.col, name)
             else
                 raise (ParseError("Expected '(' or function name after '@' at " + string next.pos))
+
+        | "?" ->
+            // MATLAB metaclass operator: ?ClassName
+            let qTok = tokens.[pos]
+            pos <- pos + 1
+            if this.Current().kind = "ID" then
+                let name = this.Eat("ID").value
+                MetaClass(loc qTok.line qTok.col, name)
+            else
+                Var(loc qTok.line qTok.col, "?")
 
         | "[" ->
             let ml = this.ParseMatrixLiteral()
@@ -887,7 +902,13 @@ type MatlabParser(tokenList: Token list) =
             let tok = this.Current()
             let op = tok.value
             let mutable prec = 0
-            if not (precedenceTable.TryGetValue(op, &prec)) then
+            // Guard: only treat as operator if the token IS an operator.
+            // OP tokens have kind = value (e.g., kind="*", value="*").
+            // DOTOP tokens have kind = "DOTOP" (e.g., kind="DOTOP", value=".*").
+            // STRING/NUMBER/ID tokens must not be confused with operators even if
+            // their value matches (e.g., STRING '*' vs OP '*').
+            let isOp = tok.kind = op || tok.kind = "DOTOP"
+            if not isOp || not (precedenceTable.TryGetValue(op, &prec)) then
                 stop <- true
             elif op = ":" && not colonVisible then
                 stop <- true

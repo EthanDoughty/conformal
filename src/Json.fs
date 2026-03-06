@@ -209,6 +209,13 @@ let rec private writeExpr (w: Writer) (expr: Expr) : unit =
             "col",  fun () -> w.WriteInt col
             "rows", fun () -> writeRows w rows
         ]
+    | MetaClass({ line = line; col = col }, name) ->
+        w.WriteObject [
+            "type", fun () -> w.WriteStr "MetaClass"
+            "line", fun () -> w.WriteInt line
+            "col",  fun () -> w.WriteInt col
+            "name", fun () -> w.WriteStr name
+        ]
 
 and private writeRows (w: Writer) (rows: Expr list list) : unit =
     w.WriteArray(rows |> List.map (fun row ->

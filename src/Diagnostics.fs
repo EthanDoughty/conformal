@@ -117,6 +117,7 @@ let rec prettyExprIr (expr: Expr) : string =
     | FieldAccess(_, base_, field) ->
         $"{prettyExprIr base_}.{field}"
     | End _ -> "end"
+    | MetaClass(_, name) -> $"?{name}"
 
 and prettyIndexArgIr (arg: IndexArg) : string =
     match arg with
