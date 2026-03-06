@@ -74,12 +74,12 @@ let rec getExprInterval (expr: Expr) (env: Env) (ctx: AnalysisContext) : Interva
                 match la.lo, la.hi, ra.lo, ra.hi with
                 | Finite ll, Finite lh, Finite rl, Finite rh
                     when rl = rh && rl >= 0 ->
-                    let exp = rl
-                    let corners = [ pown ll exp; pown lh exp ]
-                    let corners =
-                        if ll < 0 && 0 < lh && exp % 2 = 0 then corners @ [0]
-                        else corners
                     try
+                        let exp = rl
+                        let corners = [ pown ll exp; pown lh exp ]
+                        let corners =
+                            if ll < 0 && 0 < lh && exp % 2 = 0 then corners @ [0]
+                            else corners
                         Some { lo = Finite (List.min corners)
                                hi = Finite (List.max corners) }
                     with _ -> None

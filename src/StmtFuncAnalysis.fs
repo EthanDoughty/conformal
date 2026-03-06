@@ -1596,7 +1596,7 @@ and analyzeFunctionCall
                         let extraCount = max 0 (actualArgCount - maxFixedParams)
                         let elemMap =
                             argShapes
-                            |> List.skip maxFixedParams
+                            |> List.skip (min maxFixedParams argShapes.Length)
                             |> List.mapi (fun i shape -> (i, shape))
                             |> Map.ofList
                         Env.set funcEnv "varargin" (Cell(Concrete 1, Concrete extraCount, Some elemMap))
@@ -1736,7 +1736,7 @@ and analyzeNestedFunctionCall
                         let extraCount = max 0 (actualArgCount - maxFixedParams)
                         let elemMap =
                             argShapes
-                            |> List.skip maxFixedParams
+                            |> List.skip (min maxFixedParams argShapes.Length)
                             |> List.mapi (fun i shape -> (i, shape))
                             |> Map.ofList
                         Env.set funcEnv "varargin" (Cell(Concrete 1, Concrete extraCount, Some elemMap))
@@ -1886,7 +1886,7 @@ and analyzeExternalFunctionCall
                     let extraCount = max 0 (actualArgCount - maxFixedParamsExt)
                     let elemMap =
                         argShapes
-                        |> List.skip maxFixedParamsExt
+                        |> List.skip (min maxFixedParamsExt argShapes.Length)
                         |> List.mapi (fun i shape -> (i, shape))
                         |> Map.ofList
                     Env.set funcEnv "varargin" (Cell(Concrete 1, Concrete extraCount, Some elemMap))
