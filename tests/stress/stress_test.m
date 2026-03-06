@@ -3,7 +3,7 @@
 % Purpose: performance benchmarking and stability testing.
 %
 % This file intentionally contains many errors to trigger every warning path.
-% EXPECT: warnings = 34
+% EXPECT: warnings = 33
 
 % ==========================================================================
 % SECTION 1: Shape kinds — all 7 types
@@ -638,12 +638,13 @@ v18 = norm(v1);
 v19 = abs(v1);
 v20 = sqrt(v1);
 
-% Large literal
-big_lit = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10;  % EXPECT_WARNING: W_UNSUPPORTED_STMT
+% Large literal (multiline matrix — parser handles ; followed by newline)
+big_lit = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10;
            11, 12, 13, 14, 15, 16, 17, 18, 19, 20;
            21, 22, 23, 24, 25, 26, 27, 28, 29, 30;
            31, 32, 33, 34, 35, 36, 37, 38, 39, 40;
            41, 42, 43, 44, 45, 46, 47, 48, 49, 50];
+% EXPECT: big_lit = matrix[5 x 10]
 
 % Many function calls
 fc1 = sin(cos(tan(exp(log(abs(A))))));
