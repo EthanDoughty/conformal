@@ -1322,11 +1322,12 @@ and private analyzeAssignMulti
         else
             // Non-builtin dispatch via resolveCall
             let bindOutputShapes (outputShapes: Shape list) =
-                if targets.Length <> outputShapes.Length then
+                if targets.Length > outputShapes.Length then
                     warnings.Add(warnMultiAssignCountMismatch line fname outputShapes.Length targets.Length)
                     for target in targets do bindTarget target UnknownShape
                 else
-                    for (target, shape) in List.zip targets outputShapes do bindTarget target shape
+                    // Zip targets with first N outputs (fewer targets than outputs is valid MATLAB)
+                    for (target, shape) in List.zip targets (outputShapes |> List.take targets.Length) do bindTarget target shape
 
             let ccN = { fname = fname; args = args; line = line; numTargets = targets.Length }
 

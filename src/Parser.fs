@@ -952,6 +952,8 @@ type MatlabParser(tokenList: Token list) =
                     outerStop <- true
                 elif this.Current().value = ";" then
                     pos <- pos + 1
+                    // Skip newlines after semicolon row separator (multiline matrix literals)
+                    while this.Current().kind = "NEWLINE" do pos <- pos + 1
                     if this.Current().value = endToken then outerStop <- true
                 elif this.Current().kind = "NEWLINE" then
                     pos <- pos + 1

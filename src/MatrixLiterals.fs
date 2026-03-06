@@ -67,8 +67,10 @@ let inferMatrixLiteralShape
 
                     for s0 in row do
                         // Type check: warn on mixed kinds if non-numeric mixing
+                        // Skip type-check when either side is empty matrix [] (type-neutral in MATLAB)
                         match literalFirstKind with
-                        | Some firstShape when not (isUnknown firstShape) && s0 <> firstShape && not (isUnknown s0) ->
+                        | Some firstShape when not (isUnknown firstShape) && s0 <> firstShape && not (isUnknown s0)
+                                                && not (isEmptyMatrix firstShape) && not (isEmptyMatrix s0) ->
                             let firstIsNumeric = isNumeric firstShape
                             let currentIsNumeric = isNumeric s0
                             if not firstIsNumeric || not currentIsNumeric then
