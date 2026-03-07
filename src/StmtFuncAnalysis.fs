@@ -1620,18 +1620,9 @@ and analyzeFunctionCall
                     for s in sig_.body do
                         match s with
                         | FunctionDef({ line = nLine; col = nCol }, nestedName, nestedParms, nestedOuts, nestedBody, nestedArgAnns) ->
-                            let nestedArgShapes =
-                                nestedArgAnns |> List.map (fun (p, r, c) ->
-                                    let shape =
-                                        match r, c with
-                                        | Some 1, Some 1 -> Scalar
-                                        | Some rv, Some cv -> Matrix(Concrete rv, Concrete cv)
-                                        | Some rv, None -> Matrix(Concrete rv, Unknown)
-                                        | None, Some cv -> Matrix(Unknown, Concrete cv)
-                                        | None, None -> Matrix(Unknown, Unknown)
-                                    (p, shape)) |> Map.ofList
                             ctx.call.nestedFunctionRegistry.[nestedName] <-
-                                { name = nestedName; parms = nestedParms; outputVars = nestedOuts; body = nestedBody; defLine = nLine; defCol = nCol; argShapes = nestedArgShapes }
+                                { name = nestedName; parms = nestedParms; outputVars = nestedOuts; body = nestedBody
+                                  defLine = nLine; defCol = nCol; argShapes = argAnnotationsToShapes nestedArgAnns }
                         | _ -> ()
 
                     // Analyze function body
@@ -1778,18 +1769,9 @@ and analyzeNestedFunctionCall
                     for s in sig_.body do
                         match s with
                         | FunctionDef({ line = nLine; col = nCol }, nestedName, nestedParms, nestedOuts, nestedBody, nestedArgAnns) ->
-                            let nestedArgShapes =
-                                nestedArgAnns |> List.map (fun (p, r, c) ->
-                                    let shape =
-                                        match r, c with
-                                        | Some 1, Some 1 -> Scalar
-                                        | Some rv, Some cv -> Matrix(Concrete rv, Concrete cv)
-                                        | Some rv, None -> Matrix(Concrete rv, Unknown)
-                                        | None, Some cv -> Matrix(Unknown, Concrete cv)
-                                        | None, None -> Matrix(Unknown, Unknown)
-                                    (p, shape)) |> Map.ofList
                             ctx.call.nestedFunctionRegistry.[nestedName] <-
-                                { name = nestedName; parms = nestedParms; outputVars = nestedOuts; body = nestedBody; defLine = nLine; defCol = nCol; argShapes = nestedArgShapes }
+                                { name = nestedName; parms = nestedParms; outputVars = nestedOuts; body = nestedBody
+                                  defLine = nLine; defCol = nCol; argShapes = argAnnotationsToShapes nestedArgAnns }
                         | _ -> ()
 
                     runStmts sig_.body funcEnv funcWarnings ctx |> ignore
