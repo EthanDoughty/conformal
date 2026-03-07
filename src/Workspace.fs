@@ -213,17 +213,8 @@ let buildIrFromSource (source: string) : (FunctionSignature * Map<string, Functi
             |> List.choose (fun stmt ->
                 match stmt with
                 | Ir.FunctionDef({ line = line; col = col }, name, parms, outputVars, body, argAnns) ->
-                    let argShapes =
-                        argAnns |> List.map (fun (p, r, c) ->
-                            let shape =
-                                match r, c with
-                                | Some 1, Some 1 -> Shapes.Scalar
-                                | Some rv, Some cv -> Shapes.Matrix(Shapes.Concrete rv, Shapes.Concrete cv)
-                                | Some rv, None -> Shapes.Matrix(Shapes.Concrete rv, Shapes.Unknown)
-                                | None, Some cv -> Shapes.Matrix(Shapes.Unknown, Shapes.Concrete cv)
-                                | None, None -> Shapes.Matrix(Shapes.Unknown, Shapes.Unknown)
-                            (p, shape)) |> Map.ofList
-                    Some { name = name; parms = parms; outputVars = outputVars; body = body; defLine = line; defCol = col; argShapes = argShapes }
+                    Some { name = name; parms = parms; outputVars = outputVars; body = body
+                           defLine = line; defCol = col; argShapes = Shapes.argAnnotationsToShapes argAnns }
                 | _ -> None)
         match funcDefs with
         | [] -> None
@@ -264,18 +255,9 @@ let loadExternalClassdef (sourcePath: string)
             |> List.choose (fun stmt ->
                 match stmt with
                 | Ir.FunctionDef({ line = line; col = col }, name, parms, outputVars, body, argAnns) ->
-                    let argShapes =
-                        argAnns |> List.map (fun (p, r, c) ->
-                            let shape =
-                                match r, c with
-                                | Some 1, Some 1 -> Shapes.Scalar
-                                | Some rv, Some cv -> Shapes.Matrix(Shapes.Concrete rv, Shapes.Concrete cv)
-                                | Some rv, None -> Shapes.Matrix(Shapes.Concrete rv, Shapes.Unknown)
-                                | None, Some cv -> Shapes.Matrix(Shapes.Unknown, Shapes.Concrete cv)
-                                | None, None -> Shapes.Matrix(Shapes.Unknown, Shapes.Unknown)
-                            (p, shape)) |> Map.ofList
                     Some (name, { name = name; parms = parms; outputVars = outputVars
-                                  body = body; defLine = line; defCol = col; argShapes = argShapes })
+                                  body = body; defLine = line; defCol = col
+                                  argShapes = Shapes.argAnnotationsToShapes argAnns })
                 | _ -> None)
             |> Map.ofList
         // Find the OpaqueStmt that encodes classdef metadata

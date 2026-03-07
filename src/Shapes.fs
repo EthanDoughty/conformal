@@ -416,6 +416,20 @@ let isFunctionHandle s = match s with FunctionHandle _ -> true | _ -> false
 let isNumeric s        = match s with Scalar | Matrix _ | StringShape -> true | _ -> false
 let isEmptyMatrix s    = match s with Matrix(Concrete 0, Concrete 0) -> true | _ -> false
 
+/// Convert a parsed arguments-block size annotation to a Shape.
+/// (Some 1, Some 1) → Scalar; (None, None) → Matrix(Unknown,Unknown); etc.
+let annotToShape (r: int option) (c: int option) : Shape =
+    match r, c with
+    | Some 1, Some 1 -> Scalar
+    | Some rv, Some cv -> Matrix(Concrete rv, Concrete cv)
+    | Some rv, None -> Matrix(Concrete rv, Unknown)
+    | None, Some cv -> Matrix(Unknown, Concrete cv)
+    | None, None -> Matrix(Unknown, Unknown)
+
+/// Convert a list of (paramName, rowDim, colDim) annotations to a Map<string, Shape>.
+let argAnnotationsToShapes (anns: (string * int option * int option) list) : Map<string, Shape> =
+    anns |> List.map (fun (p, r, c) -> (p, annotToShape r c)) |> Map.ofList
+
 // ---------------------------------------------------------------------------
 // Active patterns for Shape/Dim (additive — existing predicates kept)
 // ---------------------------------------------------------------------------
