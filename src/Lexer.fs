@@ -134,6 +134,19 @@ let private masterRe = Regex(masterPatternSimple)
 let private masterRe = Regex(masterPatternSimple, RegexOptions.Compiled)
 #endif
 
+// Known MATLAB command-syntax functions: when these appear as an ID at statement
+// level followed by ', the quote starts a string (not transpose).
+// e.g., warning 'text', error 'msg', xlabel 'Label'
+let private commandSyntaxNames =
+    Set.ofList [
+        "error"; "warning"; "disp"; "fprintf"; "sprintf"; "printf"
+        "xlabel"; "ylabel"; "zlabel"; "title"; "sgtitle"; "legend"
+        "cd"; "load"; "save"; "type"; "help"; "doc"; "which"; "what"
+        "format"; "dbstop"; "dbclear"; "dbcont"; "dbtype"; "import"
+        "mkdir"; "rmdir"; "delete"; "copyfile"; "movefile"
+        "addpath"; "rmpath"; "rehash"; "mex"
+    ]
+
 // ---------------------------------------------------------------------------
 // lex : string -> Token list
 // ---------------------------------------------------------------------------
@@ -142,6 +155,7 @@ let private masterRe = Regex(masterPatternSimple, RegexOptions.Compiled)
 //   Otherwise -> ' starts a STRING
 // Inside [] or {} (bracket_depth > 0), space before ' with those prev_kinds
 // forces STRING (MATLAB matrix literal row semantics).
+// After known command-syntax names with space -> ' starts a STRING.
 
 let lex (src: string) : Token list =
     // Normalize line endings.
@@ -154,6 +168,7 @@ let lex (src: string) : Token list =
     let mutable line = 1
     let mutable lastNewlinePos = -1   // col 1 for pos 0 (1-based)
     let mutable prevKind: TokenKind = TkNewline   // start-of-file acts as start-of-line
+    let mutable prevValue: string = ""            // previous token's value (for command-syntax detection)
     let mutable bracketDepth = 0      // nesting depth of [ ] and { }
     let mutable sawSpace = false      // whitespace since last real token
 
@@ -217,6 +232,7 @@ let lex (src: string) : Token list =
             else
                 tokens.Add(makeToken TkId value startPos)
                 prevKind <- TkId
+            prevValue <- value
             sawSpace <- false
             pos <- m.Index + m.Length
 
@@ -262,6 +278,11 @@ let lex (src: string) : Token list =
             // Inside brackets, space before ' overrides -> string
             let isTranspose =
                 if isTranspose && bracketDepth > 0 && sawSpace then false
+                else isTranspose
+            // Command syntax: known function names followed by space then ' -> string
+            // e.g., warning 'text', xlabel 'Label'
+            let isTranspose =
+                if isTranspose && prevKind = TkId && sawSpace && commandSyntaxNames.Contains(prevValue) then false
                 else isTranspose
 
             if isTranspose then
