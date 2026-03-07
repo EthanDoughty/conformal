@@ -469,6 +469,14 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
             | TkNewline ->
                 this.Eat(TkNewline) |> ignore
                 ExprStmt(loc 0 0, Const(loc 0 0, 0.0))
+            | TkId when tok.value = "arguments" &&
+                        (let nk = tokens.[pos + 1].kind
+                         nk = TkNewline ||
+                         (nk = TkLParen && pos + 2 < tokens.Length &&
+                          tokens.[pos + 2].kind = TkId &&
+                          (let q = tokens.[pos + 2].value
+                           q = "Input" || q = "Output" || q = "Repeating"))) ->
+                this.SkipArgumentsBlock()
             | _ ->
                 let node = this.ParseSimpleStmt()
                 let curKind = this.Current().kind
@@ -624,6 +632,37 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
         else
             let expr = this.ParseExpr(0, false, true)
             ExprStmt(loc expr.Line expr.Col, expr)
+
+    // -------------------------------------------------------------------
+    // arguments block (R2019b+)
+    // -------------------------------------------------------------------
+
+    /// Skip an `arguments ... end` block. These declare parameter validation/defaults
+    /// but do not affect runtime shape analysis. We skip the entire block, treating it
+    /// as a no-op statement. Handles `arguments`, `arguments (Input)`, `arguments (Output)`,
+    /// and `arguments (Repeating)` variants.
+    member private this.SkipArgumentsBlock() : Stmt =
+        let argTok = tokens.[pos]
+        pos <- pos + 1 // consume 'arguments'
+        // Skip optional qualifier: (Input), (Output), (Repeating)
+        if this.Current().kind = TkLParen then
+            pos <- pos + 1
+            while this.Current().kind <> TkRParen && not (this.AtEnd()) do
+                pos <- pos + 1
+            if this.Current().kind = TkRParen then pos <- pos + 1
+        // Skip to matching 'end', tracking block depth for any nested blocks
+        // (unlikely inside arguments, but safe)
+        let blockOpeners = set [TkIf; TkFor; TkParfor; TkWhile; TkSwitch; TkTry]
+        let mutable depth = 1
+        while depth > 0 && not (this.AtEnd()) do
+            let tk = this.Current()
+            if Set.contains tk.kind blockOpeners then depth <- depth + 1
+            elif tk.kind = TkEnd then depth <- depth - 1
+            if depth > 0 then pos <- pos + 1
+        if this.Current().kind = TkEnd then pos <- pos + 1 // consume the closing 'end'
+        // Skip trailing newline
+        if not (this.AtEnd()) && this.Current().kind = TkNewline then pos <- pos + 1
+        ExprStmt(loc argTok.line argTok.col, Const(loc argTok.line argTok.col, 0.0))
 
     // -------------------------------------------------------------------
     // Control flow
