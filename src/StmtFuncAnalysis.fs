@@ -1601,6 +1601,15 @@ and analyzeFunctionCall
                             |> Map.ofList
                         Env.set funcEnv "varargin" (Cell(Concrete 1, Concrete extraCount, Some elemMap))
 
+                    // Apply arguments-block shapes for unbound/unknown parameters
+                    for param in sig_.parms do
+                        match Map.tryFind param sig_.argShapes with
+                        | Some argBlockShape ->
+                            let current = Env.get funcEnv param
+                            if isBottom current || current = UnknownShape then
+                                Env.set funcEnv param argBlockShape
+                        | None -> ()
+
                     // Inject nargin/nargout into function env
                     Env.set funcEnv "nargin" Scalar
                     ctx.cst.valueRanges <- Map.add "nargin" { lo = Finite actualArgCount; hi = Finite actualArgCount } ctx.cst.valueRanges
@@ -1610,9 +1619,19 @@ and analyzeFunctionCall
                     // Pre-scan body for nested FunctionDefs
                     for s in sig_.body do
                         match s with
-                        | FunctionDef({ line = nLine; col = nCol }, nestedName, nestedParms, nestedOuts, nestedBody) ->
+                        | FunctionDef({ line = nLine; col = nCol }, nestedName, nestedParms, nestedOuts, nestedBody, nestedArgAnns) ->
+                            let nestedArgShapes =
+                                nestedArgAnns |> List.map (fun (p, r, c) ->
+                                    let shape =
+                                        match r, c with
+                                        | Some 1, Some 1 -> Scalar
+                                        | Some rv, Some cv -> Matrix(Concrete rv, Concrete cv)
+                                        | Some rv, None -> Matrix(Concrete rv, Unknown)
+                                        | None, Some cv -> Matrix(Unknown, Concrete cv)
+                                        | None, None -> Matrix(Unknown, Unknown)
+                                    (p, shape)) |> Map.ofList
                             ctx.call.nestedFunctionRegistry.[nestedName] <-
-                                { name = nestedName; parms = nestedParms; outputVars = nestedOuts; body = nestedBody; defLine = nLine; defCol = nCol }
+                                { name = nestedName; parms = nestedParms; outputVars = nestedOuts; body = nestedBody; defLine = nLine; defCol = nCol; argShapes = nestedArgShapes }
                         | _ -> ()
 
                     // Analyze function body
@@ -1741,6 +1760,15 @@ and analyzeNestedFunctionCall
                             |> Map.ofList
                         Env.set funcEnv "varargin" (Cell(Concrete 1, Concrete extraCount, Some elemMap))
 
+                    // Apply arguments-block shapes for unbound/unknown parameters
+                    for param in sig_.parms do
+                        match Map.tryFind param sig_.argShapes with
+                        | Some argBlockShape ->
+                            let current = Env.get funcEnv param
+                            if isBottom current || current = UnknownShape then
+                                Env.set funcEnv param argBlockShape
+                        | None -> ()
+
                     // Inject nargin/nargout into function env
                     Env.set funcEnv "nargin" Scalar
                     ctx.cst.valueRanges <- Map.add "nargin" { lo = Finite actualArgCount; hi = Finite actualArgCount } ctx.cst.valueRanges
@@ -1749,9 +1777,19 @@ and analyzeNestedFunctionCall
 
                     for s in sig_.body do
                         match s with
-                        | FunctionDef({ line = nLine; col = nCol }, nestedName, nestedParms, nestedOuts, nestedBody) ->
+                        | FunctionDef({ line = nLine; col = nCol }, nestedName, nestedParms, nestedOuts, nestedBody, nestedArgAnns) ->
+                            let nestedArgShapes =
+                                nestedArgAnns |> List.map (fun (p, r, c) ->
+                                    let shape =
+                                        match r, c with
+                                        | Some 1, Some 1 -> Scalar
+                                        | Some rv, Some cv -> Matrix(Concrete rv, Concrete cv)
+                                        | Some rv, None -> Matrix(Concrete rv, Unknown)
+                                        | None, Some cv -> Matrix(Unknown, Concrete cv)
+                                        | None, None -> Matrix(Unknown, Unknown)
+                                    (p, shape)) |> Map.ofList
                             ctx.call.nestedFunctionRegistry.[nestedName] <-
-                                { name = nestedName; parms = nestedParms; outputVars = nestedOuts; body = nestedBody; defLine = nLine; defCol = nCol }
+                                { name = nestedName; parms = nestedParms; outputVars = nestedOuts; body = nestedBody; defLine = nLine; defCol = nCol; argShapes = nestedArgShapes }
                         | _ -> ()
 
                     runStmts sig_.body funcEnv funcWarnings ctx |> ignore
@@ -1890,6 +1928,15 @@ and analyzeExternalFunctionCall
                         |> List.mapi (fun i shape -> (i, shape))
                         |> Map.ofList
                     Env.set funcEnv "varargin" (Cell(Concrete 1, Concrete extraCount, Some elemMap))
+
+                // Apply arguments-block shapes for unbound/unknown parameters
+                for param in primarySig.parms do
+                    match Map.tryFind param primarySig.argShapes with
+                    | Some argBlockShape ->
+                        let current = Env.get funcEnv param
+                        if isBottom current || current = UnknownShape then
+                            Env.set funcEnv param argBlockShape
+                    | None -> ()
 
                 // Inject nargin/nargout into function env
                 Env.set funcEnv "nargin" Scalar
