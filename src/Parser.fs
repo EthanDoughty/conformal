@@ -101,61 +101,10 @@ let private precedenceTable : System.Collections.Generic.Dictionary<string,int> 
 // MatlabParser
 // ---------------------------------------------------------------------------
 
-type MatlabParser(tokenList: Token list) =
+type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
 
     let tokens = Array.ofList tokenList
     let mutable pos = 0  // current token index
-
-    // Endless-function pre-scan
-    let detectEndlessFunctions () : bool =
-        let mutable start = -1
-        let mutable si = 0
-        while si < tokens.Length && start = -1 do
-            if tokens.[si].kind = TkFunction then start <- si
-            si <- si + 1
-        if start = -1 then false
-        else
-            let blockOpeners = set [TkIf; TkFor; TkParfor; TkWhile; TkSwitch; TkTry]
-            let mutable blockDepth = 1
-            let mutable delimDepth = 0
-            let mutable result = true
-            let mutable finished = false
-            let mutable idx = start + 1
-            while idx < tokens.Length && not finished do
-                let tok = tokens.[idx]
-                if tok.kind = TkEof then
-                    result <- blockDepth >= 1
-                    finished <- true
-                else
-                    // Only count actual delimiter tokens, not STRING tokens whose value
-                    // happens to be a bracket character (e.g. STRING "(")
-                    if tok.kind <> TkString then
-                        if tok.kind = TkLParen || tok.kind = TkLBracket || tok.kind = TkLCurly then
-                            delimDepth <- delimDepth + 1
-                        elif tok.kind = TkRParen || tok.kind = TkRBracket || tok.kind = TkRCurly then
-                            delimDepth <- max 0 (delimDepth - 1)
-                    if delimDepth = 0 then
-                        if Set.contains tok.kind blockOpeners then
-                            blockDepth <- blockDepth + 1
-                        elif tok.kind = TkEnd then
-                            // END followed by ( is a function name (e.g. function x = end(...)),
-                            // not a block closer — skip it.
-                            let nextIdx = idx + 1
-                            let nextIsCall = nextIdx < tokens.Length && tokens.[nextIdx].kind = TkLParen
-                            if not nextIsCall then
-                                blockDepth <- blockDepth - 1
-                                if blockDepth = 0 then
-                                    result <- false
-                                    finished <- true
-                        elif tok.kind = TkFunction then
-                            if blockDepth >= 1 then blockDepth <- blockDepth + 1
-                            else
-                                result <- true
-                                finished <- true
-                idx <- idx + 1
-            result
-
-    let endlessFunctions = detectEndlessFunctions ()
 
     // Token helpers
     member private _.Current() = tokens.[pos]
@@ -1084,5 +1033,12 @@ type MatlabParser(tokenList: Token list) =
 
 let parseMATLAB (src: string) : Program =
     let tokenList = Lexer.lex src
-    let parser = MatlabParser(tokenList)
-    parser.ParseProgram()
+    try
+        // Try modern end-terminated functions first (most common)
+        let parser = MatlabParser(tokenList, false)
+        parser.ParseProgram()
+    with
+    | :? ParseError ->
+        // Retry with endless-function mode (legacy MATLAB without end)
+        let parser = MatlabParser(tokenList, true)
+        parser.ParseProgram()
