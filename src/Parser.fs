@@ -7,6 +7,11 @@ open Ir
 // Parse error exception, mirroring Python's ParseError.
 exception ParseError of string
 
+// LHS accessor chain segment — replaces (string * obj) boxing in ParseLhsChain.
+type LhsSegment =
+    | Field of name: string
+    | Paren of args: IndexArg list
+    | Curly of args: IndexArg list
 
 // ---------------------------------------------------------------------------
 // extract_targets_from_tokens
@@ -18,17 +23,17 @@ let extractTargetsFromTokens (toks: Token list) : string list =
         let arr = Array.ofList toks
 
         // Simple: ID =
-        if arr.Length >= 2 && arr.[0].kind = "ID" && arr.[1].value = "=" then
+        if arr.Length >= 2 && arr.[0].kind = TkId && arr.[1].value = "=" then
             [arr.[0].value]
 
         // Function-style: ID( ... ) =
-        elif arr.Length >= 3 && arr.[0].kind = "ID" && arr.[1].value = "(" then
+        elif arr.Length >= 3 && arr.[0].kind = TkId && arr.[1].kind = TkLParen then
             let mutable depth = 0
             let mutable result: string list = []
             let mutable i = 0
             while i < arr.Length && result.IsEmpty do
-                if arr.[i].value = "(" then depth <- depth + 1
-                elif arr.[i].value = ")" then
+                if arr.[i].kind = TkLParen then depth <- depth + 1
+                elif arr.[i].kind = TkRParen then
                     depth <- depth - 1
                     if depth = 0 then
                         if i + 1 < arr.Length && arr.[i + 1].value = "=" then
@@ -38,13 +43,13 @@ let extractTargetsFromTokens (toks: Token list) : string list =
             result
 
         // Destructuring: [ ... ] =
-        elif arr.Length >= 2 && arr.[0].value = "[" then
+        elif arr.Length >= 2 && arr.[0].kind = TkLBracket then
             let mutable depth = 0
             let mutable bracketEnd = -1
             let mutable i = 0
             while i < arr.Length && bracketEnd = -1 do
-                if arr.[i].value = "[" then depth <- depth + 1
-                elif arr.[i].value = "]" then
+                if arr.[i].kind = TkLBracket then depth <- depth + 1
+                elif arr.[i].kind = TkRBracket then
                     depth <- depth - 1
                     if depth = 0 then bracketEnd <- i
                 i <- i + 1
@@ -53,19 +58,19 @@ let extractTargetsFromTokens (toks: Token list) : string list =
                 let mutable valid = true
                 for j in 1 .. bracketEnd - 1 do
                     let tok = arr.[j]
-                    if tok.kind <> "ID" && tok.kind <> "NEWLINE" && tok.value <> "," && tok.value <> "~" && tok.value <> "." then
+                    if tok.kind <> TkId && tok.kind <> TkNewline && tok.kind <> TkComma && tok.value <> "~" && tok.kind <> TkDot then
                         valid <- false
                 if valid then
                     let targets = System.Collections.Generic.List<string>()
                     let mutable j = 1
                     while j < bracketEnd do
                         let tok = arr.[j]
-                        if tok.kind = "ID" then
+                        if tok.kind = TkId then
                             targets.Add(tok.value)
                             j <- j + 1
-                            while j < bracketEnd && arr.[j].value = "." do
+                            while j < bracketEnd && arr.[j].kind = TkDot do
                                 j <- j + 1
-                                if j < bracketEnd && arr.[j].kind = "ID" then j <- j + 1
+                                if j < bracketEnd && arr.[j].kind = TkId then j <- j + 1
                         elif tok.value = "~" then
                             targets.Add("~")
                             j <- j + 1
@@ -106,11 +111,11 @@ type MatlabParser(tokenList: Token list) =
         let mutable start = -1
         let mutable si = 0
         while si < tokens.Length && start = -1 do
-            if tokens.[si].kind = "FUNCTION" then start <- si
+            if tokens.[si].kind = TkFunction then start <- si
             si <- si + 1
         if start = -1 then false
         else
-            let blockOpeners = set ["IF"; "FOR"; "PARFOR"; "WHILE"; "SWITCH"; "TRY"]
+            let blockOpeners = set [TkIf; TkFor; TkParfor; TkWhile; TkSwitch; TkTry]
             let mutable blockDepth = 1
             let mutable delimDepth = 0
             let mutable result = true
@@ -118,31 +123,31 @@ type MatlabParser(tokenList: Token list) =
             let mutable idx = start + 1
             while idx < tokens.Length && not finished do
                 let tok = tokens.[idx]
-                if tok.kind = "EOF" then
+                if tok.kind = TkEof then
                     result <- blockDepth >= 1
                     finished <- true
                 else
                     // Only count actual delimiter tokens, not STRING tokens whose value
                     // happens to be a bracket character (e.g. STRING "(")
-                    if tok.kind <> "STRING" then
-                        if tok.value = "(" || tok.value = "[" || tok.value = "{" then
+                    if tok.kind <> TkString then
+                        if tok.kind = TkLParen || tok.kind = TkLBracket || tok.kind = TkLCurly then
                             delimDepth <- delimDepth + 1
-                        elif tok.value = ")" || tok.value = "]" || tok.value = "}" then
+                        elif tok.kind = TkRParen || tok.kind = TkRBracket || tok.kind = TkRCurly then
                             delimDepth <- max 0 (delimDepth - 1)
                     if delimDepth = 0 then
                         if Set.contains tok.kind blockOpeners then
                             blockDepth <- blockDepth + 1
-                        elif tok.kind = "END" then
+                        elif tok.kind = TkEnd then
                             // END followed by ( is a function name (e.g. function x = end(...)),
                             // not a block closer — skip it.
                             let nextIdx = idx + 1
-                            let nextIsCall = nextIdx < tokens.Length && tokens.[nextIdx].value = "("
+                            let nextIsCall = nextIdx < tokens.Length && tokens.[nextIdx].kind = TkLParen
                             if not nextIsCall then
                                 blockDepth <- blockDepth - 1
                                 if blockDepth = 0 then
                                     result <- false
                                     finished <- true
-                        elif tok.kind = "FUNCTION" then
+                        elif tok.kind = TkFunction then
                             if blockDepth >= 1 then blockDepth <- blockDepth + 1
                             else
                                 result <- true
@@ -154,19 +159,28 @@ type MatlabParser(tokenList: Token list) =
 
     // Token helpers
     member private _.Current() = tokens.[pos]
-    member private _.AtEnd() = tokens.[pos].kind = "EOF"
+    member private _.AtEnd() = tokens.[pos].kind = TkEof
 
-    member private _.Eat(expected: string) : Token =
+    member private _.Eat(expected: TokenKind) : Token =
         let tok = tokens.[pos]
-        if tok.kind <> expected && tok.value <> expected then
-            raise (ParseError($"Expected {expected} at pos {tok.pos}, found {tok.kind} '{tok.value}'"))
+        if tok.kind <> expected then
+            raise (ParseError($"Expected {tokenKindName expected} at pos {tok.pos}, found {tokenKindName tok.kind} '{tok.value}'"))
+        pos <- pos + 1
+        tok
+
+    member private _.EatValue(expectedValue: string) : Token =
+        let tok = tokens.[pos]
+        if tok.value <> expectedValue then
+            raise (ParseError($"Expected '{expectedValue}' at pos {tok.pos}, found {tokenKindName tok.kind} '{tok.value}'"))
         pos <- pos + 1
         tok
 
     member private _.StartsExpr(tok: Token) : bool =
-        tok.kind = "NUMBER" || tok.kind = "ID" || tok.kind = "STRING" || tok.kind = "END" ||
-        tok.value = "(" || tok.value = "-" || tok.value = "+" || tok.value = "~" ||
-        tok.value = "[" || tok.value = "{" || tok.value = "@" || tok.value = "?"
+        match tok.kind with
+        | TkNumber | TkId | TkString | TkEnd
+        | TkLParen | TkLBracket | TkLCurly -> true
+        | TkOp -> tok.value = "-" || tok.value = "+" || tok.value = "~" || tok.value = "@" || tok.value = "?"
+        | _ -> false
 
     // Recovery: consume tokens until statement boundary
     member private this.RecoverToStmtBoundary(startLine: int, startCol: int) : Stmt =
@@ -176,27 +190,27 @@ type MatlabParser(tokenList: Token list) =
         while not (this.AtEnd()) && not stop do
             let tok = this.Current()
             if depth = 0 then
-                let isBlockEnd = tok.kind = "END" || tok.kind = "ELSE" || tok.kind = "ELSEIF" ||
-                                 tok.kind = "CASE" || tok.kind = "OTHERWISE" || tok.kind = "CATCH"
+                let isBlockEnd = tok.kind = TkEnd || tok.kind = TkElse || tok.kind = TkElseif ||
+                                 tok.kind = TkCase || tok.kind = TkOtherwise || tok.kind = TkCatch
                 if isBlockEnd then
                     stop <- true
-                elif tok.kind = "NEWLINE" then
+                elif tok.kind = TkNewline then
                     pos <- pos + 1
                     stop <- true
-                elif tok.kind = ";" || tok.value = ";" then
+                elif tok.kind = TkSemicolon then
                     pos <- pos + 1
                     stop <- true
                 else
                     // Only count actual delimiters, not STRING tokens with bracket values
-                    if tok.kind <> "STRING" then
-                        if tok.value = "(" || tok.value = "[" || tok.value = "{" then depth <- depth + 1
-                        elif tok.value = ")" || tok.value = "]" || tok.value = "}" then depth <- max 0 (depth - 1)
+                    if tok.kind <> TkString then
+                        if tok.kind = TkLParen || tok.kind = TkLBracket || tok.kind = TkLCurly then depth <- depth + 1
+                        elif tok.kind = TkRParen || tok.kind = TkRBracket || tok.kind = TkRCurly then depth <- max 0 (depth - 1)
                     consumed.Add(tok)
                     pos <- pos + 1
             else
-                if tok.kind <> "STRING" then
-                    if tok.value = "(" || tok.value = "[" || tok.value = "{" then depth <- depth + 1
-                    elif tok.value = ")" || tok.value = "]" || tok.value = "}" then depth <- max 0 (depth - 1)
+                if tok.kind <> TkString then
+                    if tok.kind = TkLParen || tok.kind = TkLBracket || tok.kind = TkLCurly then depth <- depth + 1
+                    elif tok.kind = TkRParen || tok.kind = TkRBracket || tok.kind = TkRCurly then depth <- max 0 (depth - 1)
                 consumed.Add(tok)
                 pos <- pos + 1
         let rawText = consumed |> Seq.map (fun t -> t.value) |> String.concat " "
@@ -207,28 +221,28 @@ type MatlabParser(tokenList: Token list) =
 
     member private this.SkipNewlines() =
         while not (this.AtEnd()) &&
-              (this.Current().kind = "NEWLINE" || this.Current().kind = ";" || this.Current().value = ";") do
+              (this.Current().kind = TkNewline || this.Current().kind = TkSemicolon) do
             pos <- pos + 1
 
     member private this.SkipToEndOfLine() =
-        while not (this.AtEnd()) && this.Current().kind <> "NEWLINE" &&
-              this.Current().kind <> "EOF" && this.Current().kind <> "END" &&
-              not (this.Current().kind = ";" || this.Current().value = ";") do
+        while not (this.AtEnd()) && this.Current().kind <> TkNewline &&
+              this.Current().kind <> TkEof && this.Current().kind <> TkEnd &&
+              this.Current().kind <> TkSemicolon do
             pos <- pos + 1
         if not (this.AtEnd()) &&
-           (this.Current().kind = "NEWLINE" || this.Current().kind = ";" || this.Current().value = ";") then
+           (this.Current().kind = TkNewline || this.Current().kind = TkSemicolon) then
             pos <- pos + 1
 
     // Skip optional (Attr = val, ...) attribute block after properties/methods keyword
     member private this.SkipParenAttributes() =
-        if not (this.AtEnd()) && this.Current().value = "(" then
+        if not (this.AtEnd()) && this.Current().kind = TkLParen then
             let mutable depth = 0
             let mutable finished = false
             while not (this.AtEnd()) && not finished do
                 let tok = this.Current()
                 pos <- pos + 1
-                if tok.value = "(" then depth <- depth + 1
-                elif tok.value = ")" then
+                if tok.kind = TkLParen then depth <- depth + 1
+                elif tok.kind = TkRParen then
                     depth <- depth - 1
                     if depth = 0 then finished <- true
 
@@ -236,23 +250,23 @@ type MatlabParser(tokenList: Token list) =
     // Consumes tokens until the matching END, then consumes the END.
     member private this.ConsumeBlock() =
         pos <- pos + 1  // skip keyword
-        let blockOpeners = set ["IF"; "FOR"; "WHILE"; "SWITCH"; "TRY"; "FUNCTION"; "PARFOR"]
+        let blockOpeners = set [TkIf; TkFor; TkWhile; TkSwitch; TkTry; TkFunction; TkParfor]
         let idBlockOpeners = set ["methods"; "properties"; "events"; "enumeration"]
         let mutable depth = 1
         let mutable parenDepth = 0
         while not (this.AtEnd()) && depth > 0 do
             let tok = this.Current()
             pos <- pos + 1
-            if tok.value = "(" || tok.value = "[" || tok.value = "{" then
+            if tok.kind = TkLParen || tok.kind = TkLBracket || tok.kind = TkLCurly then
                 parenDepth <- parenDepth + 1
-            elif tok.value = ")" || tok.value = "]" || tok.value = "}" then
+            elif tok.kind = TkRParen || tok.kind = TkRBracket || tok.kind = TkRCurly then
                 parenDepth <- max 0 (parenDepth - 1)
             elif parenDepth = 0 then
-                if tok.kind = "END" then
+                if tok.kind = TkEnd then
                     depth <- depth - 1
                 elif Set.contains tok.kind blockOpeners then
                     depth <- depth + 1
-                elif tok.kind = "ID" && Set.contains tok.value idBlockOpeners then
+                elif tok.kind = TkId && Set.contains tok.value idBlockOpeners then
                     depth <- depth + 1
 
     member private this.ParsePropertiesBlock() : string list =
@@ -260,15 +274,15 @@ type MatlabParser(tokenList: Token list) =
         this.SkipParenAttributes()
         this.SkipNewlines()
         let props = System.Collections.Generic.List<string>()
-        while not (this.AtEnd()) && this.Current().kind <> "END" do
-            if this.Current().kind = "ID" then
+        while not (this.AtEnd()) && this.Current().kind <> TkEnd do
+            if this.Current().kind = TkId then
                 props.Add(this.Current().value)
                 pos <- pos + 1
                 this.SkipToEndOfLine()
             else
                 pos <- pos + 1
             this.SkipNewlines()
-        if not (this.AtEnd()) && this.Current().kind = "END" then pos <- pos + 1
+        if not (this.AtEnd()) && this.Current().kind = TkEnd then pos <- pos + 1
         props |> Seq.toList
 
     member private this.ParseMethodsBlock() : Stmt list =
@@ -276,13 +290,13 @@ type MatlabParser(tokenList: Token list) =
         this.SkipParenAttributes()
         this.SkipNewlines()
         let meths = System.Collections.Generic.List<Stmt>()
-        while not (this.AtEnd()) && this.Current().kind <> "END" do
-            if this.Current().kind = "FUNCTION" then
+        while not (this.AtEnd()) && this.Current().kind <> TkEnd do
+            if this.Current().kind = TkFunction then
                 meths.Add(this.ParseFunctionDef())
             else
                 pos <- pos + 1
             this.SkipNewlines()
-        if not (this.AtEnd()) && this.Current().kind = "END" then pos <- pos + 1
+        if not (this.AtEnd()) && this.Current().kind = TkEnd then pos <- pos + 1
         meths |> Seq.toList
 
     member private this.ParseClassdef() : Stmt list =
@@ -295,7 +309,7 @@ type MatlabParser(tokenList: Token list) =
             this.SkipParenAttributes()
             // Class name
             let className =
-                if not (this.AtEnd()) && this.Current().kind = "ID" then
+                if not (this.AtEnd()) && this.Current().kind = TkId then
                     let n = this.Current().value
                     pos <- pos + 1
                     n
@@ -304,29 +318,29 @@ type MatlabParser(tokenList: Token list) =
             let mutable superName = ""
             if not (this.AtEnd()) && this.Current().value = "<" then
                 pos <- pos + 1  // skip '<'
-                if not (this.AtEnd()) && this.Current().kind = "ID" then
+                if not (this.AtEnd()) && this.Current().kind = TkId then
                     superName <- this.Current().value
                     pos <- pos + 1
-                    while not (this.AtEnd()) && this.Current().kind = "DOT" do
+                    while not (this.AtEnd()) && this.Current().kind = TkDot do
                         pos <- pos + 1  // skip '.'
-                        if not (this.AtEnd()) && this.Current().kind = "ID" then
+                        if not (this.AtEnd()) && this.Current().kind = TkId then
                             superName <- $"{superName}.{this.Current().value}"
                             pos <- pos + 1
             this.SkipNewlines()
             let mutable properties : string list = []
             let mutable methodDefs : Stmt list = []
-            while not (this.AtEnd()) && this.Current().kind <> "END" do
+            while not (this.AtEnd()) && this.Current().kind <> TkEnd do
                 let cur = this.Current()
-                if cur.kind = "ID" && cur.value = "properties" then
+                if cur.kind = TkId && cur.value = "properties" then
                     properties <- properties @ this.ParsePropertiesBlock()
-                elif cur.kind = "ID" && cur.value = "methods" then
+                elif cur.kind = TkId && cur.value = "methods" then
                     methodDefs <- methodDefs @ this.ParseMethodsBlock()
-                elif cur.kind = "ID" && (cur.value = "events" || cur.value = "enumeration") then
+                elif cur.kind = TkId && (cur.value = "events" || cur.value = "enumeration") then
                     this.ConsumeBlock()
                 else
                     pos <- pos + 1
                 this.SkipNewlines()
-            if not (this.AtEnd()) && this.Current().kind = "END" then pos <- pos + 1
+            if not (this.AtEnd()) && this.Current().kind = TkEnd then pos <- pos + 1
             this.SkipNewlines()
             // Encode metadata in OpaqueStmt raw string
             let propPart = properties |> String.concat ","
@@ -337,7 +351,7 @@ type MatlabParser(tokenList: Token list) =
         with
         | _ ->
             // Fallback: depth-count consume the rest as opaque
-            let blockOpeners = set ["IF"; "FOR"; "WHILE"; "SWITCH"; "TRY"; "FUNCTION"; "PARFOR"]
+            let blockOpeners = set [TkIf; TkFor; TkWhile; TkSwitch; TkTry; TkFunction; TkParfor]
             let idBlockOpeners = set ["methods"; "properties"; "events"; "enumeration"]
             let mutable depth = 1
             let mutable parenDepth = 0
@@ -345,17 +359,17 @@ type MatlabParser(tokenList: Token list) =
             while not (this.AtEnd()) && not finished do
                 let tok = this.Current()
                 pos <- pos + 1
-                if tok.value = "(" || tok.value = "[" || tok.value = "{" then
+                if tok.kind = TkLParen || tok.kind = TkLBracket || tok.kind = TkLCurly then
                     parenDepth <- parenDepth + 1
-                elif tok.value = ")" || tok.value = "]" || tok.value = "}" then
+                elif tok.kind = TkRParen || tok.kind = TkRBracket || tok.kind = TkRCurly then
                     parenDepth <- max 0 (parenDepth - 1)
                 elif parenDepth = 0 then
-                    if tok.kind = "END" then
+                    if tok.kind = TkEnd then
                         depth <- depth - 1
                         if depth = 0 then finished <- true
                     elif Set.contains tok.kind blockOpeners then
                         depth <- depth + 1
-                    elif tok.kind = "ID" && Set.contains tok.value idBlockOpeners then
+                    elif tok.kind = TkId && Set.contains tok.value idBlockOpeners then
                         depth <- depth + 1
             this.SkipNewlines()
             [OpaqueStmt(loc line col, [], "classdef")]
@@ -371,14 +385,14 @@ type MatlabParser(tokenList: Token list) =
             let mutable skipping = true
             while skipping && not (this.AtEnd()) do
                 let cur = this.Current()
-                if cur.kind = "NEWLINE" then pos <- pos + 1
-                elif cur.kind = ";" || cur.value = ";" then pos <- pos + 1
+                if cur.kind = TkNewline then pos <- pos + 1
+                elif cur.kind = TkSemicolon then pos <- pos + 1
                 else skipping <- false
             if not (this.AtEnd()) then
                 let cur = this.Current()
-                if cur.kind = "ID" && cur.value = "classdef" then
+                if cur.kind = TkId && cur.value = "classdef" then
                     for stmt in this.ParseClassdef() do items.Add(stmt)
-                elif cur.kind = "FUNCTION" then
+                elif cur.kind = TkFunction then
                     items.Add(this.ParseFunctionDef())
                 else
                     let savedPos = pos
@@ -394,55 +408,55 @@ type MatlabParser(tokenList: Token list) =
     // for operator overloading, e.g. @classname/end.m).
     member private this.EatFuncName() : string =
         let tok = this.Current()
-        if tok.kind = "ID" || tok.kind = "END" then
+        if tok.kind = TkId || tok.kind = TkEnd then
             pos <- pos + 1
             tok.value
         else
-            raise (ParseError($"Expected function name at pos {tok.pos}, found {tok.kind} '{tok.value}'"))
+            raise (ParseError($"Expected function name at pos {tok.pos}, found {tokenKindName tok.kind} '{tok.value}'"))
 
     member private this.ParseFunctionDef() : Stmt =
-        let funcTok = this.Eat("FUNCTION")
+        let funcTok = this.Eat(TkFunction)
         let line = funcTok.line
         let col = funcTok.col
         let outputVars = ResizeArray<string>()
         let mutable name = ""
         let mutable hasParens = true
 
-        if this.Current().kind = "ID" || this.Current().kind = "END" then
+        if this.Current().kind = TkId || this.Current().kind = TkEnd then
             let lookahead = if pos + 1 < tokens.Length then tokens.[pos + 1] else tokens.[tokens.Length - 1]
-            if lookahead.value = "(" then
+            if lookahead.kind = TkLParen then
                 // Procedure form: function name(args) — or function end(args)
                 name <- this.EatFuncName()
-                this.Eat("(") |> ignore
-            elif lookahead.value = "=" && this.Current().kind = "ID" then
+                this.Eat(TkLParen) |> ignore
+            elif lookahead.value = "=" && this.Current().kind = TkId then
                 // Single return: function result = name(args)
                 // Note: only ID can be an output var (not END)
-                outputVars.Add(this.Eat("ID").value)
-                this.Eat("=") |> ignore
+                outputVars.Add(this.Eat(TkId).value)
+                this.EatValue("=") |> ignore
                 name <- this.EatFuncName()
-                if this.Current().value = "(" then this.Eat("(") |> ignore
+                if this.Current().kind = TkLParen then this.Eat(TkLParen) |> ignore
                 else hasParens <- false
-            elif lookahead.kind = "NEWLINE" || lookahead.kind = "EOF" || lookahead.value = ";" ||
-                 lookahead.kind = "FUNCTION" then
+            elif lookahead.kind = TkNewline || lookahead.kind = TkEof || lookahead.kind = TkSemicolon ||
+                 lookahead.kind = TkFunction then
                 // No-arg procedure
                 name <- this.EatFuncName()
                 hasParens <- false
             else
                 raise (ParseError("Expected '=' or '(' after function name at " + string (this.Current().pos)))
-        elif this.Current().value = "[" then
+        elif this.Current().kind = TkLBracket then
             // Multiple outputs: function [a, b] = name(args)
-            this.Eat("[") |> ignore
-            if this.Current().value = "]" then
-                this.Eat("]") |> ignore
+            this.Eat(TkLBracket) |> ignore
+            if this.Current().kind = TkRBracket then
+                this.Eat(TkRBracket) |> ignore
             else
-                outputVars.Add(this.Eat("ID").value)
-                while this.Current().value = "," || this.Current().kind = "ID" do
-                    if this.Current().value = "," then this.Eat(",") |> ignore
-                    outputVars.Add(this.Eat("ID").value)
-                this.Eat("]") |> ignore
-            this.Eat("=") |> ignore
+                outputVars.Add(this.Eat(TkId).value)
+                while this.Current().kind = TkComma || this.Current().kind = TkId do
+                    if this.Current().kind = TkComma then this.Eat(TkComma) |> ignore
+                    outputVars.Add(this.Eat(TkId).value)
+                this.Eat(TkRBracket) |> ignore
+            this.EatValue("=") |> ignore
             name <- this.EatFuncName()
-            if this.Current().value = "(" then this.Eat("(") |> ignore
+            if this.Current().kind = TkLParen then this.Eat(TkLParen) |> ignore
             else hasParens <- false
         else
             raise (ParseError("Expected function output or name at " + string (this.Current().pos)))
@@ -452,25 +466,25 @@ type MatlabParser(tokenList: Token list) =
         if hasParens then
             let eatParam () =
                 if this.Current().value = "~" then
-                    this.Eat("~") |> ignore; "~"
-                else this.Eat("ID").value
-            if this.Current().value <> ")" then
+                    this.EatValue("~") |> ignore; "~"
+                else this.Eat(TkId).value
+            if this.Current().kind <> TkRParen then
                 parms.Add(eatParam ())
-                while this.Current().value = "," do
-                    this.Eat(",") |> ignore
+                while this.Current().kind = TkComma do
+                    this.Eat(TkComma) |> ignore
                     parms.Add(eatParam ())
-            this.Eat(")") |> ignore
+            this.Eat(TkRParen) |> ignore
 
         // Skip newline/semicolon after signature
-        if this.Current().kind = "NEWLINE" then this.Eat("NEWLINE") |> ignore
-        elif this.Current().kind = ";" || this.Current().value = ";" then pos <- pos + 1
+        if this.Current().kind = TkNewline then this.Eat(TkNewline) |> ignore
+        elif this.Current().kind = TkSemicolon then pos <- pos + 1
 
         // Body
         let body =
-            if endlessFunctions then this.ParseBlock([| "FUNCTION" |])
+            if endlessFunctions then this.ParseBlock([| TkFunction |])
             else
-                let b = this.ParseBlock([| "END" |])
-                this.Eat("END") |> ignore
+                let b = this.ParseBlock([| TkEnd |])
+                this.Eat(TkEnd) |> ignore
                 b
 
         FunctionDef(loc line col, name, Seq.toList parms, Seq.toList outputVars, body)
@@ -486,36 +500,35 @@ type MatlabParser(tokenList: Token list) =
         let startPos = pos
         try
             match tok.kind with
-            | "FOR"    -> this.ParseFor(false)
-            | "PARFOR" -> this.ParseFor(true)
-            | "GLOBAL" | "PERSISTENT" -> this.ParseGlobal()
-            | "WHILE"  -> this.ParseWhile()
-            | "IF"     -> this.ParseIf()
-            | "SWITCH" -> this.ParseSwitch()
-            | "TRY"    -> this.ParseTry()
-            | "BREAK"  -> let t = this.Eat("BREAK") in Break(loc t.line t.col)
-            | "CONTINUE" -> let t = this.Eat("CONTINUE") in Continue(loc t.line t.col)
-            | "RETURN" -> let t = this.Eat("RETURN") in Return(loc t.line t.col)
-            | "FUNCTION" -> this.ParseFunctionDef()
-            | "SHELL_ESCAPE" ->
+            | TkFor    -> this.ParseFor(false)
+            | TkParfor -> this.ParseFor(true)
+            | TkGlobal | TkPersistent -> this.ParseGlobal()
+            | TkWhile  -> this.ParseWhile()
+            | TkIf     -> this.ParseIf()
+            | TkSwitch -> this.ParseSwitch()
+            | TkTry    -> this.ParseTry()
+            | TkBreak  -> let t = this.Eat(TkBreak) in Break(loc t.line t.col)
+            | TkContinue -> let t = this.Eat(TkContinue) in Continue(loc t.line t.col)
+            | TkReturn -> let t = this.Eat(TkReturn) in Return(loc t.line t.col)
+            | TkFunction -> this.ParseFunctionDef()
+            | TkShellEscape ->
                 // !command — skip the token and any trailing newline
                 let t = tokens.[pos]
                 pos <- pos + 1
-                if not (this.AtEnd()) && this.Current().kind = "NEWLINE" then pos <- pos + 1
+                if not (this.AtEnd()) && this.Current().kind = TkNewline then pos <- pos + 1
                 ExprStmt(loc t.line t.col, Const(loc t.line t.col, 0.0))
-            | "NEWLINE" ->
-                this.Eat("NEWLINE") |> ignore
+            | TkNewline ->
+                this.Eat(TkNewline) |> ignore
                 ExprStmt(loc 0 0, Const(loc 0 0, 0.0))
             | _ ->
                 let node = this.ParseSimpleStmt()
                 let curKind = this.Current().kind
-                let curVal  = this.Current().value
-                if curKind <> "NEWLINE" && curKind <> "EOF" && curVal <> ";" then
+                if curKind <> TkNewline && curKind <> TkEof && curKind <> TkSemicolon then
                     pos <- startPos
                     this.RecoverToStmtBoundary(startLine, startCol)
                 else
-                    if this.Current().kind = "NEWLINE" then this.Eat("NEWLINE") |> ignore
-                    elif this.Current().kind = ";" || this.Current().value = ";" then pos <- pos + 1
+                    if this.Current().kind = TkNewline then this.Eat(TkNewline) |> ignore
+                    elif this.Current().kind = TkSemicolon then pos <- pos + 1
                     node
         with
         | :? ParseError ->
@@ -526,25 +539,25 @@ type MatlabParser(tokenList: Token list) =
     member private this.ParseBracketStmt() : Stmt =
         let savedPos = pos
         try
-            this.Eat("[") |> ignore
+            this.Eat(TkLBracket) |> ignore
             let eatTarget () =
                 if this.Current().value = "~" then
-                    this.Eat("~") |> ignore; "~"
+                    this.EatValue("~") |> ignore; "~"
                 else
-                    let mutable tname = this.Eat("ID").value
-                    while this.Current().kind = "DOT" do
-                        this.Eat("DOT") |> ignore
-                        let nextId = this.Eat("ID").value
+                    let mutable tname = this.Eat(TkId).value
+                    while this.Current().kind = TkDot do
+                        this.Eat(TkDot) |> ignore
+                        let nextId = this.Eat(TkId).value
                         tname <- $"{tname}.{nextId}"
                     tname
             let targets = ResizeArray<string>()
             targets.Add(eatTarget ())
-            while this.Current().value = "," || this.Current().kind = "ID" || this.Current().value = "~" do
-                if this.Current().value = "," then this.Eat(",") |> ignore
+            while this.Current().kind = TkComma || this.Current().kind = TkId || this.Current().value = "~" do
+                if this.Current().kind = TkComma then this.Eat(TkComma) |> ignore
                 targets.Add(eatTarget ())
-            this.Eat("]") |> ignore
+            this.Eat(TkRBracket) |> ignore
             if this.Current().value = "=" then
-                let eqTok = this.Eat("=")
+                let eqTok = this.EatValue("=")
                 let expr = this.ParseExpr(0, false, true)
                 AssignMulti(loc eqTok.line eqTok.col, Seq.toList targets, expr)
             else
@@ -558,90 +571,86 @@ type MatlabParser(tokenList: Token list) =
             ExprStmt(loc expr.Line expr.Col, expr)
 
     // Greedy LHS accessor chain after an ID.
-    // Returns list of kind+data: kind is "field"|"paren"|"curly", data is string|IndexArg list
-    member private this.ParseLhsChain() : (string * obj) list =
-        let chain = System.Collections.Generic.List<string * obj>()
+    member private this.ParseLhsChain() : LhsSegment list =
+        let chain = System.Collections.Generic.List<LhsSegment>()
         let mutable stop = false
         while not stop do
             let cur = this.Current()
-            if cur.kind = "DOT" then
-                this.Eat("DOT") |> ignore
-                if this.Current().kind = "ID" then
-                    chain.Add(("field", box (this.Eat("ID").value)))
-                elif this.Current().value = "(" then
-                    this.Eat("(") |> ignore
+            if cur.kind = TkDot then
+                this.Eat(TkDot) |> ignore
+                if this.Current().kind = TkId then
+                    chain.Add(Field(this.Eat(TkId).value))
+                elif this.Current().kind = TkLParen then
+                    this.Eat(TkLParen) |> ignore
                     this.ParseExpr(0, false, true) |> ignore
-                    this.Eat(")") |> ignore
-                    chain.Add(("field", box "<dynamic>"))
+                    this.Eat(TkRParen) |> ignore
+                    chain.Add(Field("<dynamic>"))
                 else
                     stop <- true
-            elif cur.value = "(" then
-                this.Eat("(") |> ignore
+            elif cur.kind = TkLParen then
+                this.Eat(TkLParen) |> ignore
                 let args = this.ParseParenArgs()
-                this.Eat(")") |> ignore
-                chain.Add(("paren", box args))
-            elif cur.value = "{" then
-                this.Eat("{") |> ignore
+                this.Eat(TkRParen) |> ignore
+                chain.Add(Paren(args))
+            elif cur.kind = TkLCurly then
+                this.Eat(TkLCurly) |> ignore
                 let args = this.ParseParenArgs()
-                this.Eat("}") |> ignore
-                chain.Add(("curly", box args))
+                this.Eat(TkRCurly) |> ignore
+                chain.Add(Curly(args))
             else
                 stop <- true
         chain |> Seq.toList
 
-    member private _.ChainToExpr(idTok: Token, chain: (string * obj) list) : Expr =
+    member private _.ChainToExpr(idTok: Token, chain: LhsSegment list) : Expr =
         let mutable expr: Expr = Var(loc idTok.line idTok.col, idTok.value)
-        for (kind, data) in chain do
-            match kind with
-            | "field" -> expr <- FieldAccess(loc idTok.line idTok.col, expr, data :?> string)
-            | "paren" -> expr <- Apply(loc idTok.line idTok.col, expr, data :?> IndexArg list)
-            | "curly" -> expr <- CurlyApply(loc idTok.line idTok.col, expr, data :?> IndexArg list)
-            | _       -> ()
+        for seg in chain do
+            match seg with
+            | Field name -> expr <- FieldAccess(loc idTok.line idTok.col, expr, name)
+            | Paren args -> expr <- Apply(loc idTok.line idTok.col, expr, args)
+            | Curly args -> expr <- CurlyApply(loc idTok.line idTok.col, expr, args)
         expr
 
-    member private _.ClassifyAssignment(idTok: Token, chain: (string * obj) list, eqTok: Token, rhs: Expr) : Stmt =
+    member private _.ClassifyAssignment(idTok: Token, chain: LhsSegment list, eqTok: Token, rhs: Expr) : Stmt =
         let baseName = idTok.value
+        let isField = function Field _ -> true | _ -> false
+        let fieldName = function Field n -> n | _ -> ""
+        let indexArgs = function Paren a | Curly a -> a | _ -> []
+        let indexKind = function Paren _ -> "paren" | Curly _ -> "curly" | _ -> ""
 
         if chain.IsEmpty then
             Assign(loc idTok.line idTok.col, baseName, rhs)
 
-        elif chain |> List.forall (fun (k,_) -> k = "field") then
-            let fields = chain |> List.map (fun (_,d) -> d :?> string)
-            StructAssign(loc eqTok.line eqTok.col, baseName, fields, rhs)
+        elif chain |> List.forall isField then
+            StructAssign(loc eqTok.line eqTok.col, baseName, chain |> List.map fieldName, rhs)
 
-        elif chain.Length = 1 && fst chain.[0] = "paren" then
-            IndexAssign(loc eqTok.line eqTok.col, baseName, snd chain.[0] :?> IndexArg list, rhs)
+        elif chain.Length = 1 then
+            match chain.[0] with
+            | Paren args -> IndexAssign(loc eqTok.line eqTok.col, baseName, args, rhs)
+            | Curly args -> CellAssign(loc eqTok.line eqTok.col, baseName, args, rhs)
+            | Field _ -> StructAssign(loc eqTok.line eqTok.col, baseName, [fieldName chain.[0]], rhs)
 
-        elif chain.Length = 1 && fst chain.[0] = "curly" then
-            CellAssign(loc eqTok.line eqTok.col, baseName, snd chain.[0] :?> IndexArg list, rhs)
-
-        elif (fst chain.[0] = "paren" || fst chain.[0] = "curly") && chain.Length > 1 &&
-             chain.[1..] |> List.forall (fun (k,_) -> k = "field") then
-            let indexKind = fst chain.[0]
-            let indexArgs = snd chain.[0] :?> IndexArg list
-            let fields = chain.[1..] |> List.map (fun (_,d) -> d :?> string)
-            IndexStructAssign(loc eqTok.line eqTok.col, baseName, indexArgs, indexKind, fields, rhs)
+        elif (match chain.[0] with Paren _ | Curly _ -> true | _ -> false) && chain.Length > 1 &&
+             chain.[1..] |> List.forall isField then
+            IndexStructAssign(loc eqTok.line eqTok.col, baseName, indexArgs chain.[0],
+                              indexKind chain.[0], chain.[1..] |> List.map fieldName, rhs)
 
         else
-            let indexPos = chain |> List.tryFindIndex (fun (k,_) -> k = "paren" || k = "curly")
+            let indexPos = chain |> List.tryFindIndex (fun s -> match s with Paren _ | Curly _ -> true | _ -> false)
             match indexPos with
             | Some ip ->
                 let prefix = if ip > 0 then chain.[..ip-1] else []
                 let suffix = if ip < chain.Length - 1 then chain.[ip+1..] else []
-                if not prefix.IsEmpty && prefix |> List.forall (fun (k,_) -> k = "field") &&
-                   not suffix.IsEmpty && suffix |> List.forall (fun (k,_) -> k = "field") then
+                if not prefix.IsEmpty && prefix |> List.forall isField &&
+                   not suffix.IsEmpty && suffix |> List.forall isField then
                     FieldIndexAssign(
                         loc eqTok.line eqTok.col, baseName,
-                        prefix |> List.map (fun (_,d) -> d :?> string),
-                        snd chain.[ip] :?> IndexArg list,
-                        fst chain.[ip],
-                        suffix |> List.map (fun (_,d) -> d :?> string),
+                        prefix |> List.map fieldName,
+                        indexArgs chain.[ip],
+                        indexKind chain.[ip],
+                        suffix |> List.map fieldName,
                         rhs)
-                elif chain.Length >= 2 && fst chain.[chain.Length-1] = "paren" &&
-                     chain.[..chain.Length-2] |> List.forall (fun (k,_) -> k = "field") then
-                    ExprStmt(loc eqTok.line eqTok.col, rhs)
-                elif chain.Length >= 2 && fst chain.[chain.Length-1] = "curly" &&
-                     chain.[..chain.Length-2] |> List.forall (fun (k,_) -> k = "field") then
+                elif chain.Length >= 2 && (match chain.[chain.Length-1] with Paren _ | Curly _ -> true | _ -> false) &&
+                     chain.[..chain.Length-2] |> List.forall isField then
                     ExprStmt(loc eqTok.line eqTok.col, rhs)
                 else
                     OpaqueStmt(loc eqTok.line eqTok.col, [baseName], "")
@@ -649,13 +658,13 @@ type MatlabParser(tokenList: Token list) =
                 OpaqueStmt(loc eqTok.line eqTok.col, [baseName], "")
 
     member private this.ParseSimpleStmt() : Stmt =
-        if this.Current().value = "[" then
+        if this.Current().kind = TkLBracket then
             this.ParseBracketStmt()
-        elif this.Current().kind = "ID" then
-            let idTok = this.Eat("ID")
+        elif this.Current().kind = TkId then
+            let idTok = this.Eat(TkId)
             let chain = this.ParseLhsChain()
             if this.Current().value = "=" then
-                let eqTok = this.Eat("=")
+                let eqTok = this.EatValue("=")
                 let rhs = this.ParseExpr(0, false, true)
                 this.ClassifyAssignment(idTok, chain, eqTok, rhs)
             else
@@ -672,56 +681,56 @@ type MatlabParser(tokenList: Token list) =
     // -------------------------------------------------------------------
 
     member private this.ParseFor(isParfor: bool) : Stmt =
-        this.Eat(if isParfor then "PARFOR" else "FOR") |> ignore
+        this.Eat(if isParfor then TkParfor else TkFor) |> ignore
         // MATLAB allows optional parens: for(i = 1:n) ... end
-        let hasParen = this.Current().value = "("
+        let hasParen = this.Current().kind = TkLParen
         if hasParen then pos <- pos + 1
-        let varTok = this.Eat("ID")
-        this.Eat("=") |> ignore
+        let varTok = this.Eat(TkId)
+        this.EatValue("=") |> ignore
         let it = this.ParseExpr(0, false, true)
-        if hasParen then this.Eat(")") |> ignore
-        let body = this.ParseBlock([| "END" |])
-        this.Eat("END") |> ignore
+        if hasParen then this.Eat(TkRParen) |> ignore
+        let body = this.ParseBlock([| TkEnd |])
+        this.Eat(TkEnd) |> ignore
         For(loc it.Line it.Col, varTok.value, it, body)
 
     member private this.ParseGlobal() : Stmt =
         let kwTok = tokens.[pos]
         pos <- pos + 1
         let varNames = ResizeArray<string>()
-        while this.Current().kind = "ID" do
-            varNames.Add(this.Eat("ID").value)
+        while this.Current().kind = TkId do
+            varNames.Add(this.Eat(TkId).value)
         let varNamesList = Seq.toList varNames
         let rawText = kwTok.value + " " + String.concat " " varNamesList
         // Consume trailing semicolon or newline so the caller doesn't see a stray token.
         if not (this.AtEnd()) then
             let cur = this.Current()
-            if cur.kind = "NEWLINE" then pos <- pos + 1
-            elif cur.value = ";" then pos <- pos + 1
+            if cur.kind = TkNewline then pos <- pos + 1
+            elif cur.kind = TkSemicolon then pos <- pos + 1
         OpaqueStmt(loc kwTok.line kwTok.col, varNamesList, rawText)
 
     member private this.ParseWhile() : Stmt =
-        this.Eat("WHILE") |> ignore
+        this.Eat(TkWhile) |> ignore
         let cond = this.ParseExpr(0, false, true)
-        let body = this.ParseBlock([| "END" |])
-        this.Eat("END") |> ignore
+        let body = this.ParseBlock([| TkEnd |])
+        this.Eat(TkEnd) |> ignore
         While(loc cond.Line cond.Col, cond, body)
 
     member private this.ParseIf() : Stmt =
-        this.Eat("IF") |> ignore
+        this.Eat(TkIf) |> ignore
         let cond = this.ParseExpr(0, false, true)
-        let thenBody = this.ParseBlock([| "ELSE"; "ELSEIF"; "END" |])
+        let thenBody = this.ParseBlock([| TkElse; TkElseif; TkEnd |])
         let elseifs = ResizeArray<Expr * Stmt list>()
-        while this.Current().kind = "ELSEIF" do
-            this.Eat("ELSEIF") |> ignore
+        while this.Current().kind = TkElseif do
+            this.Eat(TkElseif) |> ignore
             let elifCond = this.ParseExpr(0, false, true)
-            let elifBody = this.ParseBlock([| "ELSE"; "ELSEIF"; "END" |])
+            let elifBody = this.ParseBlock([| TkElse; TkElseif; TkEnd |])
             elseifs.Add((elifCond, elifBody))
         let skipStmt = ExprStmt(loc 0 0, Const(loc 0 0, 0.0))
         let mutable elseBody = [skipStmt]
-        if this.Current().kind = "ELSE" then
-            this.Eat("ELSE") |> ignore
-            elseBody <- this.ParseBlock([| "END" |])
-        this.Eat("END") |> ignore
+        if this.Current().kind = TkElse then
+            this.Eat(TkElse) |> ignore
+            elseBody <- this.ParseBlock([| TkEnd |])
+        this.Eat(TkEnd) |> ignore
         if elseifs.Count = 0 then
             If(loc cond.Line cond.Col, cond, thenBody, elseBody)
         else
@@ -731,42 +740,42 @@ type MatlabParser(tokenList: Token list) =
             IfChain(loc cond.Line cond.Col, conditions, bodies, elseBody)
 
     member private this.ParseSwitch() : Stmt =
-        this.Eat("SWITCH") |> ignore
+        this.Eat(TkSwitch) |> ignore
         let expr = this.ParseExpr(0, false, true)
         // Skip all newlines (blank lines, comment-only lines stripped by lexer)
-        while this.Current().kind = "NEWLINE" do pos <- pos + 1
+        while this.Current().kind = TkNewline do pos <- pos + 1
         let cases = ResizeArray<Expr * Stmt list>()
-        while this.Current().kind = "CASE" do
-            this.Eat("CASE") |> ignore
+        while this.Current().kind = TkCase do
+            this.Eat(TkCase) |> ignore
             let caseVal = this.ParseExpr(0, false, true)
-            let caseBody = this.ParseBlock([| "CASE"; "OTHERWISE"; "END" |])
+            let caseBody = this.ParseBlock([| TkCase; TkOtherwise; TkEnd |])
             cases.Add((caseVal, caseBody))
         let skipStmt = ExprStmt(loc 0 0, Const(loc 0 0, 0.0))
         let mutable otherwiseBody = [skipStmt]
-        if this.Current().kind = "OTHERWISE" then
-            this.Eat("OTHERWISE") |> ignore
-            otherwiseBody <- this.ParseBlock([| "END" |])
-        this.Eat("END") |> ignore
+        if this.Current().kind = TkOtherwise then
+            this.Eat(TkOtherwise) |> ignore
+            otherwiseBody <- this.ParseBlock([| TkEnd |])
+        this.Eat(TkEnd) |> ignore
         Switch(loc expr.Line expr.Col, expr, Seq.toList cases, otherwiseBody)
 
     member private this.ParseTry() : Stmt =
-        this.Eat("TRY") |> ignore
-        let tryBody = this.ParseBlock([| "CATCH"; "END" |])
+        this.Eat(TkTry) |> ignore
+        let tryBody = this.ParseBlock([| TkCatch; TkEnd |])
         let skipStmt = ExprStmt(loc 0 0, Const(loc 0 0, 0.0))
         let mutable catchBody = [skipStmt]
-        if this.Current().kind = "CATCH" then
-            this.Eat("CATCH") |> ignore
-            if this.Current().kind = "ID" then this.Eat("ID") |> ignore
-            catchBody <- this.ParseBlock([| "END" |])
-        this.Eat("END") |> ignore
+        if this.Current().kind = TkCatch then
+            this.Eat(TkCatch) |> ignore
+            if this.Current().kind = TkId then this.Eat(TkId) |> ignore
+            catchBody <- this.ParseBlock([| TkEnd |])
+        this.Eat(TkEnd) |> ignore
         let l, c =
             match tryBody with
             | h :: _ -> h.Line, h.Col
             | [] -> 0, 0
         Try(loc l c, tryBody, catchBody)
 
-    member private this.ParseBlock(untilKinds: string[]) : Stmt list =
-        if this.Current().kind = "NEWLINE" then this.Eat("NEWLINE") |> ignore
+    member private this.ParseBlock(untilKinds: TokenKind[]) : Stmt list =
+        if this.Current().kind = TkNewline then this.Eat(TkNewline) |> ignore
         let stmts = System.Collections.Generic.List<Stmt>()
         while not (this.AtEnd()) && not (Array.contains (this.Current().kind) untilKinds) do
             let savedPos = pos
@@ -790,29 +799,43 @@ type MatlabParser(tokenList: Token list) =
         // Check kind-based literal types first to prevent STRING/NUMBER values
         // from matching operator arms (e.g. STRING "(" matching the "(" case).
         match tok.kind with
-        | "NUMBER" ->
+        | TkNumber ->
             let numTok = tokens.[pos]
             pos <- pos + 1
             Const(loc numTok.line numTok.col, float numTok.value)
 
-        | "STRING" ->
+        | TkString ->
             let strTok = tokens.[pos]
             pos <- pos + 1
             StringLit(loc strTok.line strTok.col, strTok.value)
 
-        | "ID" ->
+        | TkId ->
             let idTok = tokens.[pos]
             pos <- pos + 1
             let left: Expr = Var(loc idTok.line idTok.col, idTok.value)
             this.ParsePostfix(left)
 
-        | "END" ->
+        | TkEnd ->
             let endTok = tokens.[pos]
             pos <- pos + 1
             End(loc endTok.line endTok.col)
 
-        | _ ->
-            // Value-based matching for operators (safe now: STRING/NUMBER/ID/END handled above)
+        | TkLParen ->
+            this.Eat(TkLParen) |> ignore
+            let inner = this.ParseExpr(0, false, true)
+            this.Eat(TkRParen) |> ignore
+            this.ParsePostfix(inner)
+
+        | TkLBracket ->
+            let ml = this.ParseMatrixLiteral()
+            this.ParsePostfix(ml)
+
+        | TkLCurly ->
+            let cl = this.ParseCellLiteral()
+            this.ParsePostfix(cl)
+
+        | TkOp ->
+            // Value-based matching for operators (safe now: STRING/NUMBER/ID/END/delimiters handled above)
             match tok.value with
             | "+" ->
                 pos <- pos + 1
@@ -834,19 +857,19 @@ type MatlabParser(tokenList: Token list) =
                 let atTok = tokens.[pos]
                 pos <- pos + 1
                 let next = this.Current()
-                if next.value = "(" then
-                    this.Eat("(") |> ignore
+                if next.kind = TkLParen then
+                    this.Eat(TkLParen) |> ignore
                     let parms = ResizeArray<string>()
-                    if this.Current().value <> ")" then
-                        parms.Add(this.Eat("ID").value)
-                        while this.Current().value = "," do
-                            this.Eat(",") |> ignore
-                            parms.Add(this.Eat("ID").value)
-                    this.Eat(")") |> ignore
+                    if this.Current().kind <> TkRParen then
+                        parms.Add(this.Eat(TkId).value)
+                        while this.Current().kind = TkComma do
+                            this.Eat(TkComma) |> ignore
+                            parms.Add(this.Eat(TkId).value)
+                    this.Eat(TkRParen) |> ignore
                     let body = this.ParseExpr(0, false, true)
                     Lambda(loc atTok.line atTok.col, Seq.toList parms, body)
-                elif next.kind = "ID" then
-                    let name = this.Eat("ID").value
+                elif next.kind = TkId then
+                    let name = this.Eat(TkId).value
                     FuncHandle(loc atTok.line atTok.col, name)
                 else
                     raise (ParseError("Expected '(' or function name after '@' at " + string next.pos))
@@ -854,68 +877,57 @@ type MatlabParser(tokenList: Token list) =
             | "?" ->
                 let qTok = tokens.[pos]
                 pos <- pos + 1
-                if this.Current().kind = "ID" then
-                    let name = this.Eat("ID").value
+                if this.Current().kind = TkId then
+                    let name = this.Eat(TkId).value
                     MetaClass(loc qTok.line qTok.col, name)
                 else
                     Var(loc qTok.line qTok.col, "?")
 
-            | "[" ->
-                let ml = this.ParseMatrixLiteral()
-                this.ParsePostfix(ml)
-
-            | "{" ->
-                let cl = this.ParseCellLiteral()
-                this.ParsePostfix(cl)
-
-            | "(" ->
-                this.Eat("(") |> ignore
-                let inner = this.ParseExpr(0, false, true)
-                this.Eat(")") |> ignore
-                this.ParsePostfix(inner)
-
             | _ ->
-                raise (ParseError($"Unexpected token {tok.kind} '{tok.value}' in expression at {tok.pos}"))
+                raise (ParseError($"Unexpected token {tokenKindName tok.kind} '{tok.value}' in expression at {tok.pos}"))
+
+        | _ ->
+            raise (ParseError($"Unexpected token {tokenKindName tok.kind} '{tok.value}' in expression at {tok.pos}"))
 
     member private this.ParsePostfix(initial: Expr) : Expr =
         let mutable left = initial
         let mutable stop = false
         while not stop do
             let tok = this.Current()
-            if tok.value = "(" then
+            if tok.kind = TkLParen then
                 let lparenTok = tokens.[pos]
                 pos <- pos + 1
                 let args = this.ParseParenArgs()
-                this.Eat(")") |> ignore
+                this.Eat(TkRParen) |> ignore
                 left <- Apply(loc lparenTok.line lparenTok.col, left, args)
 
-            elif tok.value = "{" then
+            elif tok.kind = TkLCurly then
                 let lcurlyTok = tokens.[pos]
                 pos <- pos + 1
                 let args = this.ParseParenArgs()
-                this.Eat("}") |> ignore
+                this.Eat(TkRCurly) |> ignore
                 left <- CurlyApply(loc lcurlyTok.line lcurlyTok.col, left, args)
 
-            elif tok.kind = "TRANSPOSE" then
+            elif tok.kind = TkTranspose then
                 let tTok = tokens.[pos]
                 pos <- pos + 1
                 left <- Transpose(loc tTok.line tTok.col, left)
 
-            elif tok.kind = "DOTOP" && tok.value = ".'" then
+            elif tok.kind = TkDotOp && tok.value = ".'" then
                 let tTok = tokens.[pos]
                 pos <- pos + 1
                 left <- Transpose(loc tTok.line tTok.col, left)
 
-            elif tok.kind = "DOT" then
+            elif tok.kind = TkDot then
                 let dotTok = tokens.[pos]
                 pos <- pos + 1
-                if this.Current().kind = "ID" then
-                    let fieldName = this.Eat("ID").value
+                if this.Current().kind = TkId then
+                    let fieldName = this.Eat(TkId).value
                     left <- FieldAccess(loc dotTok.line dotTok.col, left, fieldName)
-                elif this.Current().value = "(" then
-                    this.Eat("(") |> ignore
+                elif this.Current().kind = TkLParen then
+                    this.Eat(TkLParen) |> ignore
                     this.ParseExpr(0, false, true) |> ignore
-                    this.Eat(")") |> ignore
+                    this.Eat(TkRParen) |> ignore
                     left <- FieldAccess(loc dotTok.line dotTok.col, left, "<dynamic>")
                 else
                     raise (ParseError("Expected field name after '.' at " + string tok.pos))
@@ -932,11 +944,11 @@ type MatlabParser(tokenList: Token list) =
             let op = tok.value
             let mutable prec = 0
             // Guard: only treat as operator if the token IS an operator.
-            // OP tokens have kind = value (e.g., kind="*", value="*").
-            // DOTOP tokens have kind = "DOTOP" (e.g., kind="DOTOP", value=".*").
+            // TkOp tokens have kind = TkOp.
+            // TkDotOp tokens have kind = TkDotOp (e.g., kind=TkDotOp, value=".*").
             // STRING/NUMBER/ID tokens must not be confused with operators even if
             // their value matches (e.g., STRING '*' vs OP '*').
-            let isOp = tok.kind = op || tok.kind = "DOTOP"
+            let isOp = match tok.kind with TkOp | TkDotOp -> true | _ -> false
             if not isOp || not (precedenceTable.TryGetValue(op, &prec)) then
                 stop <- true
             elif op = ":" && not colonVisible then
@@ -971,12 +983,12 @@ type MatlabParser(tokenList: Token list) =
     // Matrix / cell literals
     // -------------------------------------------------------------------
 
-    member private this.ParseDelimitedRows(endToken: string) : int * int * Expr list list =
+    member private this.ParseDelimitedRows(endKind: TokenKind) : int * int * Expr list list =
         let cur = this.Current()
         let line = cur.line
         let col = cur.col
 
-        if this.Current().value = endToken then
+        if this.Current().kind = endKind then
             (line, col, [])
         else
             let rows = System.Collections.Generic.List<Expr list>()
@@ -987,10 +999,10 @@ type MatlabParser(tokenList: Token list) =
                 let mutable innerStop = false
                 while not innerStop do
                     let tok = this.Current()
-                    if tok.value = "," then
+                    if tok.kind = TkComma then
                         pos <- pos + 1
                         row.Add(this.ParseExpr(0, true, true))
-                    elif tok.value = ";" || tok.value = endToken || tok.kind = "NEWLINE" || tok.kind = "EOF" then
+                    elif tok.kind = TkSemicolon || tok.kind = endKind || tok.kind = TkNewline || tok.kind = TkEof then
                         innerStop <- true
                     elif this.StartsExpr(tok) then
                         row.Add(this.ParseExpr(0, true, true))
@@ -998,32 +1010,32 @@ type MatlabParser(tokenList: Token list) =
                         innerStop <- true
                 rows.Add(row |> Seq.toList)
 
-                if this.Current().value = endToken then
+                if this.Current().kind = endKind then
                     outerStop <- true
-                elif this.Current().value = ";" then
+                elif this.Current().kind = TkSemicolon then
                     pos <- pos + 1
                     // Skip newlines after semicolon row separator (multiline matrix literals)
-                    while this.Current().kind = "NEWLINE" do pos <- pos + 1
-                    if this.Current().value = endToken then outerStop <- true
-                elif this.Current().kind = "NEWLINE" then
+                    while this.Current().kind = TkNewline do pos <- pos + 1
+                    if this.Current().kind = endKind then outerStop <- true
+                elif this.Current().kind = TkNewline then
                     pos <- pos + 1
-                    if this.Current().value = endToken then outerStop <- true
+                    if this.Current().kind = endKind then outerStop <- true
                 else
                     let tok = this.Current()
-                    raise (ParseError($"Unexpected token {tok.kind} '{tok.value}' in literal at {tok.pos}"))
+                    raise (ParseError($"Unexpected token {tokenKindName tok.kind} '{tok.value}' in literal at {tok.pos}"))
             (line, col, rows |> Seq.toList)
 
     member private this.ParseMatrixLiteral() : Expr =
-        let lbrack = this.Eat("[")
-        let line, col, rows = this.ParseDelimitedRows("]")
-        this.Eat("]") |> ignore
+        let lbrack = this.Eat(TkLBracket)
+        let line, col, rows = this.ParseDelimitedRows(TkRBracket)
+        this.Eat(TkRBracket) |> ignore
         let l, c = if rows.IsEmpty then lbrack.line, lbrack.col else line, col
         MatrixLit(loc l c, rows)
 
     member private this.ParseCellLiteral() : Expr =
-        let lcurly = this.Eat("{")
-        let line, col, rows = this.ParseDelimitedRows("}")
-        this.Eat("}") |> ignore
+        let lcurly = this.Eat(TkLCurly)
+        let line, col, rows = this.ParseDelimitedRows(TkRCurly)
+        this.Eat(TkRCurly) |> ignore
         let l, c = if rows.IsEmpty then lcurly.line, lcurly.col else line, col
         CellLit(loc l c, rows)
 
@@ -1048,14 +1060,14 @@ type MatlabParser(tokenList: Token list) =
 
     member private this.ParseParenArgs() : IndexArg list =
         let args = System.Collections.Generic.List<IndexArg>()
-        while this.Current().kind = "NEWLINE" do pos <- pos + 1
-        if this.Current().value <> ")" && this.Current().value <> "}" then
+        while this.Current().kind = TkNewline do pos <- pos + 1
+        if this.Current().kind <> TkRParen && this.Current().kind <> TkRCurly then
             args.Add(this.ParseIndexArg())
-            while this.Current().value = "," do
+            while this.Current().kind = TkComma do
                 pos <- pos + 1  // eat comma
-                while this.Current().kind = "NEWLINE" do pos <- pos + 1
+                while this.Current().kind = TkNewline do pos <- pos + 1
                 args.Add(this.ParseIndexArg())
-        while this.Current().kind = "NEWLINE" do pos <- pos + 1
+        while this.Current().kind = TkNewline do pos <- pos + 1
         args |> Seq.toList
 
 
