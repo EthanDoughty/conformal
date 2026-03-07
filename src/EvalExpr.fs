@@ -343,7 +343,7 @@ let rec evalExprIr
                             | _ -> joinAllElements elemMap
                         | _ -> joinAllElements elemMap
                     | Colon _ -> joinAllElements elemMap
-                    | Ir.Range _ ->
+                    | Ir.Range _ | Ir.SteppedRange _ ->
                         evalIndexArgToShape arg env warnings ctx (Some baseShape) (fun e en w c cs -> evalExprIr e en w c cs builtinDispatch)
                         |> ignore
                         joinAllElements elemMap
@@ -596,7 +596,7 @@ and private evalHandleCall
         let argShapes =
             args |> List.map (fun arg ->
                 match arg with
-                | Colon _ | Ir.Range _ -> UnknownShape
+                | Colon _ | Ir.Range _ | Ir.SteppedRange _ -> UnknownShape
                 | IndexExpr(_, e) -> evalExprIr e env warnings ctx None builtinDispatch)
 
         let results = ResizeArray<Shape>()
