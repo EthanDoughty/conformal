@@ -1053,8 +1053,15 @@ type MatlabParser(tokenList: Token list) =
             if this.Current().value = ":" then
                 let colonTok = tokens.[pos]
                 pos <- pos + 1
-                let rangeEnd = this.ParseExpr(0, false, false)
-                Range(loc colonTok.line colonTok.col, startExpr, rangeEnd)
+                let midExpr = this.ParseExpr(0, false, false)
+                if this.Current().value = ":" then
+                    // a:step:b — three-argument stepped range
+                    pos <- pos + 1
+                    let endExpr = this.ParseExpr(0, false, false)
+                    SteppedRange(loc colonTok.line colonTok.col, startExpr, midExpr, endExpr)
+                else
+                    // a:b — two-argument range
+                    Range(loc colonTok.line colonTok.col, startExpr, midExpr)
             else
                 IndexExpr(loc startExpr.Line startExpr.Col, startExpr)
 

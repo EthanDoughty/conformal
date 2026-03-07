@@ -137,6 +137,11 @@ let evalIndexArgToShape
         evalFn startExpr env warnings ctx containerShape |> ignore
         evalFn endExpr   env warnings ctx containerShape |> ignore
         Matrix(Concrete 1, Unknown)   // 1 x unknown
+    | Ir.SteppedRange(_, startExpr, stepExpr, endExpr) ->
+        evalFn startExpr env warnings ctx containerShape |> ignore
+        evalFn stepExpr  env warnings ctx containerShape |> ignore
+        evalFn endExpr   env warnings ctx containerShape |> ignore
+        Matrix(Concrete 1, Unknown)
     | Colon _ -> UnknownShape
 
 
@@ -179,6 +184,28 @@ let indexArgToExtentIr
                     Unknown
                 else Concrete ((b' - a') + 1)
             | _ -> addDim (subDim b a) (Concrete 1)   // (b-a)+1 symbolic
+
+    | Ir.SteppedRange(_, startExpr, stepExpr, endExpr) ->
+        evalFn startExpr env warnings ctx containerShape |> ignore
+        evalFn stepExpr  env warnings ctx containerShape |> ignore
+        evalFn endExpr   env warnings ctx containerShape |> ignore
+        let stepInt = DimExtract.tryExtractIntLiteral stepExpr
+        let a = exprToDimIrCtx startExpr env (Some ctx)
+        let b = exprToDimIrCtx endExpr env (Some ctx)
+        match stepInt with
+        | Some s when s > 0 ->
+            match a, b with
+            | Concrete a', Concrete b' ->
+                if b' < a' then Concrete 0
+                else Concrete ((b' - a') / s + 1)
+            | _ -> Unknown
+        | Some s when s < 0 ->
+            match a, b with
+            | Concrete a', Concrete b' ->
+                if a' < b' then Concrete 0
+                else Concrete ((a' - b') / (-s) + 1)
+            | _ -> Unknown
+        | _ -> Unknown
 
     | IndexExpr(_, expr) ->
         let s = evalFn expr env warnings ctx containerShape

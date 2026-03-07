@@ -81,7 +81,7 @@ and exprToDimIrCtx (expr: Expr) (env: Env) (ctx: Context.AnalysisContext option)
 
 /// tryExtractIntLiteral: extract a concrete integer from an expression.
 /// Handles Const and Neg(Const) to support negative step literals like -3 in a:(-3):b.
-let private tryExtractIntLiteral (expr: Expr) : int option =
+let tryExtractIntLiteral (expr: Expr) : int option =
     match expr with
     | Const(_, v) when v = System.Math.Floor(v) && not (System.Double.IsInfinity v) -> Some (int v)
     | Neg(_, Const(_, v)) when v = System.Math.Floor(v) && not (System.Double.IsInfinity v) -> Some (-(int v))
@@ -191,4 +191,22 @@ let indexArgToExtentIr (arg: Ir.IndexArg) (env: Env) : Dim =
             if b' < a' then Unknown
             else Concrete ((b' - a') + 1)
         | _ -> addDim (subDim b a) (Concrete 1)
+    | Ir.SteppedRange(_, startExpr, stepExpr, endExpr) ->
+        let stepInt = tryExtractIntLiteral stepExpr
+        let a = exprToDimIr startExpr env
+        let b = exprToDimIr endExpr env
+        match stepInt with
+        | Some s when s > 0 ->
+            match a, b with
+            | Concrete a', Concrete b' ->
+                if b' < a' then Concrete 0
+                else Concrete ((b' - a') / s + 1)
+            | _ -> Unknown
+        | Some s when s < 0 ->
+            match a, b with
+            | Concrete a', Concrete b' ->
+                if a' < b' then Concrete 0
+                else Concrete ((a' - b') / (-s) + 1)
+            | _ -> Unknown
+        | _ -> Unknown
     | IndexExpr _ -> Concrete 1
