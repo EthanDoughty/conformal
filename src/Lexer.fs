@@ -6,11 +6,36 @@ open System.Text.RegularExpressions
 // Custom exception mirroring Python SyntaxError for lex errors.
 exception LexError of string
 
+type TokenKind =
+    | TkId | TkNumber | TkString
+    | TkLParen | TkRParen | TkLBracket | TkRBracket | TkLCurly | TkRCurly
+    | TkComma | TkSemicolon | TkDot
+    | TkOp | TkDotOp | TkTranspose
+    | TkNewline | TkEof | TkShellEscape
+    | TkIf | TkElse | TkElseif | TkEnd
+    | TkFor | TkParfor | TkWhile
+    | TkSwitch | TkCase | TkOtherwise
+    | TkTry | TkCatch
+    | TkFunction | TkReturn | TkBreak | TkContinue
+    | TkGlobal | TkPersistent
+
+let tokenKindName = function
+    | TkId -> "ID" | TkNumber -> "NUMBER" | TkString -> "STRING"
+    | TkLParen -> "(" | TkRParen -> ")" | TkLBracket -> "[" | TkRBracket -> "]"
+    | TkLCurly -> "{" | TkRCurly -> "}" | TkComma -> "," | TkSemicolon -> ";"
+    | TkDot -> "." | TkOp -> "OP" | TkDotOp -> "DOTOP" | TkTranspose -> "TRANSPOSE"
+    | TkNewline -> "NEWLINE" | TkEof -> "EOF" | TkShellEscape -> "SHELL_ESCAPE"
+    | TkIf -> "IF" | TkElse -> "ELSE" | TkElseif -> "ELSEIF" | TkEnd -> "END"
+    | TkFor -> "FOR" | TkParfor -> "PARFOR" | TkWhile -> "WHILE"
+    | TkSwitch -> "SWITCH" | TkCase -> "CASE" | TkOtherwise -> "OTHERWISE"
+    | TkTry -> "TRY" | TkCatch -> "CATCH" | TkFunction -> "FUNCTION"
+    | TkReturn -> "RETURN" | TkBreak -> "BREAK" | TkContinue -> "CONTINUE"
+    | TkGlobal -> "GLOBAL" | TkPersistent -> "PERSISTENT"
+
 // Token record matching the Python Token dataclass.
 // col is 1-based; pos is 0-based character offset into the source string.
-[<Struct>]
 type Token =
-    { kind: string
+    { kind: TokenKind
       value: string
       pos: int
       line: int
@@ -26,6 +51,24 @@ let keywords: Set<string> =
         "function"; "return"
         "global"; "persistent"
     ]
+
+let private keywordToKind (kw: string) : TokenKind =
+    match kw.ToUpperInvariant() with
+    | "FOR" -> TkFor | "PARFOR" -> TkParfor | "WHILE" -> TkWhile
+    | "IF" -> TkIf | "ELSE" -> TkElse | "ELSEIF" -> TkElseif | "END" -> TkEnd
+    | "SWITCH" -> TkSwitch | "CASE" -> TkCase | "OTHERWISE" -> TkOtherwise
+    | "TRY" -> TkTry | "CATCH" -> TkCatch
+    | "BREAK" -> TkBreak | "CONTINUE" -> TkContinue
+    | "FUNCTION" -> TkFunction | "RETURN" -> TkReturn
+    | "GLOBAL" -> TkGlobal | "PERSISTENT" -> TkPersistent
+    | _ -> TkId
+
+let private opValueToKind (v: string) : TokenKind =
+    match v with
+    | "(" -> TkLParen | ")" -> TkRParen
+    | "[" -> TkLBracket | "]" -> TkRBracket
+    | "," -> TkComma | ";" -> TkSemicolon
+    | _ -> TkOp
 
 // ---------------------------------------------------------------------------
 // Token patterns – ordered by priority matching TOKEN_SPEC in lexer.py.
@@ -110,7 +153,7 @@ let lex (src: string) : Token list =
     let mutable pos = 0
     let mutable line = 1
     let mutable lastNewlinePos = -1   // col 1 for pos 0 (1-based)
-    let mutable prevKind: string = ""   // previous token kind ("" = start of file)
+    let mutable prevKind: TokenKind = TkNewline   // start-of-file acts as start-of-line
     let mutable bracketDepth = 0      // nesting depth of [ ] and { }
     let mutable sawSpace = false      // whitespace since last real token
 
@@ -154,47 +197,49 @@ let lex (src: string) : Token list =
         | "DQSTRING" ->
             // Strip outer quotes; replace "" with "
             let content = value.[1 .. value.Length - 2].Replace("\"\"", "\"")
-            tokens.Add(makeToken "STRING" content startPos)
-            prevKind <- "STRING"
+            tokens.Add(makeToken TkString content startPos)
+            prevKind <- TkString
             sawSpace <- false
             pos <- m.Index + m.Length
 
         | "NUMBER" ->
-            tokens.Add(makeToken "NUMBER" value startPos)
-            prevKind <- "NUMBER"
+            tokens.Add(makeToken TkNumber value startPos)
+            prevKind <- TkNumber
             sawSpace <- false
             pos <- m.Index + m.Length
 
         | "ID" ->
             let upper = value.ToUpperInvariant()
             if keywords.Contains(value) then
-                tokens.Add(makeToken upper value startPos)
-                prevKind <- upper
+                let tk = keywordToKind upper
+                tokens.Add(makeToken tk value startPos)
+                prevKind <- tk
             else
-                tokens.Add(makeToken "ID" value startPos)
-                prevKind <- "ID"
+                tokens.Add(makeToken TkId value startPos)
+                prevKind <- TkId
             sawSpace <- false
             pos <- m.Index + m.Length
 
         | "DOTOP" ->
-            tokens.Add(makeToken kind value startPos)
-            prevKind <- kind
+            tokens.Add(makeToken TkDotOp value startPos)
+            prevKind <- TkDotOp
             sawSpace <- false
             pos <- m.Index + m.Length
 
         | "DOT" ->
-            tokens.Add(makeToken "DOT" value startPos)
-            prevKind <- "DOT"
+            tokens.Add(makeToken TkDot value startPos)
+            prevKind <- TkDot
             sawSpace <- false
             pos <- m.Index + m.Length
 
         | "CURLYBRACE" ->
+            let tk = if value = "{" then TkLCurly else TkRCurly
             if value = "{" then
                 bracketDepth <- bracketDepth + 1
             elif value = "}" then
                 bracketDepth <- max 0 (bracketDepth - 1)
-            tokens.Add(makeToken value value startPos)
-            prevKind <- value
+            tokens.Add(makeToken tk value startPos)
+            prevKind <- tk
             sawSpace <- false
             pos <- m.Index + m.Length
 
@@ -212,7 +257,7 @@ let lex (src: string) : Token list =
             // Matches Python: is_transpose if prev_kind in {ID, ), ], }, NUMBER, TRANSPOSE}
             let isTranspose =
                 match prevKind with
-                | "ID" | ")" | "]" | "}" | "NUMBER" | "TRANSPOSE" -> true
+                | TkId | TkRParen | TkRBracket | TkRCurly | TkNumber | TkTranspose -> true
                 | _ -> false
             // Inside brackets, space before ' overrides -> string
             let isTranspose =
@@ -220,8 +265,8 @@ let lex (src: string) : Token list =
                 else isTranspose
 
             if isTranspose then
-                tokens.Add(makeToken "TRANSPOSE" value startPos)
-                prevKind <- "TRANSPOSE"
+                tokens.Add(makeToken TkTranspose value startPos)
+                prevKind <- TkTranspose
                 sawSpace <- false
                 pos <- m.Index + m.Length
             else
@@ -238,24 +283,25 @@ let lex (src: string) : Token list =
                 if not found then
                     raise (LexError("Unterminated string at line " + string line + ", pos " + string startPos))
                 let content = src.[startPos + 1 .. endPos - 1]
-                tokens.Add(makeToken "STRING" content startPos)
-                prevKind <- "STRING"
+                tokens.Add(makeToken TkString content startPos)
+                prevKind <- TkString
                 sawSpace <- false
                 pos <- endPos + 1   // skip past closing quote
 
         | "OP" ->
             if value = "[" then bracketDepth <- bracketDepth + 1
             elif value = "]" then bracketDepth <- max 0 (bracketDepth - 1)
-            tokens.Add(makeToken value value startPos)
-            prevKind <- value
+            let tk = opValueToKind value
+            tokens.Add(makeToken tk value startPos)
+            prevKind <- tk
             sawSpace <- false
             pos <- m.Index + m.Length
 
         | "NEWLINE" ->
-            tokens.Add(makeToken "NEWLINE" value startPos)
+            tokens.Add(makeToken TkNewline value startPos)
             line <- line + 1
             lastNewlinePos <- startPos
-            prevKind <- "NEWLINE"
+            prevKind <- TkNewline
             sawSpace <- false
             pos <- m.Index + m.Length
 
@@ -267,13 +313,13 @@ let lex (src: string) : Token list =
         | "MISMATCH" ->
             // MATLAB shell escape: !command runs the rest of the line as an OS command.
             // Valid at statement level (after NEWLINE, ";", or start-of-file).
-            if value = "!" && (prevKind = "NEWLINE" || prevKind = "" || prevKind = ";") then
+            if value = "!" && (prevKind = TkNewline || prevKind = TkSemicolon) then
                 let mutable endPos = startPos + 1
                 while endPos < src.Length && src.[endPos] <> '\n' do
                     endPos <- endPos + 1
                 let cmd = src.[startPos + 1 .. endPos - 1].Trim()
-                tokens.Add(makeToken "SHELL_ESCAPE" cmd startPos)
-                prevKind <- "SHELL_ESCAPE"
+                tokens.Add(makeToken TkShellEscape cmd startPos)
+                prevKind <- TkShellEscape
                 sawSpace <- false
                 pos <- endPos  // stop before \n so NEWLINE is lexed normally
             else
@@ -283,5 +329,5 @@ let lex (src: string) : Token list =
             pos <- m.Index + m.Length
 
     // Append EOF sentinel.
-    tokens.Add({ kind = "EOF"; value = ""; pos = src.Length; line = line; col = src.Length - lastNewlinePos })
+    tokens.Add({ kind = TkEof; value = ""; pos = src.Length; line = line; col = src.Length - lastNewlinePos })
     tokens |> Seq.toList
