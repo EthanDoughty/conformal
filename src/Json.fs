@@ -238,6 +238,15 @@ and private writeIndexArg (w: Writer) (arg: IndexArg) : unit =
             "start", fun () -> writeExpr w start
             "end",   fun () -> writeExpr w end_
         ]
+    | SteppedRange({ line = line; col = col }, start, step, end_) ->
+        w.WriteObject [
+            "type",  fun () -> w.WriteStr "SteppedRange"
+            "line",  fun () -> w.WriteInt line
+            "col",   fun () -> w.WriteInt col
+            "start", fun () -> writeExpr w start
+            "step",  fun () -> writeExpr w step
+            "end",   fun () -> writeExpr w end_
+        ]
     | IndexExpr({ line = line; col = col }, expr) ->
         w.WriteObject [
             "type", fun () -> w.WriteStr "IndexExpr"

@@ -42,9 +42,10 @@ type Expr =
     member this.Col  = this.Loc.col
 
 and IndexArg =
-    | Colon     of loc: SrcLoc
-    | Range     of loc: SrcLoc * start: Expr * end_: Expr
-    | IndexExpr of loc: SrcLoc * expr: Expr
+    | Colon       of loc: SrcLoc
+    | Range       of loc: SrcLoc * start: Expr * end_: Expr
+    | SteppedRange of loc: SrcLoc * start: Expr * step: Expr * end_: Expr
+    | IndexExpr   of loc: SrcLoc * expr: Expr
 
 type Stmt =
     | Assign           of loc: SrcLoc * name: string * expr: Expr

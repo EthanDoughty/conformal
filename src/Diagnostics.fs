@@ -121,9 +121,10 @@ let rec prettyExprIr (expr: Expr) : string =
 
 and prettyIndexArgIr (arg: IndexArg) : string =
     match arg with
-    | Colon _              -> ":"
-    | Ir.Range(_, s, e)    -> $"{prettyExprIr s}:{prettyExprIr e}"
-    | IndexExpr(_, e)      -> prettyExprIr e
+    | Colon _                    -> ":"
+    | Ir.Range(_, s, e)          -> $"{prettyExprIr s}:{prettyExprIr e}"
+    | Ir.SteppedRange(_, s, t, e) -> $"{prettyExprIr s}:{prettyExprIr t}:{prettyExprIr e}"
+    | IndexExpr(_, e)            -> prettyExprIr e
 
 // ---------------------------------------------------------------------------
 // Warning message builders
