@@ -464,7 +464,8 @@ let runPhase4Test () : int =
                 [ Ir.Assign(Ir.loc 2 0, "v",
                       Ir.Apply(Ir.loc 2 0, Ir.Var(Ir.loc 2 0, "zeros"),
                           [ Ir.IndexExpr(Ir.loc 2 0, Ir.Var(Ir.loc 2 0, "n"))
-                            Ir.IndexExpr(Ir.loc 2 0, Ir.Const(Ir.loc 2 0, 1.0)) ])) ])
+                            Ir.IndexExpr(Ir.loc 2 0, Ir.Const(Ir.loc 2 0, 1.0)) ])) ],
+                [])
             Ir.Assign(Ir.loc 5 0, "result",
                 Ir.Apply(Ir.loc 5 0, Ir.Var(Ir.loc 5 0, "makeVec"),
                     [ Ir.IndexExpr(Ir.loc 5 0, Ir.Const(Ir.loc 5 0, 5.0)) ]))

@@ -415,7 +415,7 @@ and private writeStmt (w: Writer) (stmt: Stmt) : unit =
             "targets", fun () -> w.WriteStringList targets
             "raw",     fun () -> w.WriteStr rawStr
         ]
-    | FunctionDef({ line = line; col = col }, name, parms, outputVars, body) ->
+    | FunctionDef({ line = line; col = col }, name, parms, outputVars, body, _argAnns) ->
         w.WriteObject [
             "type",        fun () -> w.WriteStr "FunctionDef"
             "line",        fun () -> w.WriteInt line

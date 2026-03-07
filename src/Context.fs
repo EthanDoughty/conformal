@@ -27,6 +27,7 @@ type FunctionSignature = {
     body:       Stmt list
     defLine:    int
     defCol:     int
+    argShapes:  Map<string, Shape>
 }
 
 /// Class metadata extracted from a classdef block.

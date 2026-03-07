@@ -69,6 +69,7 @@ type Stmt =
     | OpaqueStmt       of loc: SrcLoc * targets: string list * raw: string
     | FunctionDef      of loc: SrcLoc * name: string * parms: string list
                           * outputVars: string list * body: Stmt list
+                          * argAnnotations: (string * int option * int option) list
     | AssignMulti      of loc: SrcLoc * targets: string list * expr: Expr
 
     member this.Loc =
@@ -78,7 +79,7 @@ type Stmt =
         | FieldIndexAssign(l,_,_,_,_,_,_) | ExprStmt(l,_)
         | If(l,_,_,_) | IfChain(l,_,_,_) | While(l,_,_) | For(l,_,_,_)
         | Switch(l,_,_,_) | Try(l,_,_) | Break l | Continue l | Return l
-        | OpaqueStmt(l,_,_) | FunctionDef(l,_,_,_,_) | AssignMulti(l,_,_) -> l
+        | OpaqueStmt(l,_,_) | FunctionDef(l,_,_,_,_,_) | AssignMulti(l,_,_) -> l
 
     member this.Line = this.Loc.line
     member this.Col  = this.Loc.col

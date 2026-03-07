@@ -105,6 +105,7 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
 
     let tokens = Array.ofList tokenList
     let mutable pos = 0  // current token index
+    let mutable lastArgSpecs: (string * int option * int option) list = []
 
     // Token helpers
     member private _.Current() = tokens.[pos]
@@ -428,15 +429,18 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
         if this.Current().kind = TkNewline then this.Eat(TkNewline) |> ignore
         elif this.Current().kind = TkSemicolon then pos <- pos + 1
 
-        // Body
+        // Body — reset lastArgSpecs so ParseArgumentsBlock can populate it
+        lastArgSpecs <- []
         let body =
             if endlessFunctions then this.ParseBlock([| TkFunction |])
             else
                 let b = this.ParseBlock([| TkEnd |])
                 this.Eat(TkEnd) |> ignore
                 b
+        let argAnns = lastArgSpecs
+        lastArgSpecs <- []
 
-        FunctionDef(loc line col, name, Seq.toList parms, Seq.toList outputVars, body)
+        FunctionDef(loc line col, name, Seq.toList parms, Seq.toList outputVars, body, argAnns)
 
     // -------------------------------------------------------------------
     // Statements
@@ -476,7 +480,7 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
                           tokens.[pos + 2].kind = TkId &&
                           (let q = tokens.[pos + 2].value
                            q = "Input" || q = "Output" || q = "Repeating"))) ->
-                this.SkipArgumentsBlock()
+                this.ParseArgumentsBlock()
             | _ ->
                 let node = this.ParseSimpleStmt()
                 let curKind = this.Current().kind
@@ -637,31 +641,83 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
     // arguments block (R2019b+)
     // -------------------------------------------------------------------
 
-    /// Skip an `arguments ... end` block. These declare parameter validation/defaults
-    /// but do not affect runtime shape analysis. We skip the entire block, treating it
-    /// as a no-op statement. Handles `arguments`, `arguments (Input)`, `arguments (Output)`,
-    /// and `arguments (Repeating)` variants.
-    member private this.SkipArgumentsBlock() : Stmt =
+    /// Parse an `arguments ... end` block, extracting parameter size annotations.
+    /// For (Input) or plain blocks, extracts (paramName, rowDim, colDim) tuples from
+    /// size annotations like `x (1,:) double`. For (Output) or (Repeating) blocks,
+    /// skips without extracting. The extracted specs are stored in lastArgSpecs.
+    member private this.ParseArgumentsBlock() : Stmt =
         let argTok = tokens.[pos]
         pos <- pos + 1 // consume 'arguments'
-        // Skip optional qualifier: (Input), (Output), (Repeating)
+        // Check optional qualifier: (Input), (Output), (Repeating)
+        let mutable isOutput = false
         if this.Current().kind = TkLParen then
-            pos <- pos + 1
+            pos <- pos + 1 // consume '('
+            if this.Current().kind = TkId then
+                let q = this.Current().value
+                if q = "Output" || q = "Repeating" then isOutput <- true
             while this.Current().kind <> TkRParen && not (this.AtEnd()) do
                 pos <- pos + 1
             if this.Current().kind = TkRParen then pos <- pos + 1
-        // Skip to matching 'end', tracking block depth for any nested blocks
-        // (unlikely inside arguments, but safe)
-        let blockOpeners = set [TkIf; TkFor; TkParfor; TkWhile; TkSwitch; TkTry]
-        let mutable depth = 1
-        while depth > 0 && not (this.AtEnd()) do
-            let tk = this.Current()
-            if Set.contains tk.kind blockOpeners then depth <- depth + 1
-            elif tk.kind = TkEnd then depth <- depth - 1
-            if depth > 0 then pos <- pos + 1
-        if this.Current().kind = TkEnd then pos <- pos + 1 // consume the closing 'end'
-        // Skip trailing newline
+        // Skip leading newline after 'arguments' or 'arguments(...)'
         if not (this.AtEnd()) && this.Current().kind = TkNewline then pos <- pos + 1
+        if isOutput then
+            // For Output/Repeating blocks, just skip to 'end'
+            let mutable depth = 1
+            while depth > 0 && not (this.AtEnd()) do
+                let tk = this.Current()
+                if tk.kind = TkEnd then depth <- depth - 1
+                if depth > 0 then pos <- pos + 1
+            if this.Current().kind = TkEnd then pos <- pos + 1
+            if not (this.AtEnd()) && this.Current().kind = TkNewline then pos <- pos + 1
+        else
+            // Parse parameter lines until 'end'
+            let specs = ResizeArray<string * int option * int option>()
+            while not (this.AtEnd()) && this.Current().kind <> TkEnd do
+                // Skip blank lines
+                if this.Current().kind = TkNewline then
+                    pos <- pos + 1
+                elif this.Current().kind = TkId then
+                    let paramName = this.Current().value
+                    pos <- pos + 1
+                    // Check for name-value pair: opts.Color — skip entire line
+                    if not (this.AtEnd()) && this.Current().kind = TkDot then
+                        // Skip rest of line
+                        while not (this.AtEnd()) && this.Current().kind <> TkNewline && this.Current().kind <> TkEnd do
+                            pos <- pos + 1
+                        if not (this.AtEnd()) && this.Current().kind = TkNewline then pos <- pos + 1
+                    else
+                        // Check for size tuple: (rows, cols)
+                        if not (this.AtEnd()) && this.Current().kind = TkLParen then
+                            pos <- pos + 1 // consume '('
+                            // Parse first dimension: number or ':'
+                            let mutable dim1 : int option = None
+                            if this.Current().kind = TkNumber then
+                                dim1 <- Some (int (System.Double.Parse(this.Current().value)))
+                                pos <- pos + 1
+                            elif this.Current().kind = TkOp && this.Current().value = ":" then
+                                pos <- pos + 1
+                            // Consume comma
+                            if not (this.AtEnd()) && this.Current().kind = TkComma then pos <- pos + 1
+                            // Parse second dimension: number or ':'
+                            let mutable dim2 : int option = None
+                            if this.Current().kind = TkNumber then
+                                dim2 <- Some (int (System.Double.Parse(this.Current().value)))
+                                pos <- pos + 1
+                            elif this.Current().kind = TkOp && this.Current().value = ":" then
+                                pos <- pos + 1
+                            // Consume closing ')'
+                            if not (this.AtEnd()) && this.Current().kind = TkRParen then pos <- pos + 1
+                            specs.Add(paramName, dim1, dim2)
+                        // Skip rest of line (type name, validators, defaults)
+                        while not (this.AtEnd()) && this.Current().kind <> TkNewline && this.Current().kind <> TkEnd do
+                            pos <- pos + 1
+                        if not (this.AtEnd()) && this.Current().kind = TkNewline then pos <- pos + 1
+                else
+                    // Skip unexpected tokens (safety)
+                    pos <- pos + 1
+            if this.Current().kind = TkEnd then pos <- pos + 1
+            if not (this.AtEnd()) && this.Current().kind = TkNewline then pos <- pos + 1
+            lastArgSpecs <- Seq.toList specs
         ExprStmt(loc argTok.line argTok.col, Const(loc argTok.line argTok.col, 0.0))
 
     // -------------------------------------------------------------------

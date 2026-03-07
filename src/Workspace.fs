@@ -212,8 +212,18 @@ let buildIrFromSource (source: string) : (FunctionSignature * Map<string, Functi
             program.body
             |> List.choose (fun stmt ->
                 match stmt with
-                | Ir.FunctionDef({ line = line; col = col }, name, parms, outputVars, body) ->
-                    Some { name = name; parms = parms; outputVars = outputVars; body = body; defLine = line; defCol = col }
+                | Ir.FunctionDef({ line = line; col = col }, name, parms, outputVars, body, argAnns) ->
+                    let argShapes =
+                        argAnns |> List.map (fun (p, r, c) ->
+                            let shape =
+                                match r, c with
+                                | Some 1, Some 1 -> Shapes.Scalar
+                                | Some rv, Some cv -> Shapes.Matrix(Shapes.Concrete rv, Shapes.Concrete cv)
+                                | Some rv, None -> Shapes.Matrix(Shapes.Concrete rv, Shapes.Unknown)
+                                | None, Some cv -> Shapes.Matrix(Shapes.Unknown, Shapes.Concrete cv)
+                                | None, None -> Shapes.Matrix(Shapes.Unknown, Shapes.Unknown)
+                            (p, shape)) |> Map.ofList
+                    Some { name = name; parms = parms; outputVars = outputVars; body = body; defLine = line; defCol = col; argShapes = argShapes }
                 | _ -> None)
         match funcDefs with
         | [] -> None
@@ -229,7 +239,7 @@ let buildIrFromSource (source: string) : (FunctionSignature * Map<string, Functi
 let loadExternalFunction (sig_: ExternalSignature) : (FunctionSignature * Map<string, FunctionSignature>) option =
     match sig_.body with
     | Some body ->
-        let primary = { name = sig_.filename; parms = sig_.parmNames; outputVars = sig_.outputNames; body = body; defLine = 1; defCol = 0 }
+        let primary = { name = sig_.filename; parms = sig_.parmNames; outputVars = sig_.outputNames; body = body; defLine = 1; defCol = 0; argShapes = Map.empty }
         Some (primary, Map.empty)
     | None -> None
 #else
@@ -253,9 +263,19 @@ let loadExternalClassdef (sourcePath: string)
             program.body
             |> List.choose (fun stmt ->
                 match stmt with
-                | Ir.FunctionDef({ line = line; col = col }, name, parms, outputVars, body) ->
+                | Ir.FunctionDef({ line = line; col = col }, name, parms, outputVars, body, argAnns) ->
+                    let argShapes =
+                        argAnns |> List.map (fun (p, r, c) ->
+                            let shape =
+                                match r, c with
+                                | Some 1, Some 1 -> Shapes.Scalar
+                                | Some rv, Some cv -> Shapes.Matrix(Shapes.Concrete rv, Shapes.Concrete cv)
+                                | Some rv, None -> Shapes.Matrix(Shapes.Concrete rv, Shapes.Unknown)
+                                | None, Some cv -> Shapes.Matrix(Shapes.Unknown, Shapes.Concrete cv)
+                                | None, None -> Shapes.Matrix(Shapes.Unknown, Shapes.Unknown)
+                            (p, shape)) |> Map.ofList
                     Some (name, { name = name; parms = parms; outputVars = outputVars
-                                  body = body; defLine = line; defCol = col })
+                                  body = body; defLine = line; defCol = col; argShapes = argShapes })
                 | _ -> None)
             |> Map.ofList
         // Find the OpaqueStmt that encodes classdef metadata

@@ -30,9 +30,19 @@ let analyzeProgramIr
     // Pass 1: register function definitions
     for item in program.body do
         match item with
-        | FunctionDef({ line = line; col = col }, name, parms, outputVars, body) ->
+        | FunctionDef({ line = line; col = col }, name, parms, outputVars, body, argAnns) ->
+            let argShapes =
+                argAnns |> List.map (fun (p, r, c) ->
+                    let shape =
+                        match r, c with
+                        | Some 1, Some 1 -> Scalar
+                        | Some rv, Some cv -> Matrix(Concrete rv, Concrete cv)
+                        | Some rv, None -> Matrix(Concrete rv, Unknown)
+                        | None, Some cv -> Matrix(Unknown, Concrete cv)
+                        | None, None -> Matrix(Unknown, Unknown)
+                    (p, shape)) |> Map.ofList
             ctx.call.functionRegistry.[name] <-
-                { name = name; parms = parms; outputVars = outputVars; body = body; defLine = line; defCol = col }
+                { name = name; parms = parms; outputVars = outputVars; body = body; defLine = line; defCol = col; argShapes = argShapes }
         | _ -> ()
 
     // Pass 1b: scan for classdef metadata in OpaqueStmts, populate classRegistry
