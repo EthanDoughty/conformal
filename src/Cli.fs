@@ -285,7 +285,7 @@ let run (argv: string array) : int =
     let args = parseArgv argv
 
     if args.version then
-        printfn "Conformal 3.2.0"
+        printfn "Conformal 3.3.0"
         0
     elif args.help then
         printUsage ()
