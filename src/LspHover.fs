@@ -6,12 +6,11 @@ open Shapes
 open Context
 
 // ---------------------------------------------------------------------------
-// getHover: hover provider showing inferred shapes.
-// Port of lsp/hover.py get_hover().
+// Hover provider showing inferred shapes.
 // ---------------------------------------------------------------------------
 
-/// getHover: return hover information for identifier at (line, character).
-/// line and character are 0-based (LSP convention).
+/// Return hover information for identifier at (line, character).
+/// Line and character are 0-based (LSP convention).
 let getHover
     (env: Env.Env)
     (source: string)

@@ -9,11 +9,10 @@ open SharedTypes
 
 // ---------------------------------------------------------------------------
 // Binary operation shape inference.
-// Port of analysis/eval_binop.py
 // ---------------------------------------------------------------------------
 
-/// evalBinopIr: evaluate a binary operation and infer result shape.
-/// getDivisorInterval: callback to compute interval of divisor expression (for div-by-zero check).
+/// Evaluate a binary operation and infer result shape.
+/// getDivisorInterval is a callback to compute the interval of the divisor expression (for div-by-zero check).
 let evalBinopIr
     (op: string)
     (left: Shape)

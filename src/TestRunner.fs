@@ -28,7 +28,7 @@ let private expectFpNoWarningRe = Regex(@"%\s*EXPECT_FIXPOINT_NO_WARNING:\s*(W_\
 let private normalizeShapeStr (s: string) : string =
     Regex.Replace(s.Trim(), @"\s+", "")
 
-/// Convert a character offset in src to a 1-based line number.
+// Convert a character offset in src to a 1-based line number.
 let private lineOfOffset (src: string) (offset: int) : int =
     let mutable count = 1
     for i in 0 .. (min offset (src.Length - 1)) - 1 do
@@ -141,8 +141,7 @@ let private parseExpectations (src: string) (fixpoint: bool) : Expectations =
 // Single test runner
 // ---------------------------------------------------------------------------
 
-/// runTest: analyze one .m file, check assertions.
-/// Returns (passed: bool).
+// Analyze one .m file and check assertions. Returns true if all assertions pass.
 let private runTest (path: string) (fixpoint: bool) (forceCoder: bool) (quiet: bool) : bool =
     if not quiet then
         printfn "===== Analysis for %s" path
@@ -319,7 +318,7 @@ let private runTest (path: string) (fixpoint: bool) (forceCoder: bool) (quiet: b
 // Discover test files
 // ---------------------------------------------------------------------------
 
-/// Discover all .m test files under the given root directory, sorted.
+// Discover all .m test files under the given root directory, sorted.
 let private discoverTestFiles (rootDir: string) : string list =
     if not (Directory.Exists rootDir) then []
     else
@@ -332,7 +331,7 @@ let private discoverTestFiles (rootDir: string) : string list =
 // Main entry point
 // ---------------------------------------------------------------------------
 
-/// run: run all tests, return exit code (0 = all pass, 1 = any fail).
+/// Run all tests. Returns exit code: 0 if all pass, 1 if any fail.
 let run (strict: bool) (fixpoint: bool) (coder: bool) (quiet: bool) : int =
     // Discover tests relative to cwd (project root when running via `dotnet run`)
     let testsDir =

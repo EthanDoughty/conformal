@@ -11,8 +11,7 @@ open Intervals
 open SharedTypes
 
 // ---------------------------------------------------------------------------
-// EvalBuiltins: builtin function shape inference via dispatch table.
-// Port of analysis/eval_builtins.py
+// Builtin function shape inference via dispatch table.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -105,7 +104,7 @@ let unwrapArg (arg: IndexArg) : Expr option =
 // Handler helpers
 // ---------------------------------------------------------------------------
 
-/// evalArgShape: evaluate an IndexArg to a Shape.
+// Evaluate an IndexArg to a Shape.
 let private evalArgShape
     (arg: IndexArg)
     (env: Env)
@@ -118,7 +117,7 @@ let private evalArgShape
     | _ -> UnknownShape
 
 
-/// checkNegativeDimArg: check a dimension argument for negative value, emit warning.
+// Check a dimension argument for negative value, emit warning if so.
 let private checkNegativeDimArg
     (arg: Expr)
     (env: Env)
@@ -1031,7 +1030,7 @@ let private handleHorzcatVertcat
 // Batch 6b: Fixed-dimension robotics/CV transform handlers
 // ---------------------------------------------------------------------------
 
-/// Functions with fixed output dimensions regardless of input.
+// Fixed output dimensions regardless of input.
 let private FIXED_DIM_BUILTINS : Map<string, int * int> =
     Map.ofList [
         "axang2rotm", (3, 3); "tform2rotm", (3, 3)
@@ -1048,8 +1047,8 @@ let private FIXED_DIM_BUILTINS : Map<string, int * int> =
 // Batch 6c: Random number generator handlers
 // ---------------------------------------------------------------------------
 
-/// Distribution parameter count for each random generator.
-/// Remaining args after skipping these are treated as size dimensions.
+// Distribution parameter count for each random generator.
+// Remaining args after skipping these are treated as size dimensions.
 let private RANDOM_GENERATOR_PARAMS : Map<string, int> =
     Map.ofList [
         "normrnd", 2; "exprnd", 1; "unifrnd", 2; "poissrnd", 1
@@ -1100,7 +1099,7 @@ let private handleRandomGenerator
 // Batch 6d: Complex handler functions
 // ---------------------------------------------------------------------------
 
-/// cov/corrcoef: [n x p] -> [p x p]
+// [n x p] -> [p x p]
 let private handleCovCorrcoef
     (args: IndexArg list)
     (env: Env)
@@ -1117,7 +1116,7 @@ let private handleCovCorrcoef
     else None
 
 
-/// rot90: [m x n] -> [n x m]  (same as transpose)
+// [m x n] -> [n x m]
 let private handleRot90
     (args: IndexArg list)
     (env: Env)
@@ -1133,7 +1132,7 @@ let private handleRot90
     else None
 
 
-/// conv2: 2-arg full convolution [m x n] * [p x q] -> [m+p-1 x n+q-1]
+// 2-arg full convolution: [m x n] * [p x q] -> [m+p-1 x n+q-1]
 let private handleConv2
     (args: IndexArg list)
     (env: Env)
@@ -1156,7 +1155,7 @@ let private handleConv2
         Some UnknownShape
 
 
-/// num2cell: [m x n] -> cell[m x n]
+// [m x n] -> cell[m x n]
 let private handleNum2cell
     (args: IndexArg list)
     (env: Env)
@@ -1173,7 +1172,7 @@ let private handleNum2cell
     else None
 
 
-/// jacobian: 2-arg [m x 1] f, [n x 1] v -> [m x n]
+// 2-arg jacobian: [m x 1] f, [n x 1] v -> [m x n]
 let private handleJacobian
     (args: IndexArg list)
     (env: Env)
@@ -1219,7 +1218,7 @@ let private evalFirstArgShape
 // Control System Toolbox helpers (defined here to use evalFirstArgShape above)
 // ---------------------------------------------------------------------------
 
-/// Extract (n, m) from A(n×n) and B(n×m) -- shared by lqr/dlqr/place/acker/care/dare/ctrb
+// Extract (n, m) from A(n×n) and B(n×m) -- shared by lqr/dlqr/place/acker/care/dare/ctrb
 let private extractStateFeedbackDims
     (args: IndexArg list)
     (env: Env)
@@ -1239,7 +1238,7 @@ let private extractStateFeedbackDims
         | _ -> None
 
 
-/// lqr/dlqr/place/acker single-return: K = matrix[m x n]
+// Single-return lqr/dlqr/place/acker: K = matrix[m x n]
 let private handleGainMatrix
     (args: IndexArg list)
     (env: Env)
@@ -1252,7 +1251,7 @@ let private handleGainMatrix
     | None -> Some UnknownShape
 
 
-/// lyap/dlyap single-return: X = matrix[n x n] (passthrough square dim from first arg)
+// Single-return lyap/dlyap: X = matrix[n x n] (square dim from first arg)
 let private handleSquarePassthrough
     (args: IndexArg list)
     (env: Env)
@@ -1267,7 +1266,7 @@ let private handleSquarePassthrough
     | None -> Some UnknownShape
 
 
-/// care/dare single-return: X = matrix[n x n]
+// Single-return care/dare: X = matrix[n x n]
 let private handleCareSquare
     (args: IndexArg list)
     (env: Env)
@@ -1280,7 +1279,7 @@ let private handleCareSquare
     | None -> Some UnknownShape
 
 
-/// obsv(A, C): A n×n, C p×n -- returns matrix[n*p x n]
+// obsv(A, C): A n×n, C p×n -- returns matrix[n*p x n]
 let private handleObsv
     (args: IndexArg list)
     (env: Env)
@@ -1300,7 +1299,7 @@ let private handleObsv
         | _ -> Some UnknownShape
 
 
-/// ctrb(A, B): A n×n, B n×m -- returns matrix[n x n*m]
+// ctrb(A, B): A n×n, B n×m -- returns matrix[n x n*m]
 let private handleCtrb
     (args: IndexArg list)
     (env: Env)
@@ -1500,7 +1499,7 @@ let private handleMultiAny (numTargets: int) : Shape list option =
     Some (List.replicate numTargets UnknownShape)
 
 
-/// lqr/dlqr multi-return [K, S, e]: K=matrix[m×n], S=matrix[n×n], e=matrix[n×1]
+// Multi-return lqr/dlqr [K, S, e]: K=matrix[m×n], S=matrix[n×n], e=matrix[n×1]
 let private handleMultiLqr
     (args: IndexArg list)
     (env: Env)
@@ -1516,7 +1515,7 @@ let private handleMultiLqr
         | None -> Some [ UnknownShape; UnknownShape; UnknownShape ]
 
 
-/// care/dare multi-return [X, L, G]: X=matrix[n×n], L=matrix[n×1], G=matrix[m×n]
+// Multi-return care/dare [X, L, G]: X=matrix[n×n], L=matrix[n×1], G=matrix[m×n]
 let private handleMultiCare
     (args: IndexArg list)
     (env: Env)
@@ -1532,7 +1531,7 @@ let private handleMultiCare
         | None -> Some [ UnknownShape; UnknownShape; UnknownShape ]
 
 
-/// butter/cheby1/cheby2/ellip/besself multi-return [b, a]: both matrix[1 x (n+1)]
+// Multi-return butter/cheby1/cheby2/ellip/besself [b, a]: both matrix[1 x (n+1)]
 let private handleMultiFilterDesign
     (args: IndexArg list)
     (env: Env)
@@ -1553,7 +1552,7 @@ let private handleMultiFilterDesign
         Some [ Matrix(Concrete 1, outLen); Matrix(Concrete 1, outLen) ]
 
 
-/// dcm2angle multi-return [r1, r2, r3]: all Scalar
+// Multi-return dcm2angle [r1, r2, r3]: all Scalar
 let private handleMultiDcm2angle
     (args: IndexArg list)
     (env: Env)
@@ -1575,7 +1574,7 @@ let private handleMultiDcm2angle
 // Batch 6e: Multi-return handlers
 // ---------------------------------------------------------------------------
 
-/// pca: input X [n x p] -> coeff [p x p], score [n x p], latent [p x 1]
+// pca: X [n x p] -> coeff [p x p], score [n x p], latent [p x 1]
 let private handleMultiPca
     (args: IndexArg list)
     (env: Env)
@@ -1594,7 +1593,7 @@ let private handleMultiPca
             Some results.[..numTargets - 1]
 
 
-/// ind2sub: all outputs same shape as args.[1] (the linear indices)
+// ind2sub: all outputs same shape as args.[1] (the linear indices)
 let private handleMultiInd2sub
     (args: IndexArg list)
     (env: Env)
@@ -1612,7 +1611,7 @@ let private handleMultiInd2sub
         Some (List.replicate numTargets indShape)
 
 
-/// linprog: x = same shape as f (args.[0]), fval = scalar, exitflag = scalar
+// linprog: x = same shape as f (args.[0]), fval = scalar, exitflag = scalar
 let private handleMultiLinprog
     (args: IndexArg list)
     (env: Env)
@@ -1634,7 +1633,7 @@ let private handleMultiLinprog
         Some results.[..numTargets - 1]
 
 
-/// quadprog: x = [n x 1] where n = cols of H (args.[0]), fval = scalar, exitflag = scalar
+// quadprog: x = [n x 1] where n = cols of H (args.[0]), fval = scalar, exitflag = scalar
 let private handleMultiQuadprog
     (args: IndexArg list)
     (env: Env)
@@ -1659,7 +1658,7 @@ let private handleMultiQuadprog
         Some results.[..numTargets - 1]
 
 
-/// fmincon: x = same shape as x0 (args.[1]), fval = scalar, exitflag = scalar
+// fmincon: x = same shape as x0 (args.[1]), fval = scalar, exitflag = scalar
 let private handleMultiFmincon
     (args: IndexArg list)
     (env: Env)
@@ -1680,7 +1679,7 @@ let private handleMultiFmincon
         Some results.[..numTargets - 1]
 
 
-/// fsolve: x = same shape as x0 (args.[1]), fval = same shape as x0
+// fsolve: x = same shape as x0 (args.[1]), fval = same shape as x0
 let private handleMultiFsolve
     (args: IndexArg list)
     (env: Env)
@@ -1705,8 +1704,7 @@ let private handleMultiFsolve
 // cellfun / arrayfun helpers
 // ---------------------------------------------------------------------------
 
-/// detectUniformOutput: scan name-value pairs starting at index 2 for
-/// 'UniformOutput', false (or 0).  Default is true.
+// Scan name-value pairs starting at index 2 for 'UniformOutput', false (or 0). Default is true.
 let private detectUniformOutput (args: IndexArg list) : bool =
     // Skip the first two positional args (func, cellArray); scan remaining pairs.
     let rec scan (remaining: IndexArg list) (result: bool) =
@@ -1725,12 +1723,10 @@ let private detectUniformOutput (args: IndexArg list) : bool =
     scan nvPairs true
 
 
-/// resolveHandleOutputShape: given a FunctionHandle shape and element shapes,
-/// dispatch through the full evaluation pipeline to get the output shape.
-/// For named handles, synthesises an Apply call with temp-env variables so all
-/// existing dispatch logic (builtins, user funcs, external funcs) is reused.
-/// For lambdas, binds params to elementShapes and evaluates the body.
-/// Returns UnknownShape for opaque handles or arity mismatches.
+// Dispatch a FunctionHandle through the full pipeline to get the output shape.
+// For named handles, synthesises an Apply call so all existing dispatch logic is reused.
+// For lambdas, binds params to elementShapes and evaluates the body.
+// Returns UnknownShape for opaque handles or arity mismatches.
 let private resolveHandleOutputShape
     (handleShape: Shape)
     (elementShapes: Shape list)
@@ -1769,7 +1765,7 @@ let private resolveHandleOutputShape
     | _ -> UnknownShape
 
 
-/// handleCellfun: single-return cellfun handler.
+// Single-return cellfun handler.
 let private handleCellfun
     (line: int)
     (args: IndexArg list)
@@ -1824,7 +1820,7 @@ let private handleCellfun
             Some (Cell(cellRows, cellCols, None))
 
 
-/// handleArrayfun: single-return arrayfun handler.
+// Single-return arrayfun handler.
 let private handleArrayfun
     (line: int)
     (args: IndexArg list)
@@ -1852,8 +1848,7 @@ let private handleArrayfun
             Some (Cell(arrayRows, arrayCols, None))
 
 
-/// handleMultiCellfun: multi-return cellfun handler.
-/// Each output target gets the appropriate shape.
+// Multi-return cellfun handler. Each output target gets the appropriate shape.
 let private handleMultiCellfun
     (line: int)
     (args: IndexArg list)
@@ -1869,7 +1864,7 @@ let private handleMultiCellfun
     Some (List.replicate numTargets singleShape)
 
 
-/// handleMultiArrayfun: multi-return arrayfun handler.
+// Multi-return arrayfun handler.
 let private handleMultiArrayfun
     (line: int)
     (args: IndexArg list)
@@ -1906,7 +1901,7 @@ let MULTI_SUPPORTED_FORMS : Map<string, string> =
 // Main dispatch functions
 // ---------------------------------------------------------------------------
 
-/// evalBuiltinCall: dispatch a builtin call, returning inferred shape.
+/// Dispatch a builtin call and return the inferred shape.
 /// evalExprFn and getIntervalFn break the circular dependency with EvalExpr.
 let evalBuiltinCall
     (fname: string)
@@ -2050,7 +2045,7 @@ let evalBuiltinCall
             UnknownShape
 
 
-/// evalMultiBuiltinCall: dispatch a multi-return builtin call, returning shape list.
+/// Dispatch a multi-return builtin call and return the shape list.
 let rec evalMultiBuiltinCall
     (fname: string)
     (line: int)

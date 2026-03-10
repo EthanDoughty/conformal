@@ -3,11 +3,11 @@ module AnalysisCore
 open Shapes
 
 // ---------------------------------------------------------------------------
-// Shape compatibility helpers — port of analysis/analysis_core.py
+// Shape compatibility helpers.
 // ---------------------------------------------------------------------------
 
-/// shapesDefinitelyIncompatible: checks if two shapes are provably incompatible
-/// for variable reassignment. Only matrix vs matrix dimension conflicts matter.
+/// Check if two shapes are provably incompatible for variable reassignment.
+/// Only matrix vs matrix dimension conflicts matter.
 let shapesDefinitelyIncompatible (oldShape: Shape) (newShape: Shape) : bool =
     match oldShape, newShape with
     | Bottom, _ | _, Bottom -> false
@@ -17,7 +17,7 @@ let shapesDefinitelyIncompatible (oldShape: Shape) (newShape: Shape) : bool =
     | _ -> false
 
 
-/// elementwiseResultShape: compute result shape for elementwise operations (+,-,.*,./).
+/// Compute result shape for elementwise operations (+,-,.*,./).
 let elementwiseResultShape (left: Shape) (right: Shape) : Shape =
     match left, right with
     | UnknownShape, _ | _, UnknownShape -> UnknownShape
@@ -28,7 +28,7 @@ let elementwiseResultShape (left: Shape) (right: Shape) : Shape =
     | _ -> UnknownShape
 
 
-/// elementwiseDefinitelyMismatch: check if elementwise op has provable dimension mismatch.
+/// Check if an elementwise op has a provable dimension mismatch.
 let elementwiseDefinitelyMismatch (left: Shape) (right: Shape) : bool =
     match left, right with
     | Matrix(r1, c1), Matrix(r2, c2) ->
@@ -36,7 +36,7 @@ let elementwiseDefinitelyMismatch (left: Shape) (right: Shape) : bool =
     | _ -> false
 
 
-/// matmulResultShape: compute result shape for matrix multiplication.
+/// Compute result shape for matrix multiplication.
 let matmulResultShape (left: Shape) (right: Shape) : Shape =
     match left, right with
     | Scalar, Scalar -> Scalar
@@ -48,7 +48,7 @@ let matmulResultShape (left: Shape) (right: Shape) : Shape =
     | _ -> UnknownShape
 
 
-/// matmulDefinitelyMismatch: check if matrix multiplication has provable inner dimension mismatch.
+/// Check if matrix multiplication has a provable inner dimension mismatch.
 let matmulDefinitelyMismatch (left: Shape) (right: Shape) : bool =
     match left, right with
     | Matrix(_, c1), Matrix(r2, _) -> dimsDefinitelyConflict c1 r2

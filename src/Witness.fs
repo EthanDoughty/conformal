@@ -7,12 +7,11 @@ open SharedTypes
 
 // ---------------------------------------------------------------------------
 // Witness generation for dimension conflict sites.
-// Port of analysis/witness.py
 // ---------------------------------------------------------------------------
 
 // ConflictSite type is defined in SharedTypes.fs
 
-/// Witness: concrete proof that a warning is a real bug.
+/// Concrete proof that a warning is a real bug.
 type Witness = {
     assignments:    (string * int) list
     dimAConcrete:   int
@@ -22,7 +21,7 @@ type Witness = {
 }
 
 
-/// evalDim: evaluate a Dim under concrete bindings.
+// Evaluate a Dim under concrete bindings.
 let private evalDim (d: Dim) (bindings: Map<string, int>) : int option =
     match d with
     | Concrete n -> Some n
@@ -33,14 +32,14 @@ let private evalDim (d: Dim) (bindings: Map<string, int>) : int option =
         SymDim.evaluate bindings s
 
 
-/// constraintsSatisfied: check that snapshot equality constraints hold under bindings.
+// Check that snapshot equality constraints hold under bindings.
 let private constraintsSatisfied (site: ConflictSite) (bindings: Map<string, int>) : bool =
     // For now, basic check: constraints are string pairs (dimStr1, dimStr2).
     // We skip constraint validation here and just check dims directly.
     true  // Conservative: don't reject on unsatisfied constraints
 
 
-/// collectRelevantVars: collect variable names from dim_a, dim_b.
+// Collect variable names from dim_a, dim_b.
 let private collectRelevantVars (site: ConflictSite) : Set<string> =
     let getVars (d: Dim) : Set<string> =
         match d with
@@ -50,7 +49,7 @@ let private collectRelevantVars (site: ConflictSite) : Set<string> =
     Set.union (getVars site.dimA) (getVars site.dimB)
 
 
-/// negateOp / flipOp for path bound extraction.
+// Operator inversion helpers for path bound extraction.
 let private negateOp (op: string) =
     match op with
     | ">"  -> "<="
@@ -107,7 +106,7 @@ let private pathIntervalBounds (pathSnapshot: (string * bool * int) list) (var: 
     (lo, hi)
 
 
-/// findSatisfyingAssignment: enumerate assignments and verify witness.
+// Enumerate variable assignments and verify a concrete witness exists.
 let private findSatisfyingAssignment
     (site: ConflictSite)
     (relevantVars: Set<string>)
@@ -180,7 +179,7 @@ let private findSatisfyingAssignment
     enumerate freeVarsList candidates Map.empty
 
 
-/// attemptWitness: try to construct a concrete witness for a ConflictSite.
+/// Try to construct a concrete witness for a ConflictSite.
 let attemptWitness (site: ConflictSite) : Witness option =
     let dimA = site.dimA
     let dimB = site.dimB
@@ -246,7 +245,7 @@ let attemptWitness (site: ConflictSite) : Witness option =
             findSatisfyingAssignment site relevantVars scalarBindings
 
 
-/// generateWitnesses: batch-process conflict sites and return witnesses keyed by (line, code).
+/// Batch-process conflict sites and return witnesses keyed by (line, code).
 let generateWitnesses (conflictSites: ConflictSite list) : Map<int * WarningCode, Witness> =
     let mutable result = Map.empty
     for site in conflictSites do

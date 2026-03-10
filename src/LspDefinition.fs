@@ -5,12 +5,12 @@ open Ionide.LanguageServerProtocol.Types
 open Context
 
 // ---------------------------------------------------------------------------
-// getDefinition: go-to-definition provider for user-defined functions.
+// Go-to-definition provider for user-defined functions.
 // Returns Location option for Ctrl+Click / F12 navigation.
 // ---------------------------------------------------------------------------
 
-/// getDefinition: return definition location for identifier at (line, character).
-/// line and character are 0-based (LSP convention).
+/// Return definition location for identifier at (line, character).
+/// Line and character are 0-based (LSP convention).
 let getDefinition
     (source: string)
     (line: int)

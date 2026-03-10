@@ -14,8 +14,7 @@ open EvalExpr
 open EvalBuiltins
 
 // ---------------------------------------------------------------------------
-// StmtFuncAnalysis: statement dispatch + function/lambda call analysis.
-// Combined port of analysis/stmt_analysis.py + analysis/func_analysis.py.
+// Statement dispatch + function/lambda call analysis.
 // Uses `let rec ... and ...` for mutual recursion.
 // ---------------------------------------------------------------------------
 
@@ -55,7 +54,7 @@ type private AccumPattern = {
 }
 
 
-/// exprMentionsVar: check if an expression mentions a specific variable.
+// Check if an expression mentions a specific variable.
 let rec private exprMentionsVar (expr: Expr) (varName: string) : bool =
     match expr with
     | Var(_, n)        -> n = varName
@@ -80,7 +79,7 @@ let rec private exprMentionsVar (expr: Expr) (varName: string) : bool =
             match arg with IndexExpr(_, e) -> exprMentionsVar e varName | _ -> false)
 
 
-/// exprMentionsFieldAccess: check if an expression mentions a specific struct field access.
+// Check if an expression mentions a specific struct field access.
 let rec private exprMentionsFieldAccess (expr: Expr) (baseName: string) (fieldName: string) : bool =
     match expr with
     | FieldAccess(_, Var(_, bn), fn) -> bn = baseName && fn = fieldName
@@ -107,7 +106,7 @@ let rec private exprMentionsFieldAccess (expr: Expr) (baseName: string) (fieldNa
             match arg with IndexExpr(_, e) -> exprMentionsFieldAccess e baseName fieldName | _ -> false)
 
 
-/// detectAccumulation: detect accumulation patterns in a loop body.
+// Detect accumulation patterns in a loop body.
 let private detectAccumulation (loopVar: string) (body: Stmt list) : AccumPattern list =
     let candidates = System.Collections.Generic.Dictionary<string, AccumPattern option>()
 
@@ -184,14 +183,14 @@ let private detectAccumulation (loopVar: string) (body: Stmt list) : AccumPatter
     |> Seq.toList
 
 
-/// getStructField: extract the shape of a named field from a Struct shape. Returns Bottom if missing.
+// Extract the shape of a named field from a Struct shape. Returns Bottom if missing.
 let private getStructField (structShape: Shape) (fieldName: string) : Shape =
     match structShape with
     | Struct(fields, _) ->
         fields |> List.tryFind (fun (fn, _) -> fn = fieldName) |> Option.map snd |> Option.defaultValue Bottom
     | _ -> Bottom
 
-/// setStructField: return a new Struct shape with a specific field updated.
+// Return a new Struct shape with a specific field updated.
 let private setStructField (structShape: Shape) (fieldName: string) (fieldShape: Shape) : Shape =
     match structShape with
     | Struct(fields, isOpen) ->
@@ -201,8 +200,8 @@ let private setStructField (structShape: Shape) (fieldName: string) (fieldShape:
     | _ -> structShape  // Can't update field on non-struct; return unchanged
 
 
-/// refineAccumulation: refine accumulation variable shape using algebraic computation.
-/// Handles plain variables and dot-separated struct fields (baseName.fieldName).
+// Refine accumulation variable shape using algebraic computation.
+// Handles plain variables and dot-separated struct fields (baseName.fieldName).
 let private refineAccumulation
     (accum: AccumPattern)
     (iterCount: Dim)
@@ -291,7 +290,7 @@ let private refineAccumulation
 // Branch join helper
 // ---------------------------------------------------------------------------
 
-/// joinBranchResults: join analyzed branches, propagate if all returned.
+// Join analyzed branches; propagate if all returned.
 let private joinBranchResults
     (env: Env)
     (ctx: AnalysisContext)
@@ -417,10 +416,8 @@ let rec private updateStructField
 // External classdef lazy-loading helper
 // ---------------------------------------------------------------------------
 
-/// tryLoadExternalClassdef: check externalClassdefs for fname, parse on first access,
-/// populate classRegistry + functionRegistry, and return the struct shape.
-/// Returns Some shape on success, None if not found or parse failed.
-/// Only active in the native (.NET) path; always returns None under Fable.
+// Check externalClassdefs for fname, parse on first access, populate classRegistry +
+// functionRegistry, and return the class info. .NET-only; always returns None under Fable.
 let private tryLoadExternalClassdef
     (fname: string)
     (ctx: AnalysisContext)
@@ -459,8 +456,8 @@ type CallResolution =
     | ExternalClassdefCall of ClassInfo
     | UnknownCall
 
-/// Bundled call-site parameters shared by analyzeFunctionCall, analyzeNestedFunctionCall,
-/// and analyzeExternalFunctionCall. Env, warnings, and ctx stay separate.
+// Bundled call-site parameters shared by analyzeFunctionCall, analyzeNestedFunctionCall,
+// and analyzeExternalFunctionCall. Env, warnings, and ctx stay separate.
 type CallConfig = {
     fname:      string
     args:       IndexArg list
@@ -472,7 +469,7 @@ type CallConfig = {
 // Wired eval functions (break circular dependency EvalExpr <-> StmtFuncAnalysis)
 // ---------------------------------------------------------------------------
 
-/// wiredEvalExpr: evalExprIr wired with real builtin dispatch and function call stubs.
+/// evalExprIr wired with real builtin dispatch.
 let rec wiredEvalExpr
     (expr: Expr)
     (env: Env)
@@ -481,10 +478,10 @@ let rec wiredEvalExpr
     : Shape =
     evalExprIr expr env warnings ctx None wiredBuiltinDispatch
 
-/// resolveCall: determine dispatch target for a function name.
-/// Priority: same-file function > nested function > private > external function
-///         > builtin > class constructor > external classdef > unknown.
-/// Note: workspace files shadow builtins (MATLAB semantics).
+// Determine dispatch target for a function name.
+// Priority: same-file function > nested function > private > external function
+//           > builtin > class constructor > external classdef > unknown.
+// Workspace files shadow builtins (MATLAB semantics).
 and private resolveCall (fname: string) (ctx: AnalysisContext) : CallResolution =
     if ctx.call.functionRegistry.ContainsKey(fname) then
         UserFunctionCall(ctx.call.functionRegistry.[fname])
@@ -502,9 +499,8 @@ and private resolveCall (fname: string) (ctx: AnalysisContext) : CallResolution 
         | Some classInfo -> ExternalClassdefCall(classInfo)
         | None -> UnknownCall
 
-/// makeClassConstructorShape: build Struct shape from a class constructor call.
-/// If the class has a user-defined constructor in functionRegistry, analyze it
-/// and merge declared properties with analyzed fields.
+// Build Struct shape from a class constructor call. If the class has a user-defined
+// constructor in functionRegistry, analyze it and merge declared properties with analyzed fields.
 and private makeClassConstructorShape
     (cc: CallConfig) (classInfo: ClassInfo) (env: Env)
     (warnings: ResizeArray<Diagnostic>) (ctx: AnalysisContext)
@@ -527,18 +523,18 @@ and private makeClassConstructorShape
         let allFields = classInfo.properties |> List.map (fun p -> (p, UnknownShape)) |> List.sortBy fst
         Struct(allFields, false)
 
-/// Extract the target dimension from size(argShape, dimIdx).
+// Extract the target dimension from size(argShape, dimIdx).
 and private resolveSizeDim (argShape: Shape) (dimIdx: Dim) : Dim option =
     match argShape, dimIdx with
     | Matrix(rowDim, _), Concrete 1 -> Some rowDim
     | Matrix(_, colDim), Concrete 2 -> Some colDim
     | _ -> None
 
-/// Apply size() DimEquiv aliasing for targetName linked to source dimension dim.
-/// Unions targetName with dim in DimEquiv. For Concrete dims, also calls setConcrete.
-/// For Symbolic dims, adds to dimAliases.
-/// When applyNow=true, immediately sets valueRanges and calls bridgeToDimEquiv for Concrete.
-/// Returns Some(exact interval) for Concrete dims, None otherwise.
+// Apply size() DimEquiv aliasing for targetName linked to source dimension dim.
+// Unions targetName with dim in DimEquiv. For Concrete dims, also calls setConcrete.
+// For Symbolic dims, adds to dimAliases.
+// When applyNow=true, immediately sets valueRanges and calls bridgeToDimEquiv for Concrete.
+// Returns Some(exact interval) for Concrete dims, None otherwise.
 and private applySizeAlias
     (ctx: AnalysisContext) (env: Env) (targetName: string) (dim: Dim) (applyNow: bool)
     : Interval option =

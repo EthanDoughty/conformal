@@ -9,10 +9,9 @@ open StmtFuncAnalysis
 
 // ---------------------------------------------------------------------------
 // Analysis entry point.
-// Port of analysis/__init__.py  analyze_program_ir().
 // ---------------------------------------------------------------------------
 
-/// analyzeProgramIr: analyze a complete MATLAB program for shape consistency.
+/// Analyze a complete MATLAB program for shape consistency.
 ///
 /// Two-pass analysis:
 ///   Pass 1 - register all FunctionDef statements into ctx.call.functionRegistry

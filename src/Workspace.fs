@@ -9,7 +9,6 @@ open Context
 
 // ---------------------------------------------------------------------------
 // Workspace scanning for multi-file MATLAB projects.
-// Port of analysis/workspace.py
 // ---------------------------------------------------------------------------
 
 // Regex to extract first function signature from MATLAB source.
@@ -24,7 +23,7 @@ let private funcSigRegex =
     Regex(funcSigPattern, RegexOptions.Multiline)
 
 
-/// extractFunctionSignature: extract the first function signature from MATLAB source.
+/// Extract the first function signature from MATLAB source.
 /// Returns (funcName, paramCount, returnCount) or None if no function found.
 let extractFunctionSignature (source: string) : (string * int * int) option =
     let m = funcSigRegex.Match(source)
@@ -62,16 +61,13 @@ let extractFunctionSignature (source: string) : (string * int * int) option =
 
 
 #if !FABLE_COMPILER
-/// Regex to detect classdef files: matches a line starting with 'classdef'
-/// (after optional whitespace), ignoring commented-out occurrences.
+// Matches a line starting with 'classdef' (after optional whitespace), ignoring comments.
 let private classdefRegex =
     Regex(@"^\s*classdef\s+", RegexOptions.Multiline)
 
-/// scanWorkspace: scan a directory for .m files and extract function signatures.
-/// Returns a tuple: (externalFunctions map, externalClassdefs map).
-/// externalFunctions: Maps function name -> ExternalSignature for regular function files.
-/// externalClassdefs: Maps class name -> source file path for classdef files.
-/// maxDepth: how many levels of subdirectories to descend (0 = flat, matching old behavior).
+/// Scan a directory for .m files and extract function signatures.
+/// Returns (externalFunctions map, externalClassdefs map).
+/// maxDepth: levels of subdirectories to descend (0 = flat).
 /// First-found wins on name collisions (shallower directory takes priority).
 /// Hidden directories (starting with '.') and 'private/' are skipped at depth > 0.
 let scanWorkspace (dirPath: string) (excludeFile: string) (maxDepth: int)
@@ -128,7 +124,7 @@ let scanWorkspace (dirPath: string) (excludeFile: string) (maxDepth: int)
         funcMap, classMap
 
 
-/// scanPrivateDir: scan <dirPath>/private/*.m and return a map of ExternalSignature.
+/// Scan <dirPath>/private/*.m and return a map of ExternalSignature.
 /// Returns Map.empty if the private/ directory does not exist.
 /// Private functions are visible only to callers in the parent directory (MATLAB convention).
 let scanPrivateDir (dirPath: string) : Map<string, ExternalSignature> =
@@ -166,13 +162,13 @@ let private parsedCache =
     System.Collections.Generic.Dictionary<string, string * (FunctionSignature * Map<string, FunctionSignature>)>()
 
 
-/// clearParseCache: clear the parsed external file cache.
+/// Clear the parsed external file cache. Callers must invoke between test runs to avoid stale parses.
 let clearParseCache () =
     parsedCache.Clear()
 
 
 #if !FABLE_COMPILER
-/// contentHash: compute MD5 hash of a string.
+// Compute MD5 hash of a string.
 let private contentHash (content: string) : string =
     use md5 = System.Security.Cryptography.MD5.Create()
     let bytes = System.Text.Encoding.UTF8.GetBytes(content)
@@ -180,8 +176,7 @@ let private contentHash (content: string) : string =
     hash |> Array.map (fun b -> b.ToString("x2")) |> String.concat ""
 
 
-/// loadExternalFunctionFromPath: load and parse an external .m file given its full path.
-/// This is the real implementation; called from analysis when we have the path.
+// .NET-only path (Fable uses pre-parsed IR). Load and parse an external .m file.
 let loadExternalFunctionFromPath
     (sourcePath: string)
     (parseAndBuildIr: string -> (FunctionSignature * Map<string, FunctionSignature>) option)
@@ -203,7 +198,7 @@ let loadExternalFunctionFromPath
 #endif
 
 
-/// buildIrFromSource: parse MATLAB source and extract function signatures.
+/// Parse MATLAB source and extract function signatures.
 /// Returns (primary_FunctionSignature, subfunctions_dict) or None if no function found.
 let buildIrFromSource (source: string) : (FunctionSignature * Map<string, FunctionSignature>) option =
     try
@@ -226,7 +221,7 @@ let buildIrFromSource (source: string) : (FunctionSignature * Map<string, Functi
 
 
 #if FABLE_COMPILER
-/// loadExternalFunction: Fable path — uses pre-parsed body from Interop.
+/// Fable path: uses pre-parsed body from Interop.
 let loadExternalFunction (sig_: ExternalSignature) : (FunctionSignature * Map<string, FunctionSignature>) option =
     match sig_.body with
     | Some body ->
@@ -234,14 +229,14 @@ let loadExternalFunction (sig_: ExternalSignature) : (FunctionSignature * Map<st
         Some (primary, Map.empty)
     | None -> None
 #else
-/// loadExternalFunction: load and parse an external .m file.
+/// Load and parse an external .m file.
 /// Returns (primary_FunctionSignature, subfunctions_dict) or None on error.
 let loadExternalFunction (sig_: ExternalSignature) : (FunctionSignature * Map<string, FunctionSignature>) option =
     if sig_.sourcePath = "" then None
     else loadExternalFunctionFromPath sig_.sourcePath buildIrFromSource
 
 
-/// loadExternalClassdef: parse a classdef .m file and extract ClassInfo + method signatures.
+/// Parse a classdef .m file and extract ClassInfo + method signatures.
 /// Returns (className, propNames, methodSigs, superName) or None if the file cannot be parsed
 /// or does not contain a classdef OpaqueStmt.
 let loadExternalClassdef (sourcePath: string)

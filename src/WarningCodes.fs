@@ -78,7 +78,7 @@ type WarningCode =
     // Strict mode (pseudo-code used in LspDiagnostics)
     | W_STRICT_MODE
 
-/// codeString: serialize a WarningCode to its canonical string representation.
+/// Serialize a WarningCode to its canonical string representation.
 /// Output is byte-identical to the previous stringly-typed codes.
 /// Use this at all serialization boundaries (CLI output, LSP protocol).
 let codeString (c: WarningCode) : string =
@@ -138,8 +138,8 @@ let codeString (c: WarningCode) : string =
     | W_CODER_RECURSION             -> "W_CODER_RECURSION"
     | W_STRICT_MODE                 -> "W_STRICT_MODE"
 
-/// Private lookup map from canonical string to WarningCode.
-/// Built without reflection; must be updated whenever WarningCode cases are added or removed.
+// Lookup map from canonical string to WarningCode.
+// Built without reflection; must be updated whenever WarningCode cases are added or removed.
 let private codeMap : Map<string, WarningCode> =
     [ W_INNER_DIM_MISMATCH; W_ELEMENTWISE_MISMATCH; W_HORZCAT_ROW_MISMATCH
       W_VERTCAT_COL_MISMATCH; W_RESHAPE_MISMATCH; W_MLDIVIDE_DIM_MISMATCH
@@ -165,7 +165,7 @@ let private codeMap : Map<string, WarningCode> =
     |> List.map (fun c -> (codeString c, c))
     |> Map.ofList
 
-/// tryParseCode: deserialize a string to WarningCode option.
+/// Deserialize a string to WarningCode option.
 /// Returns None for unrecognized code strings.
 let tryParseCode (s: string) : WarningCode option =
     codeMap.TryFind s

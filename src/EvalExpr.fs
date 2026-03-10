@@ -11,8 +11,7 @@ open DimExtract
 open SharedTypes
 
 // ---------------------------------------------------------------------------
-// EvalExpr: core expression evaluator.
-// Port of analysis/eval_expr.py
+// Core expression evaluator.
 //
 // CIRCULAR DEPENDENCY NOTE:
 //   EvalExpr depends on EvalBuiltins for builtin dispatch, but EvalBuiltins
@@ -21,8 +20,8 @@ open SharedTypes
 //   that Phase 4 wires to EvalBuiltins.evalBuiltinCall.
 // ---------------------------------------------------------------------------
 
-/// BuiltinDispatch: callback type for builtin function dispatch.
-/// Signature: fname -> line -> baseExpr -> args -> env -> warnings ref -> ctx -> Shape
+/// Callback type for builtin function dispatch.
+/// Signature: fname -> line -> baseExpr -> args -> env -> warnings -> ctx -> Shape
 type BuiltinDispatch = string -> int -> Expr -> IndexArg list -> Env -> ResizeArray<Diagnostics.Diagnostic> -> AnalysisContext -> Shape
 
 // ---------------------------------------------------------------------------
@@ -46,7 +45,7 @@ let private matlabConstants : Map<string, Shape> =
 // Interval evaluator (parallel to shape inference, no shape side effects)
 // ---------------------------------------------------------------------------
 
-/// getExprInterval: compute integer interval for an expression.
+/// Compute integer interval for an expression.
 let rec getExprInterval (expr: Expr) (env: Env) (ctx: AnalysisContext) : Interval option =
     match expr with
     | Const(_, v) ->
@@ -89,7 +88,7 @@ let rec getExprInterval (expr: Expr) (env: Env) (ctx: AnalysisContext) : Interva
     | _ -> None
 
 
-/// getConcreteDimSize: get concrete dimension size from int or SymDim via interval lookup.
+/// Get concrete dimension size from an int or SymDim via interval lookup.
 let getConcreteDimSize (dim: Dim) (ctx: AnalysisContext) : int option =
     match dim with
     | Concrete n -> Some n
@@ -114,14 +113,14 @@ let getConcreteDimSize (dim: Dim) (ctx: AnalysisContext) : int option =
 // Main expression evaluator
 // ---------------------------------------------------------------------------
 
-/// joinAllElements: join all element shapes from a cell element tracking map.
+// Join all element shapes from a cell element tracking map.
 let private joinAllElements (elemMap: Map<int, Shape>) : Shape =
     if elemMap.IsEmpty then UnknownShape
     else
         Map.fold (fun acc _ shp -> joinShape acc shp) Bottom elemMap
 
 
-/// evalIndexArgToShape: evaluate an IndexArg to a Shape.
+/// Evaluate an IndexArg to a Shape.
 let evalIndexArgToShape
     (arg: IndexArg)
     (env: Env)
@@ -145,7 +144,7 @@ let evalIndexArgToShape
     | Colon _ -> UnknownShape
 
 
-/// indexArgToExtentIr: return how many rows/cols this IndexArg selects.
+/// Return how many rows/cols an IndexArg selects.
 let indexArgToExtentIr
     (arg: IndexArg)
     (env: Env)
@@ -219,9 +218,9 @@ let indexArgToExtentIr
         | _ -> Concrete 1
 
 
-/// evalExprIr: main expression evaluator.
+/// Main expression evaluator.
 /// containerShape: optional shape of container being indexed (for End keyword resolution).
-/// builtinDispatch: callback for builtin function dispatch (set to stub in Phase 3).
+/// builtinDispatch: callback for builtin function dispatch.
 let rec evalExprIr
     (expr: Expr)
     (env: Env)
@@ -504,7 +503,7 @@ let rec evalExprIr
         EvalBinop.evalBinopIr op leftShape rightShape warnings left right line ctx env getDivisorIv
 
 
-/// evalApply: evaluate an Apply node (function call or array indexing).
+// Evaluate an Apply node (function call or array indexing).
 and private evalApply
     (line: int)
     (baseExpr: Expr)
@@ -574,7 +573,7 @@ and private evalApply
         evalIndexing baseShape args line env warnings ctx builtinDispatch
 
 
-/// evalHandleCall: dispatch a call through a function handle variable.
+// Dispatch a call through a function handle variable.
 and private evalHandleCall
     (baseVarName: string)
     (baseVarShape: Shape)
@@ -688,7 +687,7 @@ and private evalHandleCall
     | _ -> UnknownShape
 
 
-/// evalIndexing: indexing logic for Apply-as-indexing nodes.
+// Indexing logic for Apply-as-indexing nodes.
 and private evalIndexing
     (baseShape: Shape)
     (args: IndexArg list)
@@ -830,6 +829,6 @@ and private evalIndexing
     | StringShape | Struct _ | FunctionHandle _ | Cell _ | Bottom -> UnknownShape
 
 
-/// isColon: check if an IndexArg is a Colon.
+// Check if an IndexArg is a Colon.
 and private isColon (arg: IndexArg) =
     match arg with Colon _ -> true | _ -> false

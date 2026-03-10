@@ -7,10 +7,9 @@ open WarningCodes
 
 // ---------------------------------------------------------------------------
 // Matrix/cell literal shape inference.
-// Port of analysis/matrix_literals.py
 // ---------------------------------------------------------------------------
 
-/// asMatrixShape: treat scalar and string as 1x1 matrix for concatenation.
+// Treat scalar and string as 1x1 matrix for concatenation.
 let asMatrixShape (s: Shape) : Shape =
     match s with
     | Scalar | StringShape -> Matrix(Concrete 1, Concrete 1)
@@ -18,11 +17,8 @@ let asMatrixShape (s: Shape) : Shape =
     | _ -> s
 
 
-/// inferMatrixLiteralShape: shared matrix-literal concatenation checker/inferencer.
-/// Operates on already-evaluated shapes.
-///
-/// evalExprFn callback is needed only for the matrix literal shape inference logic;
-/// here we take already-evaluated shape_rows directly.
+/// Shape inference for a matrix literal given already-evaluated element shapes.
+/// Takes shape_rows directly (no evalExprFn callback needed).
 let inferMatrixLiteralShape
     (shapeRows: Shape list list)
     (line: int)

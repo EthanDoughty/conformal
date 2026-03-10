@@ -4,11 +4,10 @@ open System.Text.RegularExpressions
 open Ionide.LanguageServerProtocol.Types
 
 // ---------------------------------------------------------------------------
-// codeActionsForDiagnostic: quick fix code actions.
-// Port of lsp/code_actions.py code_actions_for_diagnostic().
+// Quick fix code actions.
 // ---------------------------------------------------------------------------
 
-/// Make a WorkspaceEdit replacing lineNum's text entirely with newText.
+// Make a WorkspaceEdit replacing lineNum's text entirely with newText.
 let private makeLineEdit (uri: string) (lineNum: int) (lineLen: int) (newText: string) : WorkspaceEdit =
     let range : Range = {
         Start = { Line = uint32 lineNum; Character = 0u }
@@ -19,7 +18,7 @@ let private makeLineEdit (uri: string) (lineNum: int) (lineLen: int) (newText: s
       DocumentChanges = None
       ChangeAnnotations = None }
 
-/// codeActionsForDiagnostic: generate quick-fix actions for a single LSP diagnostic.
+/// Generate quick-fix actions for a single LSP diagnostic.
 let codeActionsForDiagnostic
     (diagnostic: Ionide.LanguageServerProtocol.Types.Diagnostic)
     (uri: string)

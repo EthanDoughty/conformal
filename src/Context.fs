@@ -194,6 +194,8 @@ type AnalysisContext() =
     /// upperBounds, lowerBounds). DimEquiv is deep-copied; the rest are persistent/O(1).
     member this.SnapshotConstraintState() : ConstraintSnapshot = {
         constraints = this.cst.constraints
+        // DimEquiv uses mutable Dictionaries (union-find), so it needs a deep copy here.
+        // The other fields are F# persistent maps, which are immutable and require no copying.
         dimEquiv    = DimEquiv.snapshot this.cst.dimEquiv
         valueRanges = this.cst.valueRanges
         upperBounds = this.cst.upperBounds

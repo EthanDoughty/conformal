@@ -11,14 +11,14 @@ open WarningCodes
 // ConflictSite: extracted from Witness.fs
 // ---------------------------------------------------------------------------
 
-/// IntervalBound: concrete int, symbolic SymDim, or unbounded (None)
+/// Concrete int, symbolic SymDim, or unbounded (represents -inf or +inf).
 type IntervalBound =
     | Finite    of int
     | SymBound  of SymDim
     | Unbounded   // represents -infinity (lo) or +infinity (hi)
 
 
-/// Interval: [lo, hi] with optional symbolic bounds.
+/// Closed interval [lo, hi] with optional symbolic bounds.
 /// lo=Unbounded means -infinity, hi=Unbounded means +infinity.
 /// Invariant: if both concrete (Finite), lo <= hi.
 [<Struct>]
@@ -28,7 +28,7 @@ type Interval = {
 }
 
 
-/// ConflictSite: recorded dimension conflict at a warning emission point.
+/// Recorded dimension conflict at a warning emission point.
 type ConflictSite = {
     dimA:                  Shapes.Dim
     dimB:                  Shapes.Dim

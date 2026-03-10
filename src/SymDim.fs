@@ -55,7 +55,8 @@ type Rational private (num: int64, den: int64) =
 
 type Monomial = (string * int) list
 
-// Sort key for monomials: higher degree first, then lexicographic
+// Sort key for monomials: higher degree first, then lexicographic.
+// Defines canonical ordering so that equivalent polynomials always compare equal.
 let private monoKey (mono: Monomial) : int * Monomial =
     let degree = mono |> List.sumBy snd
     (-degree, mono)
