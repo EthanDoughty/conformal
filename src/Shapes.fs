@@ -314,6 +314,7 @@ let mulDim (a: Dim) (b: Dim) : Dim =
                 canonicalizeDim (Range(BConcrete (List.min corners), BConcrete (List.max corners)))
             | _ -> Unknown
         | Concrete ia, Concrete ib -> Concrete (ia * ib)
+        | Range _, Symbolic _ | Symbolic _, Range _ -> Unknown
         | Symbolic _, Symbolic _ | Symbolic _, Concrete _ | Concrete _, Symbolic _ ->
             let sa = toSymDim a
             let sb = toSymDim b

@@ -28,3 +28,7 @@ dogfood/
 
 # Local NuGet package cache (sandbox workaround)
 .nuget-packages/
+
+# Fable compiler output (generated .js from .fs)
+src/*.fs.js
+vscode-conformal/fable/*.fs.js

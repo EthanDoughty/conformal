@@ -664,15 +664,10 @@ let rec extractPentagonBoundsFromCondition
         [ (varName, boundVar, 0, false) ]
     | Ir.BinOp(_, ">", Ir.Var(_, varName), Ir.Var(_, boundVar)) ->
         [ (varName, boundVar, 1, false) ]
-    // Flipped sides: n >= i  ->  i <= n
-    | Ir.BinOp(_, ">=", Ir.Var(_, boundVar), Ir.Var(_, varName)) ->
-        [ (varName, boundVar, 0, true) ]
-    | Ir.BinOp(_, ">", Ir.Var(_, boundVar), Ir.Var(_, varName)) ->
-        [ (varName, boundVar, -1, true) ]
-    | Ir.BinOp(_, "<=", Ir.Var(_, boundVar), Ir.Var(_, varName)) ->
-        [ (varName, boundVar, 0, false) ]
-    | Ir.BinOp(_, "<", Ir.Var(_, boundVar), Ir.Var(_, varName)) ->
-        [ (varName, boundVar, 1, false) ]
+    // Note: flipped patterns (n >= i → i <= n) are structurally identical to
+    // the above in F# pattern matching, so the left Var is always treated as
+    // the variable and the right as the bound. This is correct for the common
+    // MATLAB idiom `while i <= n`.
     | _ -> []
 
 
