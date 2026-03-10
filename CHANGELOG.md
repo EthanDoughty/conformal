@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-03-10
+### Added
+- **`SteppedRange` index argument** (`Ir.fs`, `EvalExpr.fs`): first-class `a:step:b` in index expressions; `IndexArg` DU gains `SteppedRange` case, handled in all exhaustive matches
+- **Arguments block parsing** (`Parser.fs`): R2019b+ `arguments` blocks are parsed and skipped; parameter shape annotations extracted into `argAnnotations` on `FunctionDef` IR
+- **Arguments block shape extraction** (`Shapes.fs`, `Env.fs`, `StmtFuncAnalysis.fs`): `argAnnotationsToShapes` helper converts argument annotations to shapes and seeds parameter bindings at call sites; deduplicated across 6 conversion sites
+- **Command syntax** (`Parser.fs`): known functions can be called without parentheses (e.g., `disp hello`); 13,176 of 13,177 corpus files now parse successfully
+- **`\!` shell escape** (`Lexer.fs`, `Parser.fs`): `!command` syntax lexed as `ShellEscape` token and skipped during parsing
+- Total test count: 475 (was 469)
+
+### Changed
+- **`TokenKind` DU** (`Lexer.fs`): replaced stringly-typed `Token.kind` with a discriminated union and `LhsSegment` DU for type-safe token handling
+- **Try-parse-then-retry** (`Parser.fs`): replaced `detectEndlessFunctions` prescan with a try-parse-then-retry strategy; simpler and more robust for end-less function detection
+- **Comment cleanup**: removed stale Python port references and redundant function-name prefixes from doc comments across 29 files
+
+### Fixed
+- **STRING token collision** (`Parser.fs`): STRING tokens with bracket values no longer break multi-function file parsing
+- **`List.Skip` OOB crash** (`Parser.fs`): fixed crash and `pown` overflow discovered in dogfood round 5 (11,980 files, 0 crashes)
+- **`mulDim` incomplete match** (`Shapes.fs`): added missing `Range * Symbolic` / `Symbolic * Range` cases (returns `Unknown`)
+- **Dead match arms** (`Intervals.fs`): removed unreachable flipped-comparison patterns in `extractPentagonBoundsFromCondition`
+
 ## [3.2.0] - 2026-03-05
 ### Added
 - **`MetaClass` IR node** (`Ir.fs`, `Parser.fs`, `EvalExpr.fs`, `Diagnostics.fs`, `Json.fs`, `StmtFuncAnalysis.fs`): represents the MATLAB metaclass operator `?ClassName`; parser emits `MetaClass of loc * name` when `?` is followed by an identifier; evaluates to `UnknownShape`; covered by `prettyExprIr`, `exprMentionsVar`, `exprMentionsFieldAccess`, and JSON serialization
