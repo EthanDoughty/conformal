@@ -3,35 +3,35 @@
     <TargetFramework>netstandard2.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
-    <!-- Core pipeline: same .fs files as ConformalParse.fsproj, minus LSP/CLI/Test -->
-    <Compile Include="../../src/Ir.fs" />
-    <Compile Include="../../src/Lexer.fs" />
-    <Compile Include="../../src/Parser.fs" />
-    <Compile Include="../../src/Json.fs" />
-    <Compile Include="../../src/SymDim.fs" />
-    <Compile Include="../../src/WarningCodes.fs" />
-    <Compile Include="../../src/Shapes.fs" />
-    <Compile Include="../../src/DimEquiv.fs" />
-    <Compile Include="../../src/Env.fs" />
-    <Compile Include="../../src/Diagnostics.fs" />
-    <Compile Include="../../src/Builtins.fs" />
-    <Compile Include="../../src/PathConstraints.fs" />
-    <Compile Include="../../src/SharedTypes.fs" />
-    <Compile Include="../../src/Context.fs" />
-    <Compile Include="../../src/AnalysisCore.fs" />
-    <Compile Include="../../src/EndHelpers.fs" />
-    <Compile Include="../../src/Intervals.fs" />
-    <Compile Include="../../src/DimExtract.fs" />
-    <Compile Include="../../src/Constraints.fs" />
-    <Compile Include="../../src/MatrixLiterals.fs" />
-    <Compile Include="../../src/EvalBinop.fs" />
-    <Compile Include="../../src/EvalExpr.fs" />
-    <Compile Include="../../src/Workspace.fs" />
-    <Compile Include="../../src/EvalBuiltins.fs" />
-    <Compile Include="../../src/StmtFuncAnalysis.fs" />
-    <Compile Include="../../src/Witness.fs" />
-    <Compile Include="../../src/Analysis.fs" />
-    <Compile Include="../../src/License.fs" />
+    <!-- Core pipeline: same .fs files as ConformalCore.fsproj -->
+    <Compile Include="../../src/core/Ir.fs" />
+    <Compile Include="../../src/core/Lexer.fs" />
+    <Compile Include="../../src/core/Parser.fs" />
+    <Compile Include="../../src/core/Json.fs" />
+    <Compile Include="../../src/core/SymDim.fs" />
+    <Compile Include="../../src/core/WarningCodes.fs" />
+    <Compile Include="../../src/core/Shapes.fs" />
+    <Compile Include="../../src/core/DimEquiv.fs" />
+    <Compile Include="../../src/core/Env.fs" />
+    <Compile Include="../../src/core/Diagnostics.fs" />
+    <Compile Include="../../src/core/Builtins.fs" />
+    <Compile Include="../../src/core/PathConstraints.fs" />
+    <Compile Include="../../src/core/SharedTypes.fs" />
+    <Compile Include="../../src/core/Context.fs" />
+    <Compile Include="../../src/core/AnalysisCore.fs" />
+    <Compile Include="../../src/core/EndHelpers.fs" />
+    <Compile Include="../../src/core/Intervals.fs" />
+    <Compile Include="../../src/core/DimExtract.fs" />
+    <Compile Include="../../src/core/Constraints.fs" />
+    <Compile Include="../../src/core/MatrixLiterals.fs" />
+    <Compile Include="../../src/core/EvalBinop.fs" />
+    <Compile Include="../../src/core/EvalExpr.fs" />
+    <Compile Include="../../src/core/Workspace.fs" />
+    <Compile Include="../../src/core/EvalBuiltins.fs" />
+    <Compile Include="../../src/core/StmtFuncAnalysis.fs" />
+    <Compile Include="../../src/core/Witness.fs" />
+    <Compile Include="../../src/core/Analysis.fs" />
+    <Compile Include="../../src/shared/License.fs" />
     <Compile Include="Interop.fs" />
   </ItemGroup>
   <ItemGroup>

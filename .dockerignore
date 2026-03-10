@@ -1,0 +1,17 @@
+.git/
+.github/
+.claude/
+.idea/
+.vscode/
+dogfood/
+node_modules/
+vscode-conformal/
+research/
+*.vsix
+*.zip
+*.log
+CLAUDE.md
+CLAUDE_DEEP.md
+AGENTS.md
+TASK.md
+FINDINGS-*.md

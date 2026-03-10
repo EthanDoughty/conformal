@@ -22,14 +22,14 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Restore F# dependencies
-        run: dotnet restore src/ConformalParse.fsproj
+      - name: Restore dependencies
+        run: dotnet restore Conformal.sln
 
-      - name: Build F# analyzer
-        run: dotnet build src/ConformalParse.fsproj --no-restore
+      - name: Build solution
+        run: dotnet build Conformal.sln --no-restore
 
       - name: Run F# tests
-        run: dotnet run --project src/ConformalParse.fsproj -- --tests
+        run: dotnet run --project src/analyzer/ConformalAnalyzer.fsproj -- --tests
 
       - name: Install Fable
         run: |
@@ -74,3 +74,11 @@ jobs:
           name: conformal-vsix
           path: vscode-conformal/*.vsix
           retention-days: 14
+
+      - name: Docker build
+        run: |
+          docker build -t conformal:latest --target runtime .
+          docker build -t conformal:test --target test .
+
+      - name: Docker test
+        run: docker run --rm conformal:test --tests --quiet
