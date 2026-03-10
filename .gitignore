@@ -19,9 +19,31 @@ Thumbs.db
 # Development tooling (local only)
 .claude/
 CLAUDE.md
+CLAUDE_DEEP.md
 AGENTS.md
 TASK.md
 FINDINGS-*.md
+.mcp.json
+
+# Shell/editor config (environment artifacts)
+.bash_profile
+.bashrc
+.zprofile
+.zshrc
+.profile
+.gitconfig
+.ripgreprc
+
+# Bare git repo artifacts (not part of this repo)
+/HEAD
+/config
+/hooks
+/objects
+/refs
+.gitmodules
+
+# Research (local only)
+research/
 
 # Dogfood corpus (third-party MATLAB files for testing)
 dogfood/
@@ -30,5 +52,5 @@ dogfood/
 .nuget-packages/
 
 # Fable compiler output (generated .js from .fs)
-src/*.fs.js
+src/**/*.fs.js
 vscode-conformal/fable/*.fs.js

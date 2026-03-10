@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <PublishAot>true</PublishAot>
+    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>conformal-parse</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="LspDiagnostics.fs" />
+    <Compile Include="LspHover.fs" />
+    <Compile Include="LspSymbols.fs" />
+    <Compile Include="LspCodeActions.fs" />
+    <Compile Include="LspDefinition.fs" />
+    <Compile Include="LspInlayHints.fs" />
+    <Compile Include="LspServer.fs" />
+    <Compile Include="TestRunner.fs" />
+    <Compile Include="PropertyTests.fs" />
+    <Compile Include="Cli.fs" />
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../shared/ConformalShared.fsproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="FsCheck" Version="3.3.2" />
+    <PackageReference Include="Ionide.LanguageServerProtocol" Version="0.7.0" />
+  </ItemGroup>
+</Project>

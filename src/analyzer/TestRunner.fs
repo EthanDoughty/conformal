@@ -333,15 +333,16 @@ let private discoverTestFiles (rootDir: string) : string list =
 
 /// Run all tests. Returns exit code: 0 if all pass, 1 if any fail.
 let run (strict: bool) (fixpoint: bool) (coder: bool) (quiet: bool) : int =
-    // Discover tests relative to cwd (project root when running via `dotnet run`)
+    // Discover tests by searching up from cwd for a "tests" directory
     let testsDir =
-        let cwd = Directory.GetCurrentDirectory()
-        let candidate = Path.Combine(cwd, "tests")
-        if Directory.Exists candidate then candidate
-        else
-            // Try parent of src/ directory
-            let parent = Path.GetDirectoryName(cwd)
-            Path.Combine(parent, "tests")
+        let rec findUp (dir: string) =
+            let candidate = Path.Combine(dir, "tests")
+            if Directory.Exists candidate then candidate
+            else
+                let parent = Path.GetDirectoryName(dir)
+                if parent = null || parent = dir then candidate // fallback
+                else findUp parent
+        findUp (Directory.GetCurrentDirectory())
 
     let coderDir = Path.Combine(testsDir, "coder")
 
