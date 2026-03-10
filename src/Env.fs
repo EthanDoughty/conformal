@@ -76,6 +76,7 @@ let joinEnv (env1: Env) (env2: Env) : Env =
         Set.union
             (env1.bindings |> Map.toSeq |> Seq.map fst |> Set.ofSeq)
             (env2.bindings |> Map.toSeq |> Seq.map fst |> Set.ofSeq)
+    // List.sort ensures deterministic iteration order across runs.
     for var in allVars |> Set.toList |> List.sort do
         let s1 = defaultArg (Map.tryFind var env1.bindings) Bottom
         let s2 = defaultArg (Map.tryFind var env2.bindings) Bottom

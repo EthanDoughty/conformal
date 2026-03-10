@@ -22,7 +22,7 @@ let create () : DimEquiv = {
     concrete = System.Collections.Generic.Dictionary<string, int>()
 }
 
-/// Ensure a key exists in the parent/rank maps (lazy initialization).
+// Ensure a key exists in the parent/rank maps (lazy initialization).
 let private ensureNode (eq: DimEquiv) (key: string) : unit =
     if not (eq.parent.ContainsKey(key)) then
         eq.parent.[key] <- key

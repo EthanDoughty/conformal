@@ -9,18 +9,16 @@ open Context
 
 // ---------------------------------------------------------------------------
 // Constraint tracking and path-sensitive joins for dimension equality.
-// Port of analysis/constraints.py
 // ---------------------------------------------------------------------------
 
-/// tryExtractConstValue: extract integer value from a Const expression, or None.
-/// Port of analysis/constraints.py try_extract_const_value().
+/// Extract integer value from a Const expression, or None.
 let tryExtractConstValue (expr: Expr) : int option =
     match expr with
     | Const(_, v) when v = System.Math.Floor(v : float) -> Some (int v)
     | _ -> None
 
 
-/// dimKey: structural sort key for canonicalizing constraint pairs.
+// Structural sort key for canonicalizing constraint pairs.
 let private dimKey (d: Dim) : int * string =
     match d with
     | Concrete n -> (0, string n)
@@ -29,7 +27,7 @@ let private dimKey (d: Dim) : int * string =
     | Unknown    -> (2, "")
 
 
-/// isPreBoundVar: check if a Dim is a simple variable that's already bound in env.
+// Check if a Dim is a simple variable that's already bound in env.
 let private isPreBoundVar (d: Dim) (env: Env) : bool =
     match d with
     | Symbolic s ->
@@ -43,7 +41,7 @@ let private isPreBoundVar (d: Dim) (env: Env) : bool =
     | _ -> false
 
 
-/// recordConstraint: record equality constraint between two dimensions.
+/// Record equality constraint between two dimensions.
 /// Skips trivial, both-concrete, None, and pre-bound constraints.
 let recordConstraint (ctx: AnalysisContext) (env: Env) (dim1: Dim) (dim2: Dim) (line: int) : unit =
     match dim1, dim2 with
@@ -80,7 +78,7 @@ let recordConstraint (ctx: AnalysisContext) (env: Env) (dim1: Dim) (dim2: Dim) (
             | _ -> ()
 
 
-/// resolveDim: resolve a symbolic dim using the equivalence store.
+/// Resolve a symbolic dim using the equivalence store.
 /// 1. Check if the whole dim's key has a concrete value in the equiv store.
 /// 2. If not, extract individual variables, substitute known concrete values.
 /// 3. If all variables resolve, evaluate to Concrete; partial resolution returns simplified Symbolic.
@@ -111,7 +109,7 @@ let resolveDim (ctx: AnalysisContext) (d: Dim) : Dim =
     | _ -> d
 
 
-/// resolveShape: apply resolveDim to all dims in a Shape.
+/// Apply resolveDim to all dims in a Shape.
 let resolveShape (ctx: AnalysisContext) (shape: Shape) : Shape =
     match shape with
     | Matrix(r, c) ->
@@ -125,12 +123,12 @@ let resolveShape (ctx: AnalysisContext) (shape: Shape) : Shape =
     | Scalar | StringShape | FunctionHandle _ | Struct _ | UnknownShape | Bottom -> shape
 
 
-/// snapshotConstraints: return current constraint set (persistent; O(1)).
+/// Return current constraint set (persistent; O(1)).
 let snapshotConstraints (ctx: AnalysisContext) : Set<string * string> =
     ctx.cst.constraints
 
 
-/// joinConstraints: path-sensitive join: keep baseline + constraints added in ALL branches.
+/// Path-sensitive join: keep baseline + constraints added in ALL branches.
 let joinConstraints
     (baseline: Set<string * string>)
     (branchSets: Set<string * string> list)
@@ -152,7 +150,7 @@ let joinConstraints
     Set.union baseline commonNew
 
 
-/// validateBinding: check if binding var_name=value conflicts with recorded constraints.
+/// Check if binding var_name=value conflicts with recorded constraints.
 let validateBinding
     (ctx: AnalysisContext)
     (env: Env)

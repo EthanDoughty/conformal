@@ -4,11 +4,10 @@ open Ionide.LanguageServerProtocol.Types
 open Ir
 
 // ---------------------------------------------------------------------------
-// getDocumentSymbols: document symbol provider for outline view.
-// Port of lsp/symbols.py get_document_symbols().
+// Document symbol provider for outline view.
 // ---------------------------------------------------------------------------
 
-/// getDocumentSymbols: walk IR program body for FunctionDef nodes.
+/// Walk IR program body for FunctionDef nodes.
 /// Returns DocumentSymbol array (one per function definition).
 /// sourceLines is used to compute end-of-line character positions.
 let getDocumentSymbols

@@ -7,7 +7,6 @@ open WarningCodes
 
 // ---------------------------------------------------------------------------
 // Codes that represent definite errors (will crash at runtime).
-// Port of lsp/diagnostics.py ERROR_CODES set.
 // ---------------------------------------------------------------------------
 
 let ERROR_CODES : Set<WarningCode> =
@@ -39,8 +38,7 @@ let ERROR_CODES : Set<WarningCode> =
     ]
 
 // ---------------------------------------------------------------------------
-// toLspDiagnostic: convert a Conformal Diagnostic to an LSP Diagnostic.
-// Port of lsp/diagnostics.py to_lsp_diagnostic().
+// Convert a Conformal Diagnostic to an LSP Diagnostic.
 // ---------------------------------------------------------------------------
 
 let toLspDiagnostic

@@ -111,6 +111,7 @@ let private masterPattern =
 // Looking at lexer.py: NUMBER = r"\d+(?:\.\d*)?(?:[eE][+-]?\d+)?" — starts with \d+, no leading dot.
 // So we should match the Python behavior exactly: no leading-dot support.
 
+// Active pattern used for tokenization. masterPattern above is retained as a readable reference.
 let private masterPatternSimple =
     String.concat "|" [
         """(?<DQSTRING>"(?:[^"]|"")*")"""

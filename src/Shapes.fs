@@ -42,8 +42,7 @@ type Shape =
 // DimBound helpers
 // ---------------------------------------------------------------------------
 
-/// minBound: minimum of two DimBounds (for lo of hull).
-/// BUnknown as lo represents 0 (minimum possible dim).
+// Minimum of two DimBounds (for lo of hull). BUnknown as lo represents 0.
 let private minBound (a: DimBound) (b: DimBound) : DimBound =
     match a, b with
     | BConcrete x, BConcrete y -> BConcrete (min x y)
@@ -52,8 +51,7 @@ let private minBound (a: DimBound) (b: DimBound) : DimBound =
     | BSymbolic _, BConcrete _ | BConcrete _, BSymbolic _ | BSymbolic _, BSymbolic _ ->
         BUnknown  // can't compare symbolic: conservative
 
-/// maxBound: maximum of two DimBounds (for hi of hull).
-/// BUnknown as hi represents +infinity.
+// Maximum of two DimBounds (for hi of hull). BUnknown as hi represents +infinity.
 let private maxBound (a: DimBound) (b: DimBound) : DimBound =
     match a, b with
     | BConcrete x, BConcrete y -> BConcrete (max x y)
@@ -62,7 +60,7 @@ let private maxBound (a: DimBound) (b: DimBound) : DimBound =
     | BSymbolic _, BConcrete _ | BConcrete _, BSymbolic _ | BSymbolic _, BSymbolic _ ->
         BUnknown  // can't compare symbolic: conservative
 
-/// addBound: add two DimBounds (for interval arithmetic).
+/// Add two DimBounds (for interval arithmetic).
 let addBound (a: DimBound) (b: DimBound) : DimBound =
     match a, b with
     | BConcrete x, BConcrete y -> BConcrete (x + y)
@@ -71,7 +69,7 @@ let addBound (a: DimBound) (b: DimBound) : DimBound =
     | BConcrete n, BSymbolic s -> BSymbolic (SymDim.add (SymDim.const' n) s)
     | BSymbolic a, BSymbolic b -> BSymbolic (SymDim.add a b)
 
-/// dimToBounds: extract (lo, hi) DimBound pair from any Dim.
+/// Extract (lo, hi) DimBound pair from any Dim.
 let dimToBounds (d: Dim) : DimBound * DimBound =
     match d with
     | Concrete n  -> (BConcrete n, BConcrete n)
@@ -79,7 +77,7 @@ let dimToBounds (d: Dim) : DimBound * DimBound =
     | Range(lo, hi) -> (lo, hi)
     | Unknown     -> (BUnknown, BUnknown)
 
-/// canonicalizeDim: normalize degenerate Range cases.
+/// Normalize degenerate Range cases.
 let canonicalizeDim (d: Dim) : Dim =
     match d with
     | Range(BConcrete a, BConcrete b) when a = b  -> Concrete a
@@ -91,15 +89,15 @@ let canonicalizeDim (d: Dim) : Dim =
         Range(BConcrete 0, snd (dimToBounds d))
     | _ -> d
 
-/// boundsDisjoint: check if intervals [alo, ahi] and [blo, bhi] are provably non-overlapping.
-/// Only provable when both sides have concrete bounds.
+// Check if intervals [alo, ahi] and [blo, bhi] are provably non-overlapping.
+// Only provable when both sides have concrete bounds.
 let private boundsDisjoint (alo: DimBound) (ahi: DimBound) (blo: DimBound) (bhi: DimBound) : bool =
     match alo, ahi, blo, bhi with
     | BConcrete al, BConcrete ah, BConcrete bl, BConcrete bh ->
         ah < bl || bh < al   // disjoint: a ends before b starts, or vice versa
     | _ -> false   // symbolic/unknown: can't prove disjoint
 
-/// extendRange: extend range [lo, hi] to include a new point bound.
+// Extend range [lo, hi] to include a new point bound.
 let private extendRange (lo: DimBound) (hi: DimBound) (pt: DimBound) : Dim =
     canonicalizeDim (Range(minBound lo pt, maxBound hi pt))
 
@@ -417,7 +415,7 @@ let isNumeric s        = match s with Scalar | Matrix _ | StringShape -> true | 
 let isEmptyMatrix s    = match s with Matrix(Concrete 0, Concrete 0) -> true | _ -> false
 
 /// Convert a parsed arguments-block size annotation to a Shape.
-/// (Some 1, Some 1) → Scalar; (None, None) → Matrix(Unknown,Unknown); etc.
+/// (Some 1, Some 1) -> Scalar; (None, None) -> Matrix(Unknown,Unknown); etc.
 let annotToShape (r: int option) (c: int option) : Shape =
     match r, c with
     | Some 1, Some 1 -> Scalar

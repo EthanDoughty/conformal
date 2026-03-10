@@ -8,10 +8,9 @@ open SharedTypes
 
 // ---------------------------------------------------------------------------
 // Dimension extraction from IR expressions.
-// Port of analysis/dim_extract.py
 // ---------------------------------------------------------------------------
 
-/// exprToDimWithEnd: convert an expression (possibly containing End) to a Dim.
+/// Convert an expression (possibly containing End) to a Dim.
 /// Substitutes End with endDim, enabling symbolic range extent computation.
 let rec exprToDimWithEnd (expr: Expr) (env: Env) (endDim: Dim) : Dim =
     match expr with
@@ -38,7 +37,7 @@ let rec exprToDimWithEnd (expr: Expr) (env: Env) (endDim: Dim) : Dim =
     | _ -> Unknown
 
 
-/// exprToDimIr: convert an expression to a Dim without End support.
+/// Convert an expression to a Dim without End support.
 /// When ctx (AnalysisContext) is provided, checks value_ranges for exact scalar values.
 let rec exprToDimIr (expr: Expr) (env: Env) : Dim =
     exprToDimIrCtx expr env None
@@ -79,7 +78,7 @@ and exprToDimIrCtx (expr: Expr) (env: Env) (ctx: Context.AnalysisContext option)
     | _ -> Unknown
 
 
-/// tryExtractIntLiteral: extract a concrete integer from an expression.
+/// Extract a concrete integer from an expression.
 /// Handles Const and Neg(Const) to support negative step literals like -3 in a:(-3):b.
 let tryExtractIntLiteral (expr: Expr) : int option =
     match expr with
@@ -88,7 +87,7 @@ let tryExtractIntLiteral (expr: Expr) : int option =
     | _ -> None
 
 
-/// extractIterationCount: extract iteration count from a for-loop iterator expression.
+/// Extract iteration count from a for-loop iterator expression.
 ///
 /// Handles three structural forms (as emitted by MatlabParser):
 ///
@@ -176,9 +175,8 @@ let extractIterationCount (itExpr: Expr) (env: Env) (ctx: Context.AnalysisContex
     | _ -> Unknown
 
 
-/// indexArgToExtentIr: return how many rows/cols an IndexArg selects.
-/// Returns Unknown for Colon (caller must handle), None-mapped to Unknown here.
-/// This partial port doesn't need warnings; the full version is in EvalExpr.fs.
+/// Return how many rows/cols an IndexArg selects.
+/// Returns Unknown for Colon (caller must handle). The full version is in EvalExpr.fs.
 let indexArgToExtentIr (arg: Ir.IndexArg) (env: Env) : Dim =
     match arg with
     | Colon _ -> Unknown

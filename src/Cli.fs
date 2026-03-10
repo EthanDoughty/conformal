@@ -11,13 +11,12 @@ open Workspace
 // Output helpers
 // ---------------------------------------------------------------------------
 
-/// Format a single diagnostic for CLI output (mirrors Python Diagnostic __str__).
-/// Python format: "W_CODE line N: message" or "W_UNSUPPORTED_STMT line=N targets=..."
+// Format a single diagnostic for CLI output.
+// Python format: "W_CODE line N: message" or "W_UNSUPPORTED_STMT line=N targets=..."
 let private formatDiag (d: Diagnostic) : string =
     diagnosticToString d
 
-/// Print the final environment in Env{...} format (sorted by key).
-/// Mirrors Python Env.__repr__ but sorted alphabetically.
+// Print the final environment in Env{...} format (sorted by key).
 let private printEnv (env: Env.Env) : unit =
     let pairs =
         env.bindings
@@ -33,8 +32,7 @@ let private printEnv (env: Env.Env) : unit =
 // Single-file analysis
 // ---------------------------------------------------------------------------
 
-/// runFile: analyze one .m file and print results.
-/// Returns exit code: 0 = success, 1 = error.
+/// Analyze one .m file and print results. Returns exit code: 0 = success, 1 = error.
 let runFile (filePath: string) (strict: bool) (fixpoint: bool) (benchmark: bool) (coder: bool) (licenseStatus: License.LicenseStatus) : int =
     if not (File.Exists filePath) then
         eprintfn "ERROR: file not found: %s" filePath
@@ -172,11 +170,7 @@ let runTests (strict: bool) (fixpoint: bool) (benchmark: bool) (quiet: bool) : i
     result
 
 // ---------------------------------------------------------------------------
-// Main entry point
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Argument parsing types
+// Argument parsing and entry point
 // ---------------------------------------------------------------------------
 
 type CliArgs = {
@@ -192,9 +186,9 @@ let private defaultArgs =
       quiet = false; help = false; version = false
       license = ""; generateKey = false }
 
-/// Fold state: Ready accepts flags, ConsumeFile means next arg is a file path,
-/// ConsumeWitness means next arg is an optional witness mode or file path,
-/// ConsumeLicense means next arg is the license key string.
+// Fold state: Ready accepts flags, ConsumeFile means next arg is a file path,
+// ConsumeWitness means next arg is an optional witness mode or file path,
+// ConsumeLicense means next arg is the license key string.
 type private ParseState = Ready | ConsumeFile | ConsumeWitness | ConsumeLicense
 
 let private parseArgv (argv: string array) : CliArgs =
@@ -247,8 +241,6 @@ let private parseArgv (argv: string array) : CliArgs =
             | _ -> (acc, Ready)
     ) (defaultArgs, Ready) |> fst
 
-/// run: parse argv and dispatch.
-/// Returns exit code.
 let private printUsage () =
     printfn "Usage: conformal [OPTIONS] <file.m>"
     printfn "       conformal --generate-key"
@@ -281,6 +273,7 @@ let private resolveLicense (args: CliArgs) : License.LicenseStatus =
     if keyStr = "" then License.Invalid "no license key provided"
     else License.validateLicense keyStr
 
+/// Parse argv and dispatch. Returns exit code.
 let run (argv: string array) : int =
     let args = parseArgv argv
 

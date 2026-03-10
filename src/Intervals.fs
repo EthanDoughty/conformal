@@ -5,7 +5,6 @@ open SharedTypes
 
 // ---------------------------------------------------------------------------
 // Integer interval abstract domain for value range analysis.
-// Port of analysis/intervals.py
 // ---------------------------------------------------------------------------
 
 // IntervalBound, Interval types are defined in SharedTypes.fs
@@ -20,14 +19,14 @@ let makeInterval (lo: IntervalBound) (hi: IntervalBound) : Interval =
 
 let intervalUnbounded () : Interval = { lo = Unbounded; hi = Unbounded }
 
-/// isConcreteB: check if a bound is a concrete int (not SymDim)
+// Check if a bound is a concrete int (not symbolic).
 let private isConcreteB (b: IntervalBound) : bool =
     match b with
     | Finite _ | Unbounded -> true
     | SymBound _ -> false
 
 
-/// joinInterval: convex hull of two optional intervals (lattice join).
+/// Convex hull of two optional intervals (lattice join).
 /// None represents absence of information.
 let joinInterval (a: Interval option) (b: Interval option) : Interval option =
     match a, b with
@@ -61,7 +60,7 @@ let joinInterval (a: Interval option) (b: Interval option) : Interval option =
 /// bound to a strictly larger threshold or to Unbounded; the set is finite.
 let private WIDEN_THRESHOLDS = [| -1000; -100; -10; -1; 0; 1; 10; 100; 1000 |]
 
-/// widenInterval: push bounds outward to the next threshold when they move,
+/// Push bounds outward to the next threshold when they move,
 /// falling back to Unbounded only when no threshold covers the new value.
 let widenInterval (oldIv: Interval) (newIv: Interval) : Interval =
     // Lower bound: when it decreases, snap to the next threshold <= nl.
@@ -95,7 +94,7 @@ let widenInterval (oldIv: Interval) (newIv: Interval) : Interval =
     { lo = widenLo oldIv.lo newIv.lo; hi = widenHi oldIv.hi newIv.hi }
 
 
-/// meetInterval: intersection of two intervals (lattice meet).
+/// Intersection of two intervals (lattice meet).
 /// Returns None if intervals don't overlap.
 let meetInterval (a: Interval) (b: Interval) : Interval option =
     // max of lower bounds
@@ -122,8 +121,7 @@ let meetInterval (a: Interval) (b: Interval) : Interval option =
     | _ -> Some { lo = newLo; hi = newHi }
 
 
-/// intervalAdd: [a,b] + [c,d] = [a+c, b+d].
-/// Returns None (top) if any bound is symbolic.
+/// [a,b] + [c,d] = [a+c, b+d]. Returns None if any bound is symbolic.
 let intervalAdd (a: Interval option) (b: Interval option) : Interval option =
     match a, b with
     | None, _ | _, None -> None
@@ -145,8 +143,7 @@ let intervalAdd (a: Interval option) (b: Interval option) : Interval option =
             Some { lo = newLo; hi = newHi }
 
 
-/// intervalSub: [a,b] - [c,d] = [a-d, b-c].
-/// Returns None (top) if any bound is symbolic.
+/// [a,b] - [c,d] = [a-d, b-c]. Returns None if any bound is symbolic.
 let intervalSub (a: Interval option) (b: Interval option) : Interval option =
     match a, b with
     | None, _ | _, None -> None
@@ -167,8 +164,7 @@ let intervalSub (a: Interval option) (b: Interval option) : Interval option =
             Some { lo = newLo; hi = newHi }
 
 
-/// intervalMul: standard 4-product min/max.
-/// Returns None (top) if any bound is symbolic.
+/// Standard 4-product min/max. Returns None if any bound is symbolic.
 let intervalMul (a: Interval option) (b: Interval option) : Interval option =
     match a, b with
     | None, _ | _, None -> None
@@ -202,8 +198,7 @@ let intervalMul (a: Interval option) (b: Interval option) : Interval option =
                 Some { lo = Finite minP; hi = Finite maxP }
 
 
-/// intervalNeg: -[a,b] = [-b, -a].
-/// Returns None (top) if any bound is symbolic.
+/// -[a,b] = [-b, -a]. Returns None if any bound is symbolic.
 let intervalNeg (a: Interval option) : Interval option =
     match a with
     | None -> None
@@ -223,7 +218,7 @@ let intervalNeg (a: Interval option) : Interval option =
             Some { lo = newLo; hi = newHi }
 
 
-/// intervalIsExactlyZero: check if interval is definitely exactly zero.
+/// Check if interval is definitely exactly zero.
 let intervalIsExactlyZero (iv: Interval option) : bool =
     match iv with
     | None -> false
@@ -233,7 +228,7 @@ let intervalIsExactlyZero (iv: Interval option) : bool =
         | _ -> false
 
 
-/// intervalDefinitelyPositive: check if interval is definitely > 0.
+/// Check if interval is definitely > 0.
 let intervalDefinitelyPositive (iv: Interval option) : bool =
     match iv with
     | None -> false
@@ -243,7 +238,7 @@ let intervalDefinitelyPositive (iv: Interval option) : bool =
         | _ -> false
 
 
-/// intervalDefinitelyNonpositive: check if interval is definitely <= 0.
+/// Check if interval is definitely <= 0.
 let intervalDefinitelyNonpositive (iv: Interval option) : bool =
     match iv with
     | None -> false
@@ -253,7 +248,7 @@ let intervalDefinitelyNonpositive (iv: Interval option) : bool =
         | _ -> false
 
 
-/// intervalDefinitelyNegative: check if interval is definitely < 0.
+/// Check if interval is definitely < 0.
 let intervalDefinitelyNegative (iv: Interval option) : bool =
     match iv with
     | None -> false
@@ -263,7 +258,7 @@ let intervalDefinitelyNegative (iv: Interval option) : bool =
         | _ -> false
 
 
-/// joinValueRanges: join value_ranges maps across branches (convex hull per variable).
+/// Join value_ranges maps across branches (convex hull per variable).
 /// For each variable in the union of baseline and all branches, collect an interval
 /// from each branch (using the baseline as fallback when a branch doesn't mention
 /// the variable), then compute the convex hull.
@@ -301,7 +296,7 @@ let joinValueRanges
     ) Map.empty allVars
 
 
-/// widenValueRanges: widen intervals that moved between baseline and current state.
+/// Widen intervals that moved between baseline and current state.
 /// Variables whose interval did not change are preserved.
 /// Variables new in current (not in baseline) are kept as-is.
 /// The loop iteration variable (if any) is excluded from widening.
@@ -319,7 +314,7 @@ let widenValueRanges
             | _ -> iv)  // new variable or unchanged: keep as-is
 
 
-/// narrowInterval: tighten a widened bound using the new iterate from the narrowing pass.
+/// Tighten a widened bound using the new iterate from the narrowing pass.
 /// Only moves bounds inward (more precise); never widens.
 let narrowInterval (wideIv: Interval) (newIv: Interval) : Interval =
     // Lower bound: take max (move floor up if iterate has higher lower bound)
@@ -339,7 +334,7 @@ let narrowInterval (wideIv: Interval) (newIv: Interval) : Interval =
     { lo = narrowLo wideIv.lo newIv.lo; hi = narrowHi wideIv.hi newIv.hi }
 
 
-/// narrowValueRanges: apply one narrowing pass to all intervals.
+/// Apply one narrowing pass to all intervals.
 /// For each variable in the widened map, if the narrowing iterate has a tighter
 /// bound, adopt it.  Variables that disappeared in the iterate are kept wide (sound).
 /// The loop iteration variable (if any) is excluded from narrowing.
@@ -360,7 +355,7 @@ let narrowValueRanges
 // Conditional interval refinement (v1.8.0)
 // ---------------------------------------------------------------------------
 
-/// negateComparisonOp: negate a comparison operator for else-branch refinement.
+/// Negate a comparison operator for else-branch refinement.
 let negateComparisonOp (op: string) : string =
     match op with
     | ">"  -> "<="
@@ -372,8 +367,7 @@ let negateComparisonOp (op: string) : string =
     | _    -> op
 
 
-/// intervalFromComparison: convert a comparison to a guard interval.
-/// Uses Shapes.addDim for bound arithmetic.
+/// Convert a comparison to a guard interval.
 let intervalFromComparison (op: string) (bound: Shapes.Dim) : Interval option =
     match bound with
     | Shapes.Unknown  -> None
@@ -396,8 +390,7 @@ let intervalFromComparison (op: string) (bound: Shapes.Dim) : Interval option =
         | _ -> None
 
 
-/// simpleExprToDim: lightweight dim extractor for use in condition refinement.
-/// Handles only Const and Var — does not support BinOp (too complex for here).
+// Lightweight dim extractor for condition refinement. Handles Const and Var only.
 let private simpleExprToDim (expr: Ir.Expr) (env: Env.Env) (ctx: Context.AnalysisContext) : Shapes.Dim =
     match expr with
     | Ir.Const(_, v) ->
@@ -420,7 +413,7 @@ let private simpleExprToDim (expr: Ir.Expr) (env: Env.Env) (ctx: Context.Analysi
     | _ -> Shapes.Unknown  // open type: all other Expr cases not handled here
 
 
-/// extractConditionRefinements: extract interval refinements from a branch condition.
+/// Extract interval refinements from a branch condition.
 /// Returns list of (var_name, comparison_op, Dim bound) tuples.
 let rec extractConditionRefinements
     (cond: Ir.Expr)
@@ -465,7 +458,7 @@ let rec extractConditionRefinements
     | _ -> []
 
 
-/// bridgeToDimEquiv: when an interval is exact [k,k], propagate k into DimEquiv and
+/// When an interval is exact [k,k], propagate k into DimEquiv and
 /// back-propagate the concrete value to valueRanges for all equivalent simple variables.
 let bridgeToDimEquiv (ctx: Context.AnalysisContext) (varName: string) (iv: Interval) : unit =
     match iv.lo, iv.hi with
@@ -482,7 +475,7 @@ let bridgeToDimEquiv (ctx: Context.AnalysisContext) (varName: string) (iv: Inter
     | _ -> ()
 
 
-/// applyRefinements: apply interval refinements to ctx.valueRanges in place.
+/// Apply interval refinements to ctx.valueRanges in place.
 let applyRefinements
     (ctx: Context.AnalysisContext)
     (refinements: (string * string * Shapes.Dim) list)
@@ -535,7 +528,7 @@ let applyRefinements
 // Pentagon domain helpers (relational upper-bound constraints)
 // ---------------------------------------------------------------------------
 
-/// joinUpperBounds: intersect two upper-bound maps (keep only facts present in both).
+/// Intersect two upper-bound maps (keep only facts present in both).
 /// When the same variable appears in both maps with different offsets, take the max offset
 /// (least precise but sound: a larger offset is a weaker constraint).
 let joinUpperBounds
@@ -549,7 +542,7 @@ let joinUpperBounds
         | None -> false)
 
 
-/// widenUpperBounds: same as joinUpperBounds (intersection).
+/// Same as joinUpperBounds (intersection).
 /// Since the set of bounds only shrinks, this naturally converges.
 let widenUpperBounds
     (oldMap: Map<string, string * int>)
@@ -558,16 +551,15 @@ let widenUpperBounds
     joinUpperBounds oldMap newMap
 
 
-/// killUpperBoundsFor: remove all bounds that mention varName (either as the
-/// constrained variable or as the bound variable) after an assignment to varName.
+/// Remove all bounds that mention varName (either as the constrained variable or as
+/// the bound variable) after an assignment to varName.
 let killUpperBoundsFor (varName: string) (bounds: Map<string, string * int>) : Map<string, string * int> =
     bounds
     |> Map.filter (fun key (bVar, _) -> key <> varName && bVar <> varName)
 
 
-/// pentagonProvesInBounds: check if the Pentagon upper-bound relation proves
-/// that index variable varName is within matrix dimension matDim.
-/// Returns true if:
+/// Check if the Pentagon upper-bound relation proves that index variable varName is
+/// within matrix dimension matDim. Returns true if:
 ///   (a) upperBounds[varName] = (boundVar, offset) and boundVar has exact interval
 ///       [k,k] in valueRanges and k + offset <= concrete matDim size, OR
 ///   (b) upperBounds[varName] = (boundVar, offset) and the DimEquiv root of boundVar
@@ -603,7 +595,7 @@ let pentagonProvesInBounds
         | _ -> false
 
 
-/// joinLowerBounds: intersect two lower-bound maps (keep only facts present in both).
+/// Intersect two lower-bound maps (keep only facts present in both).
 /// Symmetric with joinUpperBounds -- intersection is the sound join for relational facts.
 let joinLowerBounds
     (a: Map<string, string * int>)
@@ -615,7 +607,7 @@ let joinLowerBounds
         | None -> false)
 
 
-/// widenLowerBounds: same as joinLowerBounds (intersection converges trivially).
+/// Same as joinLowerBounds (intersection converges trivially).
 let widenLowerBounds
     (oldMap: Map<string, string * int>)
     (newMap: Map<string, string * int>)
@@ -623,14 +615,13 @@ let widenLowerBounds
     joinLowerBounds oldMap newMap
 
 
-/// killLowerBoundsFor: remove all lower bounds that mention varName after an assignment.
+/// Remove all lower bounds that mention varName after an assignment.
 let killLowerBoundsFor (varName: string) (bounds: Map<string, string * int>) : Map<string, string * int> =
     bounds
     |> Map.filter (fun key (bVar, _) -> key <> varName && bVar <> varName)
 
 
-/// pentagonProvesLowerBound: check if the Pentagon lower-bound relation proves
-/// that index variable varName is >= 1.
+/// Check if the Pentagon lower-bound relation proves that index variable varName is >= 1.
 /// Returns true when lowerBounds[varName] = (boundVar, offset) and boundVar has
 /// exact interval [k,k] and k + offset >= 1.
 let pentagonProvesLowerBound
@@ -648,10 +639,9 @@ let pentagonProvesLowerBound
         | None -> false
 
 
-/// extractPentagonBoundsFromCondition: parse a while-condition expression and
-/// extract relational bounds of the form (varName, boundVar, offset, isUpper).
-/// Only fires when both sides are simple Var references; constant bounds are
-/// already handled by extractConditionRefinements / applyRefinements.
+/// Parse a while-condition expression and extract relational bounds of the form
+/// (varName, boundVar, offset, isUpper). Only fires when both sides are simple Var
+/// references; constant bounds are already handled by extractConditionRefinements.
 ///
 /// Patterns recognised:
 ///   i <= n  ->  (i, n, 0, true)   -- upper bound: i <= n + 0
@@ -686,7 +676,7 @@ let rec extractPentagonBoundsFromCondition
     | _ -> []
 
 
-/// applyPentagonBridge: for each x in upperBounds where upperBounds[x] = (y, c)
+/// For each x in upperBounds where upperBounds[x] = (y, c)
 /// and valueRanges[y] = [k,k] (exact), tighten valueRanges[x].hi to min(current_hi, k+c).
 let applyPentagonBridge (ctx: Context.AnalysisContext) : unit =
     for kvp in ctx.cst.upperBounds |> Map.toSeq do
@@ -713,7 +703,7 @@ let applyPentagonBridge (ctx: Context.AnalysisContext) : unit =
         | None -> ()
 
 
-/// applyPentagonLowerBridge: for each x in lowerBounds where lowerBounds[x] = (y, c)
+/// For each x in lowerBounds where lowerBounds[x] = (y, c)
 /// and valueRanges[y] = [k,k] (exact), tighten valueRanges[x].lo to max(current_lo, k+c).
 let applyPentagonLowerBridge (ctx: Context.AnalysisContext) : unit =
     for kvp in ctx.cst.lowerBounds |> Map.toSeq do
