@@ -2,7 +2,6 @@ module Builtins
 
 // ---------------------------------------------------------------------------
 // KNOWN_BUILTINS: set of recognized builtin function names.
-// Mechanical port of analysis/builtins.py KNOWN_BUILTINS.
 // Sorted alphabetically within groups for maintainability.
 // ---------------------------------------------------------------------------
 
@@ -179,7 +178,7 @@ let CODER_UNSUPPORTED_BUILTINS : Set<string> =
 
 // ---------------------------------------------------------------------------
 // SUPPRESSED_CMD_STMTS: command-syntax statements that are silently ignored.
-// Mechanical port of analysis/eval_builtins.py _SUPPRESSED_CMD_STMTS.
+// Statements silently ignored in command-syntax context.
 // ---------------------------------------------------------------------------
 
 let SUPPRESSED_CMD_STMTS : Set<string> =

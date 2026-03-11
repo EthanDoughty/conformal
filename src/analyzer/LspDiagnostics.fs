@@ -125,6 +125,9 @@ let toLspDiagnostic
         Message            = message
         Tags               = tags
         RelatedInformation = relatedInformation
-        CodeDescription    = Some { Href = $"https://github.com/EthanDoughty/conformal/blob/main/docs/warnings/{codeString d.code}.md" }
+        CodeDescription    =
+            match d.code with
+            | W_STRICT_MODE -> None
+            | _ -> Some { Href = $"https://github.com/EthanDoughty/conformal/blob/main/docs/warnings/{codeString d.code}.md" }
         Data               = None
     }

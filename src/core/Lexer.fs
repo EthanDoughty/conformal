@@ -71,12 +71,12 @@ let private opValueToKind (v: string) : TokenKind =
     | _ -> TkOp
 
 // ---------------------------------------------------------------------------
-// Token patterns – ordered by priority matching TOKEN_SPEC in lexer.py.
+// Token patterns – ordered by priority.
 // We build one alternation regex with named groups.
 // ---------------------------------------------------------------------------
 
 // Named pattern fragments used in the master regex.
-// Python TOKEN_SPEC order:
+// Token pattern order:
 //   DQSTRING, NUMBER, ID, CONTINUATION, DOTOP, OP, DOT, NEWLINE, SKIP, COMMENT, QUOTE, CURLYBRACE, MISMATCH
 // We replicate them as named groups; the first match wins.
 //
@@ -108,7 +108,7 @@ let private masterPattern =
 // regex ORDER — CONTINUATION before DOTOP before NUMBER. The key insight is that
 // in Python, the NUMBER pattern r"\d+(?:\.\d*)?(?:[eE][+-]?\d+)?" does NOT match .5 —
 // the Python lexer just doesn't support leading-dot numbers (they get lexed as DOT + NUMBER).
-// Looking at lexer.py: NUMBER = r"\d+(?:\.\d*)?(?:[eE][+-]?\d+)?" — starts with \d+, no leading dot.
+// NUMBER = r"\d+(?:\.\d*)?(?:[eE][+-]?\d+)?" — starts with \d+, no leading dot.
 // So we should match the Python behavior exactly: no leading-dot support.
 
 // Active pattern used for tokenization. masterPattern above is retained as a readable reference.
