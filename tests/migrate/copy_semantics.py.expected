@@ -4,4 +4,4 @@ import numpy as np
 
 A = np.ones((3, 3))
 B = A.copy()
-B[1 - 1, 1 - 1] = 99
+B[0, 0] = 99
