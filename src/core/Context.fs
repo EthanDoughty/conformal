@@ -189,6 +189,12 @@ type AnalysisContext() =
     member val ws   : WorkspaceContext   = WorkspaceContext()  with get
     /// Accumulated diagnostics
     member val diagnostics : Diagnostics.Diagnostic list = [] with get, set
+    /// Per-expression inferred shapes. Populated during analysis.
+    /// Key: SrcLoc of the expression. Value: its inferred result shape.
+    /// Last-write-wins (fixpoint re-analysis may refine shapes).
+    /// NOT saved/restored by SnapshotScope — accumulates globally across all scopes.
+    member val shapeAnnotations : System.Collections.Generic.Dictionary<SrcLoc, Shape>
+        = System.Collections.Generic.Dictionary<SrcLoc, Shape>() with get
 
     /// Snapshot the 5 branch-sensitive fields (constraints, dimEquiv, valueRanges,
     /// upperBounds, lowerBounds). DimEquiv is deep-copied; the rest are persistent/O(1).
