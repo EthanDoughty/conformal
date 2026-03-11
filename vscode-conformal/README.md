@@ -35,13 +35,7 @@ Search "Conformal" in VS Code Extensions, or run:
 code --install-extension EthanDoughty.conformal
 ```
 
-You shouldn't need to configure anything. The extension bundles the analyzer directly, compiled from F# to JavaScript using the Fable tool, so there is no subprocess, no Python, and no .NET required on your machine.
-
-## How it works
-
-Initially, the analyzer runs in-process inside the VS Code extension's Node.js host, since it is compiled to JavaScript from F# using Fable. When you open or save a `.m` file, the server analyzes it and publishes diagnostics back to the editor. If you save a file that other files in the same directory might depend on, those are re-analyzed too. If the server crashes, it can auto-recover up to 3 times.
-
-Under the hood, there are around 315 builtin shape rules (out of 635 recognized builtins total, covering core MATLAB plus Control System, Signal Processing, Aerospace, Optimization, Mapping, Image Processing, Robotics, Statistics, Communications, Computer Vision, Deep Learning, and Symbolic Math Toolbox functions), symbolic dimension tracking, constraint solving, interval analysis, switch/case interval refinement, and fixed-point loop convergence, all validated by 439 tests across 21 categories. The parser has also been tested against 139 `.m` files drawn from 8 real open-source MATLAB repos, covering robotics, signal processing, and scientific computing, and produces zero warnings on all of them in default mode.
+You shouldn't need to configure anything. The extension bundles the analyzer directly -- no subprocess, no Python, and no .NET required on your machine.
 
 ## Commands
 
@@ -60,6 +54,6 @@ Under the hood, there are around 315 builtin shape rules (out of 635 recognized 
 | `conformal.strict` | `false` | Show all warnings including informational and low-confidence diagnostics |
 | `conformal.licenseKey` | `""` | Conformal Pro license key (format: `CONF-xxx.yyy`). Get one at [conformal.dev](https://conformal.dev) |
 | `conformal.analyzeOnChange` | `true` | Keystroke analysis with a 500ms debounce |
-| `conformal.inlayHints` | `true` | Show inferred shapes as inlay hints on first assignment |
+| `conformal.inlayHints` | `true` | Show inferred shapes as inlay hints on first assignment. If hints feel noisy, set to `false` |
 
 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal) · [GitHub](https://github.com/EthanDoughty/conformal)

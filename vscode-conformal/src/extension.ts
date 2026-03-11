@@ -96,7 +96,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // Status bar
     statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 0);
     statusBarItem.command = 'conformal.analyzeFile';
-    statusBarItem.tooltip = 'Conformal MATLAB Shape Analyzer';
+    statusBarItem.tooltip = 'Conformal MATLAB Shape Analyzer\nToggle inlay hints: conformal.inlayHints setting';
     context.subscriptions.push(statusBarItem);
 
     // Update status bar on diagnostic changes and editor switches

@@ -7,7 +7,7 @@
 [![Version](https://img.shields.io/badge/version-3.3.0-orange.svg)](#motivation-and-future-directions)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4.svg)](https://dotnet.microsoft.com/download)
-[![Tests](https://img.shields.io/badge/tests-475%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-502%20passing-brightgreen.svg)](#test-suite)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
 *Matrices must be **conformable** before they can perform. Conformal makes sure they are.*
@@ -69,7 +69,7 @@ dotnet run -- ../tests/basics/inner_dim_mismatch.m
 
 ## Performance
 
-The single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and the cross-file workspace analysis runs in about 70ms. The full test suite (475 tests total) finishes in about one second, with no MATLAB runtime involved during any part of the process.
+The single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and the cross-file workspace analysis runs in about 70ms. The full test suite (502 tests across 22 categories) finishes in about one second, with no MATLAB runtime involved during any part of the process.
 
 The VS Code extension runs the analyzer while you are typing code, since it is compiled to JavaScript, using the Fable tool, so there is no subprocess startup cost and analysis works on every keystroke with a 500ms debounce.
 
@@ -199,13 +199,13 @@ src/                    F# analyzer (lexer, parser, shape inference, builtins, d
 vscode-conformal/       VS Code extension (TypeScript client + Fable-compiled analyzer)
   fable/                Fable compilation project (F# to JavaScript, shares src/*.fs files)
   src/                  TypeScript extension and LSP server code
-tests/                  469 self-checking MATLAB programs in 22 categories
+tests/                  502 self-checking MATLAB programs in 22 categories
 .github/                CI workflow (build, test, compile Fable, package VSIX)
 ```
 
 ## Test Suite
 
-Conformal is validated by 469 self-checking MATLAB programs organized into 22 categories. Each test embeds its expected behavior as inline assertions:
+Conformal is validated by 502 self-checking MATLAB programs organized into 22 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -898,7 +898,7 @@ Parser and lexer edge cases that don't fit naturally into other categories.
 ### Running the Tests
 
 ```bash
-# Run all 469 .m tests
+# Run all 502 .m tests
 cd src && dotnet run -- --tests
 
 # Run with fixed-point loop analysis
@@ -951,11 +951,11 @@ Run `cd src && dotnet run -- file.m` to analyze a file. The other flags are:
 
 `--coder` runs the MATLAB Coder compatibility pass after shape analysis, emitting six `W_CODER_*` warnings for constructs Coder cannot handle (variable-size arrays, cell arrays, dynamic field access, try/catch, unsupported builtins, recursion). These codes are strict-only, so you normally combine `--coder` with `--strict`.
 
-`--quiet` suppresses per-test output during `--tests` runs and only prints failures. Useful when you want to run the full suite without scrolling through 469 passing test blocks.
+`--quiet` suppresses per-test output during `--tests` runs and only prints failures. Useful when you want to run the full suite without scrolling through 502 passing test blocks.
 
 `--help` prints usage and exits 0.
 
-`--version` prints `conformal 3.2.0` and exits 0.
+`--version` prints `conformal 3.3.0` and exits 0.
 
 `--lsp` starts the native .NET Language Server Protocol server.
 
@@ -963,9 +963,9 @@ The exit code is `0` on success and `1` on a parse error, analyzer mismatch, or 
 
 ## Real-World Compatibility
 
-To check how Conformal holds up on real MATLAB code, a corpus of 139 `.m` files was drawn from 8 open-source repos on GitHub, covering robotics, signal processing, and scientific computing. In default mode, the corpus produces zero warnings, and in strict mode the warnings are predominantly informational or low-confidence diagnostics.
+To check how Conformal holds up on real MATLAB code, a corpus of 1,197 `.m` files was drawn from 11 open-source repos on GitHub, covering robotics, signal processing, scientific computing, and computer vision. In default mode, the corpus produces zero crashes and zero false positives.
 
-The repos in the corpus include petercorke/robotics-toolbox-matlab (1491 stars), rpng/kalibr_allan (648 stars), gpeyre/matlab-toolboxes (344 stars), and ImperialCollegeLondon/sap-voicebox (248 stars), among others. These files use a wide range of MATLAB idioms: pre-2016 end-less function definitions, space-separated multi-return syntax (`function [a b c] = f(...)`), Latin-1 encoded files from European authors, `\` for linear solves, and complex matrix literal spacing like `[1 -2; 3 -4]`. Parser robustness improvements came directly from failures on this corpus.
+The repos in the corpus include gptoolbox (669 stars), vlfeat (1.6k stars), prmlt (6.2k stars), petercorke/robotics-toolbox-matlab (1491 stars), rpng/kalibr_allan (648 stars), gpeyre/matlab-toolboxes (344 stars), and ImperialCollegeLondon/sap-voicebox (248 stars), among others. These files use a wide range of MATLAB idioms: pre-2016 end-less function definitions, space-separated multi-return syntax (`function [a b c] = f(...)`), Latin-1 encoded files from European authors, `\` for linear solves, and complex matrix literal spacing like `[1 -2; 3 -4]`. Parser robustness improvements came directly from failures on this corpus.
 
 ## Limitations
 
