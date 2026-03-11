@@ -28,8 +28,11 @@ jobs:
       - name: Build solution
         run: dotnet build Conformal.sln --no-restore
 
-      - name: Run F# tests
+      - name: Run analyzer tests
         run: dotnet run --project src/analyzer/ConformalAnalyzer.fsproj -- --tests
+
+      - name: Run migrate tests
+        run: dotnet run --project src/migrate/ConformalMigrate.fsproj -- --test-migrate
 
       - name: Install Fable
         run: |

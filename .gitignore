@@ -1,5 +1,6 @@
 # IDEs
 .vscode/
+.idea
 .idea/
 *.swp
 *.swo
@@ -23,6 +24,8 @@ CLAUDE_DEEP.md
 AGENTS.md
 TASK.md
 FINDINGS-*.md
+CODEX_MIGRATE.md
+.env
 .mcp.json
 
 # Shell/editor config (environment artifacts)

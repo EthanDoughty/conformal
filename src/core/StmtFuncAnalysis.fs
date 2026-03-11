@@ -363,7 +363,7 @@ let private formatDualLocationWarning (funcWarn: Diagnostic) (funcName: string) 
 
 
 // ---------------------------------------------------------------------------
-// _update_struct_field helper (mirrors Python's _update_struct_field in dim_extract.py)
+// Struct field update helper
 // ---------------------------------------------------------------------------
 
 let rec private updateStructField

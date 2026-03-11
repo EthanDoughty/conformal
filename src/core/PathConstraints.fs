@@ -3,7 +3,7 @@ module PathConstraints
 open Ir
 
 // ---------------------------------------------------------------------------
-// Condition formatting helpers (mirrors path_constraints.py)
+// Condition formatting helpers
 // ---------------------------------------------------------------------------
 
 let private formatSimple (expr: Expr) : string option =

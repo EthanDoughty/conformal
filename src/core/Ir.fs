@@ -1,7 +1,6 @@
 module Ir
 
 // Intermediate Representation for MATLAB.
-// Mirrors ir/ir.py using F# discriminated unions.
 // camelCase for record fields, PascalCase for DU cases and type names.
 
 // Source location: line and column (1-based).
