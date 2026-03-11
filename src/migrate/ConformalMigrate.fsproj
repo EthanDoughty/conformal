@@ -6,9 +6,14 @@
     <AssemblyName>conformal-migrate</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="PyAst.fs" />
+    <Compile Include="BuiltinMap.fs" />
+    <Compile Include="CopySemantics.fs" />
+    <Compile Include="Translate.fs" />
+    <Compile Include="Emit.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="../shared/ConformalShared.fsproj" />
+    <ProjectReference Include="../core/ConformalCore.fsproj" />
   </ItemGroup>
 </Project>

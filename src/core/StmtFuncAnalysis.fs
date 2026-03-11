@@ -469,6 +469,10 @@ type CallConfig = {
 // Wired eval functions (break circular dependency EvalExpr <-> StmtFuncAnalysis)
 // ---------------------------------------------------------------------------
 
+/// Record the inferred shape at a source location (last-write-wins).
+let inline private recordShape (ctx: AnalysisContext) (loc: SrcLoc) (shape: Shape) =
+    ctx.shapeAnnotations.[loc] <- shape
+
 /// evalExprIr wired with real builtin dispatch.
 let rec wiredEvalExpr
     (expr: Expr)
@@ -476,7 +480,9 @@ let rec wiredEvalExpr
     (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     : Shape =
-    evalExprIr expr env warnings ctx None wiredBuiltinDispatch
+    let shape = evalExprIr expr env warnings ctx None wiredBuiltinDispatch
+    recordShape ctx expr.Loc shape
+    shape
 
 // Determine dispatch target for a function name.
 // Priority: same-file function > nested function > private > external function
@@ -605,20 +611,23 @@ and private wiredEvalExprFull
     (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     : Shape =
-    match expr with
-    | Apply({ line = line }, Var(_, fname), args) ->
-        let varShape = Env.get env fname
-        if isFunctionHandle varShape then
-            // Function handle variable: delegate to evalExprIr handle dispatch
+    let shape =
+        match expr with
+        | Apply({ line = line }, Var(_, fname), args) ->
+            let varShape = Env.get env fname
+            if isFunctionHandle varShape then
+                // Function handle variable: delegate to evalExprIr handle dispatch
+                evalExprIr expr env warnings ctx None wiredBuiltinDispatch
+            elif Env.hasLocal env fname && not (Set.contains fname KNOWN_BUILTINS) then
+                // Bound non-handle, non-builtin variable: treat as indexing
+                evalExprIr expr env warnings ctx None wiredBuiltinDispatch
+            else
+                // Name-based dispatch via resolveCall (builtins, functions, classes, unknown)
+                wiredBuiltinDispatch fname line (Var(loc line 0, fname)) args env warnings ctx
+        | _ ->
             evalExprIr expr env warnings ctx None wiredBuiltinDispatch
-        elif Env.hasLocal env fname && not (Set.contains fname KNOWN_BUILTINS) then
-            // Bound non-handle, non-builtin variable: treat as indexing
-            evalExprIr expr env warnings ctx None wiredBuiltinDispatch
-        else
-            // Name-based dispatch via resolveCall (builtins, functions, classes, unknown)
-            wiredBuiltinDispatch fname line (Var(loc line 0, fname)) args env warnings ctx
-    | _ ->
-        evalExprIr expr env warnings ctx None wiredBuiltinDispatch
+    recordShape ctx expr.Loc shape
+    shape
 
 
 // ---------------------------------------------------------------------------
