@@ -9,3 +9,4 @@ bundled/**
 *.vsix
 node_modules/**
 out/*.map
+.env
