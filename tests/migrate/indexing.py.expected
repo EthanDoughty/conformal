@@ -3,8 +3,8 @@
 import numpy as np
 
 A = np.zeros((5, 5))
-x = A[2 - 1, 3 - 1]
-A[1 - 1, 1 - 1] = 99
-row = A[1 - 1, :]
-col = A[:, 2 - 1]
-sub = A[2 - 1:4, 1 - 1:3]
+x = A[1, 2]
+A[0, 0] = 99
+row = A[0, :]
+col = A[:, 1]
+sub = A[1:4, 0:3]

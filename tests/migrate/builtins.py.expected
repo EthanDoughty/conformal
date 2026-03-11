@@ -5,7 +5,7 @@ import numpy as np
 A = np.eye(4)
 B = np.linalg.inv(A)
 n = max(A.shape)
-s = A.shape[1 - 1]
+s = A.shape[0]
 v = np.diag(A)
 d = np.linalg.det(A)
 print(d)

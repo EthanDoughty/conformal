@@ -11,7 +11,7 @@ let private precedence (op: string) : int =
     | "or" -> 1
     | "and" -> 2
     | "not " -> 3
-    | "==" | "!=" | "<" | ">" | "<=" | ">=" -> 4
+    | "in" | "not in" | "==" | "!=" | "<" | ">" | "<=" | ">=" -> 4
     | "+" | "-" -> 5
     | "*" | "/" | "//" | "%" | "@" -> 6
     | "**" -> 7
@@ -63,7 +63,8 @@ let rec emitExpr (expr: PyExpr) : string =
         sprintf "%s(%s)" (emitExpr func) allArgs
     | PyIndex(base_, indices) ->
         let sIndices = indices |> List.map emitIdx |> String.concat ", "
-        sprintf "%s[%s]" (emitExpr base_) sIndices
+        let sBase = match base_ with PyBinOp _ | PyUnaryOp _ -> sprintf "(%s)" (emitExpr base_) | _ -> emitExpr base_
+        sprintf "%s[%s]" sBase sIndices
     | PyAttr(base_, attr) ->
         sprintf "%s.%s" (emitExpr base_) attr
     | PyList items ->

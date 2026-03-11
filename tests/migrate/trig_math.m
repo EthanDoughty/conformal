@@ -1,0 +1,9 @@
+x = 1.5;
+a = sin(x);
+b = cos(x);
+c = atan2(1, 2);
+d = floor(x);
+e = ceil(x);
+f = mod(7, 3);
+g = log2(8);
+h = sign(-5);
