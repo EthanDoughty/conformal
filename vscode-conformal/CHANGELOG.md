@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.4.0
+
+- Multi-project solution: core library, shared, analyzer, migrate
+- Arguments block shape extraction and stepped range tracking
+- Command syntax support (bare function calls without parentheses)
+- Try-parse-retry for robust error recovery
+- Trimmed Marketplace README: removed implementation internals, tightened install section
+- Status bar tooltip now mentions inlay hints toggle
+- 502 tests across 22 categories
+
 ## 3.2.0
 
 - Fix spurious W_END_OUTSIDE_INDEXING from parenthesized `for(i = 1:n)` syntax
