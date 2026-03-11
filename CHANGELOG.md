@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-03-11
+### Added
+- **Multi-project solution**: split into core library, shared, analyzer, and migrate projects
+- **Conformal Migrate**: MATLAB-to-Python transpiler with 162 builtins and 27 test pairs
+- Makefile and Dockerfile for build/test/docker workflow
+
+### Changed
+- Trimmed Marketplace README: removed implementation internals, tightened install section
+- Status bar tooltip now mentions inlay hints toggle
+- Dogfood corpus expanded to 1,197 files from 11 repos (was 139 from 8)
+- Total test count: 502 (was 475)
+
 ## [3.3.0] - 2026-03-10
 ### Added
 - **`SteppedRange` index argument** (`Ir.fs`, `EvalExpr.fs`): first-class `a:step:b` in index expressions; `IndexArg` DU gains `SteppedRange` case, handled in all exhaustive matches
