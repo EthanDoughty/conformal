@@ -955,7 +955,7 @@ Run `cd src && dotnet run -- file.m` to analyze a file. The other flags are:
 
 `--help` prints usage and exits 0.
 
-`--version` prints `conformal 3.3.0` and exits 0.
+`--version` prints `conformal 3.4.0` and exits 0.
 
 `--lsp` starts the native .NET Language Server Protocol server.
 
