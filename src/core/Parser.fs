@@ -1126,14 +1126,36 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
 // Public entry point
 // ---------------------------------------------------------------------------
 
+/// Quick pre-scan: detect multi-function files that use end-less style.
+/// In end-terminated files, end count = block openers + function count.
+/// In end-less files, end count = block openers only (functions lack end).
+/// If there are 2+ functions and fewer ends than openers + functions, it's end-less.
+let private detectEndless (tokens: Token list) : bool =
+    let mutable funcCount = 0
+    let mutable openerCount = 0
+    let mutable endCount = 0
+    for tok in tokens do
+        match tok.kind with
+        | TkFunction -> funcCount <- funcCount + 1
+        | TkIf | TkFor | TkParfor | TkWhile | TkSwitch | TkTry ->
+            openerCount <- openerCount + 1
+        | TkEnd -> endCount <- endCount + 1
+        | _ -> ()
+    funcCount >= 2 && endCount < openerCount + funcCount
+
 let parseMATLAB (src: string) : Program =
     let tokenList = Lexer.lex src
-    try
-        // Try modern end-terminated functions first (most common)
-        let parser = MatlabParser(tokenList, false)
-        parser.ParseProgram()
-    with
-    | :? ParseError ->
-        // Retry with endless-function mode (legacy MATLAB without end)
+    if detectEndless tokenList then
+        // Pre-scan detected end-less multi-function file; skip straight to endless mode
         let parser = MatlabParser(tokenList, true)
         parser.ParseProgram()
+    else
+        try
+            // Try modern end-terminated functions first (most common)
+            let parser = MatlabParser(tokenList, false)
+            parser.ParseProgram()
+        with
+        | :? ParseError ->
+            // Retry with endless-function mode (legacy MATLAB without end)
+            let parser = MatlabParser(tokenList, true)
+            parser.ParseProgram()
