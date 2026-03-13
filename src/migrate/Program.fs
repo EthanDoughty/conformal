@@ -42,7 +42,7 @@ let private migrateFile (inputFile: string) (outputFile: string option) (toStdou
                 eprintfn "Wrote %s" outputFile.Value
             0
         with
-        | Parser.ParseError msg ->
+        | Parser.ParseError(msg, _, _) ->
             eprintfn "ParseError: %s" msg
             1
         | Lexer.LexError msg ->

@@ -56,7 +56,7 @@ let runFile (filePath: string) (strict: bool) (fixpoint: bool) (benchmark: bool)
                 let prog = Parser.parseMATLAB src
                 Some prog
             with
-            | Parser.ParseError msg ->
+            | Parser.ParseError(msg, _, _) ->
                 eprintfn "Error while parsing %s: ParseError: %s" filePath msg
                 None
             | Lexer.LexError msg ->
@@ -314,7 +314,7 @@ let run (argv: string array) : int =
                 printfn "%s" json
                 0
             with
-            | Parser.ParseError msg ->
+            | Parser.ParseError(msg, _, _) ->
                 eprintfn "ParseError: %s" msg
                 2
             | Lexer.LexError msg ->
