@@ -64,6 +64,8 @@ interface AnalysisResult {
     env: [string, string][];         // [varName, shapeString]
     symbols: FunctionSymbol[];
     parseError: string | undefined;
+    parseErrorLine: number | undefined;
+    parseErrorCol: number | undefined;
     assignments: AssignmentHint[];
 }
 
@@ -291,9 +293,11 @@ function validate(uri: string, source: string, force = false): void {
         );
 
         if (result.parseError) {
-            // Parse error diagnostic
+            // Parse error diagnostic — use line/col from parser (1-based) converted to LSP (0-based)
+            const line = Math.max(0, (result.parseErrorLine ?? 1) - 1);
+            const col = Math.max(0, (result.parseErrorCol ?? 1) - 1);
             const errorDiag: Diagnostic = {
-                range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } },
+                range: { start: { line, character: col }, end: { line, character: col } },
                 severity: DiagnosticSeverity.Error,
                 source: 'conformal',
                 message: `Syntax error: ${result.parseError}`,

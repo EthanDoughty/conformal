@@ -107,6 +107,15 @@
           "description": "Show inferred shapes as inlay hints on first assignment of each variable"
         }
       }
+    },
+    "menus": {
+      "editor/context": [
+        {
+          "command": "conformal.analyzeFile",
+          "when": "resourceLangId == matlab",
+          "group": "conformal"
+        }
+      ]
     }
   },
   "scripts": {

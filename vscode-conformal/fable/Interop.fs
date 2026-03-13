@@ -37,11 +37,13 @@ type AssignmentHint = {
 }
 
 type AnalysisResult = {
-    diagnostics: SerializedDiagnostic array
-    env:         (string * string) array   // (varName, shapeString)
-    symbols:     FunctionSymbol array
-    parseError:  string option
-    assignments: AssignmentHint array
+    diagnostics:    SerializedDiagnostic array
+    env:            (string * string) array   // (varName, shapeString)
+    symbols:        FunctionSymbol array
+    parseError:     string option
+    parseErrorLine: int option
+    parseErrorCol:  int option
+    assignments:    AssignmentHint array
 }
 
 // ---------------------------------------------------------------------------
@@ -113,22 +115,23 @@ let analyzeSource
     let irProgOpt =
         try Some (Parser.parseMATLAB source)
         with
-        | Parser.ParseError msg -> None
-        | Lexer.LexError msg -> None
+        | Parser.ParseError(_, _, _) -> None
+        | Lexer.LexError _ -> None
         | _ -> None
 
     match irProgOpt with
     | None ->
         // Return parse error — TS server will create a diagnostic for it
-        let errMsg =
+        let (errMsg, errLine, errCol) =
             try
                 Parser.parseMATLAB source |> ignore
-                "Unknown parse error"
+                ("Unknown parse error", None, None)
             with
-            | Parser.ParseError msg -> msg
-            | Lexer.LexError msg -> msg
-            | ex -> ex.Message
-        { diagnostics = [||]; env = [||]; symbols = [||]; parseError = Some errMsg; assignments = [||] }
+            | Parser.ParseError(msg, line, col) -> (msg, Some line, Some col)
+            | Lexer.LexError msg -> (msg, None, None)
+            | ex -> (ex.Message, None, None)
+        { diagnostics = [||]; env = [||]; symbols = [||]; parseError = Some errMsg
+          parseErrorLine = errLine; parseErrorCol = errCol; assignments = [||] }
 
     | Some irProg ->
 
@@ -207,4 +210,5 @@ let analyzeSource
 
     walkStmts irProg.body
 
-    { diagnostics = diags; env = envPairs; symbols = symbols; parseError = None; assignments = hintList.ToArray() }
+    { diagnostics = diags; env = envPairs; symbols = symbols; parseError = None
+      parseErrorLine = None; parseErrorCol = None; assignments = hintList.ToArray() }

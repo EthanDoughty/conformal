@@ -1,4 +1,4 @@
-# Stage 1: Build
+# Build
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
@@ -21,13 +21,13 @@ COPY src/migrate/ src/migrate/
 # Build release
 RUN dotnet publish src/analyzer/ConformalAnalyzer.fsproj -c Release -o /app
 
-# Stage 2: Runtime (slim, no tests)
+# Runtime
 FROM mcr.microsoft.com/dotnet/runtime:8.0 AS runtime
 WORKDIR /app
 COPY --from=build /app .
 ENTRYPOINT ["./conformal-parse"]
 
-# Stage 3: Test (runtime + test files)
+# Test (runtime + test files)
 FROM runtime AS test
 COPY tests/ /app/tests/
 ENTRYPOINT ["./conformal-parse"]

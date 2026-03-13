@@ -190,9 +190,11 @@ type ConformalLspServer(client: ConformalClient) =
             analysisCache.[uri] <- cache
 
         with
-        | Parser.ParseError msg ->
+        | Parser.ParseError(msg, line, col) ->
+            let lspLine = if line > 0 then uint32 (line - 1) else 0u
+            let lspCol  = if col > 0 then uint32 (col - 1) else 0u
             let errorDiag : Ionide.LanguageServerProtocol.Types.Diagnostic = {
-                Range    = { Start = { Line = 0u; Character = 0u }; End = { Line = 0u; Character = 0u } }
+                Range    = { Start = { Line = lspLine; Character = lspCol }; End = { Line = lspLine; Character = lspCol } }
                 Severity = Some DiagnosticSeverity.Error
                 Code     = None
                 Source   = Some "conformal"
