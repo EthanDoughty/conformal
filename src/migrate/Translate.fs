@@ -89,16 +89,16 @@ let rec translateExpr (expr: Expr) (tctx: TranslateContext) : PyExpr =
     | StringLit(_, s) -> PyStr s
     | Neg(_, operand) -> PyUnaryOp("-", translateExpr operand tctx)
     | Not(_, operand) ->
-        let pyOp = translateExpr operand tctx
-        let shape = inferExprShape tctx operand
-        match shape with
-        | Some s when isMatrixShape s -> PyCall(PyVar "np.logical_not", [pyOp], [])
-        | _ -> PyUnaryOp("not ", pyOp)
+        PyCall(PyVar "np.logical_not", [translateExpr operand tctx], [])
     | BinOp(_, op, left, right) -> translateBinOp op left right tctx
     | Transpose(_, operand) ->
         PyAttr(translateExpr operand tctx, "T")
     | FieldAccess(_, base_, field) ->
-        PyAttr(translateExpr base_ tctx, field)
+        if field = "<dynamic>" then
+            // Dynamic field access s.(expr) — expression lost in IR, emit getattr placeholder
+            PyCall(PyVar "getattr", [translateExpr base_ tctx; PyStr "<dynamic>"], [])
+        else
+            PyAttr(translateExpr base_ tctx, safeName field)
     | Lambda(_, parms, body) ->
         PyLambda(parms, translateExpr body tctx)
     | FuncHandle(_, name) ->
@@ -210,9 +210,10 @@ and private translateApply (expr: Expr) (base_: Expr) (args: IndexArg list) (tct
                 let pyArgs = args |> List.map (fun a -> translateCallArg a tctx)
                 PyCall(PyVar fname, pyArgs, [])
     | _ ->
-        // Complex base expression: treat as indexing
+        // Complex base expression (e.g. obj.method(args))
         let pyBase = translateExpr base_ tctx
         match args with
+        | [] -> PyCall(pyBase, [], [])  // Zero-arg method call: obj.method()
         | [Colon _] -> PyCall(PyAttr(pyBase, "ravel"), [], [])
         | _ ->
             let pyIndices = args |> List.map (fun a -> translateIndexArg a tctx)
@@ -360,6 +361,11 @@ and private translateBuiltinCall (mapping: BuiltinMapping) (fname: string) (args
             | func :: arrays when arrays.Length >= 1 ->
                 PyCall(PyVar "list", [PyCall(PyVar "map", func :: arrays, [])], [])
             | _ -> PyCall(PyVar "cellfun", pyArgs, [])
+    | ClassStyle ->
+        // class(x) -> type(x).__name__
+        match pyArgs with
+        | [arg] -> PyAttr(PyCall(PyVar "type", [arg], []), "__name__")
+        | _ -> PyCall(PyVar "type", pyArgs, [])
     | ExistStyle ->
         // exist('x', 'var') -> x is not None  (variable existence)
         // exist(path, 'file') -> os.path.exists(path)  (file existence)
@@ -677,7 +683,7 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
 
     | StructAssign(_, baseName, fields, expr) ->
         let pyExpr = translateExpr expr tctx
-        let target = fields |> List.fold (fun acc f -> sprintf "%s.%s" acc f) (safeName baseName)
+        let target = fields |> List.fold (fun acc f -> sprintf "%s.%s" acc (safeName f)) (safeName baseName)
         [PyAssign(target, pyExpr)]
 
     | CellAssign(_, baseName, args, expr) ->

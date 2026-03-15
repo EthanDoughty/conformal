@@ -27,6 +27,7 @@ type ArgTransform =
     | DimArgStyle                                    // sum(A, dim) -> np.sum(A, axis=dim-1)
     | CellfunStyle                                   // cellfun(@f, C) -> [f(x) for x in C]
     | ExistStyle                                    // exist('x','var') -> x is not None; exist(f,'file') -> os.path.exists(f)
+    | ClassStyle                                    // class(x) -> type(x).__name__
 
 type BuiltinMapping = {
     pythonFunc: string
@@ -219,6 +220,8 @@ let private builtinTable =
         "polyfit",   { pythonFunc = "np.polyfit";       argTransform = Direct;         needsOrderF = false }
         "conv",      { pythonFunc = "np.convolve";      argTransform = Direct;         needsOrderF = false }
         "deconv",    { pythonFunc = "np.polydiv";       argTransform = Direct;         needsOrderF = false }
+        // Type queries
+        "class",     { pythonFunc = "type";             argTransform = ClassStyle;     needsOrderF = false }
         // Existence checks
         "exist",     { pythonFunc = "os.path.exists";   argTransform = ExistStyle;     needsOrderF = false }
         "fft",       { pythonFunc = "np.fft.fft";       argTransform = Direct;         needsOrderF = false }
