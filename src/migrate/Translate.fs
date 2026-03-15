@@ -5,6 +5,20 @@ open Shapes
 open PyAst
 open BuiltinMap
 
+/// Python 3 reserved keywords that cannot be used as identifiers.
+let private pythonKeywords = set [
+    "False"; "None"; "True"; "and"; "as"; "assert"; "async"; "await"
+    "break"; "class"; "continue"; "def"; "del"; "elif"; "else"; "except"
+    "finally"; "for"; "from"; "global"; "if"; "import"; "in"; "is"
+    "lambda"; "nonlocal"; "not"; "or"; "pass"; "raise"; "return"
+    "try"; "while"; "with"; "yield"
+]
+
+/// Rename a MATLAB identifier if it collides with a Python keyword.
+let private safeName (name: string) : string =
+    if Set.contains name pythonKeywords then name + "_"
+    else name
+
 /// Constant-folding binary op constructor: folds arithmetic on two constants at build time.
 let private mkBinOp (op: string) (left: PyExpr) (right: PyExpr) : PyExpr =
     match op, left, right with
@@ -70,7 +84,7 @@ let rec translateExpr (expr: Expr) (tctx: TranslateContext) : PyExpr =
         | "inf" | "Inf" -> PyAttr(PyVar "np", "inf")
         | "nan" | "NaN" -> PyAttr(PyVar "np", "nan")
         | "eps" -> PyAttr(PyCall(PyAttr(PyVar "np", "finfo"), [PyAttr(PyVar "np", "float64")], []), "eps")
-        | _ -> PyVar name
+        | _ -> PyVar (safeName name)
     | Const(_, v) -> PyConst v
     | StringLit(_, s) -> PyStr s
     | Neg(_, operand) -> PyUnaryOp("-", translateExpr operand tctx)
@@ -547,9 +561,9 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
     match stmt with
     | Assign(_, name, Var(srcLoc, srcName)) when Set.contains srcLoc tctx.copySites ->
         // Copy semantics: B = A -> B = A.copy()
-        [PyAssign(name, PyCall(PyAttr(PyVar srcName, "copy"), [], []))]
+        [PyAssign(safeName name, PyCall(PyAttr(PyVar (safeName srcName), "copy"), [], []))]
     | Assign(_, name, expr) ->
-        [PyAssign(name, translateExpr expr tctx)]
+        [PyAssign(safeName name, translateExpr expr tctx)]
     | AssignMulti(_, targets, expr) ->
         // Handle return-order swaps for builtins with different conventions
         let swappedTargets =
@@ -562,7 +576,7 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
                 targets
             | _ -> targets
         // MATLAB ~ (ignore output) -> Python _ convention
-        let pyTargets = swappedTargets |> List.map (fun t -> if t = "~" then "_" else t)
+        let pyTargets = swappedTargets |> List.map (fun t -> if t = "~" then "_" else safeName t)
         [PyMultiAssign(pyTargets, translateExpr expr tctx)]
     | ExprStmt(_, expr) ->
         [PyExprStmt(translateExpr expr tctx)]
@@ -592,6 +606,7 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
         [PyWhile(pyCond, pyBody)]
 
     | For(_, var_, it, body) ->
+        let safeVar = safeName var_
         let pyBody = body |> List.collect (fun s -> translateStmt s tctx)
         match it with
         | BinOp(_, ":", BinOp(_, ":", start, step), end_) ->
@@ -599,27 +614,27 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
             let pyStart = translateExpr start tctx
             let pyEnd = mkBinOp "+" (translateExpr end_ tctx) (PyConst 1.0)
             let pyStep = translateExpr step tctx
-            [PyFor(var_, PyCall(PyVar "range", [pyStart; pyEnd; pyStep], []), pyBody)]
+            [PyFor(safeVar, PyCall(PyVar "range", [pyStart; pyEnd; pyStep], []), pyBody)]
         | BinOp(_, ":", start, Neg(_, BinOp(_, ":", stepAbs, end_))) ->
             // Parser artifact: 10:-1:1 parses as BinOp(":", 10, Neg(BinOp(":", 1, 1)))
             // Reinterpret as: range(start, end - 1, -stepAbs)
             let pyStart = translateExpr start tctx
             let pyEnd = mkBinOp "-" (translateExpr end_ tctx) (PyConst 1.0)
             let pyStep = PyUnaryOp("-", translateExpr stepAbs tctx)
-            [PyFor(var_, PyCall(PyVar "range", [pyStart; pyEnd; pyStep], []), pyBody)]
+            [PyFor(safeVar, PyCall(PyVar "range", [pyStart; pyEnd; pyStep], []), pyBody)]
         | BinOp(_, ":", start, end_) ->
             // for i = a:b -> for i in range(a, b + 1):
             let pyStart = translateExpr start tctx
             let pyEnd = mkBinOp "+" (translateExpr end_ tctx) (PyConst 1.0)
-            [PyFor(var_, PyCall(PyVar "range", [pyStart; pyEnd], []), pyBody)]
+            [PyFor(safeVar, PyCall(PyVar "range", [pyStart; pyEnd], []), pyBody)]
         | Apply(_, Var(_, "colon"), _) ->
             // Fallback for colon() calls
-            [PyCommentStmt (sprintf "CONFORMAL: complex for-loop iterator for '%s'" var_)]
-             @ [PyFor(var_, translateExpr it tctx, pyBody)]
+            [PyCommentStmt (sprintf "CONFORMAL: complex for-loop iterator for '%s'" safeVar)]
+             @ [PyFor(safeVar, translateExpr it tctx, pyBody)]
         | _ ->
             // General iterator expression (could be Range IR node)
             let pyIt = translateForIterator it tctx
-            [PyFor(var_, pyIt, pyBody)]
+            [PyFor(safeVar, pyIt, pyBody)]
 
     | Switch(_, expr, cases, otherwise) ->
         let pyExpr = translateExpr expr tctx
@@ -658,27 +673,27 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
         // A(i,j) = expr -> A[i-1, j-1] = expr
         let pyIndices = args |> List.map (fun a -> translateIndexArg a tctx)
         let pyExpr = translateExpr expr tctx
-        [PyExprStmt(PyBinOp("=", PyIndex(PyVar baseName, pyIndices), pyExpr))]
+        [PyExprStmt(PyBinOp("=", PyIndex(PyVar (safeName baseName), pyIndices), pyExpr))]
 
     | StructAssign(_, baseName, fields, expr) ->
         let pyExpr = translateExpr expr tctx
-        let target = fields |> List.fold (fun acc f -> sprintf "%s.%s" acc f) baseName
+        let target = fields |> List.fold (fun acc f -> sprintf "%s.%s" acc f) (safeName baseName)
         [PyAssign(target, pyExpr)]
 
     | CellAssign(_, baseName, args, expr) ->
         let pyIndices = args |> List.map (fun a -> translateIndexArg a tctx)
         let pyExpr = translateExpr expr tctx
-        [PyExprStmt(PyBinOp("=", PyIndex(PyVar baseName, pyIndices), pyExpr))]
+        [PyExprStmt(PyBinOp("=", PyIndex(PyVar (safeName baseName), pyIndices), pyExpr))]
 
     | IndexStructAssign(_, baseName, indexArgs, _, fields, expr) ->
         let pyExpr = translateExpr expr tctx
-        [PyCommentStmt (sprintf "CONFORMAL: complex index-struct assignment to %s" baseName)]
-         @ [PyAssign(baseName, pyExpr)]
+        [PyCommentStmt (sprintf "CONFORMAL: complex index-struct assignment to %s" (safeName baseName))]
+         @ [PyAssign(safeName baseName, pyExpr)]
 
     | FieldIndexAssign(_, baseName, prefixFields, indexArgs, _, suffixFields, expr) ->
         let pyExpr = translateExpr expr tctx
-        [PyCommentStmt (sprintf "CONFORMAL: complex field-index assignment to %s" baseName)]
-         @ [PyAssign(baseName, pyExpr)]
+        [PyCommentStmt (sprintf "CONFORMAL: complex field-index assignment to %s" (safeName baseName))]
+         @ [PyAssign(safeName baseName, pyExpr)]
 
     | OpaqueStmt(_, targets, raw) ->
         let comment = [PyCommentStmt (sprintf "MATLAB: %s" (raw.Trim()))]
@@ -690,34 +705,36 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
 
     | FunctionDef(_, name, parms, outputVars, body, _) ->
         let savedReturnVars = tctx.currentReturnVars
-        tctx.currentReturnVars <- outputVars
+        let safeOutputVars = outputVars |> List.map safeName
+        tctx.currentReturnVars <- safeOutputVars
         // Check if body references 'nargin' / 'nargout' — add preamble as needed
         let usesNargin = body |> List.exists (fun s -> stmtReferencesVar "nargin" s)
         let usesNargout = body |> List.exists (fun s -> stmtReferencesVar "nargout" s)
-        let pyParms = if usesNargin && parms.Length > 0 then parms |> List.map (fun p -> p + "=None") else parms
+        let safeParms = parms |> List.map safeName
+        let pyParms = if usesNargin && safeParms.Length > 0 then safeParms |> List.map (fun p -> p + "=None") else safeParms
         let narginPreamble =
-            if usesNargin && parms.Length > 0 then
-                let countExpr = sprintf "sum(1 for __x in [%s] if __x is not None)" (parms |> String.concat ", ")
+            if usesNargin && safeParms.Length > 0 then
+                let countExpr = sprintf "sum(1 for __x in [%s] if __x is not None)" (safeParms |> String.concat ", ")
                 [PyExprStmt(PyBinOp("=", PyVar "nargin", PyVar countExpr))]
             else []
         let nargoutPreamble =
             if usesNargout then
                 // nargout = <number of declared output variables>
                 // Always compute all outputs in Python (caller ignores extras with _)
-                [PyAssign("nargout", PyConst (float outputVars.Length))]
+                [PyAssign("nargout", PyConst (float safeOutputVars.Length))]
             else []
         let pyBody = narginPreamble @ nargoutPreamble @ (body |> List.collect (fun s -> translateStmt s tctx))
         // Add implicit return if the body doesn't end with an explicit return
         let needsReturn =
-            not outputVars.IsEmpty &&
+            not safeOutputVars.IsEmpty &&
             (pyBody.IsEmpty || (match List.last pyBody with PyReturn _ -> false | _ -> true))
         let fullBody =
             if needsReturn then
-                pyBody @ [PyReturn (outputVars |> List.map PyVar)]
+                pyBody @ [PyReturn (safeOutputVars |> List.map PyVar)]
             else
                 pyBody
         tctx.currentReturnVars <- savedReturnVars
-        [PyFuncDef(name, pyParms, (if fullBody.IsEmpty then [PyPass] else fullBody), outputVars)]
+        [PyFuncDef(name, pyParms, (if fullBody.IsEmpty then [PyPass] else fullBody), safeOutputVars)]
 
 and private translateForIterator (it: Expr) (tctx: TranslateContext) : PyExpr =
     match it with
