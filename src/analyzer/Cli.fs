@@ -53,13 +53,13 @@ let runFile (filePath: string) (strict: bool) (fixpoint: bool) (benchmark: bool)
 
         let irProgOpt =
             try
-                let prog = Parser.parseMATLAB src
+                let (prog, _parseErrs) = Parser.parseMATLAB src
                 Some prog
             with
-            | Parser.ParseError(msg, _, _) ->
+            | Parser.ParseError(msg, _, _, _, _) ->
                 eprintfn "Error while parsing %s: ParseError: %s" filePath msg
                 None
-            | Lexer.LexError msg ->
+            | Lexer.LexError(msg, _, _, _, _) ->
                 eprintfn "Error while parsing %s: LexError: %s" filePath msg
                 None
             | ex ->
@@ -309,15 +309,15 @@ let run (argv: string array) : int =
         else
             try
                 let src = File.ReadAllText(args.file)
-                let program = Parser.parseMATLAB src
+                let (program, _) = Parser.parseMATLAB src
                 let json = Json.programToJson program
                 printfn "%s" json
                 0
             with
-            | Parser.ParseError(msg, _, _) ->
+            | Parser.ParseError(msg, _, _, _, _) ->
                 eprintfn "ParseError: %s" msg
                 2
-            | Lexer.LexError msg ->
+            | Lexer.LexError(msg, _, _, _, _) ->
                 eprintfn "LexError: %s" msg
                 2
             | ex ->

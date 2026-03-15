@@ -147,7 +147,7 @@ type ConformalLspServer(client: ConformalClient) =
             ctx.ws.workspaceDir <- dirPath
 
             // Parse and analyze
-            let irProg = Parser.parseMATLAB source
+            let (irProg, recoveredParseErrors) = Parser.parseMATLAB source
             let (env, warnings) = analyzeProgramIr irProg ctx
 
             // Validate license for pro tier
@@ -167,14 +167,33 @@ type ConformalLspServer(client: ConformalClient) =
             let witnesses = generateWitnesses ctx.cst.conflictSites
 
             // Convert to LSP diagnostics
-            let lspDiags =
+            let analysisLspDiags =
                 filteredWarnings
                 |> List.map (fun d ->
                     let key = (d.line, d.code)
                     let wit = Map.tryFind key witnesses
                     LspDiagnostics.toLspDiagnostic d sourceLines uri wit)
-                |> Array.ofList
 
+            // Convert recovered parse errors to LSP diagnostics
+            let parseLspDiags =
+                recoveredParseErrors
+                |> List.map (fun pe ->
+                    let lspStartLine = if pe.startLine > 0 then uint32 (pe.startLine - 1) else 0u
+                    let lspStartCol  = if pe.startCol > 0 then uint32 (pe.startCol - 1) else 0u
+                    let lspEndLine   = if pe.endLine > 0 then uint32 (pe.endLine - 1) else lspStartLine
+                    let lspEndCol    = if pe.endCol > 0 then uint32 (pe.endCol - 1) else lspStartCol
+                    { Range    = { Start = { Line = lspStartLine; Character = lspStartCol }
+                                   End   = { Line = lspEndLine; Character = lspEndCol } }
+                      Severity = Some DiagnosticSeverity.Error
+                      Code     = None
+                      Source   = Some "conformal"
+                      Message  = "Syntax error: " + pe.message
+                      Tags     = None
+                      RelatedInformation = None
+                      CodeDescription    = None
+                      Data               = None } : Ionide.LanguageServerProtocol.Types.Diagnostic)
+
+            let lspDiags = (parseLspDiags @ analysisLspDiags) |> Array.ofList
             publishDiagnostics uri lspDiags
 
             // Update cache
@@ -190,11 +209,13 @@ type ConformalLspServer(client: ConformalClient) =
             analysisCache.[uri] <- cache
 
         with
-        | Parser.ParseError(msg, line, col) ->
-            let lspLine = if line > 0 then uint32 (line - 1) else 0u
-            let lspCol  = if col > 0 then uint32 (col - 1) else 0u
+        | Parser.ParseError(msg, line, col, endLine, endCol) ->
+            let lspLine    = if line > 0 then uint32 (line - 1) else 0u
+            let lspCol     = if col > 0 then uint32 (col - 1) else 0u
+            let lspEndLine = if endLine > 0 then uint32 (endLine - 1) else lspLine
+            let lspEndCol  = if endCol > 0 then uint32 (endCol - 1) else lspCol
             let errorDiag : Ionide.LanguageServerProtocol.Types.Diagnostic = {
-                Range    = { Start = { Line = lspLine; Character = lspCol }; End = { Line = lspLine; Character = lspCol } }
+                Range    = { Start = { Line = lspLine; Character = lspCol }; End = { Line = lspEndLine; Character = lspEndCol } }
                 Severity = Some DiagnosticSeverity.Error
                 Code     = None
                 Source   = Some "conformal"
@@ -205,9 +226,13 @@ type ConformalLspServer(client: ConformalClient) =
                 Data               = None
             }
             publishDiagnostics uri [| errorDiag |]
-        | Lexer.LexError msg ->
+        | Lexer.LexError(msg, line, col, endLine, endCol) ->
+            let lspLine    = if line > 0 then uint32 (line - 1) else 0u
+            let lspCol     = if col > 0 then uint32 (col - 1) else 0u
+            let lspEndLine = if endLine > 0 then uint32 (endLine - 1) else lspLine
+            let lspEndCol  = if endCol > 0 then uint32 (endCol - 1) else lspCol
             let errorDiag : Ionide.LanguageServerProtocol.Types.Diagnostic = {
-                Range    = { Start = { Line = 0u; Character = 0u }; End = { Line = 0u; Character = 0u } }
+                Range    = { Start = { Line = lspLine; Character = lspCol }; End = { Line = lspEndLine; Character = lspEndCol } }
                 Severity = Some DiagnosticSeverity.Error
                 Code     = None
                 Source   = Some "conformal"

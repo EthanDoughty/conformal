@@ -202,7 +202,7 @@ let loadExternalFunctionFromPath
 /// Returns (primary_FunctionSignature, subfunctions_dict) or None if no function found.
 let buildIrFromSource (source: string) : (FunctionSignature * Map<string, FunctionSignature>) option =
     try
-        let program = Parser.parseMATLAB source
+        let (program, _) = Parser.parseMATLAB source
         let funcDefs =
             program.body
             |> List.choose (fun stmt ->
@@ -243,7 +243,7 @@ let loadExternalClassdef (sourcePath: string)
     : (string * string list * Map<string, FunctionSignature> * string option) option =
     try
         let source = File.ReadAllText(sourcePath)
-        let program = Parser.parseMATLAB source
+        let (program, _) = Parser.parseMATLAB source
         // Collect all FunctionDef nodes (methods)
         let methodSigs =
             program.body

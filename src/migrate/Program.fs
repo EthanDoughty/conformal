@@ -9,7 +9,7 @@ let private migrateFile (inputFile: string) (outputFile: string option) (toStdou
     else
         try
             let src = File.ReadAllText(inputFile)
-            let program = Parser.parseMATLAB src
+            let (program, _) = Parser.parseMATLAB src
 
             // Run shape analysis
             let ctx = Context.AnalysisContext()
@@ -42,10 +42,10 @@ let private migrateFile (inputFile: string) (outputFile: string option) (toStdou
                 eprintfn "Wrote %s" outputFile.Value
             0
         with
-        | Parser.ParseError(msg, _, _) ->
+        | Parser.ParseError(msg, _, _, _, _) ->
             eprintfn "ParseError: %s" msg
             1
-        | Lexer.LexError msg ->
+        | Lexer.LexError(msg, _, _, _, _) ->
             eprintfn "LexError: %s" msg
             1
         | ex ->
@@ -77,7 +77,7 @@ let private runMigrateTests () : int =
                 let testName = Path.GetFileNameWithoutExtension(mFile)
                 try
                     let src = File.ReadAllText(mFile)
-                    let program = Parser.parseMATLAB src
+                    let (program, _) = Parser.parseMATLAB src
 
                     let ctx = Context.AnalysisContext()
                     let (env, _diags) = Analysis.analyzeProgramIr program ctx

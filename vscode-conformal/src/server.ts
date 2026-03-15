@@ -59,6 +59,14 @@ interface AssignmentHint {
     shape: string;
 }
 
+interface SerializedParseError {
+    message: string;
+    startLine: number;
+    startCol: number;
+    endLine: number;
+    endCol: number;
+}
+
 interface AnalysisResult {
     diagnostics: SerializedDiagnostic[];
     env: [string, string][];         // [varName, shapeString]
@@ -66,6 +74,9 @@ interface AnalysisResult {
     parseError: string | undefined;
     parseErrorLine: number | undefined;
     parseErrorCol: number | undefined;
+    parseErrorEndLine: number | undefined;
+    parseErrorEndCol: number | undefined;
+    parseErrors: SerializedParseError[];
     assignments: AssignmentHint[];
 }
 
@@ -296,8 +307,10 @@ function validate(uri: string, source: string, force = false): void {
             // Parse error diagnostic — use line/col from parser (1-based) converted to LSP (0-based)
             const line = Math.max(0, (result.parseErrorLine ?? 1) - 1);
             const col = Math.max(0, (result.parseErrorCol ?? 1) - 1);
+            const endLine = result.parseErrorEndLine != null ? Math.max(0, result.parseErrorEndLine - 1) : line;
+            const endCol = result.parseErrorEndCol != null ? Math.max(0, result.parseErrorEndCol - 1) : col;
             const errorDiag: Diagnostic = {
-                range: { start: { line, character: col }, end: { line, character: col } },
+                range: { start: { line, character: col }, end: { line: endLine, character: endCol } },
                 severity: DiagnosticSeverity.Error,
                 source: 'conformal',
                 message: `Syntax error: ${result.parseError}`,
@@ -306,8 +319,20 @@ function validate(uri: string, source: string, force = false): void {
             return;
         }
 
+        // Convert recovered parse errors to LSP diagnostics
+        const parseErrorDiags: Diagnostic[] = (result.parseErrors || []).map(pe => ({
+            range: {
+                start: { line: Math.max(0, pe.startLine - 1), character: Math.max(0, pe.startCol - 1) },
+                end: { line: Math.max(0, pe.endLine - 1), character: Math.max(0, pe.endCol - 1) },
+            },
+            severity: DiagnosticSeverity.Error,
+            source: 'conformal',
+            message: `Syntax error: ${pe.message}`,
+        }));
+
         // Convert and publish diagnostics
-        const lspDiags = result.diagnostics.map(d => toLspDiagnostic(d, sourceLines, uri));
+        const analysisDiags = result.diagnostics.map(d => toLspDiagnostic(d, sourceLines, uri));
+        const lspDiags = [...parseErrorDiags, ...analysisDiags];
         connection.sendDiagnostics({ uri, diagnostics: lspDiags });
 
         // Update cache

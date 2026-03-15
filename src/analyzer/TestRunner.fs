@@ -171,13 +171,13 @@ let private runTest (path: string) (fixpoint: bool) (forceCoder: bool) (quiet: b
 
     let irProgOpt =
         try
-            let prog = Parser.parseMATLAB src
+            let (prog, _) = Parser.parseMATLAB src
             Some prog
         with
-        | Parser.ParseError(msg, _, _) ->
+        | Parser.ParseError(msg, _, _, _, _) ->
             if not quiet then printfn "Error while parsing %s: ParseError: %s" path msg
             None
-        | Lexer.LexError msg ->
+        | Lexer.LexError(msg, _, _, _, _) ->
             if not quiet then printfn "Error while parsing %s: LexError: %s" path msg
             None
         | ex ->
