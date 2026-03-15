@@ -66,7 +66,8 @@ let rec emitExpr (expr: PyExpr) : string =
         let sBase = match base_ with PyBinOp _ | PyUnaryOp _ -> sprintf "(%s)" (emitExpr base_) | _ -> emitExpr base_
         sprintf "%s[%s]" sBase sIndices
     | PyAttr(base_, attr) ->
-        sprintf "%s.%s" (emitExpr base_) attr
+        let sBase = match base_ with PyBinOp _ | PyUnaryOp _ -> sprintf "(%s)" (emitExpr base_) | _ -> emitExpr base_
+        sprintf "%s.%s" sBase attr
     | PyList items ->
         let sItems = items |> List.map emitExpr |> String.concat ", "
         sprintf "[%s]" sItems
@@ -102,6 +103,15 @@ and private emitIdx (idx: PyIdx) : string =
 // Statement emission
 // -------------------------------------------------------------------------
 
+/// Returns true when every line in `lines` is blank or a comment (starts with #
+/// after stripping leading whitespace). Python requires at least one real
+/// statement inside every compound-statement block; if all we have are comments
+/// we must inject `pass`.
+let private allComments (lines: string list) : bool =
+    lines |> List.forall (fun l ->
+        let t = l.TrimStart()
+        t = "" || t.StartsWith("#"))
+
 let rec emitStmt (indent: int) (stmt: PyStmt) : string list =
     let pad = System.String(' ', indent)
     match stmt with
@@ -125,33 +135,34 @@ let rec emitStmt (indent: int) (stmt: PyStmt) : string list =
     | PyIf(cond, thenBody, elifs, elseBody) ->
         let ifLine = [sprintf "%sif %s:" pad (emitExpr cond)]
         let thenLines = thenBody |> List.collect (emitStmt (indent + 4))
-        let thenLines = if thenLines.IsEmpty then [sprintf "%s    pass" pad] else thenLines
+        let thenLines = if thenLines.IsEmpty || allComments thenLines then thenLines @ [sprintf "%s    pass" pad] else thenLines
         let elifLines =
             elifs |> List.collect (fun (c, b) ->
                 let eLine = [sprintf "%selif %s:" pad (emitExpr c)]
                 let bLines = b |> List.collect (emitStmt (indent + 4))
-                let bLines = if bLines.IsEmpty then [sprintf "%s    pass" pad] else bLines
+                let bLines = if bLines.IsEmpty || allComments bLines then bLines @ [sprintf "%s    pass" pad] else bLines
                 eLine @ bLines)
         let elseLines =
             if elseBody.IsEmpty then []
             else
-                [sprintf "%selse:" pad]
-                @ (elseBody |> List.collect (emitStmt (indent + 4)))
+                let eBody = elseBody |> List.collect (emitStmt (indent + 4))
+                let eBody = if eBody.IsEmpty || allComments eBody then eBody @ [sprintf "%s    pass" pad] else eBody
+                [sprintf "%selse:" pad] @ eBody
         ifLine @ thenLines @ elifLines @ elseLines
     | PyFor(var_, iterable, body) ->
         let forLine = [sprintf "%sfor %s in %s:" pad var_ (emitExpr iterable)]
         let bodyLines = body |> List.collect (emitStmt (indent + 4))
-        let bodyLines = if bodyLines.IsEmpty then [sprintf "%s    pass" pad] else bodyLines
+        let bodyLines = if bodyLines.IsEmpty || allComments bodyLines then bodyLines @ [sprintf "%s    pass" pad] else bodyLines
         forLine @ bodyLines
     | PyWhile(cond, body) ->
         let whileLine = [sprintf "%swhile %s:" pad (emitExpr cond)]
         let bodyLines = body |> List.collect (emitStmt (indent + 4))
-        let bodyLines = if bodyLines.IsEmpty then [sprintf "%s    pass" pad] else bodyLines
+        let bodyLines = if bodyLines.IsEmpty || allComments bodyLines then bodyLines @ [sprintf "%s    pass" pad] else bodyLines
         whileLine @ bodyLines
     | PyFuncDef(name, parms, body, _returnVars) ->
         let defLine = [sprintf "%sdef %s(%s):" pad name (parms |> String.concat ", ")]
         let bodyLines = body |> List.collect (emitStmt (indent + 4))
-        let bodyLines = if bodyLines.IsEmpty then [sprintf "%s    pass" pad] else bodyLines
+        let bodyLines = if bodyLines.IsEmpty || allComments bodyLines then bodyLines @ [sprintf "%s    pass" pad] else bodyLines
         defLine @ bodyLines
     | PyReturn exprs ->
         match exprs with
@@ -171,10 +182,10 @@ let rec emitStmt (indent: int) (stmt: PyStmt) : string list =
     | PyTry(tryBody, exceptBody) ->
         let tryLine = [sprintf "%stry:" pad]
         let tryLines = tryBody |> List.collect (emitStmt (indent + 4))
-        let tryLines = if tryLines.IsEmpty then [sprintf "%s    pass" pad] else tryLines
+        let tryLines = if tryLines.IsEmpty || allComments tryLines then tryLines @ [sprintf "%s    pass" pad] else tryLines
         let exceptLine = [sprintf "%sexcept Exception:" pad]
         let exceptLines = exceptBody |> List.collect (emitStmt (indent + 4))
-        let exceptLines = if exceptLines.IsEmpty then [sprintf "%s    pass" pad] else exceptLines
+        let exceptLines = if exceptLines.IsEmpty || allComments exceptLines then exceptLines @ [sprintf "%s    pass" pad] else exceptLines
         tryLine @ tryLines @ exceptLine @ exceptLines
 
 // -------------------------------------------------------------------------

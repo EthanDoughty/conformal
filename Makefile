@@ -40,6 +40,15 @@ analyze:
 	@if [ -z "$(FILE)" ]; then echo "Usage: make analyze FILE=path/to/file.m"; exit 1; fi
 	$(DOTNET) run --project src/analyzer/ConformalAnalyzer.fsproj -- $(FILE)
 
+.PHONY: test-migrate
+test-migrate:
+	$(DOTNET) run --project src/migrate/ConformalMigrate.fsproj -- --test-migrate
+
+.PHONY: verify-migrate
+verify-migrate:
+	$(DOTNET) build src/migrate/ConformalMigrate.fsproj -c Release
+	python3 tools/verify_migrate.py
+
 .PHONY: release
 release:
 	$(DOTNET) build src/analyzer/ConformalAnalyzer.fsproj -c Release
