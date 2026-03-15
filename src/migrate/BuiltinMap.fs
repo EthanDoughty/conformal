@@ -83,7 +83,7 @@ let private builtinTable =
         // Math functions
         "floor",     { pythonFunc = "np.floor";          argTransform = Direct;        needsOrderF = false }
         "ceil",      { pythonFunc = "np.ceil";           argTransform = Direct;        needsOrderF = false }
-        "round",     { pythonFunc = "np.round_";         argTransform = Direct;        needsOrderF = false }
+        "round",     { pythonFunc = "np.round";          argTransform = Direct;        needsOrderF = false }
         "mod",       { pythonFunc = "np.mod";            argTransform = Direct;        needsOrderF = false }
         "rem",       { pythonFunc = "np.remainder";      argTransform = Direct;        needsOrderF = false }
         "sign",      { pythonFunc = "np.sign";           argTransform = Direct;        needsOrderF = false }

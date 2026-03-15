@@ -134,7 +134,7 @@ and private translateBinOp (op: string) (left: Expr) (right: Expr) (tctx: Transl
         let rShape = inferExprShape tctx right
         match lShape, rShape with
         | Some Scalar, Some Scalar -> PyBinOp("*", pyL(), pyR())
-        | Some s1, Some s2 when isMatrixShape s1 || isMatrixShape s2 ->
+        | Some s1, Some s2 when isMatrixShape s1 && isMatrixShape s2 ->
             PyCall(PyVar "np.dot", [pyL(); pyR()], [])
         | Some Scalar, _ | _, Some Scalar ->
             PyBinOp("*", pyL(), pyR())
