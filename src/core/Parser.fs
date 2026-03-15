@@ -4,8 +4,18 @@ open System
 open Lexer
 open Ir
 
-// Parse error exception, mirroring Python's ParseError.
-exception ParseError of string * int * int
+// Parse error exception with token span for underline-width diagnostics.
+// Carries (message, startLine, startCol, endLine, endCol).
+exception ParseError of string * int * int * int * int
+
+/// A recovered parse error accumulated during error recovery.
+type ParseDiagnostic = {
+    message:  string
+    startLine: int
+    startCol:  int
+    endLine:   int
+    endCol:    int
+}
 
 // LHS accessor chain segment — replaces (string * obj) boxing in ParseLhsChain.
 type LhsSegment =
@@ -106,6 +116,10 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
     let tokens = Array.ofList tokenList
     let mutable pos = 0  // current token index
     let mutable lastArgSpecs: (string * int option * int option) list = []
+    let recoveredErrors = ResizeArray<ParseDiagnostic>()
+
+    /// Errors that were caught and recovered from during parsing.
+    member _.RecoveredErrors = recoveredErrors |> Seq.toList
 
     // Token helpers
     member private _.Current() = tokens.[pos]
@@ -114,14 +128,14 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
     member private _.Eat(expected: TokenKind) : Token =
         let tok = tokens.[pos]
         if tok.kind <> expected then
-            raise (ParseError($"Expected {tokenKindName expected} at pos {tok.pos}, found {tokenKindName tok.kind} '{tok.value}'", tok.line, tok.col))
+            raise (ParseError($"Expected {tokenKindName expected} at pos {tok.pos}, found {tokenKindName tok.kind} '{tok.value}'", tok.line, tok.col, tok.line, tok.col + max 1 tok.value.Length))
         pos <- pos + 1
         tok
 
     member private _.EatValue(expectedValue: string) : Token =
         let tok = tokens.[pos]
         if tok.value <> expectedValue then
-            raise (ParseError($"Expected '{expectedValue}' at pos {tok.pos}, found {tokenKindName tok.kind} '{tok.value}'", tok.line, tok.col))
+            raise (ParseError($"Expected '{expectedValue}' at pos {tok.pos}, found {tokenKindName tok.kind} '{tok.value}'", tok.line, tok.col, tok.line, tok.col + max 1 tok.value.Length))
         pos <- pos + 1
         tok
 
@@ -299,7 +313,13 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
             let opaque = OpaqueStmt(loc line col, [], raw)
             opaque :: methodDefs
         with
-        | _ ->
+        | ex ->
+            // Accumulate the error if it's a ParseError
+            match ex with
+            | :? ParseError as pe ->
+                let (msg, sl, sc, el, ec) = (pe.Data0, pe.Data1, pe.Data2, pe.Data3, pe.Data4)
+                recoveredErrors.Add({ message = msg; startLine = sl; startCol = sc; endLine = el; endCol = ec })
+            | _ -> ()
             // Fallback: depth-count consume the rest as opaque
             let blockOpeners = set [TkIf; TkFor; TkWhile; TkSwitch; TkTry; TkFunction; TkParfor]
             let idBlockOpeners = set ["methods"; "properties"; "events"; "enumeration"]
@@ -362,7 +382,7 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
             pos <- pos + 1
             tok.value
         else
-            raise (ParseError($"Expected function name at pos {tok.pos}, found {tokenKindName tok.kind} '{tok.value}'", tok.line, tok.col))
+            raise (ParseError($"Expected function name at pos {tok.pos}, found {tokenKindName tok.kind} '{tok.value}'", tok.line, tok.col, tok.line, tok.col + max 1 tok.value.Length))
 
     member private this.ParseFunctionDef() : Stmt =
         let funcTok = this.Eat(TkFunction)
@@ -393,7 +413,7 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
                 hasParens <- false
             else
                 let errTok = this.Current()
-                raise (ParseError("Expected '=' or '(' after function name at " + string errTok.pos, errTok.line, errTok.col))
+                raise (ParseError("Expected '=' or '(' after function name at " + string errTok.pos, errTok.line, errTok.col, errTok.line, errTok.col + max 1 errTok.value.Length))
         elif this.Current().kind = TkLBracket then
             // Multiple outputs: function [a, b] = name(args)
             this.Eat(TkLBracket) |> ignore
@@ -411,7 +431,7 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
             else hasParens <- false
         else
             let errTok = this.Current()
-            raise (ParseError("Expected function output or name at " + string errTok.pos, errTok.line, errTok.col))
+            raise (ParseError("Expected function output or name at " + string errTok.pos, errTok.line, errTok.col, errTok.line, errTok.col + max 1 errTok.value.Length))
 
         // Parameters
         let parms = ResizeArray<string>()
@@ -494,7 +514,9 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
                     elif this.Current().kind = TkSemicolon then pos <- pos + 1
                     node
         with
-        | :? ParseError ->
+        | :? ParseError as pe ->
+            let (msg, sl, sc, el, ec) = (pe.Data0, pe.Data1, pe.Data2, pe.Data3, pe.Data4)
+            recoveredErrors.Add({ message = msg; startLine = sl; startCol = sc; endLine = el; endCol = ec })
             pos <- startPos
             this.RecoverToStmtBoundary(startLine, startCol)
 
@@ -918,7 +940,7 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
                     let name = this.Eat(TkId).value
                     FuncHandle(loc atTok.line atTok.col, name)
                 else
-                    raise (ParseError("Expected '(' or function name after '@' at " + string next.pos, next.line, next.col))
+                    raise (ParseError("Expected '(' or function name after '@' at " + string next.pos, next.line, next.col, next.line, next.col + max 1 next.value.Length))
 
             | "?" ->
                 let qTok = tokens.[pos]
@@ -930,10 +952,10 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
                     Var(loc qTok.line qTok.col, "?")
 
             | _ ->
-                raise (ParseError($"Unexpected token {tokenKindName tok.kind} '{tok.value}' in expression at {tok.pos}", tok.line, tok.col))
+                raise (ParseError($"Unexpected token {tokenKindName tok.kind} '{tok.value}' in expression at {tok.pos}", tok.line, tok.col, tok.line, tok.col + max 1 tok.value.Length))
 
         | _ ->
-            raise (ParseError($"Unexpected token {tokenKindName tok.kind} '{tok.value}' in expression at {tok.pos}", tok.line, tok.col))
+            raise (ParseError($"Unexpected token {tokenKindName tok.kind} '{tok.value}' in expression at {tok.pos}", tok.line, tok.col, tok.line, tok.col + max 1 tok.value.Length))
 
     member private this.ParsePostfix(initial: Expr) : Expr =
         let mutable left = initial
@@ -976,7 +998,7 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
                     this.Eat(TkRParen) |> ignore
                     left <- FieldAccess(loc dotTok.line dotTok.col, left, "<dynamic>")
                 else
-                    raise (ParseError("Expected field name after '.' at " + string tok.pos, tok.line, tok.col))
+                    raise (ParseError("Expected field name after '.' at " + string tok.pos, tok.line, tok.col, tok.line, tok.col + max 1 tok.value.Length))
 
             else
                 stop <- true
@@ -1068,7 +1090,7 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
                     if this.Current().kind = endKind then outerStop <- true
                 else
                     let tok = this.Current()
-                    raise (ParseError($"Unexpected token {tokenKindName tok.kind} '{tok.value}' in literal at {tok.pos}", tok.line, tok.col))
+                    raise (ParseError($"Unexpected token {tokenKindName tok.kind} '{tok.value}' in literal at {tok.pos}", tok.line, tok.col, tok.line, tok.col + max 1 tok.value.Length))
             (line, col, rows |> Seq.toList)
 
     member private this.ParseMatrixLiteral() : Expr =
@@ -1145,19 +1167,20 @@ let private detectEndless (tokens: Token list) : bool =
         | _ -> ()
     funcCount >= 2 && endCount < openerCount + funcCount
 
-let parseMATLAB (src: string) : Program =
+let parseMATLAB (src: string) : Program * ParseDiagnostic list =
     let tokenList = Lexer.lex src
     if detectEndless tokenList then
         // Pre-scan detected end-less multi-function file; skip straight to endless mode
         let parser = MatlabParser(tokenList, true)
-        parser.ParseProgram()
+        (parser.ParseProgram(), parser.RecoveredErrors)
     else
         try
             // Try modern end-terminated functions first (most common)
             let parser = MatlabParser(tokenList, false)
-            parser.ParseProgram()
+            (parser.ParseProgram(), parser.RecoveredErrors)
         with
         | :? ParseError ->
-            // Retry with endless-function mode (legacy MATLAB without end)
+            // Retry with endless-function mode (legacy MATLAB without end);
+            // discard first parser's recovered errors (wrong parse tree)
             let parser = MatlabParser(tokenList, true)
-            parser.ParseProgram()
+            (parser.ParseProgram(), parser.RecoveredErrors)

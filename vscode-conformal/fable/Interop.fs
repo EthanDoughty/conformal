@@ -36,14 +36,25 @@ type AssignmentHint = {
     shape: string
 }
 
+type SerializedParseError = {
+    message:   string
+    startLine: int
+    startCol:  int
+    endLine:   int
+    endCol:    int
+}
+
 type AnalysisResult = {
-    diagnostics:    SerializedDiagnostic array
-    env:            (string * string) array   // (varName, shapeString)
-    symbols:        FunctionSymbol array
-    parseError:     string option
-    parseErrorLine: int option
-    parseErrorCol:  int option
-    assignments:    AssignmentHint array
+    diagnostics:       SerializedDiagnostic array
+    env:               (string * string) array   // (varName, shapeString)
+    symbols:           FunctionSymbol array
+    parseError:        string option
+    parseErrorLine:    int option
+    parseErrorCol:     int option
+    parseErrorEndLine: int option
+    parseErrorEndCol:  int option
+    parseErrors:       SerializedParseError array
+    assignments:       AssignmentHint array
 }
 
 // ---------------------------------------------------------------------------
@@ -53,7 +64,7 @@ type AnalysisResult = {
 /// Parse MATLAB source and try to load a function body for cross-file analysis.
 let private tryParseExternalBody (source: string) : (FunctionSignature * Map<string, FunctionSignature>) option =
     try
-        let program = Parser.parseMATLAB source
+        let (program, _) = Parser.parseMATLAB source
         let funcDefs =
             program.body
             |> List.choose (fun stmt ->
@@ -112,28 +123,38 @@ let analyzeSource
     : AnalysisResult =
 
     // Parse
-    let irProgOpt =
+    let parseResult =
         try Some (Parser.parseMATLAB source)
         with
-        | Parser.ParseError(_, _, _) -> None
-        | Lexer.LexError _ -> None
+        | Parser.ParseError(_, _, _, _, _) -> None
+        | Lexer.LexError(_, _, _, _, _) -> None
         | _ -> None
 
-    match irProgOpt with
+    match parseResult with
     | None ->
         // Return parse error — TS server will create a diagnostic for it
-        let (errMsg, errLine, errCol) =
+        let (errMsg, errLine, errCol, errEndLine, errEndCol) =
             try
                 Parser.parseMATLAB source |> ignore
-                ("Unknown parse error", None, None)
+                ("Unknown parse error", None, None, None, None)
             with
-            | Parser.ParseError(msg, line, col) -> (msg, Some line, Some col)
-            | Lexer.LexError msg -> (msg, None, None)
-            | ex -> (ex.Message, None, None)
+            | Parser.ParseError(msg, line, col, endLine, endCol) -> (msg, Some line, Some col, Some endLine, Some endCol)
+            | Lexer.LexError(msg, line, col, endLine, endCol) -> (msg, Some line, Some col, Some endLine, Some endCol)
+            | ex -> (ex.Message, None, None, None, None)
         { diagnostics = [||]; env = [||]; symbols = [||]; parseError = Some errMsg
-          parseErrorLine = errLine; parseErrorCol = errCol; assignments = [||] }
+          parseErrorLine = errLine; parseErrorCol = errCol
+          parseErrorEndLine = errEndLine; parseErrorEndCol = errEndCol
+          parseErrors = [||]; assignments = [||] }
 
-    | Some irProg ->
+    | Some (irProg, recoveredParseErrors) ->
+
+    // Serialize recovered parse errors
+    let serializedParseErrors =
+        recoveredParseErrors
+        |> List.map (fun pe ->
+            { message = pe.message; startLine = pe.startLine; startCol = pe.startCol
+              endLine = pe.endLine; endCol = pe.endCol })
+        |> Array.ofList
 
     // Extract symbols (function definitions) from IR
     let symbols =
@@ -211,4 +232,6 @@ let analyzeSource
     walkStmts irProg.body
 
     { diagnostics = diags; env = envPairs; symbols = symbols; parseError = None
-      parseErrorLine = None; parseErrorCol = None; assignments = hintList.ToArray() }
+      parseErrorLine = None; parseErrorCol = None
+      parseErrorEndLine = None; parseErrorEndCol = None
+      parseErrors = serializedParseErrors; assignments = hintList.ToArray() }

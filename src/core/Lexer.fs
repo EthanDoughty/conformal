@@ -4,7 +4,8 @@ open System
 open System.Text.RegularExpressions
 
 // Custom exception mirroring Python SyntaxError for lex errors.
-exception LexError of string
+// Carries (message, startLine, startCol, endLine, endCol) for span-based error location.
+exception LexError of string * int * int * int * int
 
 type TokenKind =
     | TkId | TkNumber | TkString
@@ -183,7 +184,8 @@ let lex (src: string) : Token list =
         let m = masterRe.Match(src, pos, src.Length - pos)
 #endif
         if not m.Success then
-            raise (LexError("Unexpected character '" + string src.[pos] + "' at position " + string pos))
+            let col = pos - lastNewlinePos
+            raise (LexError("Unexpected character '" + string src.[pos] + "'", line, col, line, col + 1))
 
         // Which named group matched?
         let kind =
@@ -207,7 +209,8 @@ let lex (src: string) : Token list =
         // Guard: the match must start exactly at pos (not further ahead).
         // Regex.Match with startAt can find a match after pos; we must enforce anchoring.
         if m.Index <> pos then
-            raise (LexError("Unexpected character '" + string src.[pos] + "' at position " + string pos))
+            let col = pos - lastNewlinePos
+            raise (LexError("Unexpected character '" + string src.[pos] + "'", line, col, line, col + 1))
 
         match kind with
         | "DQSTRING" ->
@@ -299,11 +302,13 @@ let lex (src: string) : Token list =
                     if src.[endPos] = '\'' then
                         found <- true
                     elif src.[endPos] = '\n' then
-                        raise (LexError("Unterminated string at line " + string line + ", pos " + string startPos))
+                        let col = startPos - lastNewlinePos
+                        raise (LexError("Unterminated string", line, col, line, col + 1))
                     else
                         endPos <- endPos + 1
                 if not found then
-                    raise (LexError("Unterminated string at line " + string line + ", pos " + string startPos))
+                    let col = startPos - lastNewlinePos
+                    raise (LexError("Unterminated string", line, col, line, col + 1))
                 let content = src.[startPos + 1 .. endPos - 1]
                 tokens.Add(makeToken TkString content startPos)
                 prevKind <- TkString
@@ -345,7 +350,8 @@ let lex (src: string) : Token list =
                 sawSpace <- false
                 pos <- endPos  // stop before \n so NEWLINE is lexed normally
             else
-                raise (LexError("Unexpected character '" + value + "' at " + string startPos))
+                let col = startPos - lastNewlinePos
+                raise (LexError("Unexpected character '" + value + "'", line, col, line, col + 1))
 
         | _ ->
             pos <- m.Index + m.Length
