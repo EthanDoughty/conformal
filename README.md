@@ -4,10 +4,10 @@
 
 ### Static Shape & Dimension Analysis for MATLAB
 
-[![Version](https://img.shields.io/badge/version-3.4.0-orange.svg)](#motivation-and-future-directions)
+[![Version](https://img.shields.io/badge/version-3.4.0-orange.svg)](#cli-options)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4.svg)](https://dotnet.microsoft.com/download)
-[![Tests](https://img.shields.io/badge/tests-502%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-515%20passing-brightgreen.svg)](#test-suite)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
 *Matrices must be **conformable** before they can perform. Conformal makes sure they are.*
@@ -54,7 +54,7 @@ Inlay hints show shapes on first assignment:
 
 ## Quick Start
 
-**VS Code** (The recommended option): Install Conformal from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal) by searching "Conformal" in Extensions, or run the following command:
+**VS Code** (the recommended option): Install Conformal from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal) by searching "Conformal" in Extensions, or run the following command:
 ```bash
 code --install-extension EthanDoughty.conformal
 ```
@@ -63,939 +63,118 @@ Open any `.m` file and the diagnostics appear as underlines. Hover a variable to
 **CLI**: Requires [.NET 8.0 SDK](https://dotnet.microsoft.com/download) or later. Again, no MATLAB installation is required.
 ```bash
 git clone https://github.com/EthanDoughty/conformal.git
-cd conformal/src
-dotnet run -- ../tests/basics/inner_dim_mismatch.m
+cd conformal
+dotnet run --project src/analyzer/ConformalAnalyzer.fsproj -- tests/basics/inner_dim_mismatch.m
 ```
 
-## Performance
+## What Conformal Catches
 
-The single-file analysis takes under 100ms, even for 700-line files with 36 warnings, and the cross-file workspace analysis runs in about 70ms. The full test suite (502 tests across 22 categories) finishes in about one second, with no MATLAB runtime involved during any part of the process.
+Conformal tracks the shape of every variable through your program and flags dimension mismatches, type errors, and structural problems. Here's what it covers:
 
-The VS Code extension runs the analyzer while you are typing code, since it is compiled to JavaScript, using the Fable tool, so there is no subprocess startup cost and analysis works on every keystroke with a 500ms debounce.
+**Arithmetic and operators.** Conformal detects dimension mismatches in `+`, `-`, `*`, `.*`, `./`, `^`, `.^`, and backslash `\`. Scalar-matrix broadcasting is handled, so `s * A` works without a warning. When you use `*` where `.*` was probably intended, Conformal suggests the fix. Comparison operators return the broadcast shape of their operands, so logical indexing like `A(A > 0)` can be tracked correctly.
 
-## What the Analysis Detects
+**Concatenation and literals.** Horizontal concatenation `[A B]` checks that row counts match, and vertical `[A; B]` checks columns. Symbolic dimensions compose through concatenation, so `[A B]` where A is `n x k` and B is `n x m` gives `n x (k+m)`. Matrix literal spacing is handled correctly, so `[1 -2; 3 4]` parses as four elements rather than as subtraction.
 
-All warnings include source line numbers. When Conformal finds a definite error, it marks the result as unknown and keeps going so you get as many diagnostics as possible in a single pass.
+**Indexing.** Parenthesized indexing `A(i,j)`, slice indexing `A(:,j)`, range indexing `A(2:5,:)`, curly-brace cell indexing `C{i}`, and the `end` keyword with arithmetic (`A(end-1, :)`) are all supported. Indexed assignment preserves the matrix shape, and read-side out-of-bounds checking is available with a Pro license.
 
-By default, Conformal shows only high-confidence warnings. These include dimension mismatches and type errors, with two additional tiers for more specialized diagnostics. The `--strict` flag adds 11 low-confidence codes like `W_SUSPICIOUS_COMPARISON`, `W_REASSIGN_INCOMPATIBLE`, and `W_LAMBDA_CALL_APPROXIMATE`, so you can run default mode in CI without false-positive noise and use `--strict` when you want a fuller picture. A valid Conformal Pro license key (via `--license KEY` or the `conformal.licenseKey` VS Code setting) unlocks a further 11 codes that require the advanced analysis domains, including `W_INDEX_OUT_OF_BOUNDS`, `W_DIVISION_BY_ZERO`, `W_CONSTRAINT_CONFLICT`, `W_STRUCT_FIELD_NOT_FOUND`, and `W_UNKNOWN_FUNCTION`, among others. Without a license, the CLI shows a count of how many additional issues were suppressed.
+**Functions.** Over 635 MATLAB builtins are recognized, and around 315 have explicit shape rules. Matrix constructors (`zeros`, `ones`, `eye`, `rand`), reductions (`sum`, `mean`, `max` with dimension args), reshaping, type predicates, and linear algebra functions are all covered. User-defined functions are analyzed at each call site with the caller's argument shapes. Nested functions, anonymous functions, `nargin`/`nargout`, `varargin`/`varargout`, and cross-file workspace resolution are all supported.
 
-### Operations
+**Symbolic dimensions.** Variables with unknown concrete size get symbolic names like `n`, `m`, `k`, and those names propagate through operations. Symbolic dimensions use a polynomial representation with rational coefficients, so `n+m` and `m+n` are recognized as equal, and `n+n` simplifies to `2*n`.
 
-Conformal detects dimension mismatches in `+`, `-`, `*`, `.*`, `./`, `^`, `.^`. Scalar-matrix broadcasting (e.g. `s*A`, `s + A`) is handled. Backslash `A\b` (mldivide) follows the same inner-dimension logic that multiplication does. Element-wise logical `&` and `|` pass shapes through like an element-wise op usually would. Logical NOT `~` and dot-transpose `.'` also carry shapes through. When you use `*` where `.*` was probably intended, Conformal suggests the fix.
+**Data structures.** Conformal tracks struct fields, cell array elements, and basic classdef objects. Missing field access on a known struct emits a warning. Cell arrays support per-element shape tracking with literal indexing.
 
-Comparison operators (`==`, `~=`, `<`, `<=`, `>`, `>=`) return the broadcast shape of their operands, so `A > 0` where `A` is `matrix[3 x 4]` gives `matrix[3 x 4]` rather than scalar. This means logical indexing `A(A > 0)` is recognized as a matrix-typed operation, and Conformal infers the result as `matrix[None x 1]` (a column vector, since logical indexing in MATLAB always returns a column) rather than treating it as an unknown scalar index. Row vector inputs preserve orientation, giving `matrix[1 x None]` instead.
+**Control flow.** `if`/`elseif`/`else`, `for`, `while`, `switch`/`case`, `try`/`catch`, `break`, `continue`, and `return` are all supported. When branches assign different shapes to the same variable, Conformal joins them conservatively. Loops can use single-pass analysis or widening-based fixpoint iteration via `--fixpoint`.
 
-### Literals and concatenation
+**Interval analysis.** In parallel with shape inference, Conformal tracks scalar integer variables through an interval domain. This enables out-of-bounds indexing detection, division-by-zero detection, and negative dimension warnings. Branch conditions narrow intervals, and a Pentagon relational domain tracks upper-bound relations from loop ranges to suppress false positives.
 
-Conformal handles matrix literals like `[1 2; 3 4]`, cell array literals like `{1, 2; 3, 4}`, and string literals in both quote styles (`'hello'`, `"world"`). Horizontal concatenation `[A B]` checks that row counts match, and vertical concatenation `[A; B]` checks columns. Symbolic dimensions compose through concatenation, so `[A B]` where A is `n x k` and B is `n x m` gives `n x (k+m)`. An empty matrix `[]` is treated as the identity element for concatenation, so `[[] x]` and `[[] ; x]` both simplify to `x` with no false mismatch warning. Matrix literal spacing is handled correctly too, so `[1 -2; 3 -4]` parses as four elements rather than as subtraction.
+**Witness generation.** For dimension conflict warnings, Conformal can produce a concrete counterexample proving the bug is real. In `--witness filter` mode, only warnings with a verified witness are shown, which gives you zero false positives.
 
-### Indexing
+**MATLAB Coder compatibility.** The `--coder` flag adds a post-analysis pass that checks for constructs MATLAB Coder can't handle, including variable-size arrays, cell arrays, dynamic field access, try/catch, unsupported builtins, and recursion.
 
-Conformal supports parenthesized indexing `A(i,j)`, slice indexing `A(:,j)` and `A(i,:)`, range indexing `A(2:5,:)`, linear indexing, and full-matrix `A(:,:)`. Curly-brace indexing `C{i,j}` works for cell arrays with per-element shape tracking, where a literal index extracts the precise element shape. The `end` keyword works in indexing contexts with arithmetic support (`C{end}`, `C{end-1}`, `A(1:end, 2)`, `A(end-2:end, :)`). Indexed assignment `M(i,j) = expr` preserves the matrix shape, and the write side doesn't check bounds, since MATLAB auto-expands arrays on assignment. Read-side out-of-bounds checking is unchanged.
+## VS Code Extension
 
-### Functions
+The VS Code extension runs the analyzer in-process, since the F# codebase is compiled to JavaScript using the Fable tool. There is no external runtime dependency: no Python, no .NET, no subprocess. The compiled analyzer is bundled directly into the extension.
 
-Over 635 MATLAB builtins are recognized (so calls to them don't produce `W_UNKNOWN_FUNCTION` warnings), and around 315 of those have explicit shape rules. First, matrix constructors like `zeros`, `ones`, `eye`, `rand`, `randn`, `true`, `false`, `nan`, and `inf` handle all three call forms: no args gives a scalar, one arg gives an n x n square, and two args give an m x n matrix. Second, shape transformations include `reshape` (with a conformability check), `repmat`, `diag`, `transpose`, `horzcat`, `vertcat`, and more specialized ones like `kron` (where `kron(A[m x n], B[p x q])` gives `matrix[(m*p) x (n*q)]`) and `blkdiag` (where `blkdiag(A[m x n], B[p x q])` gives `matrix[(m+p) x (n+q)]`). Third, element-wise math functions like `sin`, `cos`, `exp`, `log`, `sqrt`, `abs`, `ceil`, `floor`, and their relatives all pass the input shape through. Reductions like `sum`, `prod`, `mean`, `min`, `max`, and `diff` accept an optional dimension argument. Finally, type predicates like `isscalar`, `iscell`, `isempty`, and `isnumeric` return scalar, and linear algebra functions like `det`, `inv`, `norm`, and `linspace`, query functions like `size`, `length`, and `numel`, and two-argument element-wise functions like `mod`, `rem`, and `atan2` are also covered.
-
-Dimension arithmetic works inside builtin arguments, so `zeros(n+1, 2*m)` is tracked symbolically.
-
-Higher-order builtins `cellfun` and `arrayfun` are also supported. When you write `cellfun(@func, C)` or `cellfun(@(x) expr, C)`, Conformal dispatches to the provided handle or lambda to figure out the per-element output shape, then combines that with the cell or matrix dimensions to infer the result. Passing `'UniformOutput', false` returns a cell array matching the input dimensions.
-
-Conformal analyzes user-defined functions at each call site with the caller's argument shapes. Three forms are supported: single return (`function y = f(x)`), multi-return (`function [a, b] = f(x)`), and procedures (including no-arg `function name` syntax). Nested `function...end` blocks inside another function body are also supported, with read/write access to the parent workspace via scope chains and forward-reference visibility between siblings. The parser also handles pre-2016 end-less function definitions (files where `end` is omitted), and space-separated multi-return syntax (`function [a b c] = f(...)` without commas). Anonymous functions `@(x) expr` are analyzed the same way, with by-value closure capture at definition time. Function handles `@funcName` dispatch to their targets. Results are cached per argument shape tuple so the same function called with the same shapes isn't re-analyzed. The cache key includes the argument count, so a function called with different numbers of arguments is analyzed separately.
-
-Optional argument patterns using `nargin` and `nargout` are supported. When a function is called with fewer arguments than it declares, the call isn't flagged as an error, since the missing arguments could be optional. Inside the function body, `nargin` is bound to the exact argument count as a concrete interval `[n, n]`, so `if nargin < 3` can be refined precisely and the default-value branch is analyzed correctly. `nargout` works the same way: it carries the number of requested outputs, so `if nargout > 1` can prune dead branches. Calling with more arguments than the function declares is still an error.
-
-Functions using `varargin` as the last parameter are also supported. Extra call arguments beyond the named ones are bundled into a cell with per-element shape tracking, so `varargin{1}` returns the actual shape of the first extra argument, not just unknown. The arg-count warning is suppressed when `varargin` is present. `varargout` works at the call site: output targets beyond the named return variables receive unknown shape.
-
-When analyzing a file, Conformal also scans sibling `.m` files in the same directory and fully analyzes their bodies (parse -> analyze) to infer real return shapes. Dimension aliasing works across file boundaries, subfunctions in external files are supported, and cross-file cycles (A->B->A) are detected and handled gracefully. Unparseable external files emit `W_EXTERNAL_PARSE_ERROR`. Classdef files are also scanned cross-file: if a sibling `.m` file is a `classdef`, Conformal extracts its property list and method signatures lazily on first use, so you can call `MyClass(args)` and `obj.method(args)` even when the class definition lives in a separate file.
-
-### Data structures
-
-Conformal tracks struct field assignment (`s.x = A`), field access, and chained dot notation (`s.x.y`). Missing field access on a known struct emits a warning. Struct shapes join across branches by taking the union of fields. When you assign a field to a variable whose base shape is unknown, for example the return value of an unrecognized function, Conformal creates an open struct, written `struct{x: matrix[1 x 3], ...}`. Open structs don't warn on missing field access, since there could be more fields that aren't tracked. Multi-return destructuring supports dotted targets, so `[s.x, s.y] = get_pair()` works and populates the struct's field map. The lattice ordering is bottom < closed struct < open struct < unknown.
-
-Cell arrays work with `cell(n)` and `cell(m,n)` constructors, curly-brace indexing, and element assignment. Literal indexing `C{i}` extracts the precise shape of element `i` when available, and dynamic indexing joins all element shapes conservatively. Curly-brace indexing on a non-cell emits a warning.
-
-Basic `classdef` support is included through a side-channel approach. When the parser encounters a `classdef` block, it extracts the property names and the constructor method body. A class registry maps the class name to its property list and constructor definition, so when you call the constructor, Conformal analyzes the constructor body and returns a struct with the declared fields. You can then access fields like `obj.x` and Conformal will track their shapes the same way it does for regular structs. When you call `obj.method(args)`, Conformal checks whether `obj` was created by a known class constructor, and if so dispatches the call as `method(obj, args)` through the class's registered method definitions. Superclass syntax (`classdef Foo < Bar`) parses correctly, and the superclass name is stored, but inheritance is not resolved.
-
-### Control flow
-
-Conformal covers `if`/`elseif`/`else`, `for`, `while`, `switch`/`case`/`otherwise`, `try`/`catch`, `break`, `continue`, and `return`. When branches assign different shapes to the same variable, Conformal joins them conservatively. Loops use a single pass by default, or widening-based fixed-point iteration via `--fixpoint` for guaranteed convergence in at most 2 iterations. In `--fixpoint` mode, for-loop accumulation patterns like `A = [A; delta]` and `A = [A, delta]` are detected and refined algebraically: the iteration count is extracted from the range (`(b-a)+1`), and the widened dimension is replaced with `init_dim + iter_count * delta_dim`. Interval widening in fixpoint loops produces sound post-loop intervals, so interval-based checks remain accurate even after a fixpoint run.
-
-Switch/case bodies also benefit from interval refinement: when the switch expression is an integer variable and a case arm matches a concrete value, Conformal narrows the variable to that value inside the case body, which can eliminate false-positive dimension and bounds warnings in dispatch-style code. When a case arm uses a cell list like `case {1, 5}`, Conformal computes the hull interval of all the listed integers and narrows the switch variable to that hull, so `zeros(n, n)` inside such an arm can resolve to a bounded size.
-
-### Symbolic dimensions
-
-Variables with unknown concrete size get symbolic names like `n`, `m`, `k`, and those names propagate through operations: `1:n` gives a `1 x n` vector, `[A B]` computes `n x (k+m)`, `zeros(n+1, 2*m)` tracks the arithmetic. Symbolic dimensions are represented as canonical polynomials with rational coefficients, so `n+m` and `m+n` are recognized as equal, and `n+n` simplifies to `2*n`. When a function is called with a symbolic argument `n`, the dimension name propagates into the function body.
-
-### Interval analysis
-
-In parallel with shape inference, Conformal tracks scalar integer variables through an integer interval domain `[lo, hi]`. This is what enables three additional checks: `W_DIVISION_BY_ZERO` when the divisor is provably zero, `W_INDEX_OUT_OF_BOUNDS` when an index is provably outside the matrix dimensions, and `W_POSSIBLY_NEGATIVE_DIM` when a dimension expression is provably non-positive.
-
-Initially, for-loop variables are bound to their range interval, so `for i = 1:n` records `i` in `[1, n]` with a symbolic upper bound. Comparisons against symbolic bounds fall back soundly, and intervals join conservatively across control-flow branches.
-
-When `--fixpoint` widening would ordinarily snap an interval bound to infinity, Conformal instead snaps to the nearest threshold in the set `{-1000, -100, -10, -1, 0, 1, 10, 100, 1000}`. A counter that grows inside a loop widens its upper bound to `1000` rather than `+inf`, so the interval stays finite and downstream index checks remain useful. This is a standard technique from abstract interpretation called threshold widening.
-
-Additionally, branch conditions narrow variable intervals inside the branch body. If you write `if x > 0`, Conformal refines `x` to `[1, +inf]` for the true branch, which can eliminate false-positive out-of-bounds and negative-dim warnings when a guard proves safety. Conformal supports `>`, `>=`, `<`, `<=`, `==`, `~=`, compound `&&` conditions, and operator flipping like `5 >= x`.
-
-There is also a cross-domain bridge between the interval domain and the dimension equivalence classes. When an exact interval `[k, k]` is recorded for a variable, for example because a branch condition like `if r == 5` narrows `r` to a singleton, the bridge propagates `k` into any DimEquiv equivalence class that `r` belongs to, and back into `valueRanges` for all equivalent variables. This means that if `r = size(A, 1)` and `A` has a symbolic `n` row dimension, narrowing `r` inside a branch immediately resolves `n` to that same concrete value for the duration of the branch. Similarly, `n = size(A, 1)` where `A` has a concrete row dimension now directly sets `valueRanges[n] = [dim, dim]`, so a subsequent `zeros(n, n)` can resolve to a concrete shape rather than staying symbolic.
-
-Three more precision features operate in `--fixpoint` mode. Narrowing after widening adds a Phase 2.5 pass that re-runs the loop body once after the fixpoint stabilizes, then intersects the result with the widened bounds to tighten them back, so a counter that widened to `[0, 1000]` might recover a tighter bound, all without risking non-termination. Scope-limited widening restricts widening and narrowing operations to the variables that are actually assigned inside the loop body, so a variable like `n = 5` that is read but never written inside the loop keeps its exact `[5, 5]` interval and won't be corrupted by bridge side-effects from other variables. The Pentagon domain tracks relational upper bounds of the form `x <= y + c` and lower bounds of the form `x >= y + c`: for-loop variables get an entry `i <= n` when the range endpoint is a named variable, and a matching `i >= start` entry when the start is a named variable; when those bound variables have exact intervals, the Pentagon bridge fires to tighten `i`'s bounds from above and below. The Pentagon domain also actively suppresses `W_INDEX_OUT_OF_BOUNDS` when it can prove an index stays in bounds: `pentagonProvesInBounds` checks both the concrete case (the index interval's upper bound matches the dimension exactly) and the symbolic case (the Pentagon bound variable is in the same DimEquiv equivalence class as the matrix dimension), and `pentagonProvesLowerBound` handles the symmetric lower check to suppress "index may be < 1" warnings, so `for i = start:n; A(i,1); end` where `start >= 1` produces no spurious out-of-bounds warning. The Pentagon bridge fires before each analysis pass in `analyzeLoopBody` rather than only at loop entry, so it stays effective across all fixpoint phases. While-loop conditions are also parsed for relational bounds via `extractPentagonBoundsFromCondition`, which handles `<=`, `<`, `>=`, `>`, and `&&` conjunctions, so `while i <= n` records `i <= n` in the Pentagon domain and the bridge suppresses OOB warnings inside the loop body the same way a for-loop would.
-
-### Type errors
-
-When you use a non-numeric type (struct, cell, function_handle) where a numeric value is expected, Conformal emits a type mismatch error. Arithmetic operations like `+`, `-`, `*`, and `.*` on structs or cells emit `W_ARITHMETIC_TYPE_MISMATCH`. Transpose on a non-numeric type emits `W_TRANSPOSE_TYPE_MISMATCH`, negation emits `W_NEGATE_TYPE_MISMATCH`, and mixing incompatible types in a matrix literal (like `[s, A]` where `s` is a struct) emits `W_CONCAT_TYPE_MISMATCH`. All four codes are Error severity, not warnings.
-
-### Witness generation
-
-For dimension conflict warnings, Conformal can optionally produce a concrete counterexample proving the bug is real. A witness is a set of variable assignments like `n=3, m=5` under which the conflicting dimensions evaluate to different integers. The solver pulls from variables with known concrete values, interval bounds from interval analysis, and branch path conditions to narrow the candidate space before enumerating. It bails out conservatively when dimensions are unknown, when symbolic terms are quadratic or higher, or when more than 8 free variables are involved.
-
-In `--witness enrich` mode (the default when `--witness` is given), the concrete assignment is printed below each warning. In `--witness filter` mode, only warnings with a verified witness are shown, which gives you zero false positives. In `--witness tag` mode, each warning is prefixed with `[confirmed]` or `[possible]`. The LSP server always runs witness generation and appends the witness explanation to the hover text automatically, with no extra configuration needed.
-
-### MATLAB Coder compatibility
-
-The `--coder` flag adds a post-analysis pass that checks for constructs MATLAB Coder can't handle. Six new warning codes are emitted, all strict-only by default so they don't appear in a normal CI run unless you opt in. `W_CODER_VARIABLE_SIZE` fires when a variable has an unknown or `None` dimension, since Coder requires all sizes to be statically determined. `W_CODER_CELL_ARRAY` fires when any cell array variable is present, since Coder does not support cells by default. `W_CODER_DYNAMIC_FIELD` fires when you use dynamic struct field access `s.(expr)`. `W_CODER_TRY_CATCH` fires on try/catch blocks, which Coder restricts. `W_CODER_UNSUPPORTED_BUILTIN` fires when you call one of the 30 builtins that Coder does not support, including `eval`, `feval`, `input`, `keyboard`, and display functions like `disp` and `fprintf`. `W_CODER_RECURSION` fires on recursive function calls.
-
-You can use `--coder --strict` together to surface all six codes, or combine with `--fixpoint` for the most precise size analysis before the Coder pass runs.
-
-## Language Coverage
-
-Conformal parses and tracks shapes through:
-
-| Category | Constructs |
-|----------|-----------|
-| Expressions | `+`, `-`, `*`, `.*`, `./`, `^`, `.^`, `\`, `&`, `\|`, `==`, `~=`, `<`, `>`, `<=`, `>=`, `&&`, `\|\|`, `~`, `'`, `.'` |
-| Literals | `[1 2; 3 4]`, `{1, 2; 3, 4}`, `'string'`, `"string"`, `1:n` |
-| Indexing | `A(i,j)`, `A(:,j)`, `A(2:5,:)`, `C{i}`, `C{i} = x` |
-| Assignment | `x = expr`, `s.field = expr`, `C{i} = expr`, `M(i,j) = expr`, `[a, b] = f(x)`, `[~, b] = f(x)`, `[s.x, s.y] = f(x)` |
-| Functions | `function y = f(x)`, `function name` (no-arg), nested `function` blocks, `@(x) expr`, `@funcName`, `nargin`/`nargout`, `varargin`/`varargout`, `global`/`persistent` variables, `cellfun`/`arrayfun` dispatch, 635 recognized builtins (315 with shape rules) |
-| Control flow | `if`/`elseif`/`else`, `for`, `while`, `switch`/`case`, `try`/`catch` |
-| Statements | `break`, `continue`, `return` |
-| Data types | scalars, matrices, strings, structs, cell arrays, function handles, classdef objects (constructor + method dispatch) |
-
-## Shape System
-
-Every expression Conformal analyzes gets a shape from an abstract domain. There are 7 user-visible shapes (plus an internal `bottom` for unbound variables):
-
-| Shape | Example | Notes |
-|-------|---------|-------|
-| `scalar` | `5`, `x` | Single numeric value |
-| `matrix[r x c]` | `matrix[3 x 4]`, `matrix[n x m]` | Dimensions can be concrete, symbolic, or unknown |
-| `string` | `'hello'` | Char array |
-| `struct{...}` | `struct{x: scalar, ...}` (open), `struct{x: scalar}` (closed) | Tracks fields and their shapes; open structs (from unknown bases) suppress missing-field warnings |
-| `function_handle` | `@(x) x'`, `@sin` | Tracks lambda ID for join precision |
-| `cell[r x c]` | `cell[3 x 1]` | Cell array with optional per-element shape tracking |
-| `unknown` | | Error or indeterminate; the lattice top |
-
-The shape domain is implemented as a discriminated union in F# (`Shapes.fs`), with `bottom` serving as the lattice identity, used internally for unbound variables and never surfaced in output.
-
-Dimensions in `matrix[r x c]` can be concrete integers like `3` or `100`, symbolic names like `n`, `m`, `k`, symbolic expressions like `n+m`, `2*k`, or `n+1`, or simply unknown when no information is available.
-
-Symbolic dimensions use a polynomial representation with rational coefficients. Canonicalization handles commutativity (`n+m` = `m+n`), like-term collection (`n+n` = `2*n`), and constant-offset conflict detection. When control flow branches assign conflicting dimensions to the same variable, Conformal joins them to unknown. In loops with `--fixpoint`, conflicting dimensions get widened to unknown while stable dimensions are preserved.
-
-## Project Structure
-
-```
-src/                    F# analyzer (lexer, parser, shape inference, builtins, diagnostics, LSP server)
-vscode-conformal/       VS Code extension (TypeScript client + Fable-compiled analyzer)
-  fable/                Fable compilation project (F# to JavaScript, shares src/*.fs files)
-  src/                  TypeScript extension and LSP server code
-tests/                  502 self-checking MATLAB programs in 22 categories
-.github/                CI workflow (build, test, compile Fable, package VSIX)
-```
-
-## Test Suite
-
-Conformal is validated by 502 self-checking MATLAB programs organized into 22 categories. Each test embeds its expected behavior as inline assertions:
-
-```matlab
-% EXPECT: warnings = 1
-% EXPECT: warnings >= 2
-% EXPECT: A = matrix[n x (k+m)]
-% EXPECT_FIXPOINT: A = matrix[None x None]   % Override for --fixpoint mode
-y = A * x;  % EXPECT_WARNING: W_INNER_DIM_MISMATCH
-z = ~f;     % EXPECT_NO_WARNING: W_UNKNOWN_FUNCTION
-% MODE: strict
-% MODE: coder
-% SKIP_TEST
-```
-
-The `EXPECT_WARNING` and `EXPECT_NO_WARNING` directives are inline: they go on the same line as the statement they apply to, and they check that the given warning code fires (or doesn't fire) on that exact line. The `% EXPECT: warnings` check also accepts comparison operators, so `warnings >= 1` passes if at least one warning fires rather than requiring an exact count. `% MODE: strict` enables strict mode for that file, and `% MODE: coder` enables the Coder compatibility pass. There are also `EXPECT_FIXPOINT_WARNING:` and `EXPECT_FIXPOINT_NO_WARNING:` variants that only apply when the test runner is in `--fixpoint` mode. A file containing `% SKIP_TEST` anywhere in its body is silently skipped by the test runner, which is useful for tests that require external resources or are temporarily disabled.
-
-The test runner checks that Conformal's output matches these expectations. In addition to the `.m` test files, the shape domain is validated by 28 property-based tests using FsCheck, covering 6 sections of the lattice (join commutativity, associativity, monotonicity, and lattice ordering for shapes and intervals). These run as part of `dotnet run -- --tests`.
-
----
-
-<details open>
-<summary><h3>Basics (19 tests)</h3></summary>
-
-Foundation tests for core matrix operations and dimension compatibility.
-
-| Test | What It Validates | Warnings |
-|------|-------------------|----------|
-| `valid_add.m` | Conformable matrix addition succeeds | 0 |
-| `invalid_add.m` | Dimension mismatch in addition detected | 1 |
-| `matrix_multiply.m` | Valid matrix multiplication (inner dims match) | 0 |
-| `inner_dim_mismatch.m` | Catch incompatible inner dimensions in `A * B` | 1 |
-| `scalar_matrix_ops.m` | Scalar-matrix broadcasting works correctly | 0 |
-| `elementwise_ops.m` | Shape mismatch in element-wise operations flagged | 1 |
-| `reassignment.m` | Incompatible variable reassignment detected | 1 |
-| `type_errors.m` | Type mismatch warnings for struct/cell/function_handle in arithmetic, transpose, negation, and concat | 4 |
-| `power_ops.m` | Matrix power `^` and element-wise power `.^` shape rules | 1 |
-| `backslash.m` | Backslash (mldivide) `A\b` shape inference | 1 |
-| `dot_transpose.m` | Non-conjugate transpose `.'` returns transposed shape | 0 |
-| `elementwise_logical.m` | Element-wise logical `&` and `\|` return scalar or matrix shape | 0 |
-| `logical_not.m` | Logical NOT `~x` shape passthrough | 0 |
-| `tilde_unused.m` | Tilde `[~, x] = f()` as unused output placeholder | 0 |
-| `space_destructure.m` | Space-separated destructuring `[a b] = expr` without commas | 0 |
-| `scientific_notation.m` | Scientific notation literals (`1e6`, `1.5e-3`, `1E+9`) parsed as scalars | 0 |
-| `matrix_literal_transpose.m` | Transpose of a matrix literal `[1 2; 3 4]'` parses correctly and returns transposed shape | 0 |
-| `expect_warning_demo.m` | Inline `EXPECT_WARNING` directive: `W_INNER_DIM_MISMATCH` fires on the exact line of the mismatch | 1 |
-| `not_type_mismatch.m` | Logical NOT `~` on a function handle emits `W_NOT_TYPE_MISMATCH` | 1 |
-
-</details>
-
-<details open>
-<summary><h3>Symbolic Dimensions (6 tests)</h3></summary>
-
-Tests symbolic dimension tracking, arithmetic, and canonical polynomial representation.
-
-| Test | What It Validates | Warnings |
-|------|-------------------|----------|
-| `dimension_tracking.m` | Colon vectors preserve symbolic dimensions (`1:n`) | 0 |
-| `dimension_arithmetic.m` | Addition/multiplication of symbolic dimensions (e.g., `n+m`, `2*k`) | 0 |
-| `canonicalization.m` | SymDim polynomial canonicalization ensures `zeros(n,m)` joins with `zeros(n,m)` | 0 |
-| `commutativity_join.m` | Commutative equality: `(n+m)` joins with `(m+n)` | 0 |
-| `like_terms.m` | Like-term collection: `(n+n)` canonicalizes to `(2*n)` | 0 |
-| `rational_dimensions.m` | Rational coefficients in symbolic dimensions (e.g., `n/2`) | 0 |
-
->Symbolic dimensions are represented as canonical polynomials with rational coefficients, enabling precise tracking of parametric shapes across function boundaries.
-
-</details>
-
-<details open>
-<summary><h3>Indexing (22 tests)</h3></summary>
-
-MATLAB-style indexing including scalar, slice, range, linear indexing, `end` keyword arithmetic, comparison broadcast shapes, and logical indexing.
-
-| Test | What It Validates | Warnings |
-|------|-------------------|----------|
-| `scalar_index.m` | Scalar indexing `A(i,j)` returns scalar | 0 |
-| `slice_index.m` | Slice indexing `A(:,j)` and `A(i,:)` shape rules | 0 |
-| `range_index.m` | Range indexing `A(2:5, :)` preserves symbolic dimensions | 0 |
-| `linear_index.m` | Linear indexing on scalar base is an error | 1 |
-| `invalid_row_index.m` | Constant-range row indexing edge cases | 0 |
-| `invalid_col_index.m` | Constant-range column indexing edge cases | 0 |
-| `invalid_linear_index.m` | Non-scalar index argument flagged | 1 |
-| `end_arithmetic_matrix.m` | `end` keyword arithmetic in array indexing (`end-1`, `end-2:end`) | 0 |
-| `symbolic_range.m` | Symbolic range indexing: variable endpoint `A(1:k,:)` -> `k x c` extent | 0 |
-| `end_position.m` | `end` resolves to column dimension in column position (non-square matrix) | 0 |
-| `symbolic_end_range.m` | `end` on symbolic matrices: `A(1:end,:)` -> `n x m`, `A(1:end-1,:)` -> `(n-1) x m` | 0 |
-| `index_assign.m` | Basic indexed assignment `M(i,j) = expr` preserves matrix dimensions | 0 |
-| `index_assign_bounds.m` | MATLAB auto-expands arrays on write; no `W_INDEX_OUT_OF_BOUNDS` on indexed assignment | 0 |
-| `index_assign_loop.m` | Indexed assignment inside for loop body | 0 |
-| `index_assign_in_function.m` | Indexed assignment in function body; caller sees correct return shape | 0 |
-| `matrix_literal_index.m` | Matrix literal as index argument `A([1 2 3])` returns the correct shape; colon ranges inside `[...]` index args work | 0 |
-| `colon_in_matrix_index.m` | Colon range inside a matrix literal index arg `A([1:3])` parses correctly via `colon_visible` parameter threading | 0 |
-| `comparison_returns_matrix.m` | Comparison `A > 0` where `A` is `matrix[3 x 4]` returns `matrix[3 x 4]`, not scalar | 1 |
-| `logical_index_basic.m` | Logical indexing `A(A > 0)` infers `matrix[None x 1]` (column vector) | 1 |
-| `logical_index_compound.m` | Compound logical mask `A(A > 0 & A < 1)` still infers column vector output | 2 |
-| `logical_index_variable.m` | Pre-computed mask stored in variable, then used for indexing, infers column vector | 0 |
-| `index_assign_type_mismatch.m` | Indexed assignment into a non-indexable type (function handle) emits `W_INDEX_ASSIGN_TYPE_MISMATCH` | 1 |
-
-</details>
-
-<details open>
-<summary><h3>Control Flow (22 tests)</h3></summary>
-
-Control-flow join semantics for if/elseif/else, switch/case, try/catch, break, continue, and return.
-
-| Test | What It Validates | Warnings |
-|------|-------------------|----------|
-| `if_branch_mismatch.m` | Conservative join when branches assign conflicting shapes | 1 |
-| `if_else_error_branch.m` | Error in one branch propagates as `unknown` | 1 |
-| `suspicious_comparison.m` | Matrix-scalar comparisons flagged (likely bug) | 1 |
-| `elseif_chain.m` | If-elseif-else chain joins all branch environments | 0 |
-| `elseif_no_else.m` | Elseif without else joins with pre-condition environment | 0 |
-| `elseif_mismatch.m` | Shape conflicts across elseif branches handled conservatively | 0 |
-| `break_simple.m` | Break statement exits for loop correctly | 0 |
-| `continue_simple.m` | Continue skips to next while loop iteration | 0 |
-| `break_nested_loop.m` | Break only exits innermost loop | 0 |
-| `switch_basic.m` | Switch/case with otherwise joins all branches | 0 |
-| `switch_no_otherwise.m` | Switch without otherwise joins cases with pre-switch env | 0 |
-| `switch_mismatch.m` | Conflicting shapes across cases joined conservatively | 0 |
-| `try_catch_basic.m` | Try/catch joins try-branch with catch-branch | 1 |
-| `try_catch_no_error.m` | Catch block unused when no error in try block | 0 |
-| `try_nested.m` | Nested try/catch blocks work correctly | 0 |
-| `break_in_if_else.m` | Break in if-inside-loop correctly propagates; else branch shape used when break taken | 0 |
-| `try_catch_break.m` | Break inside try/catch block propagates correctly out of the enclosing loop | 0 |
-| `break_outside_loop.m` | `break` outside a loop emits `W_BREAK_OUTSIDE_LOOP` | 1 |
-| `continue_outside_loop.m` | `continue` outside a loop emits `W_CONTINUE_OUTSIDE_LOOP` | 1 |
-| `return_outside_function.m` | `return` at script level emits `W_RETURN_OUTSIDE_FUNCTION` | 1 |
-| `return_inside_function.m` | `return` inside a function body exits the function early; shape inferred from pre-return env | 0 |
-| `if_break_both_branches.m` | Break in both branches of an if inside a loop; post-if environment is the loop-exit join | 0 |
-
->Conservative join semantics. When branches disagree on a variable's shape, the analyzer joins to the least upper bound (often `unknown`).
-
-</details>
-
-<details>
-<summary><h3>Literals (11 tests)</h3></summary>
-
-Matrix literals, string literals, and concatenation constraints.
-
-| Test | What It Validates | Warnings |
-|------|-------------------|----------|
-| `matrix_literal.m` | Basic matrix literals `[1 2; 3 4]` parsed and shaped correctly | 0 |
-| `horzcat_vertcat.m` | Horizontal/vertical concatenation dimension constraints | 1 |
-| `symbolic_concat.m` | Symbolic dimension addition in concatenation (e.g., `[A B]` -> `n x (k+m)`) | 0 |
-| `string_literal.m` | String literals with both quote styles (`'foo'`, `"bar"`) | 0 |
-| `string_horzcat.m` | String concatenation via horizontal concatenation | 0 |
-| `string_matrix_error.m` | String-matrix arithmetic operations flagged | 1 |
-| `string_in_control_flow.m` | String/scalar shape joins across branches | 0 |
-| `matrix_spacing.m` | Matrix literal spacing: `[1 -2]` is two elements (not subtraction) | 0 |
-| `cell_spacing.m` | Cell literal spacing disambiguation (`{1 -2}` is two elements) | 0 |
-| `empty_concat.m` | `[]` is identity for concatenation: `[[] x]` -> `x`, `[[] ; x]` -> `x` | 1 |
-| `negative_matrix_elements.m` | Matrix literals with negative elements: `[-1 -2]` is `1x2`, not a scalar | 0 |
-
-</details>
-
-<details>
-<summary><h3>Builtins (32 tests)</h3></summary>
-
-Shape rules for 635 recognized MATLAB builtins (315 with shape handlers), call/index disambiguation, and dimension arithmetic.
-
-| Test | What It Validates | Warnings |
-|------|-------------------|----------|
-| `unknown_function.m` | Unknown function calls emit warning | 1 |
-| `shape_preserving.m` | `size()` and `isscalar()` return scalar | 0 |
-| `call_vs_index.m` | Apply node disambiguation (function call vs indexing) | 1 |
-| `apply_disambiguation.m` | Environment-based disambiguation prefers bound variables | 0 |
-| `constructors.m` | Matrix constructors (`zeros`, `ones`, `eye`, `rand`) and element-wise ops | 0 |
-| `dim_arithmetic.m` | Dimension arithmetic in builtin args: `zeros(n+1, 2*m)` | 0 |
-| `reshape_repmat.m` | `reshape` and `repmat` shape transformations | 0 |
-| `remaining_builtins.m` | `det`, `diag`, `inv`, `linspace`, `norm` shape rules | 0 |
-| `type_queries.m` | Type query functions: `iscell()`, `isscalar()` return scalar | 0 |
-| `elementwise_math.m` | Element-wise math functions (trig, exp/log, rounding): pass-through shape | 0 |
-| `reductions.m` | Reduction functions (`sum`, `prod`, `mean`, `min`, `max`, `diff`) with dimension args | 0 |
-| `constructors_logical.m` | Logical/special constructors (`true`, `false`, `nan`, `inf`) | 0 |
-| `type_predicates_extended.m` | Type predicates (`isempty`, `isnumeric`, `isnan`, `issymmetric`, etc.) | 0 |
-| `reshape_conformability.m` | `reshape` conformability check: element count mismatch emits `W_RESHAPE_MISMATCH` | 1 |
-| `kron_blkdiag.m` | `kron` (Kronecker product) and `blkdiag` (variadic block diagonal) shape rules | 0 |
-| `expanded_builtins.m` | Coverage across all handler categories (hyperbolic trig, type casts, string returns, etc.) | 0 |
-| `multi_return_builtins.m` | Multi-return builtins like `eig`, `svd`, `sort`, `find` with `[a, b] = f(x)` syntax | 0 |
-| `math_constants.m` | Predefined constants (`pi`, `eps`, `inf`, `nan`, `i`) recognized as scalars | 0 |
-| `struct_constructor.m` | `struct()` constructor with field names and values; field tracking | 0 |
-| `domain_builtins.m` | Domain builtins: `fft`/`ifft` (passthrough), `polyfit` (row vector), `polyval` (input shape), `ndims` (scalar) | 0 |
-| `range_args.m` | Builtins receiving colon-range arguments like `polyval(p, 1:10)` don't crash | 0 |
-| `corpus_builtins.m` | Dogfood corpus builtins recognized without `W_UNKNOWN_FUNCTION` (NaN/Inf variants, string ops, nan-ignoring reductions, I/O ops) | 0 |
-| `expanded_builtins_2.m` | File I/O builtins (`fopen`, `fgets`, `fseek`, `ftell`, `textscan`, `fclose`) recognized without warnings | 0 |
-| `control_system_builtins.m` | Control System Toolbox: `lqr`, `dlqr`, `place`, `acker`, `care`, `dare`, `lyap`, `dlyap`, `obsv`, `ctrb` with shape rules; `ss`, `tf`, `zpk` recognized | 0 |
-| `signal_processing_builtins.m` | Signal Processing Toolbox: `filter`/`filtfilt` passthrough, `conv` symbolic length, window functions, `butter` multi-return | 0 |
-| `aerospace_builtins.m` | Aerospace Toolbox: DCM (`angle2dcm` -> 3x3), quaternion (`dcm2quat` -> 1x4, `quatmultiply`), `dcm2angle` multi-return | 0 |
-| `core_builtins_dogfood.m` | Dogfood corpus builtins: `bsxfun` broadcast, `interpft` resampling, degree trig, `rmfield`, `nchoosek` | 0 |
-| `builtin_expansion_smoke.m` | Smoke test for additional builtin batches: `sortrows` passthrough, `axang2rotm` fixed-dim transform, `mode` reduction, `cov` variance-covariance | 0 |
-| `cellfun_basic.m` | `cellfun(@length, C)` where `C` is `cell[3 x 1]` applies the handle per-element and returns `matrix[3 x 1]` | 0 |
-| `cellfun_lambda.m` | `cellfun` with scalar-returning lambda `@(x) size(x, 1)` returns a matrix matching the cell dimensions | 0 |
-| `cellfun_uniform_false.m` | `cellfun(..., 'UniformOutput', false)` returns a cell array matching the input cell dimensions | 0 |
-| `arrayfun_basic.m` | `arrayfun(@(x) x^2, A)` where `A` is `matrix[3 x 4]` returns a matrix with the same shape | 0 |
-
->Dimension arithmetic uses canonical polynomial representation to track expressions like `zeros(n+m+1, 2*k)`. `cellfun` and `arrayfun` dispatch to the provided handle or lambda at the element level, so the output shape is derived from what that function returns combined with the input dimensions.
-
-</details>
-
-<details>
-<summary><h3>Loops (39 tests)</h3></summary>
-
-Loop analysis with single-pass and fixed-point widening modes (via `--fixpoint`), including accumulation refinement, stepped ranges, range-valued dimensions, interval gate convergence, narrowing after widening, scope-limited widening, and Pentagon upper-bound tracking.
-
-| Test | What It Validates | Warnings |
-|------|-------------------|----------|
-| `for_loop_var.m` | Loop variable bound to scalar | 0 |
-| `for_range_symbolic.m` | For loop iterates over symbolic range | 0 |
-| `nested_loop.m` | Nested for loops handled correctly | 0 |
-| `while_basic.m` | While loop with condition | 0 |
-| `simple_accumulation.m` | Single-pass mode misses feedback (expected limitation) | 1 |
-| `matrix_growth.m` | Matrix growth with symbolic dimensions | 1 |
-| `loop_exit_join.m` | Variables unmodified in loop preserve pre-loop state | 0 |
-| `loop_may_not_execute.m` | Post-loop join accounts for zero-iteration case | 1 |
-| `warning_dedup.m` | Warnings deduplicated inside loops | 1 |
-| `fixpoint_convergence.m` | Fixed-point iteration converges in at most 2 iterations | 1 |
-| `widen_col_grows.m` | Column grows, row stable: row preserved, column widened | 1 |
-| `widen_multiple_vars.m` | Multiple variables with independent stability patterns | 1 |
-| `widen_self_reference.m` | Self-referencing updates (`A = A + A`) trigger widening | 1 |
-| `widen_while_growth.m` | While loop with matrix growth | 1 |
-| `widen_concat_unknown.m` | Concatenation with unknown dimensions in loop | 1 |
-| `widen_error_in_branch.m` | Unknown function in conditional branch inside loop | 2 |
-| `widen_first_assign_in_body.m` | Variable first assigned inside loop body | 0 |
-| `widen_if_in_loop.m` | Conditional growth inside loop converges | 1 |
-| `widen_interdependent_vars.m` | Interdependent variables (`A=B`, `B=A+A`) widen correctly | 2 |
-| `widen_stable_overwrite.m` | Stable dimension overwrite in loop | 1 |
-| `widen_unknown_false_positive.m` | Unknown function doesn't spuriously widen unrelated vars | 1 |
-| `widen_unknown_in_body.m` | Unknown function result overwrites variable | 1 |
-| `for_iter_count.m` | Iteration count extraction: concrete (`1:5` gives 5) and symbolic (`1:n` gives n) ranges | 2 |
-| `for_accum_vertcat.m` | Vertcat accumulation refined: `A=[A;delta]` for 10 iters gives concrete row count | 1 |
-| `for_accum_horzcat.m` | Horzcat accumulation refined: `D=[D,delta]` for symbolic `k` iters gives `matrix[5 x (k+2)]` | 1 |
-| `for_accum_symbolic.m` | Symbolic range `a:b` accumulation: iteration count `(b-a+1)` used algebraically | 1 |
-| `for_accum_no_match.m` | Conservative bailout for self-referencing delta, stepped range, conditional accumulation | 0 |
-| `for_accum_stepped.m` | Stepped range `1:2:10` computes 5 iterations; accumulation gives concrete row count | 2 |
-| `for_accum_stepped_edge.m` | Edge cases for stepped iteration counts (degenerate ranges, negative step) | 0 |
-| `for_accum_stepped_symbolic.m` | Symbolic stepped range `1:2:n` bails out conservatively | 1 |
-| `for_accum_struct_field.m` | Struct field accumulation `s.data = [s.data; row]` detected and refined | 0 |
-| `conditional_accum_range.m` | Conditional accumulation (only one branch grows the matrix) produces a `Range` dimension in fixpoint mode | 1 |
-| `range_dim_arithmetic.m` | Arithmetic on `Range` dimensions: `[B; zeros(2,3)]` adds 2 to the lower bound | 1 |
-| `range_dim_conflict.m` | Conflict detection when a `Range` dimension is disjoint from a concrete dimension | 2 |
-| `phase2_interval_gate.m` | Phase 2 re-analysis fires when intervals change; scalar counter widens to a finite threshold interval rather than stalling | 0 |
-| `narrowing_basic.m` | Narrowing pass after widening recovers tighter bounds; counter increments 10 times, widens to `[0, 1000]`, then tightens so `zeros(1, count)` resolves to `matrix[1 x count]` | 0 |
-| `narrowing_conditional.m` | Narrowing tightens bounds even after conditional accumulation: counter conditionally incremented inside the loop, narrowing pass still recovers a finite interval | 0 |
-| `scope_limited_widen.m` | Scope-limited widening preserves exact intervals for variables never modified inside the loop: `n = 5` set before the loop keeps `[5, 5]` so `zeros(n, n)` resolves to `matrix[5 x 5]` | 0 |
-| `pentagon_for_bound.m` | Pentagon domain records `i <= n` from `for i = 1:n`; bridge fires when `n = [5, 5]` and tightens `i`'s interval to `[1, 5]`, so downstream `zeros(n, n)` resolves to `matrix[5 x 5]` | 0 |
-
->Principled widening-based loop analysis uses a 3-phase algorithm (discover, stabilize, post-loop join) that guarantees convergence in at most 2 iterations by widening conflicting dimensions to `None` while preserving stable dimensions. In `--fixpoint` mode, conditional accumulation produces `Range` dimensions rather than `None`, tracking a lower bound on how many rows have been added. Phase 2 re-analysis fires whenever shapes or intervals change, so scalar counters propagate through threshold widening correctly. A narrowing pass after Phase 2 (Phase 2.5) intersects the widened intervals with a fresh iterate to recover precision without risking non-termination. Scope-limited widening prevents bridge side-effects from drifting into intervals for variables the loop never modifies. The Pentagon domain tracks `x <= y + c` upper-bound relations from for-loop range endpoints, and fires a bridge when the bound variable has an exact interval.
-
-</details>
-
-<details>
-<summary><h3>Functions (91 tests)</h3></summary>
-
-Interprocedural analysis for user-defined functions, anonymous functions (lambdas), nested functions, and workspace-aware external function resolution.
-
-Named Functions (41 tests)
-
-| Test | What It Validates | Warnings |
-|------|-------------------|----------|
-| `simple_function.m` | Basic single-return function analysis | 0 |
-| `multiple_returns.m` | Multi-return destructuring assignment | 0 |
-| `matrix_constructor.m` | Function with dimension arguments | 0 |
-| `procedure.m` | Procedure (no return values) | 1 |
-| `unknown_in_function.m` | Unknown shapes propagate from callee to caller | 1 |
-| `function_then_script.m` | Function definitions before script statements | 0 |
-| `call_with_mismatch.m` | Call with incompatible argument shape | 1 |
-| `recursion.m` | Recursive function detected (guard prevents infinite loop) | 1 |
-| `cache_hit.m` | Polymorphic cache hit (same args reuse result) | 0 |
-| `cache_miss.m` | Polymorphic cache miss (different args re-analyze) | 1 |
-| `cache_hit_with_warning.m` | Warnings replayed on cache hit | 2 |
-| `cache_symbolic_args.m` | Polymorphic caching with symbolic dimension arguments | 0 |
-| `cache_warning_replay.m` | Warning replay preserves both call-site and body line numbers | 2 |
-| `return_statement.m` | Return statement exits function early | 0 |
-| `return_in_script.m` | Return in script context is an error | 1 |
-| `return_in_if.m` | Return inside if-branch (non-returned branch used for join) | 0 |
-| `return_in_loop.m` | Return inside loop exits function immediately | 0 |
-| `early_return_multi_output.m` | Early return with multiple output variables | 0 |
-| `function_in_loop.m` | Function call inside loop body | 0 |
-| `nested_function_calls.m` | Nested function calls (`f(g(x))`) | 0 |
-| `procedure_with_return.m` | Procedure with explicit return statement | 1 |
-| `arg_count_mismatch_cached.m` | Argument count mismatch detected | 1 |
-| `endless_basic.m` | Pre-2016 end-less function definition (no `end` keyword) | 0 |
-| `endless_inner_blocks.m` | End-less function with nested if/for blocks | 0 |
-| `endless_multi.m` | Multiple end-less functions in a single file | 0 |
-| `noarg_basic.m` | No-arg procedure syntax `function name` with no parentheses | 0 |
-| `space_multi_return.m` | Space-separated multi-return `function [a b c] = f(...)` | 0 |
-| `struct_multi_return.m` | Multi-return destructuring into struct fields `[s.x, s.y] = f()` populates the field map correctly | 1 |
-| `nargin_basic.m` | Function called with fewer args than declared; `if nargin < 3` default branch analyzed correctly | 0 |
-| `nargin_interval.m` | `nargin` interval refinement: called with 2 args -> `nargin=[2,2]`, so `if nargin < 2` branch is dead | 0 |
-| `nargin_too_many.m` | Calling with more arguments than declared still emits a warning | 1 |
-| `nargout_basic.m` | `nargout` bound to requested output count; `if nargout > 1` branch pruned for single-return call | 0 |
-| `varargin_basic.m` | `varargin` as last param; extra args bundled into a cell, no arg-count warning | 0 |
-| `varargin_perelement.m` | `varargin{1}` extracts the actual shape of the first extra argument via per-element cell tracking | 0 |
-| `varargout_basic.m` | `varargout` at call site: extra output targets beyond named returns receive unknown shape | 0 |
-| `varargin_nargin_guard.m` | `varargin` combined with `nargin` guard: arg-count suppression coexists with interval refinement | 0 |
-| `persistent_basic.m` | `persistent x` binds as bottom; use before initialization returns bottom | 0 |
-| `persistent_isempty_init.m` | `if isempty(x), x = init; end` pattern with persistent resolves via `join(Bottom, shape) = shape` | 0 |
-| `global_basic.m` | `global x` reads from and writes to the global store | 0 |
-| `global_cross_function.m` | `global x` declared in two functions; write in one is visible as a read in the other | 0 |
-| `global_write_read.m` | Global variable written then read across function boundaries | 0 |
-
-Anonymous Functions / Lambdas (17 tests)
-
-| Test | What It Validates | Warnings |
-|------|-------------------|----------|
-| `lambda_basic.m` | Anonymous function definition `@(x) expr` | 0 |
-| `lambda_zero_args.m` | Zero-argument lambda definition | 0 |
-| `lambda_call_approximate.m` | Lambda body analyzed at call site | 0 |
-| `function_handle_from_name.m` | Named function handle `@myFunc` dispatch | 0 |
-| `function_handle_join.m` | Function handles join in control flow | 0 |
-| `lambda_store_retrieve.m` | Lambda storage with distinct IDs | 0 |
-| `lambda_closure_capture.m` | Closure captures environment by-value (MATLAB semantics) | 0 |
-| `lambda_call_basic.m` | Lambda body analysis infers result shape from arguments | 0 |
-| `lambda_call_closure.m` | Lambda uses closure variable for computation | 0 |
-| `lambda_polymorphic_cache.m` | Same lambda called with different arg shapes re-analyzed | 0 |
-| `lambda_recursive.m` | Self-referencing lambda caught by recursion guard | 1 |
-| `lambda_arg_count_mismatch.m` | Lambda argument count mismatch flagged | 1 |
-| `lambda_dim_aliasing.m` | Dimension aliasing through lambda boundaries | 0 |
-| `lambda_zero_args_call.m` | Zero-argument lambda call | 0 |
-| `lambda_control_flow_join.m` | Different lambdas in if/else both analyzed, results joined | 0 |
-| `handle_dispatch_builtin.m` | Function handle `@sin` dispatches to builtin | 0 |
-| `handle_dispatch_user_func.m` | Function handle dispatches to user-defined function | 0 |
-| `lambda_call_opaque.m` | Unresolved function handle (opaque `@unknownFunc`) fires `W_LAMBDA_CALL_APPROXIMATE` at the call site | >=1 |
-
-Workspace Awareness (17 tests)
-
-| Test | What It Validates | Warnings |
-|------|-------------------|----------|
-| `workspace_basic.m` | External function in sibling file resolves silently (no W_UNKNOWN_FUNCTION) | 0 |
-| `workspace_handle.m` | Function handle to workspace function works correctly | 0 |
-| `workspace_multi_return.m` | Multi-return external functions return unknown for all outputs | 0 |
-| `workspace_builtin_priority.m` | Builtins take priority over workspace functions | 0 |
-| `workspace_same_file_priority.m` | Same-file functions take priority over workspace functions | 0 |
-| `workspace_dim_aliasing.m` | Dimension aliasing across file boundaries (symbolic dims propagate) | 0 |
-| `workspace_return.m` | External function with return statement infers correct shape | 0 |
-| `workspace_subfunctions.m` | Subfunctions inside external file work correctly | 0 |
-| `workspace_cycle_test.m` | Cross-file cycle A->B->A detected; returns unknown gracefully | 0 |
-| `workspace_parse_error.m` | Unparseable external file handled gracefully (no caller-visible warning) | 0 |
-| `workspace_helper.m` | Helper file for workspace tests (single-return function) | - |
-| `workspace_multi_helper.m` | Helper file for workspace tests (multi-return function) | - |
-| `workspace_return_helper.m` | Helper file: function with return statement | - |
-| `workspace_subfunctions_helper.m` | Helper file: external file with subfunctions | - |
-| `workspace_cycle_a.m` | Helper file for cycle test (calls cycle_b) | - |
-| `workspace_cycle_b.m` | Helper file for cycle test (calls cycle_a) | - |
-| `workspace_parse_error_helper.m` | Helper file with recoverable parse error | - |
-
-Nested Functions (7 tests)
-
-| Test | What It Validates | Warnings |
-|------|-------------------|----------|
-| `nested_def_basic.m` | Nested `function...end` defined inside outer function, callable from within | 0 |
-| `nested_def_closure.m` | Nested function reads parent workspace variables | 0 |
-| `nested_def_writeback.m` | Nested function writes back to parent workspace variable | 1 |
-| `nested_def_dim_alias.m` | Dimension aliasing through nested function boundaries | 0 |
-| `nested_def_sibling.m` | Sibling nested functions can call each other via forward references | 0 |
-| `nested_def_param_shadow.m` | Nested function parameters shadow parent variables without write-back | 0 |
-| `nested_def_scope.m` | Nested function is not visible at top-level script scope | 1 |
-
-Conformal analyzes functions at each call site with the caller's argument shapes, and results are cached per argument shape tuple so the same function called with the same shapes isn't re-analyzed. Symbolic dimension names can propagate across function boundaries, so `f(n)` where `f = @(k) zeros(k,k)` infers `matrix[n x n]`. Lambdas capture their environment by-value at definition time, matching MATLAB semantics. When branches assign different lambdas, Conformal analyzes both bodies and joins the results at the call site.
-
-Nested functions have read access to the parent scope via scope chains, can write back to the parent workspace after returning, and can call sibling nested functions via forward references. A nested function's parameters shadow parent variables without any write-back. Variable lookup walks up the scope chain until it finds the name, so inner functions can read anything defined in any enclosing scope. Multi-level nesting works too, so a function nested three levels deep can read variables from any enclosing level.
-
-External `.m` files are fully parsed and analyzed to infer real return shapes, with cross-file cycles (A->B->A) handled gracefully. Local functions defined inside external files are accessible during cross-file analysis.
-
-</details>
-
-<details>
-<summary><h3>Structs (9 tests)</h3></summary>
-
-Struct creation, field access, control-flow joins, and open struct lattice behavior.
-
-| Test | What It Validates | Warnings |
-|------|-------------------|----------|
-| `struct_create_assign.m` | Struct creation via field assignment (`s.x = 1`) | 0 |
-| `struct_field_access.m` | Field access returns field's shape | 0 |
-| `struct_field_not_found.m` | Missing field access on a closed struct emits warning | 1 |
-| `struct_field_reassign.m` | Field reassignment with different shape updates field map | 0 |
-| `struct_in_control_flow.m` | Struct shape join takes union of fields from both branches | 0 |
-| `field_access_unknown.m` | Field access on `unknown` base does not warn; empty matrix promotes to struct on assignment | 0 |
-| `open_struct.m` | Field assignment on an unknown base creates an open struct (`struct{x: ..., ...}`); untracked field reads return `unknown` silently; closed+open join produces open | 5 |
-| `struct_field_index_assign.m` | Indexed assignment into a struct field `s.x(i) = val` preserves the field's shape | 0 |
-| `struct_field_cell_assign.m` | Cell element assignment into a struct field `s.c{i} = val` works correctly | 0 |
-
->Struct join uses union-with-bottom semantics for closed structs; open structs (from unknown bases) use unknown as the default for missing fields. The lattice ordering is: bottom < closed struct < open struct < unknown.
-
-</details>
-
-<details>
-<summary><h3>Cells (30 tests)</h3></summary>
-
-Cell array literals, curly-brace indexing, element assignment, and per-element shape tracking.
-
-| Test | What It Validates | Warnings |
-|------|-------------------|----------|
-| `cell_literal.m` | Cell array literal syntax `{1, 2; 3, 4}` | 0 |
-| `cell_indexing.m` | Curly-brace indexing `C{i,j}` | 0 |
-| `cell_assignment.m` | Cell element assignment `C{i} = expr` | 0 |
-| `cell_assign_basic.m` | Basic cell element assignment updates cell shape | 0 |
-| `cell_assign_2d.m` | 2D cell element assignment | 0 |
-| `cell_assign_after_literal.m` | Cell assignment after literal creation | 0 |
-| `cell_assign_non_cell.m` | Cell assignment on non-cell variable emits warning | 1 |
-| `cell_assign_updates_element.m` | Cell assignment updates per-element tracking | 0 |
-| `cell_builtin.m` | `cell(n)` and `cell(m,n)` constructors | 0 |
-| `cell_control_flow_element_join.m` | Per-element tracking joins across control flow branches | 0 |
-| `cell_in_control_flow.m` | Cell arrays join across branches | 0 |
-| `cell_mixed_types.m` | Cells can hold mixed element types | 0 |
-| `cell_symbolic_dims.m` | Cell arrays with symbolic dimensions | 0 |
-| `cell_transpose.m` | Cell array transpose `C'` | 0 |
-| `cell_range_indexing.m` | Range indexing `C{1:3}` on cell arrays | 0 |
-| `cell_element_tracking.m` | Per-element shape tracking with literal indexing | 0 |
-| `cell_element_2d_indexing.m` | 2D literal indexing `C{i,j}` extracts precise element shape | 0 |
-| `cell_dynamic_indexing.m` | Dynamic indexing joins all element shapes | 0 |
-| `cell_2d_linear_indexing.m` | Linear indexing on multi-row cells (column-major) | 0 |
-| `cell_end_keyword.m` | `end` keyword in cell indexing `C{end}` | 0 |
-| `cell_end_2d.m` | `end` keyword in 2D cell indexing `C{end, end}` | 0 |
-| `cell_end_range.m` | `end` as range endpoint `C{1:end}` | 0 |
-| `end_arithmetic.m` | `end` keyword arithmetic in cell indexing (`end-1`, `end-2`) | 0 |
-| `end_outside_indexing.m` | `end` keyword outside indexing emits warning | 1 |
-| `cell_end_assign.m` | `end` keyword in cell assignment LHS (`c{end+1} = val` append pattern) | 0 |
-| `curly_indexing_non_cell.m` | Curly indexing on non-cell value is an error | 1 |
-| `empty_matrix_promotion.m` | `x = []; x{1} = val` promotes `[]` to cell without warning (MATLAB's universal empty initializer) | 0 |
-| `cell_assign_known_index.m` | Cell assignment through a variable with a known concrete interval value preserves per-element tracking | 0 |
-| `cell_element_reassign.m` | Per-element shape tracking survives sequential assignments: `c{1} = zeros(2,2)` then `c{2} = ...` still extracts the right shape for `c{1}` | 0 |
-| `cellfun_non_uniform.m` | `cellfun` with a non-scalar-returning lambda fires `W_CELLFUN_NON_UNIFORM` in strict mode | >=1 |
-
->Cell arrays use abstract shape `cell[r x c]` with optional per-element tracking. Literal indexing `C{i}` extracts precise element shapes when available. Dynamic indexing joins all elements conservatively. When the index variable has a known concrete value from interval analysis, Conformal can also extract the precise element shape even for variable-index reads. The `end` keyword resolves to the last element index and supports arithmetic (`end-1`, `end/2`).
-
-</details>
-
-<details>
-<summary><h3>Recovery (18 tests)</h3></summary>
-
-Parser error recovery and unsupported construct handling (graceful degradation).
-
-| Test | What It Validates | Warnings |
-|------|-------------------|----------|
-| `struct_field.m` | Field access on non-struct value flagged, analysis continues | 1 |
-| `cell_array.m` | Curly indexing on non-cell value flagged, analysis continues | 1 |
-| `multiple_assignment.m` | Unsupported multiple assignment syntax flagged | 1 |
-| `multiline_braces.m` | Multiline cell indexing triggers unsupported construct warning | 1 |
-| `dot_elementwise.m` | Dot-elementwise edge cases handled | 0 |
-| `end_in_parens.m` | `end` keyword inside parentheses unsupported | 1 |
-| `power_recovery.m` | `^` in complex and nested expressions doesn't break recovery | 0 |
-| `line_continuation.m` | `...` line continuation in expressions, function args, and matrix literals | 0 |
-| `tilde_param.m` | Tilde `~` as unused parameter placeholder in function definitions (`function f(~, data)`) | 0 |
-| `dqstring_escape.m` | Double-quoted string literals with `""` escape sequences | 0 |
-| `void_return.m` | `function [] = name(x)` void-return function syntax | 0 |
-| `bracket_string_concat.m` | Transpose-vs-string disambiguation inside `[]` (space before `'` means string, not transpose) | 0 |
-| `parfor_loop.m` | `parfor` loops parsed and analyzed identically to `for` loops | 0 |
-| `global_decl.m` | `global` and `persistent` declarations parsed without spurious warnings | 0 |
-| `dynamic_field.m` | Dynamic field access `s.(expr)` parses correctly and evaluates to `unknown` | 0 |
-| `classdef_suppress.m` | `classdef` blocks consumed without spurious `W_END_OUTSIDE_INDEXING` | 0 |
-| `chained_index_struct.m` | Chained indexed struct assignment `A(i).field = val` parses without triggering recovery | 0 |
-| `chained_struct_index.m` | Chained struct-index-struct assignment `s.field(i).sub = val` parsed correctly via speculative backtrack | 0 |
-
->Best-effort analysis. When the parser encounters unsupported syntax, it emits a `W_UNSUPPORTED_*` warning, treats the result as `unknown`, and keeps going.
-
-</details>
-
-<details>
-<summary><h3>Classdef (7 tests)</h3></summary>
-
-Basic OOP support via a side-channel approach: `classdef` blocks are parsed for property names and method bodies, constructor calls return a struct carrying the declared fields, and `obj.method(args)` dispatches through the class's registered method definitions.
-
-| Test | What It Validates | Warnings |
-|------|-------------------|----------|
-| `basic_constructor.m` | `classdef` with properties and a constructor method; constructor assigns scalar fields so `Foo(3, 4)` returns `struct{x: scalar, y: scalar}` | 0 |
-| `properties_only.m` | `classdef` with only a `properties` block and no constructor; fields are extracted but shapes are unknown | 0 |
-| `properties_defaults.m` | Properties with default values (`x = 0`, `y = []`) are handled; property names extracted even with initializers | 0 |
-| `superclass_syntax.m` | `classdef Foo < Bar` inheritance syntax parses without error; superclass name stored but not resolved | 0 |
-| `method_dispatch.m` | `obj.method(args)` dispatches to the registered method body when `obj` was created by a known constructor | 0 |
-| `method_return_shape.m` | Method return shape is inferred from the method body and propagated back to the caller | 0 |
-| `method_no_such.m` | Calling a method not defined in the class emits `W_STRUCT_FIELD_NOT_FOUND` | 1 |
-
->Property extraction means Conformal can track which fields exist on objects created by constructor calls. The object is treated as a struct, so all the usual field-access and shape-tracking machinery applies. Method dispatch maps `obj.method(args)` to the class's registered method via `classBindings` on the call context, which records which variable names hold instances of which class.
-
-</details>
-
-<details>
-<summary><h3>Constraints (19 tests)</h3></summary>
-
-Dimension constraint solving: equality constraints recorded during operations, validated on concrete bindings, joined path-sensitively across control flow, and propagated through dimension equivalence classes.
-
-| Test | What It Validates | Warnings |
-|------|-------------------|----------|
-| `no_conflict.m` | Compatible symbolic dimensions, no constraint violation | 0 |
-| `concrete_no_constraint.m` | Concrete dimensions skip constraint recording (already handled) | 0 |
-| `matmul_conflict.m` | Inner dimension constraint conflict detected via `W_CONSTRAINT_CONFLICT` | 1 |
-| `elementwise_conflict.m` | Elementwise op constraint conflict detected | 1 |
-| `horizontal_concat_conflict.m` | Horizontal concatenation row-count constraint conflict | 1 |
-| `vertical_concat_conflict.m` | Vertical concatenation column-count constraint conflict | 1 |
-| `symbolic_concrete_constraint.m` | Symbolic dimension constrained by concrete binding | 1 |
-| `multi_constraint.m` | Multiple constraints accumulate; first conflict reported | 1 |
-| `path_sensitive_join.m` | Constraint added in all branches is kept after join | 0 |
-| `path_sensitive_discard.m` | Constraint added in only one branch is discarded after join | 0 |
-| `elseif_path_sensitive.m` | Path-sensitive join across elseif chains | 0 |
-| `prebound_dim_name.m` | Pre-bound variable names are excluded from constraint recording | 0 |
-| `function_scope_isolation.m` | Constraints are scoped to functions and don't leak to callers | 0 |
-| `equiv_basic.m` | Matmul inner-dim constraint (`A.cols == B.rows`) recorded in DimEquiv; vertcat downstream benefits with zero warnings | 0 |
-| `equiv_concrete_prop.m` | Concrete value from matmul propagates through equivalence class: `5 == m` resolves `zeros(m, 3)` to `matrix[5 x 3]` | 0 |
-| `equiv_transitive.m` | Transitive propagation: `5 == m` then `m == k` resolves `k` to `5` | 0 |
-| `equiv_branch_join.m` | Equivalences established in only one branch are dropped after join | 0 |
-| `equiv_size_alias.m` | `size(A, 1)` and `size(A, 2)` record DimEquiv entries; `zeros(r, c)` resolves to the concrete dimensions of `A` | 0 |
-| `equiv_function_scope.m` | DimEquiv entries established inside a function are isolated and don't leak to the caller | 0 |
-
->Constraint solving operates on `SymDim` polynomial dimensions. When a concrete value is bound to a variable, recorded equality constraints are checked for conflicts and `W_CONSTRAINT_CONFLICT` is emitted. Path-sensitive joins keep only constraints that hold in all branches. Dimension equivalence classes (DimEquiv, union-find) propagate concrete resolutions transitively and across `size()` aliases.
-
-</details>
-
-<details>
-<summary><h3>Intervals (40 tests)</h3></summary>
-
-Integer interval domain tracking scalar value ranges for division-by-zero, out-of-bounds indexing, and negative-dimension checks. Conditional interval refinement, symbolic interval bounds, threshold-based widening, switch/case narrowing (including multi-value cell cases), cross-domain propagation into dimension equivalence classes, Pentagon upper and lower-bound tracking, and while-loop condition extraction.
-
-| Test | What It Validates | Warnings |
-|------|-------------------|----------|
-| `interval_basic.m` | Basic interval tracking for scalar integer variables | 0 |
-| `interval_branch_join.m` | Interval join across if/else branches (conservative widening) | 0 |
-| `division_by_zero.m` | Division by a scalar known to be zero emits `W_DIVISION_BY_ZERO` | 1 |
-| `index_out_of_bounds.m` | Index provably outside matrix dimension emits `W_INDEX_OUT_OF_BOUNDS` | 1 |
-| `index_in_bounds.m` | Index provably within bounds: no warning | 0 |
-| `for_loop_interval.m` | For-loop variable bound to range interval `[1, n]` | 0 |
-| `for_loop_index_bounds.m` | Loop variable used as index: bounds checked against dimension | 1 |
-| `negative_dim.m` | Provably non-positive dimension expression emits `W_POSSIBLY_NEGATIVE_DIM` | 1 |
-| `dim_from_binop.m` | Interval arithmetic in dimension expressions (e.g., `n-1`) | 0 |
-| `conditional_refine_basic.m` | `if x > 0` narrows `x` interval in true branch; no false OOB warning | 0 |
-| `conditional_refine_compound.m` | Compound `&&` conditions apply both refinements simultaneously | 0 |
-| `conditional_refine_eliminates_warning.m` | Guard condition proves index safety, eliminating false-positive OOB | 0 |
-| `conditional_refine_else.m` | Condition flipped for else branch (`if x > 3` refines else `x` to `(-inf, 3]`) | 0 |
-| `conditional_refine_flipped.m` | Operator flipping: `5 >= x` refines `x` correctly | 0 |
-| `conditional_refine_neq.m` | `~=` comparison: no refinement (can't exclude a point from interval) | 0 |
-| `conditional_refine_symbolic.m` | Symbolic condition `if n > 0`: refinement with symbolic bounds | 0 |
-| `conditional_refine_while.m` | While loop condition refines interval in loop body | 0 |
-| `symbolic_interval_for_loop.m` | Symbolic upper bound `for i = 1:n` gives `i` in `[1, n]`; no false OOB on `A(i,:)` | 0 |
-| `scalar_propagation.m` | Concrete scalar values propagate into dimension constructors (`m = 3; zeros(m,m)` gives `matrix[3 x 3]`) | 0 |
-| `widen_threshold_upper.m` | Incrementing loop counter: threshold widening snaps upper bound to `1000` rather than `+inf`; variable remains a finite scalar post-loop | 0 |
-| `widen_threshold_lower.m` | Decrementing loop counter: threshold widening snaps lower bound to `-1000` rather than `-inf`; variable remains a finite scalar post-loop | 0 |
-| `interval_for_preserved.m` | For-loop iteration variable interval is set by its range declaration and not overwritten by widening | 0 |
-| `interval_widen_while.m` | Interval widening in a while loop produces an unbounded upper bound so no false OOB fires after the loop | 0 |
-| `switch_interval_refine.m` | Switch/case narrowing: `case 3` refines the switch variable to `[3, 3]` inside that arm, so `zeros(n, n)` resolves to `matrix[3 x 3]` | 0 |
-| `switch_interval_string.m` | Switch with a string case value: no interval refinement attempted, no crash | 0 |
-| `assign_dimequiv_bridge.m` | Cross-domain bridge: matmul inner-dim constraint forces `k == 4`; bridge propagates into DimEquiv so `zeros(k, k)` gives `matrix[4 x 4]` | 0 |
-| `if_dimequiv_bridge.m` | Bridge via if condition: `r == 5` narrows `r` to `[5, 5]`, bridge propagates to equivalent symbolic `n`, so `zeros(n, n)` gives `matrix[5 x 5]` | 0 |
-| `switch_dimequiv_bridge.m` | Bridge via switch/case arm: `case 3` narrows `r` to `[3, 3]`, bridge propagates to equivalent `n`, so `zeros(n, n)` gives `matrix[3 x 3]` | 0 |
-| `size_concrete_bridge.m` | `size()` concrete propagation: `n = size(A, 1)` where `A` is `matrix[3 x 4]` sets `valueRanges[n] = [3, 3]`, so `zeros(n, n)` resolves to `matrix[3 x 3]` | 0 |
-| `pentagon_suppresses_oob.m` | Pentagon concrete suppression: `for i = 1:5` with `A = zeros(5,5)` -- `i <= 5` via Pentagon bound matches the row dimension exactly, so `A(i,1)` produces no OOB warning | 0 |
-| `pentagon_symbolic_oob.m` | Pentagon symbolic suppression: function parameter `A`, `n = size(A,1)`, `for i = 1:n` -- `i <= n` via Pentagon, `A` has row dim `n` via DimEquiv, so `A(i,1)` is suppressed without a concrete bound | 0 |
-| `pentagon_bridge_fixpoint.m` | Pentagon bridge fires in each fixpoint phase, not just at loop entry; `A = zeros(5,5)`, `n = size(A,1)`, `for i = 1:n` stays warning-free under both normal and `--fixpoint` modes | 0 |
-| `pentagon_no_false_suppress.m` | Pentagon must not suppress real OOB: `for i = 1:10` with `A = zeros(5,5)` -- `i <= 10` via Pentagon but the row dim is only 5, so the OOB warning is still emitted | >=1 |
-| `switch_multi_value_refine.m` | `case {1, 5}` computes hull interval `[1, 5]` and narrows the switch variable; `zeros(n, n)` inside the arm sees the bounded size | 0 |
-| `switch_cell_single.m` | Single-element cell case `case {3}` narrows to `[3, 3]`; `zeros(n, n)` inside the arm resolves to `matrix[3 x 3]` | 0 |
-| `pentagon_lower_bound.m` | For-loop with variable start (`for i = start:n`); Pentagon lower bridge suppresses "index may be < 1" when `start` has a known value | 0 |
-| `pentagon_lower_concrete.m` | Concrete start value `s = 1`; Pentagon lower bridge fires with exact value and suppresses lower OOB | 0 |
-| `pentagon_lower_branch.m` | Lower-bound entry survives an if/else join inside the loop body, so OOB suppression holds in both branches | 0 |
-| `while_pentagon_upper.m` | `while i <= n` records `i <= n` in the Pentagon domain; `pentagonProvesInBounds` suppresses OOB on `A(i, 1)` inside the loop | 0 |
-| `while_pentagon_compound.m` | Compound condition `while i >= one && i <= n` extracts both upper and lower bounds; both OOB warnings suppressed | 0 |
-
->Interval analysis runs in parallel with shape inference. `W_INDEX_OUT_OF_BOUNDS` and `W_DIVISION_BY_ZERO` have Error severity (definite runtime errors). Conditional refinement eliminates false positives when branch guards prove safety; symbolic bounds fall back soundly. The cross-domain bridge connects the interval domain to dimension equivalence classes so that a concretized interval can resolve symbolic dimensions that are equated to the narrowed variable. The Pentagon domain suppresses `W_INDEX_OUT_OF_BOUNDS` when it can prove an index stays in bounds, covering both concrete and symbolic cases via `pentagonProvesInBounds` and `pentagonProvesLowerBound`. While-loop conditions are now also scanned for Pentagon bounds, so `while i <= n` works the same way a for-loop does.
-
-</details>
-
-<details>
-<summary><h3>Workspace Adversarial (3 tests, 21 helpers, 24 files total)</h3></summary>
-
-Adversarial cross-file analysis scenarios: error propagation, struct/cell returns, builtin shadowing, procedure handling, conditional shape joins, subfunctions, accumulation refinement, polymorphic caching stress, domain-authentic patterns (Kalman, covariance, gradient descent), and cross-file classdef resolution.
-
-| Test | What It Validates | Warnings |
-|------|-------------------|----------|
-| `workspace_mega.m` | Comprehensive cross-file stress test exercising all workspace analysis features | - |
-| `ws_accumulate.m` | Helper: for-loop accumulation in external function | - |
-| `ws_builtin_chain.m` | Helper: chain of builtin operations across file boundary | - |
-| `ws_conditional_shape.m` | Helper: conditional shape join (if/else returning different shapes) | - |
-| `ws_covariance.m` | Helper: covariance matrix computation (domain-authentic pattern) | - |
-| `ws_gradient_step.m` | Helper: gradient descent step (domain-authentic pattern) | - |
-| `ws_kalman_predict.m` | Helper: Kalman filter prediction (domain-authentic pattern) | - |
-| `ws_make_cell_pair.m` | Helper: function returning cell array across file boundary | - |
-| `ws_make_result.m` | Helper: struct return across file boundary | - |
-| `ws_normalize_cols.m` | Helper: column normalization across file boundary | - |
-| `ws_procedure_only.m` | Helper: procedure (no return values) across file boundary | - |
-| `ws_residual.m` | Helper: residual computation across file boundary | - |
-| `ws_return_unknown.m` | Helper: function that returns unknown shape | - |
-| `ws_state_update.m` | Helper: state update function across file boundary | - |
-| `ws_two_args.m` | Helper: two-argument function across file boundary | - |
-| `ws_with_loop.m` | Helper: function with loop body across file boundary | - |
-| `ws_with_subfunc.m` | Helper: function with subfunctions across file boundary | - |
-| `ws_fill_diag.m` | Helper: function using indexed assignment to fill diagonal; caller infers correct shape | - |
-| `sum.m` | Helper: builtin shadowing test (shadows built-in `sum`) | - |
-| `ws_continued.m` | Helper: function signature with `...` line continuation across parameters | - |
-| `ws_tilde_param.m` | Helper: function with tilde `~` as unused parameter in definition | - |
-| `MyVehicle.m` | Classdef file declaring `speed` and `capacity` properties and a `get_speed` method; resolved lazily on first constructor reference | - |
-| `ws_classdef_ctor.m` | Constructs `MyVehicle` cross-file; result is `struct{speed: unknown, capacity: unknown}` | 0 |
-| `ws_classdef_method.m` | Calls `v.get_speed()` on a cross-file classdef object; method dispatch resolves through the class registry | 0 |
-
->These tests exercise cross-file error propagation, struct and cell returns, builtin shadowing, domain-authentic patterns like Kalman filters and gradient descent, and cross-file classdef constructor and method resolution.
-
-</details>
-
-<details>
-<summary><h3>Workspace (29 tests)</h3></summary>
-
-Cross-file workspace scaling tests: chains, diamond patterns, fan-out/fan-in, polymorphic caching, symbolic dimensions, multi-return, cycle detection, and external parse error handling across 28 helper files.
-
-| Test | What It Validates | Warnings |
-|------|-------------------|----------|
-| `workspace_scaling.m` | Comprehensive cross-file stress test across all 28 helpers (chains, diamonds, fan-out, linear algebra patterns, cycle detection) | 0 |
-| `ws_external_parse_error.m` | Verifies `W_EXTERNAL_PARSE_ERROR` fires when a sibling file (`broken_helper.m`) cannot be parsed | >=1 |
-| `broken_helper.m` | Helper: intentionally malformed file used by `ws_external_parse_error.m` | - |
-| `ws_add_matrices.m` | Helper: element-wise matrix addition across file boundary | - |
-| `ws_chain_add.m` | Helper: chained cross-file call (depth 2) | - |
-| `ws_compose.m` | Helper: function composition across file boundary | - |
-| `ws_deep_chain.m` | Helper: chain of depth 5 across files | - |
-| `ws_diamond_left.m` | Helper: left branch of diamond dependency pattern | - |
-| `ws_diamond_right.m` | Helper: right branch of diamond dependency pattern | - |
-| `ws_diamond_top.m` | Helper: top of diamond (calls left and right) | - |
-| `ws_fan_out.m` | Helper: fan-out to multiple sibling files | - |
-| `ws_gram.m` | Helper: Gram matrix computation (A'*A) | - |
-| `ws_kron_pair.m` | Helper: Kronecker product across file boundary | - |
-| `ws_make_rect.m` | Helper: construct rectangular matrix | - |
-| `ws_make_sym.m` | Helper: symmetrize a matrix | - |
-| `ws_mega_pipeline.m` | Helper: multi-stage pipeline across files | - |
-| `ws_normalize.m` | Helper: column normalization | - |
-| `ws_outer_product.m` | Helper: outer product computation | - |
-| `ws_pipeline.m` | Helper: two-stage pipeline | - |
-| `ws_project.m` | Helper: orthogonal projection | - |
-| `ws_recursive_a.m` | Helper: cross-file cycle participant (calls recursive_b) | - |
-| `ws_recursive_b.m` | Helper: cross-file cycle participant (calls recursive_a) | - |
-| `ws_reduce.m` | Helper: reduction to scalar | - |
-| `ws_reshape_safe.m` | Helper: safe reshape across file boundary | - |
-| `ws_scale.m` | Helper: scalar multiplication across file boundary | - |
-| `ws_solve.m` | Helper: linear solve via backslash | - |
-| `ws_stack_cols.m` | Helper: horizontal concatenation across file boundary | - |
-| `ws_stack_rows.m` | Helper: vertical concatenation across file boundary | - |
-| `ws_transform.m` | Helper: affine transformation | - |
-
->These tests cover the scaling behavior of cross-file analysis, including chains up to depth 5, diamond dependency patterns, and cross-file cycle detection, all with symbolic dimension propagation.
-
-</details>
-
-<details>
-<summary><h3>Witness (7 tests)</h3></summary>
-
-Incorrectness witness generation: concrete proofs that dimension conflict warnings are real bugs, not false positives.
-
-| Test | What It Validates | Warnings |
-|------|-------------------|----------|
-| `concrete_witness.m` | Trivial witness for concrete dimension mismatch: dims are ints, no symbolic vars needed | 1 |
-| `symbolic_witness.m` | Symbolic mismatch (`n` vs `n+1`) is always a conflict; witness enumerates `n` to find a satisfying assignment | 1 |
-| `elementwise_witness.m` | Witness for column conflict in element-wise multiplication | 1 |
-| `constraint_witness.m` | Witness leverages `scalar_bindings`: `n=3, m=5` are known, so `dim_a=5, dim_b=6` is grounded immediately | 1 |
-| `branch_witness.m` | Witness captures active branch path (`n > 3`, true branch) alongside the variable assignments | 1 |
-| `no_witness_unknown.m` | Unknown dims produce no warning (dims_definitely_conflict is false), so no witness either | 0 |
-| `filter_mode.m` | Confirmed inner-dim mismatch that `--witness filter` would include; tests that witness generation fires correctly | 1 |
-
->Witness generation runs automatically in the LSP server (enriching hover and diagnostic messages) and can be enabled on the CLI with `--witness`. The `filter` mode produces zero false positives by only surfacing warnings that have a verified concrete counterexample.
-
-</details>
-
-<details>
-<summary><h3>Coder (6 tests)</h3></summary>
-
-MATLAB Coder compatibility checks, enabled with `--coder --strict`. These tests use the `% MODE: coder` directive so the test runner enables the Coder pass automatically.
-
-| Test | What It Validates | Warnings |
-|------|-------------------|----------|
-| `coder_variable_size.m` | `W_CODER_VARIABLE_SIZE` fires for a variable with an unknown or `None` dimension (e.g., result of `find()`) | 1 |
-| `coder_cell_array.m` | `W_CODER_CELL_ARRAY` fires when any cell array variable is present | 1 |
-| `coder_dynamic_field.m` | `W_CODER_DYNAMIC_FIELD` fires on dynamic struct field access `s.(expr)` | 1 |
-| `coder_try_catch.m` | `W_CODER_TRY_CATCH` fires on try/catch blocks | 1 |
-| `coder_unsupported_builtin.m` | `W_CODER_UNSUPPORTED_BUILTIN` fires when one of the 30 Coder-unsupported builtins is called (e.g., `eval`, `feval`, `disp`, `fprintf`) | 1 |
-| `coder_recursion.m` | `W_CODER_RECURSION` fires on a recursive function call; uses `EXPECT_WARNING` to pin the warning to the recursive call line | >=1 |
-
->All six `W_CODER_*` codes are strict-only and all six are emitted by a post-analysis pass that runs only when `--coder` is given. This means the Coder pass is completely invisible in normal analysis and CI runs, and adding `--coder` doesn't change how shape inference works, it only adds the compatibility scan on top.
-
-</details>
-
-<details>
-<summary><h3>Edge Cases (2 tests)</h3></summary>
-
-Parser and lexer edge cases that don't fit naturally into other categories.
-
-| Test | What It Validates | Warnings |
-|------|-------------------|----------|
-| `empty_file.m` | A 0-byte file parses and analyzes cleanly with no warnings | 0 |
-| `bom_file.m` | A UTF-8 BOM at the start of the file is stripped by the lexer before parsing | 0 |
-
->These tests were added with Sprint I to cover cases where the input itself is unusual rather than the MATLAB constructs inside it.
-
-</details>
-
----
-
-### Running the Tests
-
-```bash
-# Run all 502 .m tests
-cd src && dotnet run -- --tests
-
-# Run with fixed-point loop analysis
-cd src && dotnet run -- --fixpoint --tests
-
-# Run strict mode (show all warnings including informational and low-confidence diagnostics)
-cd src && dotnet run -- --strict --tests
-```
-
-## IDE Integration
-
-The VS Code extension runs the analyzer in-process, since the F# codebase is compiled to JavaScript, using the Fable tool. There is no external runtime dependency: no Python, no .NET, no subprocess. The compiled analyzer is bundled directly into the extension at 181KB.
-
-Firstly, diagnostics appear as underlines as you type, with a configurable 500ms debounce. You can hover any variable to see its inferred shape, including function signatures for user-defined and external functions. Go-to-definition works for user-defined and cross-file functions. If you use `*` where `.*` was probably intended, or `&&` where `&` should be, Conformal suggests the fix. Function definitions show in the sidebar via document symbols, and the status bar tracks warning and error counts along with active modes.
-
-Second, when you save a `.m` file, the server re-analyzes all open files in the same directory, since they could depend on each other. If the server crashes, it auto-restarts up to 3 times. `W_UNSUPPORTED_*` diagnostics render as faded text so they're visually distinct from real errors, and diagnostics with a conflict site link to the original line. Parse errors show as diagnostics rather than crashing the analysis.
-
-Lastly, the extension includes built-in MATLAB syntax highlighting, so you don't need the MathWorks extension.
-
-Configuration settings:
+Diagnostics appear as underlines as you type, with a configurable 500ms debounce. You can hover any variable to see its inferred shape. Go-to-definition works for user-defined and cross-file functions. Function definitions show in the sidebar via document symbols. The extension includes built-in MATLAB syntax highlighting, so you don't need the MathWorks extension.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `conformal.fixpoint` | `false` | Enable fixed-point loop analysis (iterative convergence) |
-| `conformal.strict` | `false` | Show all warnings including informational and low-confidence diagnostics |
-| `conformal.licenseKey` | `""` | Conformal Pro license key (format: `CONF-xxx.yyy`). Get one at [conformal.dev](https://conformal.dev) |
+| `conformal.fixpoint` | `false` | Enable fixed-point loop analysis |
+| `conformal.strict` | `false` | Show all warnings including low-confidence diagnostics |
+| `conformal.licenseKey` | `""` | Conformal Pro license key (`CONF-xxx.yyy` format) |
 | `conformal.analyzeOnChange` | `true` | Analyze as you type (500ms debounce) |
-| `conformal.inlayHints` | `true` | Show inferred shapes as inlay hints on first assignment of each variable |
-
-For editors that can launch a .NET process directly, you can also run the native LSP server:
-```bash
-cd src && dotnet run -- --lsp
-```
+| `conformal.inlayHints` | `true` | Show inferred shapes as inlay hints on first assignment |
 
 ## CLI Options
 
-Run `cd src && dotnet run -- file.m` to analyze a file. The other flags are:
+```bash
+dotnet run --project src/analyzer/ConformalAnalyzer.fsproj -- file.m
+```
 
-`--tests` runs the full test suite.
+| Flag | What it does |
+|------|-------------|
+| `--tests` | Run the full test suite (515 tests across 22 categories) |
+| `--strict` | Show all warnings including informational and low-confidence diagnostics |
+| `--fixpoint` | Use widening-based fixpoint iteration for loop analysis |
+| `--witness [MODE]` | Attach incorrectness witnesses (`enrich`, `filter`, or `tag`) |
+| `--license KEY` | Provide a Conformal Pro license key for the current run |
+| `--coder` | Run the MATLAB Coder compatibility pass (combine with `--strict`) |
+| `--quiet` | Suppress per-test output during `--tests`, only print failures |
+| `--lsp` | Start the native Language Server Protocol server |
+| `--version` | Print version and exit |
 
-`--strict` shows all warnings including informational and low-confidence diagnostics.
+The exit code is `0` on success and `1` on a parse error or test failure.
 
-`--fixpoint` uses fixed-point iteration for loop analysis.
+## Performance
 
-`--witness [MODE]` attaches incorrectness witnesses to dimension conflict warnings. MODE can be `enrich` (the default, prints the witness below each warning), `filter` (only shows warnings with a confirmed witness), or `tag` (prefixes each warning with `[confirmed]` or `[possible]`). The LSP server always runs witness generation and enriches diagnostics automatically.
-
-`--license KEY` provides a Conformal Pro license key for the current run, unlocking 11 pro-tier warning codes including `W_INDEX_OUT_OF_BOUNDS`, `W_DIVISION_BY_ZERO`, `W_CONSTRAINT_CONFLICT`, `W_STRUCT_FIELD_NOT_FOUND`, and `W_UNKNOWN_FUNCTION`. The key can also be set via the `CONFORMAL_LICENSE` environment variable or a `~/.conformal/license.key` file. Without a valid license, the CLI shows a count of suppressed pro-tier diagnostics.
-
-`--generate-key` interactively generates a new Ed25519-signed license key (for use by the project maintainer).
-
-`--coder` runs the MATLAB Coder compatibility pass after shape analysis, emitting six `W_CODER_*` warnings for constructs Coder cannot handle (variable-size arrays, cell arrays, dynamic field access, try/catch, unsupported builtins, recursion). These codes are strict-only, so you normally combine `--coder` with `--strict`.
-
-`--quiet` suppresses per-test output during `--tests` runs and only prints failures. Useful when you want to run the full suite without scrolling through 502 passing test blocks.
-
-`--help` prints usage and exits 0.
-
-`--version` prints `conformal 3.4.0` and exits 0.
-
-`--lsp` starts the native .NET Language Server Protocol server.
-
-The exit code is `0` on success and `1` on a parse error, analyzer mismatch, or test failure.
+The single-file analysis takes under 100ms, even for 700-line files with dozens of warnings. The full test suite finishes in about one second. The VS Code extension runs the analyzer on every keystroke with a 500ms debounce, since it is compiled to JavaScript and runs in-process with no subprocess startup cost.
 
 ## Real-World Compatibility
 
 To check how Conformal holds up on real MATLAB code, a corpus of 1,197 `.m` files was drawn from 11 open-source repos on GitHub, covering robotics, signal processing, scientific computing, and computer vision. In default mode, the corpus produces zero crashes and zero false positives.
 
-The repos in the corpus include gptoolbox (669 stars), vlfeat (1.6k stars), prmlt (6.2k stars), petercorke/robotics-toolbox-matlab (1491 stars), rpng/kalibr_allan (648 stars), gpeyre/matlab-toolboxes (344 stars), and ImperialCollegeLondon/sap-voicebox (248 stars), among others. These files use a wide range of MATLAB idioms: pre-2016 end-less function definitions, space-separated multi-return syntax (`function [a b c] = f(...)`), Latin-1 encoded files from European authors, `\` for linear solves, and complex matrix literal spacing like `[1 -2; 3 -4]`. Parser robustness improvements came directly from failures on this corpus.
+The repos include gptoolbox, vlfeat, prmlt, petercorke/robotics-toolbox-matlab, rpng/kalibr_allan, and others. These files use a wide range of MATLAB idioms: pre-2016 end-less function definitions, space-separated multi-return syntax, Latin-1 encoded files, `\` for linear solves, and complex matrix literal spacing. Parser robustness improvements came directly from failures on this corpus.
+
+## Warning Tiers
+
+By default, Conformal shows only high-confidence warnings. Two additional tiers provide more specialized diagnostics:
+
+The `--strict` flag adds 11 lower-confidence codes like `W_SUSPICIOUS_COMPARISON` and `W_REASSIGN_INCOMPATIBLE`, so you can run default mode in CI without false-positive noise and use strict mode when you want a fuller picture.
+
+A Conformal Pro license key (via `--license KEY` or the `conformal.licenseKey` VS Code setting) unlocks 11 additional codes that require the advanced analysis domains, including `W_INDEX_OUT_OF_BOUNDS`, `W_DIVISION_BY_ZERO`, `W_CONSTRAINT_CONFLICT`, and `W_UNKNOWN_FUNCTION`. Without a license, the CLI shows a count of how many additional issues were suppressed.
+
+## Conformal Migrate (Preview)
+
+Conformal also includes a MATLAB-to-Python transpiler that uses the shape analysis to make better translation decisions than a purely syntactic tool can. It handles 168 MATLAB builtins, 1-to-0 index conversion with constant folding, `varargin` to `*args`, copy semantics, and shape-aware operator dispatch (for example, using `np.dot` for matrix multiply and `*` for element-wise). The transpiler is a separate tool and is under active development.
+
+## Test Suite
+
+Conformal is validated by 515 self-checking MATLAB programs organized into 22 categories, plus 28 property-based lattice tests via FsCheck. Each test file embeds its expected behavior as inline assertions (`% EXPECT: A = matrix[3 x 4]`, `% EXPECT_WARNING: W_INNER_DIM_MISMATCH`), and the test runner checks that Conformal's output matches.
+
+For the full test listing, see [docs/tests.md](docs/tests.md).
+
+## Project Structure
+
+```
+src/core/               F# core library (lexer, parser, shape inference, builtins, diagnostics)
+src/shared/             License validation (Ed25519)
+src/analyzer/           CLI, LSP server, test runner
+src/migrate/            MATLAB-to-Python transpiler (~1,700 LOC)
+vscode-conformal/       VS Code extension (TypeScript client + Fable-compiled analyzer)
+  fable/                Fable compilation project (F# to JavaScript, shares core .fs files)
+  src/                  TypeScript extension and LSP server code
+tests/                  515 self-checking MATLAB programs in 22 categories
+.github/                CI workflow (build, test, compile Fable, package VSIX)
+```
 
 ## Limitations
 
-Conformal analyzes a subset of MATLAB. Here's what it doesn't cover:
+Conformal analyzes a subset of MATLAB. It focuses on the matrix-heavy computational core where dimension errors are most common and most costly. There is no support for `eval` or `str2func`, no N-D arrays beyond 2-D matrices, no complex number tracking, and no cross-directory resolution with `addpath`. Basic `classdef` support is included (properties, constructor, method dispatch), but inheritance is not resolved. For the full details on what is and isn't covered, see [docs/analysis.md](docs/analysis.md).
 
-| Category | What's missing |
-|----------|---------------|
-| Scope | Workspace analysis covers sibling `.m` files in the same directory. No `addpath` handling or cross-directory resolution yet. |
-| Functions | `varargin` and `varargout` are supported. No `eval`, `feval`, or `str2func`. `nargin`/`nargout` are tracked with concrete intervals at each call site. Nested functions are supported (read/write parent scope, sibling calls, forward references). `global` and `persistent` variables are tracked. |
-| Builtins | 635 builtins recognized (including Control System, Signal Processing, Aerospace, Optimization, Mapping, Image Processing, Robotics, Statistics, Communications, Computer Vision, Deep Learning, and Symbolic Math Toolbox functions); 315 have explicit shape rules. Unrecognized calls produce a `W_UNKNOWN_FUNCTION` warning (strict-only by default). |
-| Cell arrays | Per-element tracking available for literal-indexed cells. Dynamic indexing conservatively joins all elements. |
-| Indexing | `end` keyword supported with arithmetic (`C{end}`, `C{end-1}`, `A(1:end)`, `A(end-2:end, :)`). Variable operands in `end` arithmetic fall through to conservative join. |
-| Data types | Basic `classdef` support: properties extracted, constructor analyzed as a struct-returning function, and `obj.method(args)` dispatched through registered method definitions. Inheritance not resolved. No maps, no tables, no N-D arrays (only 2-D matrices). No complex number tracking. |
-| Syntax | No command-style calls (`save file.mat`). `global`/`persistent` variables are tracked across function boundaries. `parfor` is treated as a regular `for` loop. |
-| I/O and graphics | `load`, `save`, `fprintf`, `plot`, and other side-effecting functions are recognized (no spurious `W_UNKNOWN_FUNCTION`) but their return shapes are not tracked. |
-| Dynamic features | No `eval`, no `feval`, no `str2func`. Dynamic field access `s.(expr)` is parsed and evaluates to `unknown`. Runtime type introspection beyond type predicates (`iscell`, `isscalar`, `isnumeric`, etc.) is not tracked. |
+<details>
+<summary><h2>References</h2></summary>
 
-These are deliberate scope boundaries, not bugs. Conformal focuses on the matrix-heavy computational core of MATLAB, where dimension errors are most common and most costly.
-
-## Motivation and Future Directions
-
-I felt that it was very rewarding to use MATLAB as the source language for a static analysis tool. I wanted to choose something that was niche enough to be interesting and unique, while also being relevant to modern topics. MATLAB was perfect for this, as it is a language used widely for its scientific computing ability compared to other languages.
-
-### Roadmap
-
-First, the immediate priorities are propagating constraints across function boundaries and improving the GitHub Action for CI integration. Further out, I'd like to support additional editors like Neovim, add cross-directory workspace analysis with `addpath` handling, and explore integration with MATLAB's built-in Code Analyzer.
-
-## References
-
-Conformal's abstract interpretation techniques draw on decades of research in static analysis and formal methods. The following papers and resources informed the design of the analyzer's shape lattice, interval domain, relational constraints, and fixpoint computation.
+Conformal's abstract interpretation techniques draw on decades of research in static analysis and formal methods.
 
 ### Foundational
 
@@ -1005,20 +184,20 @@ Conformal's abstract interpretation techniques draw on decades of research in st
 
 ### Abstract Domains
 
-- A. Miné, "The Octagon Abstract Domain," *Higher-Order and Symbolic Computation*, vol. 19, no. 1, 2006. [HAL](https://hal.science/hal-00136639/document)
-- F. Logozzo and M. Fähndrich, "Pentagons: A Weakly Relational Abstract Domain," *SAS*, 2008. [Microsoft Research](https://www.microsoft.com/en-us/research/wp-content/uploads/2009/01/pentagons.pdf)
+- A. Mine, "The Octagon Abstract Domain," *Higher-Order and Symbolic Computation*, vol. 19, no. 1, 2006. [HAL](https://hal.science/hal-00136639/document)
+- F. Logozzo and M. Fahndrich, "Pentagons: A Weakly Relational Abstract Domain," *SAS*, 2008. [Microsoft Research](https://www.microsoft.com/en-us/research/wp-content/uploads/2009/01/pentagons.pdf)
 - F. Ranzato, "The Best of Abstract Interpretations," *POPL*, 2025.
 - A. Pitchanathan et al., "Strided Difference Bound Matrices," *CAV*, 2024.
 - A. Lesbre et al., "Relational Abstractions Based on Labeled Union-Find," *PLDI*, 2025.
 
 ### Industrial Analyzers
 
-- B. Blanchet et al., "A Static Analyzer for Large Safety-Critical Software," *PLDI*, 2003. (Astrée)
-- P. Cousot et al., "The ASTRÉE Analyzer," *ESOP*, 2005. [PDF](https://www.di.ens.fr/~cousot/publications.www/CousotEtAl-ESOP05.pdf)
+- B. Blanchet et al., "A Static Analyzer for Large Safety-Critical Software," *PLDI*, 2003. (Astree)
+- P. Cousot et al., "The ASTREE Analyzer," *ESOP*, 2005. [PDF](https://www.di.ens.fr/~cousot/publications.www/CousotEtAl-ESOP05.pdf)
 
 ### Data Structures
 
-- S. Conchon and J.-C. Filliâtre, "A Persistent Union-Find Data Structure," *ML Workshop*, 2007.
+- S. Conchon and J.-C. Filliatre, "A Persistent Union-Find Data Structure," *ML Workshop*, 2007.
 
 ### MATLAB-Specific
 
@@ -1033,3 +212,5 @@ Conformal's abstract interpretation techniques draw on decades of research in st
 
 - DO-178C, "Software Considerations in Airborne Systems and Equipment Certification," RTCA, 2011.
 - IEC 61508, "Functional Safety of Electrical/Electronic/Programmable Electronic Safety-Related Systems."
+
+</details>
