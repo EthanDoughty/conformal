@@ -4,11 +4,11 @@ This document covers the full technical details of Conformal's analysis capabili
 
 ## What the Analysis Detects
 
-All warnings include source line numbers and are formatted in a terse GCC/Clang style, so they can be parsed by editors and CI tools. When Conformal finds a definite error, it marks the result as unknown and keeps going so you get as many diagnostics as possible in a single pass. The parser also accumulates recovered parse errors with token-level span information, so multiple syntax issues in the same file can be reported at once rather than stopping at the first one.
+All warnings include source line numbers and are formatted in a terse GCC/Clang style, so they can be parsed by editors and CI tools. When Conformal finds a definite error, it marks the result as unknown and keeps going so as many diagnostics as possible are reported in a single pass. The parser also accumulates recovered parse errors with token-level span information, so multiple syntax issues in the same file can be reported at once rather than stopping at the first one.
 
 ### Operations
 
-Conformal detects dimension mismatches in `+`, `-`, `*`, `.*`, `./`, `^`, `.^`. Scalar-matrix broadcasting (e.g. `s*A`, `s + A`) is handled. Backslash `A\b` (mldivide) follows the same inner-dimension logic that multiplication does. Element-wise logical `&` and `|` pass shapes through like an element-wise op usually would. Logical NOT `~` and dot-transpose `.'` also carry shapes through. When you use `*` where `.*` was probably intended, Conformal suggests the fix.
+Conformal detects dimension mismatches in `+`, `-`, `*`, `.*`, `./`, `^`, `.^`. Scalar-matrix broadcasting (e.g. `s*A`, `s + A`) is handled. Backslash `A\b` (mldivide) follows the same inner-dimension logic that multiplication does. Element-wise logical `&` and `|` pass shapes through like an element-wise op usually would. Logical NOT `~` and dot-transpose `.'` also carry shapes through. If `*` is used where `.*` was probably intended, Conformal suggests the fix.
 
 Comparison operators (`==`, `~=`, `<`, `<=`, `>`, `>=`) return the broadcast shape of their operands, so `A > 0` where `A` is `matrix[3 x 4]` gives `matrix[3 x 4]` rather than scalar. This means logical indexing `A(A > 0)` is recognized as a matrix-typed operation, and Conformal infers the result as `matrix[None x 1]` (a column vector, since logical indexing in MATLAB always returns a column) rather than treating it as an unknown scalar index. Row vector inputs preserve orientation, giving `matrix[1 x None]` instead.
 
@@ -26,7 +26,7 @@ Over 635 MATLAB builtins are recognized (so calls to them don't produce `W_UNKNO
 
 Dimension arithmetic works inside builtin arguments, so `zeros(n+1, 2*m)` is tracked symbolically.
 
-Higher-order builtins `cellfun` and `arrayfun` are also supported. When you write `cellfun(@func, C)` or `cellfun(@(x) expr, C)`, Conformal dispatches to the provided handle or lambda to figure out the per-element output shape, then combines that with the cell or matrix dimensions to infer the result. Passing `'UniformOutput', false` returns a cell array matching the input dimensions.
+Higher-order builtins `cellfun` and `arrayfun` are also supported. For calls like `cellfun(@func, C)` or `cellfun(@(x) expr, C)`, Conformal dispatches to the provided handle or lambda to figure out the per-element output shape, then combines that with the cell or matrix dimensions to infer the result. Passing `'UniformOutput', false` returns a cell array matching the input dimensions.
 
 Conformal analyzes user-defined functions at each call site with the caller's argument shapes. Three forms are supported: single return (`function y = f(x)`), multi-return (`function [a, b] = f(x)`), and procedures (including no-arg `function name` syntax). Nested `function...end` blocks inside another function body are also supported, with read/write access to the parent workspace via scope chains and forward-reference visibility between siblings. The parser also handles pre-2016 end-less function definitions (files where `end` is omitted), and space-separated multi-return syntax (`function [a b c] = f(...)` without commas). Anonymous functions `@(x) expr` are analyzed the same way, with by-value closure capture at definition time. Function handles `@funcName` dispatch to their targets. Results are cached per argument shape tuple so the same function called with the same shapes isn't re-analyzed. The cache key includes the argument count, so a function called with different numbers of arguments is analyzed separately.
 
@@ -34,15 +34,15 @@ Optional argument patterns using `nargin` and `nargout` are supported. When a fu
 
 Functions using `varargin` as the last parameter are also supported. Extra call arguments beyond the named ones are bundled into a cell with per-element shape tracking, so `varargin{1}` returns the actual shape of the first extra argument, not just unknown. The arg-count warning is suppressed when `varargin` is present. `varargout` works at the call site: output targets beyond the named return variables receive unknown shape.
 
-When analyzing a file, Conformal also scans sibling `.m` files in the same directory and fully analyzes their bodies (parse -> analyze) to infer real return shapes. Dimension aliasing works across file boundaries, subfunctions in external files are supported, and cross-file cycles (A->B->A) are detected and handled gracefully. Unparseable external files emit `W_EXTERNAL_PARSE_ERROR`. Classdef files are also scanned cross-file: if a sibling `.m` file is a `classdef`, Conformal extracts its property list and method signatures lazily on first use, so you can call `MyClass(args)` and `obj.method(args)` even when the class definition lives in a separate file.
+When analyzing a file, Conformal also scans sibling `.m` files in the same directory and fully analyzes their bodies (parse -> analyze) to infer real return shapes. Dimension aliasing works across file boundaries, subfunctions in external files are supported, and cross-file cycles (A->B->A) are detected and handled gracefully. Unparseable external files emit `W_EXTERNAL_PARSE_ERROR`. Classdef files are also scanned cross-file: if a sibling `.m` file is a `classdef`, Conformal extracts its property list and method signatures lazily on first use, so `MyClass(args)` and `obj.method(args)` work even when the class definition lives in a separate file.
 
 ### Data structures
 
-Conformal tracks struct field assignment (`s.x = A`), field access, and chained dot notation (`s.x.y`). Missing field access on a known struct emits a warning. Struct shapes join across branches by taking the union of fields. When you assign a field to a variable whose base shape is unknown, for example the return value of an unrecognized function, Conformal creates an open struct, written `struct{x: matrix[1 x 3], ...}`. Open structs don't warn on missing field access, since there could be more fields that aren't tracked. Multi-return destructuring supports dotted targets, so `[s.x, s.y] = get_pair()` works and populates the struct's field map. The lattice ordering is bottom < closed struct < open struct < unknown.
+Conformal tracks struct field assignment (`s.x = A`), field access, and chained dot notation (`s.x.y`). Missing field access on a known struct emits a warning. Struct shapes join across branches by taking the union of fields. Assigning a field to a variable whose base shape is unknown, for example the return value of an unrecognized function, creates an open struct, written `struct{x: matrix[1 x 3], ...}`. Open structs don't warn on missing field access, since there could be more fields that aren't tracked. Multi-return destructuring supports dotted targets, so `[s.x, s.y] = get_pair()` works and populates the struct's field map. The lattice ordering is bottom < closed struct < open struct < unknown.
 
 Cell arrays work with `cell(n)` and `cell(m,n)` constructors, curly-brace indexing, and element assignment. Literal indexing `C{i}` extracts the precise shape of element `i` when available, and dynamic indexing joins all element shapes conservatively. Curly-brace indexing on a non-cell emits a warning.
 
-Basic `classdef` support is included through a side-channel approach. When the parser encounters a `classdef` block, it extracts the property names and the constructor method body. A class registry maps the class name to its property list and constructor definition, so when you call the constructor, Conformal analyzes the constructor body and returns a struct with the declared fields. You can then access fields like `obj.x` and Conformal will track their shapes the same way it does for regular structs. When you call `obj.method(args)`, Conformal checks whether `obj` was created by a known class constructor, and if so dispatches the call as `method(obj, args)` through the class's registered method definitions. Superclass syntax (`classdef Foo < Bar`) parses correctly, and the superclass name is stored, but inheritance is not resolved.
+Basic `classdef` support is included through a side-channel approach. When the parser encounters a `classdef` block, it extracts the property names and the constructor method body. A class registry maps the class name to its property list and constructor definition, so calling the constructor analyzes the body and returns a struct with the declared fields. Fields like `obj.x` are tracked the same way regular struct fields are. Calling `obj.method(args)` checks whether `obj` was created by a known class constructor, and if so dispatches the call as `method(obj, args)` through the class's registered method definitions. Superclass syntax (`classdef Foo < Bar`) parses correctly, and the superclass name is stored, but inheritance is not resolved.
 
 ### Control flow
 
@@ -62,7 +62,7 @@ Initially, for-loop variables are bound to their range interval, so `for i = 1:n
 
 When `--fixpoint` widening would ordinarily snap an interval bound to infinity, Conformal instead snaps to the nearest threshold in the set `{-1000, -100, -10, -1, 0, 1, 10, 100, 1000}`. A counter that grows inside a loop widens its upper bound to `1000` rather than `+inf`, so the interval stays finite and downstream index checks remain useful. This is a standard technique from abstract interpretation called threshold widening.
 
-Additionally, branch conditions narrow variable intervals inside the branch body. If you write `if x > 0`, Conformal refines `x` to `[1, +inf]` for the true branch, which can eliminate false-positive out-of-bounds and negative-dim warnings when a guard proves safety. Conformal supports `>`, `>=`, `<`, `<=`, `==`, `~=`, compound `&&` conditions, and operator flipping like `5 >= x`.
+Additionally, branch conditions narrow variable intervals inside the branch body. A condition like `if x > 0` causes Conformal to refine `x` to `[1, +inf]` for the true branch, which can eliminate false-positive out-of-bounds and negative-dim warnings when a guard proves safety. Conformal supports `>`, `>=`, `<`, `<=`, `==`, `~=`, compound `&&` conditions, and operator flipping like `5 >= x`.
 
 There is also a cross-domain bridge between the interval domain and the dimension equivalence classes. When an exact interval `[k, k]` is recorded for a variable, for example because a branch condition like `if r == 5` narrows `r` to a singleton, the bridge propagates `k` into any DimEquiv equivalence class that `r` belongs to, and back into `valueRanges` for all equivalent variables. This means that if `r = size(A, 1)` and `A` has a symbolic `n` row dimension, narrowing `r` inside a branch immediately resolves `n` to that same concrete value for the duration of the branch. Similarly, `n = size(A, 1)` where `A` has a concrete row dimension now directly sets `valueRanges[n] = [dim, dim]`, so a subsequent `zeros(n, n)` can resolve to a concrete shape rather than staying symbolic.
 
@@ -70,7 +70,7 @@ Three more precision features operate in `--fixpoint` mode. Narrowing after wide
 
 ### Type errors
 
-When you use a non-numeric type (struct, cell, function_handle) where a numeric value is expected, Conformal emits a type mismatch error. Arithmetic operations like `+`, `-`, `*`, and `.*` on structs or cells emit `W_ARITHMETIC_TYPE_MISMATCH`. Transpose on a non-numeric type emits `W_TRANSPOSE_TYPE_MISMATCH`, negation emits `W_NEGATE_TYPE_MISMATCH`, and mixing incompatible types in a matrix literal (like `[s, A]` where `s` is a struct) emits `W_CONCAT_TYPE_MISMATCH`. All four codes are Error severity, not warnings.
+Using a non-numeric type (struct, cell, function_handle) where a numeric value is expected causes Conformal to emit a type mismatch error. Arithmetic operations like `+`, `-`, `*`, and `.*` on structs or cells emit `W_ARITHMETIC_TYPE_MISMATCH`. Transpose on a non-numeric type emits `W_TRANSPOSE_TYPE_MISMATCH`, negation emits `W_NEGATE_TYPE_MISMATCH`, and mixing incompatible types in a matrix literal (like `[s, A]` where `s` is a struct) emits `W_CONCAT_TYPE_MISMATCH`. All four codes are Error severity, not warnings.
 
 ### Witness generation
 
@@ -80,9 +80,9 @@ In `--witness enrich` mode (the default when `--witness` is given), the concrete
 
 ### MATLAB Coder compatibility
 
-The `--coder` flag adds a post-analysis pass that checks for constructs MATLAB Coder can't handle. Six new warning codes are emitted, all strict-only by default so they don't appear in a normal CI run unless you opt in. `W_CODER_VARIABLE_SIZE` fires when a variable has an unknown or `None` dimension, since Coder requires all sizes to be statically determined. `W_CODER_CELL_ARRAY` fires when any cell array variable is present, since Coder does not support cells by default. `W_CODER_DYNAMIC_FIELD` fires when you use dynamic struct field access `s.(expr)`. `W_CODER_TRY_CATCH` fires on try/catch blocks, which Coder restricts. `W_CODER_UNSUPPORTED_BUILTIN` fires when you call one of the 30 builtins that Coder does not support, including `eval`, `feval`, `input`, `keyboard`, and display functions like `disp` and `fprintf`. `W_CODER_RECURSION` fires on recursive function calls.
+The `--coder` flag adds a post-analysis pass that checks for constructs MATLAB Coder can't handle. Six new warning codes are emitted, all strict-only by default so they don't appear in a normal CI run unless opted in. `W_CODER_VARIABLE_SIZE` fires when a variable has an unknown or `None` dimension, since Coder requires all sizes to be statically determined. `W_CODER_CELL_ARRAY` fires when any cell array variable is present, since Coder does not support cells by default. `W_CODER_DYNAMIC_FIELD` fires on dynamic struct field access `s.(expr)`. `W_CODER_TRY_CATCH` fires on try/catch blocks, which Coder restricts. `W_CODER_UNSUPPORTED_BUILTIN` fires on calls to one of the 30 builtins that Coder does not support, including `eval`, `feval`, `input`, `keyboard`, and display functions like `disp` and `fprintf`. `W_CODER_RECURSION` fires on recursive function calls.
 
-You can use `--coder --strict` together to surface all six codes, or combine with `--fixpoint` for the most precise size analysis before the Coder pass runs.
+Passing `--coder --strict` together surfaces all six codes, or combine with `--fixpoint` for the most precise size analysis before the Coder pass runs.
 
 ## Warning Code Catalog
 
@@ -133,7 +133,7 @@ These fire in default mode with no configuration required.
 
 ### Strict tier (11 codes, shown with `--strict`)
 
-These are informational or lower-confidence codes that can be noisy. They are suppressed by default so you can run Conformal in CI without false-positive noise, and enable them when you want a fuller picture.
+These are informational or lower-confidence codes that can be noisy. They are suppressed by default so default mode works well in CI without false-positive noise, and strict mode gives a fuller picture when needed.
 
 | Code | Category | What it catches |
 |------|----------|----------------|

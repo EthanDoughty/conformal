@@ -18,7 +18,7 @@
 
 ---
 
-Conformal catches matrix dimension errors in MATLAB code before you run it. You write `A * B` where the inner dimensions don't match, and instead of finding out at runtime, Conformal tells you at analysis time. It tracks shapes through assignments, function calls, control flow, loops, and symbolic dimensions, all without needing MATLAB installed.
+Conformal catches matrix dimension errors in MATLAB code before runtime. If `A * B` has an inner dimension mismatch, Conformal flags it at analysis time instead of letting it fail silently. It tracks shapes through assignments, function calls, control flow, loops, and symbolic dimensions, all without needing MATLAB installed.
 
 ```matlab
 A = zeros(3, 4);
@@ -71,7 +71,7 @@ dotnet run --project src/analyzer/ConformalAnalyzer.fsproj -- tests/basics/inner
 
 Conformal tracks the shape of every variable through your program and flags dimension mismatches, type errors, and structural problems. Here's what it covers:
 
-**Arithmetic and operators.** Conformal detects dimension mismatches in `+`, `-`, `*`, `.*`, `./`, `^`, `.^`, and backslash `\`. Scalar-matrix broadcasting is handled, so `s * A` works without a warning. When you use `*` where `.*` was probably intended, Conformal suggests the fix. Comparison operators return the broadcast shape of their operands, so logical indexing like `A(A > 0)` can be tracked correctly.
+**Arithmetic and operators.** Conformal detects dimension mismatches in `+`, `-`, `*`, `.*`, `./`, `^`, `.^`, and backslash `\`. Scalar-matrix broadcasting is handled, so `s * A` works without a warning. If `*` is used where `.*` was probably intended, Conformal suggests the fix. Comparison operators return the broadcast shape of their operands, so logical indexing like `A(A > 0)` can be tracked correctly.
 
 **Concatenation and literals.** Horizontal concatenation `[A B]` checks that row counts match, and vertical `[A; B]` checks columns. Symbolic dimensions compose through concatenation, so `[A B]` where A is `n x k` and B is `n x m` gives `n x (k+m)`. Matrix literal spacing is handled correctly, so `[1 -2; 3 4]` parses as four elements rather than as subtraction.
 
@@ -95,7 +95,7 @@ Conformal tracks the shape of every variable through your program and flags dime
 
 The VS Code extension runs the analyzer in-process, since the F# codebase is compiled to JavaScript using the Fable tool. There is no external runtime dependency: no Python, no .NET, no subprocess. The compiled analyzer is bundled directly into the extension.
 
-Diagnostics appear as underlines as you type, with a configurable 500ms debounce. You can hover any variable to see its inferred shape. Go-to-definition works for user-defined and cross-file functions. Function definitions show in the sidebar via document symbols. The extension includes built-in MATLAB syntax highlighting, so you don't need the MathWorks extension.
+Diagnostics appear as underlines as code is typed, with a configurable 500ms debounce. Hovering any variable shows its inferred shape. Go-to-definition works for user-defined and cross-file functions. Function definitions show in the sidebar via document symbols. The extension includes built-in MATLAB syntax highlighting, so the MathWorks extension isn't needed.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -137,7 +137,7 @@ The repos include gptoolbox, vlfeat, prmlt, petercorke/robotics-toolbox-matlab, 
 
 By default, Conformal shows all high-confidence warnings, including shape errors, type errors, indexing checks, interval-based checks like `W_INDEX_OUT_OF_BOUNDS` and `W_DIVISION_BY_ZERO`, constraint conflicts, and cross-file resolution. All 36 default codes are available with no configuration required.
 
-The `--strict` flag adds 11 lower-confidence codes like `W_SUSPICIOUS_COMPARISON` and `W_REASSIGN_INCOMPATIBLE`, so you can run default mode in CI without false-positive noise and use strict mode when you want a fuller picture.
+The `--strict` flag adds 11 lower-confidence codes like `W_SUSPICIOUS_COMPARISON` and `W_REASSIGN_INCOMPATIBLE`, so default mode works well in CI without false-positive noise, and strict mode gives a fuller picture when needed.
 
 ## Conformal Migrate (Preview)
 
