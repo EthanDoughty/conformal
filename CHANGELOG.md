@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-03-16
+### Changed
+- All 53 warning codes are now free with no license key required
+- Removed pro-tier license gating from analyzer and VS Code extension
+- Deleted `conformal.licenseKey` setting and "Enter License Key" command from extension
+- README rewritten from 1,035 to 216 lines; detailed docs extracted to `docs/analysis.md` and `docs/tests.md`
+- Warning catalog reorganized into three tiers: default (36 codes), strict (11), coder (6)
+- Marketplace README images now use absolute GitHub URLs so they render correctly in browsers
+
+### Added
+- Conformal Migrate: `feval` dispatch (38 dogfood hits), `regexp`/`regexpi`/`regexprep` (19 hits), `nan(m,n)` constructor (5 hits), `varargin` to `*args` with `nargin` preamble (377 hits)
+- Conformal Migrate: license key gate on binary (`--license KEY`, `CONFORMAL_LICENSE` env var, `~/.conformal/license.key`); tests bypass the check
+- `docs/analysis.md`: full warning code catalog, DimEquiv section, parser error recovery, lattice validation
+- `docs/tests.md`: all 22 test categories with per-test tables (extracted from README)
+- 515 analyzer tests, 40 migrate tests (up from 502 and 27)
+
 ## [3.4.0] - 2026-03-11
 ### Added
 - **Multi-project solution**: split into core library, shared, analyzer, and migrate projects

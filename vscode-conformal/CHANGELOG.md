@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.5.0
+
+- All warning codes now free, no license key required
+- Removed `conformal.licenseKey` setting and "Enter License Key" command
+- Marketplace README images fixed (absolute GitHub URLs)
+- 515 analyzer tests, 40 migrate tests
+
 ## 3.4.0
 
 - Multi-project solution: core library, shared, analyzer, migrate
