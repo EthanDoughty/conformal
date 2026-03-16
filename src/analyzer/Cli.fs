@@ -230,7 +230,7 @@ let run (argv: string array) : int =
     let args = parseArgv argv
 
     if args.version then
-        printfn "Conformal 3.4.0"
+        printfn "Conformal 3.5.0"
         0
     elif args.help then
         printUsage ()

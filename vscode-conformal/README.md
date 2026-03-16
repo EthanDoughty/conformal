@@ -1,18 +1,18 @@
 # Conformal: MATLAB Shape Analyzer
 
-Static shape and dimension analysis for MATLAB. No MATLAB license required, and no Python, no .NET, nothing to install beyond the extension itself.
+Static shape and dimension analysis for MATLAB.
 
 Conformal finds matrix dimension errors before you run your code. If `A` is `3x4` and `B` is `5x2`, it can tell you that `A * B` has an inner dimension mismatch, and that `[A; B]` has mismatched column counts. It follows shapes through assignments, function calls, control flow, and across sibling `.m` files in the same directory, tracking symbolic dimensions like `n`, `m`, and `n+m` the whole way.
 
 ## Screenshots
 
-![Inline diagnostics](images/Conformal_Example_1.png)
+![Inline diagnostics](https://raw.githubusercontent.com/EthanDoughty/conformal/main/vscode-conformal/images/Conformal_Example_1.png)
 *Dimension mismatches appear as underlines while you type.*
 
-![Hover shape](images/Conformal_Example_2.png)
+![Hover shape](https://raw.githubusercontent.com/EthanDoughty/conformal/main/vscode-conformal/images/Conformal_Example_2.png)
 *Hover any variable to see its inferred shape.*
 
-![Inlay hints](images/Conformal_Example_3.png)
+![Inlay hints](https://raw.githubusercontent.com/EthanDoughty/conformal/main/vscode-conformal/images/Conformal_Example_3.png)
 *Inlay hints show shapes on first assignment of each variable.*
 
 ## What it catches
