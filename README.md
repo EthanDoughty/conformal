@@ -47,22 +47,28 @@ dotnet run --project src/analyzer/ConformalAnalyzer.fsproj -- tests/basics/inner
 
 ## What Conformal Catches
 
-Conformal tracks the shape of every variable through your program and flags dimension mismatches, type errors, and structural problems.
-
-A more realistic example: suppose a Kalman filter helper computes a residual with mismatched dimensions.
+Conformal tracks the shape of every variable and flags dimension mismatches, type errors, and structural problems. Consider a Kalman filter update with a hardcoded identity matrix:
 
 ```matlab
-function [x_hat, P] = kalman_update(x, P, H, z, R)
-    y = z - H * x;           % residual
-    S = H * P * H' + R;      % innovation covariance
-    K = P * H' * inv(S);     % Kalman gain
-    x_hat = x + K * y;
-    I_KH = eye(3) - K * H;   % hardcoded 3, should be size(x,1)
-    P = I_KH * P * I_KH' + K * R * K';
+function [x_upd, P_upd] = kalman_update(x, P, H, z, R)
+    y = z - H * x;
+    S = H * P * H' + R;
+    K = P * H' * inv(S);
+    x_upd = x + K * y;
+    P_upd = (eye(3) - K * H) * P;    % bug: should be eye(4)
 end
+
+x = zeros(4, 1);  P = eye(4);
+H = [1 0 0 0; 0 1 0 0];  R = 0.5 * eye(2);  z = [1; 2];
+[x_upd, P_upd] = kalman_update(x, P, H, z, R);
 ```
 
-Conformal follows `H`, `P`, `K`, and `x` through each multiply and flags the line where `eye(3)` conflicts with the symbolic dimensions. It tracks `H'` as the transpose of `H`, knows that `inv(S)` preserves shape, and carries the symbolic dimensions through the entire chain. If `x` is `n x 1` and `H` is `m x n`, then `K` is `n x m`, and `eye(3) - K * H` has an inner dimension conflict when `n` is not 3.
+```
+W_ELEMENTWISE_MISMATCH line 6: eye(3) - (K * H): matrix[3 x 3] vs matrix[4 x 4]
+  (in kalman_update, called from line 12)
+```
+
+Conformal follows `H`, `P`, `K`, and `x` through each multiply, tracks `H'` as the transpose of `H`, knows that `inv(S)` preserves shape, and catches the mismatch where `eye(3)` produces `3 x 3` but `K * H` is `4 x 4`.
 
 Conformal detects dimension mismatches across arithmetic (`+`, `-`, `*`, `.*`, `./`, `^`, `.^`, `\`), concatenation (`[A B]`, `[A; B]`), and indexing (`A(i,j)`, `A(:,j)`, `C{i}`, `A(end-1, :)`). Scalar-matrix broadcasting is handled, so `s * A` works without a false warning. If `*` is used where `.*` was probably intended, Conformal suggests the fix.
 
