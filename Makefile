@@ -77,4 +77,4 @@ docker-test:
 .PHONY: docker-analyze
 docker-analyze:
 	@if [ -z "$(FILE)" ]; then echo "Usage: make docker-analyze FILE=path/to/file.m"; exit 1; fi
-	docker run --rm -v "$$(pwd):/workspace" -w /workspace $(DOCKER_IMAGE):latest $(FILE)
+	docker run --rm -v "$$(pwd):/workspace" $(DOCKER_IMAGE):latest /workspace/$(FILE)

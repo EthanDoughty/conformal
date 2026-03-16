@@ -18,16 +18,16 @@ COPY src/shared/ src/shared/
 COPY src/analyzer/ src/analyzer/
 COPY src/migrate/ src/migrate/
 
-# Build release
-RUN dotnet publish src/analyzer/ConformalAnalyzer.fsproj -c Release -o /app
+# Build release (skip AOT; container uses managed runtime)
+RUN dotnet publish src/analyzer/ConformalAnalyzer.fsproj -c Release -o /app -p:PublishAot=false
 
 # Runtime
 FROM mcr.microsoft.com/dotnet/runtime:8.0 AS runtime
 WORKDIR /app
 COPY --from=build /app .
-ENTRYPOINT ["./conformal-parse"]
+ENTRYPOINT ["dotnet", "conformal-parse.dll"]
 
 # Test (runtime + test files)
 FROM runtime AS test
 COPY tests/ /app/tests/
-ENTRYPOINT ["./conformal-parse"]
+ENTRYPOINT ["dotnet", "conformal-parse.dll"]
