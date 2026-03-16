@@ -43,7 +43,7 @@ dotnet run --project src/analyzer/ConformalAnalyzer.fsproj -- --lsp
 dotnet run --project src/migrate/ConformalMigrate.fsproj -- input.m --stdout
 ```
 
-Dependencies: .NET 8, FsCheck (property tests), Ionide.LanguageServerProtocol (LSP), NSec.Cryptography (license keys).
+Dependencies: .NET 8, FsCheck (property tests), Ionide.LanguageServerProtocol (LSP).
 
 ## Source files
 
@@ -79,11 +79,11 @@ Dependencies: .NET 8, FsCheck (property tests), Ionide.LanguageServerProtocol (L
 | `Workspace.fs` | Cross-file workspace scanning and analysis |
 | `Json.fs` | JSON serialization for diagnostics |
 
-### shared/ — license verification
+### shared/ — shared utilities
 
 | File | Role |
 |------|------|
-| `License.fs` | Ed25519 license key validation (NSec.Cryptography) |
+| `License.fs` | License key validation (reserved for future Migrate licensing) |
 
 ### analyzer/ — CLI, LSP, and tests
 

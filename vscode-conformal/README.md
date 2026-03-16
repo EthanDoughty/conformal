@@ -19,7 +19,7 @@ Conformal finds matrix dimension errors before you run your code. If `A` is `3x4
 
 Most of what Conformal catches comes down to dimension mismatches, whether that's in multiplication, concatenation, element-wise operations, or backslash solves. It can also flag type errors when you use structs or cells where numbers are expected, and it checks for index out of bounds, division by zero, and negative dimensions when it can prove them from the code. It follows shapes through user-defined functions (including pre-2016 end-less definitions and no-arg procedures), anonymous functions with closure capture, and cross-file calls to sibling `.m` files.
 
-By default, Conformal shows only high-confidence warnings. The `strict` setting adds 11 low-confidence codes like `W_SUSPICIOUS_COMPARISON`, mostly things that could be false positives. The `pro` setting adds a further 11 codes that depend on the advanced analysis domains, like `W_INDEX_OUT_OF_BOUNDS`, `W_DIVISION_BY_ZERO`, `W_CONSTRAINT_CONFLICT`, and `W_STRUCT_FIELD_NOT_FOUND`. Without `pro` enabled, those codes are silently filtered so you don't need to think about them unless you want them.
+By default, Conformal shows only high-confidence warnings. The `strict` setting adds 11 low-confidence codes like `W_SUSPICIOUS_COMPARISON`, mostly things that could be false positives.
 
 ## In the editor
 
@@ -52,7 +52,6 @@ You shouldn't need to configure anything. The extension bundles the analyzer dir
 |---------|---------|-------------|
 | `conformal.fixpoint` | `false` | Fixed-point loop analysis for convergence in loops |
 | `conformal.strict` | `false` | Show all warnings including informational and low-confidence diagnostics |
-| `conformal.licenseKey` | `""` | Conformal Pro license key (format: `CONF-xxx.yyy`). Get one at [conformal.dev](https://conformal.dev) |
 | `conformal.analyzeOnChange` | `true` | Keystroke analysis with a 500ms debounce |
 | `conformal.inlayHints` | `true` | Show inferred shapes as inlay hints on first assignment. If hints feel noisy, set to `false` |
 

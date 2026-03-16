@@ -33,7 +33,7 @@ let private printEnv (env: Env.Env) : unit =
 // ---------------------------------------------------------------------------
 
 /// Analyze one .m file and print results. Returns exit code: 0 = success, 1 = error.
-let runFile (filePath: string) (strict: bool) (fixpoint: bool) (benchmark: bool) (coder: bool) (licenseStatus: License.LicenseStatus) : int =
+let runFile (filePath: string) (strict: bool) (fixpoint: bool) (benchmark: bool) (coder: bool) : int =
     if not (File.Exists filePath) then
         eprintfn "ERROR: file not found: %s" filePath
         1
@@ -94,39 +94,18 @@ let runFile (filePath: string) (strict: bool) (fixpoint: bool) (benchmark: bool)
 
         let tAnalyze = DateTime.UtcNow
 
-        let proEnabled =
-            match licenseStatus with
-            | License.Valid _ | License.GracePeriod _ -> true
-            | _ -> false
-
-        // Count pro-only warnings that will be suppressed
-        let proSuppressed =
-            if proEnabled then 0
-            else warnings |> List.filter (fun w -> Set.contains w.code PRO_ONLY_CODES) |> List.length
-
-        // Two-stage filter: pro tier first, then strict tier
+        // Filter: suppress strict-only codes unless --strict is active
         let displayWarnings =
             warnings
-            |> (if proEnabled then id else List.filter (fun w -> not (Set.contains w.code PRO_ONLY_CODES)))
             |> (if strict then id else List.filter (fun w -> not (Set.contains w.code STRICT_ONLY_CODES)))
 
         printfn "=== Analysis for %s ===" filePath
-        if displayWarnings.IsEmpty && proSuppressed = 0 then
+        if displayWarnings.IsEmpty then
             printfn "No dimension warnings."
         else
-            if not displayWarnings.IsEmpty then
-                printfn "Warnings:"
-                for w in displayWarnings do
-                    printfn "  - %s" (formatDiag w)
-            // Grace period warning
-            match licenseStatus with
-            | License.GracePeriod p ->
-                let daysLeft = int ((p.exp + 14L * 86400L - DateTimeOffset.UtcNow.ToUnixTimeSeconds()) / 86400L)
-                printfn "  [License] Expiring in %d day%s. Renew at conformal.dev" daysLeft (if daysLeft = 1 then "" else "s")
-            | _ -> ()
-            if proSuppressed > 0 then
-                printfn "  [Conformal Pro] %d additional issue%s detected. Get a license at conformal.dev"
-                    proSuppressed (if proSuppressed = 1 then "" else "s")
+            printfn "Warnings:"
+            for w in displayWarnings do
+                printfn "  - %s" (formatDiag w)
 
         printfn ""
         printEnv env
@@ -177,19 +156,16 @@ type CliArgs = {
     tests: bool; testProps: bool; strict: bool; fixpoint: bool
     bench: bool; coder: bool; file: string; parseJson: bool
     quiet: bool; help: bool; version: bool
-    license: string; generateKey: bool
 }
 
 let private defaultArgs =
     { tests = false; testProps = false; strict = false; fixpoint = false
       bench = false; coder = false; file = ""; parseJson = false
-      quiet = false; help = false; version = false
-      license = ""; generateKey = false }
+      quiet = false; help = false; version = false }
 
 // Fold state: Ready accepts flags, ConsumeFile means next arg is a file path,
-// ConsumeWitness means next arg is an optional witness mode or file path,
-// ConsumeLicense means next arg is the license key string.
-type private ParseState = Ready | ConsumeFile | ConsumeWitness | ConsumeLicense
+// ConsumeWitness means next arg is an optional witness mode or file path.
+type private ParseState = Ready | ConsumeFile | ConsumeWitness
 
 let private parseArgv (argv: string array) : CliArgs =
     argv
@@ -197,8 +173,6 @@ let private parseArgv (argv: string array) : CliArgs =
         match state with
         | ConsumeFile ->
             ({ acc with file = arg }, Ready)
-        | ConsumeLicense ->
-            ({ acc with license = arg }, Ready)
         | ConsumeWitness ->
             if arg.StartsWith("--") then
                 // Not a mode/file arg; re-parse as a flag on the next fold iteration won't work
@@ -210,8 +184,6 @@ let private parseArgv (argv: string array) : CliArgs =
                 | "--fixpoint"     -> ({ acc with fixpoint = true }, Ready)
                 | "--benchmark"    -> ({ acc with bench = true }, Ready)
                 | "--coder"        -> ({ acc with coder = true }, Ready)
-                | "--license"      -> (acc, ConsumeLicense)
-                | "--generate-key" -> ({ acc with generateKey = true }, Ready)
                 | "--parse-json"   -> ({ acc with parseJson = true }, ConsumeFile)
                 | "--witness"      -> (acc, ConsumeWitness)
                 | "--quiet"        -> ({ acc with quiet = true }, Ready)
@@ -230,8 +202,6 @@ let private parseArgv (argv: string array) : CliArgs =
             | "--fixpoint"     -> ({ acc with fixpoint = true }, Ready)
             | "--benchmark"    -> ({ acc with bench = true }, Ready)
             | "--coder"        -> ({ acc with coder = true }, Ready)
-            | "--license"      -> (acc, ConsumeLicense)
-            | "--generate-key" -> ({ acc with generateKey = true }, Ready)
             | "--parse-json"   -> ({ acc with parseJson = true }, ConsumeFile)
             | "--witness"      -> (acc, ConsumeWitness)
             | "--quiet"        -> ({ acc with quiet = true }, Ready)
@@ -243,7 +213,6 @@ let private parseArgv (argv: string array) : CliArgs =
 
 let private printUsage () =
     printfn "Usage: conformal [OPTIONS] <file.m>"
-    printfn "       conformal --generate-key"
     printfn ""
     printfn "Options:"
     printfn "  --tests         Run test suite"
@@ -252,26 +221,9 @@ let private printUsage () =
     printfn "  --fixpoint      Use fixed-point iteration for loop analysis"
     printfn "  --benchmark     Print timing breakdown"
     printfn "  --coder         Enable MATLAB Coder compatibility warnings (W_CODER_*)"
-    printfn "  --license KEY   Provide Conformal Pro license key"
-    printfn "  --generate-key  Generate a new license key (interactive)"
     printfn "  --parse-json    Parse file and emit JSON IR"
     printfn "  --help, -h      Show this help message"
     printfn "  --version       Show version"
-
-let private resolveLicense (args: CliArgs) : License.LicenseStatus =
-    let keyStr =
-        if args.license <> "" then args.license
-        else
-            match Environment.GetEnvironmentVariable("CONFORMAL_LICENSE") with
-            | null | "" ->
-                let path = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-                    ".conformal", "license.key")
-                if File.Exists(path) then (File.ReadAllText(path)).Trim()
-                else ""
-            | v -> v
-    if keyStr = "" then License.Invalid "no license key provided"
-    else License.validateLicense keyStr
 
 /// Parse argv and dispatch. Returns exit code.
 let run (argv: string array) : int =
@@ -282,17 +234,6 @@ let run (argv: string array) : int =
         0
     elif args.help then
         printUsage ()
-        0
-    elif args.generateKey then
-        printf "Email: "
-        let email = Console.ReadLine().Trim()
-        printf "Days until expiry (0 = perpetual): "
-        let days = Console.ReadLine().Trim() |> int
-        let exp =
-            if days = 0 then 0L
-            else DateTimeOffset.UtcNow.AddDays(float days).ToUnixTimeSeconds()
-        let key = License.generateKey email exp "pro"
-        printfn "%s" key
         0
     elif args.testProps then
         PropertyTests.runPropertyTests()
@@ -324,8 +265,7 @@ let run (argv: string array) : int =
                 eprintfn "Error: %s" ex.Message
                 3
     elif args.file <> "" then
-        let licenseStatus = resolveLicense args
-        runFile args.file args.strict args.fixpoint args.bench args.coder licenseStatus
+        runFile args.file args.strict args.fixpoint args.bench args.coder
     else
         printUsage ()
         1

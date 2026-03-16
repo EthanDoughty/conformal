@@ -118,7 +118,6 @@ let analyzeSource
     (source: string)
     (fixpoint: bool)
     (strict: bool)
-    (pro: bool)
     (externalFiles: (string * string) array)
     : AnalysisResult =
 
@@ -182,10 +181,9 @@ let analyzeSource
             // Analysis crash — return what we have
             (Env.Env.create (), [])
 
-    // Two-stage filter: pro tier, then strict tier
+    // Filter strict-only codes when strict mode is off
     let displayWarnings =
         warnings
-        |> (if pro then id else List.filter (fun w -> not (Set.contains w.code PRO_ONLY_CODES)))
         |> (if strict then id else List.filter (fun w -> not (Set.contains w.code STRICT_ONLY_CODES)))
 
     // Serialize diagnostics

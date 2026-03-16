@@ -71,10 +71,6 @@
       {
         "command": "conformal.restartServer",
         "title": "Conformal: Restart Server"
-      },
-      {
-        "command": "conformal.enterLicenseKey",
-        "title": "Conformal: Enter License Key"
       }
     ],
     "configuration": {
@@ -90,11 +86,6 @@
           "type": "boolean",
           "default": false,
           "description": "Show all warnings including informational and low-confidence diagnostics"
-        },
-        "conformal.licenseKey": {
-          "type": "string",
-          "default": "",
-          "markdownDescription": "Conformal Pro license key. Get one at [conformal.dev](https://conformal.dev). Format: `CONF-xxx.yyy`"
         },
         "conformal.analyzeOnChange": {
           "type": "boolean",

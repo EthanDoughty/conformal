@@ -101,7 +101,6 @@ Diagnostics appear as underlines as you type, with a configurable 500ms debounce
 |---------|---------|-------------|
 | `conformal.fixpoint` | `false` | Enable fixed-point loop analysis |
 | `conformal.strict` | `false` | Show all warnings including low-confidence diagnostics |
-| `conformal.licenseKey` | `""` | Conformal Pro license key (`CONF-xxx.yyy` format) |
 | `conformal.analyzeOnChange` | `true` | Analyze as you type (500ms debounce) |
 | `conformal.inlayHints` | `true` | Show inferred shapes as inlay hints on first assignment |
 
@@ -117,7 +116,6 @@ dotnet run --project src/analyzer/ConformalAnalyzer.fsproj -- file.m
 | `--strict` | Show all warnings including informational and low-confidence diagnostics |
 | `--fixpoint` | Use widening-based fixpoint iteration for loop analysis |
 | `--witness [MODE]` | Attach incorrectness witnesses (`enrich`, `filter`, or `tag`) |
-| `--license KEY` | Provide a Conformal Pro license key for the current run |
 | `--coder` | Run the MATLAB Coder compatibility pass (combine with `--strict`) |
 | `--quiet` | Suppress per-test output during `--tests`, only print failures |
 | `--lsp` | Start the native Language Server Protocol server |
@@ -137,11 +135,9 @@ The repos include gptoolbox, vlfeat, prmlt, petercorke/robotics-toolbox-matlab, 
 
 ## Warning Tiers
 
-By default, Conformal shows only high-confidence warnings. Two additional tiers provide more specialized diagnostics:
+By default, Conformal shows all high-confidence warnings, including shape errors, type errors, indexing checks, interval-based checks like `W_INDEX_OUT_OF_BOUNDS` and `W_DIVISION_BY_ZERO`, constraint conflicts, and cross-file resolution. All 36 default codes are available with no configuration required.
 
 The `--strict` flag adds 11 lower-confidence codes like `W_SUSPICIOUS_COMPARISON` and `W_REASSIGN_INCOMPATIBLE`, so you can run default mode in CI without false-positive noise and use strict mode when you want a fuller picture.
-
-A Conformal Pro license key (via `--license KEY` or the `conformal.licenseKey` VS Code setting) unlocks 11 additional codes that require the advanced analysis domains, including `W_INDEX_OUT_OF_BOUNDS`, `W_DIVISION_BY_ZERO`, `W_CONSTRAINT_CONFLICT`, and `W_UNKNOWN_FUNCTION`. Without a license, the CLI shows a count of how many additional issues were suppressed.
 
 ## Conformal Migrate (Preview)
 
@@ -157,7 +153,7 @@ For the full test listing, see [docs/tests.md](docs/tests.md).
 
 ```
 src/core/               F# core library (lexer, parser, shape inference, builtins, diagnostics)
-src/shared/             License validation (Ed25519)
+src/shared/             Shared utilities
 src/analyzer/           CLI, LSP server, test runner
 src/migrate/            MATLAB-to-Python transpiler (~1,700 LOC)
 vscode-conformal/       VS Code extension (TypeScript client + Fable-compiled analyzer)

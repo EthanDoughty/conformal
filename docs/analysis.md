@@ -86,11 +86,11 @@ You can use `--coder --strict` together to surface all six codes, or combine wit
 
 ## Warning Code Catalog
 
-Conformal has 53 warning codes organized into four tiers. Each code has its own documentation page in the [warnings/](warnings/) directory. The tier determines when the warning is shown:
+Conformal has 53 warning codes organized into three tiers. Each code has its own documentation page in the [warnings/](warnings/) directory. The tier determines when the warning is shown:
 
-### Free tier (25 codes, always shown)
+### Default tier (36 codes, always shown)
 
-These fire in default mode with no license key required.
+These fire in default mode with no configuration required.
 
 | Code | Category | What it catches |
 |------|----------|----------------|
@@ -110,22 +110,6 @@ These fire in default mode with no license key required.
 | `W_INVALID_RANGE` | Indexing | Range is provably empty or malformed |
 | `W_NON_SCALAR_INDEX` | Indexing | Non-scalar used as a single index |
 | `W_INDEX_ASSIGN_TYPE_MISMATCH` | Indexing | Indexed assignment into a non-indexable type |
-| `W_FUNCTION_ARG_COUNT_MISMATCH` | Functions | Too many arguments passed to a function |
-| `W_PROCEDURE_IN_EXPR` | Functions | Procedure (no return value) used in an expression |
-| `W_MULTI_ASSIGN_COUNT_MISMATCH` | Functions | Output count doesn't match function returns |
-| `W_LAMBDA_ARG_COUNT_MISMATCH` | Functions | Lambda called with wrong number of arguments |
-| `W_RETURN_OUTSIDE_FUNCTION` | Control flow | `return` at script level |
-| `W_BREAK_OUTSIDE_LOOP` | Control flow | `break` outside a loop |
-| `W_CONTINUE_OUTSIDE_LOOP` | Control flow | `continue` outside a loop |
-| `W_END_OUTSIDE_INDEXING` | Parser | `end` keyword used outside an indexing context |
-| `W_MATRIX_LIT_EMPTY_ROW` | Parser | Empty row in a matrix literal |
-
-### Pro tier (11 codes, requires license key)
-
-These require the advanced analysis domains (intervals, constraints, cross-file resolution, deep type tracking). Without a valid license, the CLI shows how many additional issues were suppressed.
-
-| Code | Category | What it catches |
-|------|----------|----------------|
 | `W_INDEX_OUT_OF_BOUNDS` | Intervals | Index provably outside matrix dimensions |
 | `W_DIVISION_BY_ZERO` | Intervals | Divisor provably zero |
 | `W_POSSIBLY_NEGATIVE_DIM` | Intervals | Dimension expression provably non-positive |
@@ -137,6 +121,15 @@ These require the advanced analysis domains (intervals, constraints, cross-file 
 | `W_FIELD_ACCESS_NON_STRUCT` | Type tracking | Dot access on a non-struct value |
 | `W_CURLY_INDEXING_NON_CELL` | Type tracking | Curly-brace indexing on a non-cell value |
 | `W_CELL_ASSIGN_NON_CELL` | Type tracking | Cell element assignment on a non-cell value |
+| `W_FUNCTION_ARG_COUNT_MISMATCH` | Functions | Too many arguments passed to a function |
+| `W_PROCEDURE_IN_EXPR` | Functions | Procedure (no return value) used in an expression |
+| `W_MULTI_ASSIGN_COUNT_MISMATCH` | Functions | Output count doesn't match function returns |
+| `W_LAMBDA_ARG_COUNT_MISMATCH` | Functions | Lambda called with wrong number of arguments |
+| `W_RETURN_OUTSIDE_FUNCTION` | Control flow | `return` at script level |
+| `W_BREAK_OUTSIDE_LOOP` | Control flow | `break` outside a loop |
+| `W_CONTINUE_OUTSIDE_LOOP` | Control flow | `continue` outside a loop |
+| `W_END_OUTSIDE_INDEXING` | Parser | `end` keyword used outside an indexing context |
+| `W_MATRIX_LIT_EMPTY_ROW` | Parser | Empty row in a matrix literal |
 
 ### Strict tier (11 codes, shown with `--strict`)
 
