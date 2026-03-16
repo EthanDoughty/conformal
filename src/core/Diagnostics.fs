@@ -26,22 +26,6 @@ let STRICT_ONLY_CODES : Set<WarningCode> =
         W_CELLFUN_NON_UNIFORM
     ]
 
-/// Pro-tier codes: require advanced analysis domains (intervals, constraints,
-/// cross-file, deep type tracking). Suppressed unless a valid license key is present;
-/// an upsell count is shown in their place.
-let PRO_ONLY_CODES : Set<WarningCode> =
-    Set.ofList [
-        // Cross-file / recognition
-        W_UNKNOWN_FUNCTION; W_EXTERNAL_PARSE_ERROR; W_RECURSIVE_FUNCTION
-        // Interval / Pentagon domain
-        W_INDEX_OUT_OF_BOUNDS; W_DIVISION_BY_ZERO; W_POSSIBLY_NEGATIVE_DIM
-        // Constraint solver
-        W_CONSTRAINT_CONFLICT
-        // Deep type checking (struct/cell field tracking)
-        W_STRUCT_FIELD_NOT_FOUND; W_FIELD_ACCESS_NON_STRUCT
-        W_CURLY_INDEXING_NON_CELL; W_CELL_ASSIGN_NON_CELL
-    ]
-
 /// Coder-mode-only warning codes (emitted only when --coder is active).
 let CODER_ONLY_CODES : Set<WarningCode> =
     Set.ofList [

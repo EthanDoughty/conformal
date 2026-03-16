@@ -39,7 +39,6 @@ type AnalysisCache = {
 type ServerSettings() =
     member val fixpoint      : bool   = false with get, set
     member val strict        : bool   = false with get, set
-    member val licenseKey    : string = ""    with get, set
     member val analyzeOnChange : bool = false with get, set
 
 // ---------------------------------------------------------------------------
@@ -84,7 +83,7 @@ type ConformalLspServer(client: ConformalClient) =
         BitConverter.ToString(bytes).Replace("-", "").ToLowerInvariant()
 
     let computeSettingsHash () : string =
-        computeHash (string settings.fixpoint + string settings.strict + settings.licenseKey)
+        computeHash (string settings.fixpoint + string settings.strict)
 
     let uriToPath (uri: string) : string =
         try
@@ -150,17 +149,9 @@ type ConformalLspServer(client: ConformalClient) =
             let (irProg, recoveredParseErrors) = Parser.parseMATLAB source
             let (env, warnings) = analyzeProgramIr irProg ctx
 
-            // Validate license for pro tier
-            let proEnabled =
-                if settings.licenseKey = "" then false
-                else match License.validateLicense settings.licenseKey with
-                     | License.Valid _ | License.GracePeriod _ -> true
-                     | _ -> false
-
-            // Two-stage filter: pro tier, then strict tier
+            // Filter: suppress strict-only codes unless strict mode is active
             let filteredWarnings =
                 warnings
-                |> (if proEnabled then id else List.filter (fun w -> not (Set.contains w.code PRO_ONLY_CODES)))
                 |> (if settings.strict then id else List.filter (fun w -> not (Set.contains w.code STRICT_ONLY_CODES)))
 
             // Generate witnesses from conflict sites
@@ -273,9 +264,6 @@ type ConformalLspServer(client: ConformalClient) =
                 | _ -> ()
                 match jobj.TryGetValue("strict") with
                 | true, v -> settings.strict <- v.Value<bool>()
-                | _ -> ()
-                match jobj.TryGetValue("licenseKey") with
-                | true, v -> settings.licenseKey <- v.Value<string>()
                 | _ -> ()
                 match jobj.TryGetValue("analyzeOnChange") with
                 | true, v -> settings.analyzeOnChange <- v.Value<bool>()
@@ -545,9 +533,6 @@ type ConformalLspServer(client: ConformalClient) =
             | _ -> ()
             match conformal.TryGetValue("strict") with
             | true, v -> settings.strict <- v.Value<bool>()
-            | _ -> ()
-            match conformal.TryGetValue("licenseKey") with
-            | true, v -> settings.licenseKey <- v.Value<string>()
             | _ -> ()
             match conformal.TryGetValue("analyzeOnChange") with
             | true, v -> settings.analyzeOnChange <- v.Value<bool>()
