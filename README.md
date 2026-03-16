@@ -40,15 +40,11 @@ Final environment:
 
 ## Screenshots
 
-Inline diagnostics flag dimension mismatches as you type:
-
 ![Inline diagnostics](vscode-conformal/images/Conformal_Example_1.png)
 
-Hover any variable to see its inferred shape:
+Conformal also shows the inferred shape of any variable on hover, and can annotate first assignments with inlay hints:
 
 ![Hover shape](vscode-conformal/images/Conformal_Example_2.png)
-
-Inlay hints show shapes on first assignment:
 
 ![Inlay hints](vscode-conformal/images/Conformal_Example_3.png)
 
@@ -69,31 +65,38 @@ dotnet run --project src/analyzer/ConformalAnalyzer.fsproj -- tests/basics/inner
 
 ## What Conformal Catches
 
-Conformal tracks the shape of every variable through your program and flags dimension mismatches, type errors, and structural problems. Here's what it covers:
+Conformal tracks the shape of every variable through your program and flags dimension mismatches, type errors, and structural problems.
 
-**Arithmetic and operators.** Conformal detects dimension mismatches in `+`, `-`, `*`, `.*`, `./`, `^`, `.^`, and backslash `\`. Scalar-matrix broadcasting is handled, so `s * A` works without a warning. If `*` is used where `.*` was probably intended, Conformal suggests the fix. Comparison operators return the broadcast shape of their operands, so logical indexing like `A(A > 0)` can be tracked correctly.
+A more realistic example: suppose a Kalman filter helper computes a residual with mismatched dimensions.
 
-**Concatenation and literals.** Horizontal concatenation `[A B]` checks that row counts match, and vertical `[A; B]` checks columns. Symbolic dimensions compose through concatenation, so `[A B]` where A is `n x k` and B is `n x m` gives `n x (k+m)`. Matrix literal spacing is handled correctly, so `[1 -2; 3 4]` parses as four elements rather than as subtraction.
+```matlab
+function [x_hat, P] = kalman_update(x, P, H, z, R)
+    y = z - H * x;           % residual
+    S = H * P * H' + R;      % innovation covariance
+    K = P * H' * inv(S);     % Kalman gain
+    x_hat = x + K * y;
+    I_KH = eye(3) - K * H;   % hardcoded 3, should be size(x,1)
+    P = I_KH * P * I_KH' + K * R * K';
+end
+```
 
-**Indexing.** Parenthesized indexing `A(i,j)`, slice indexing `A(:,j)`, range indexing `A(2:5,:)`, curly-brace cell indexing `C{i}`, and the `end` keyword with arithmetic (`A(end-1, :)`) are all supported. Indexed assignment preserves the matrix shape, and read-side out-of-bounds checking is available with a Pro license.
+Conformal follows `H`, `P`, `K`, and `x` through each multiply and flags the line where `eye(3)` conflicts with the symbolic dimensions. It tracks `H'` as the transpose of `H`, knows that `inv(S)` preserves shape, and carries the symbolic dimensions through the entire chain. If `x` is `n x 1` and `H` is `m x n`, then `K` is `n x m`, and `eye(3) - K * H` has an inner dimension conflict when `n` is not 3.
 
-**Functions.** Over 635 MATLAB builtins are recognized, and around 315 have explicit shape rules. Matrix constructors (`zeros`, `ones`, `eye`, `rand`), reductions (`sum`, `mean`, `max` with dimension args), reshaping, type predicates, and linear algebra functions are all covered. User-defined functions are analyzed at each call site with the caller's argument shapes. Nested functions, anonymous functions, `nargin`/`nargout`, `varargin`/`varargout`, and cross-file workspace resolution are all supported.
+Conformal detects dimension mismatches across arithmetic (`+`, `-`, `*`, `.*`, `./`, `^`, `.^`, `\`), concatenation (`[A B]`, `[A; B]`), and indexing (`A(i,j)`, `A(:,j)`, `C{i}`, `A(end-1, :)`). Scalar-matrix broadcasting is handled, so `s * A` works without a false warning. If `*` is used where `.*` was probably intended, Conformal suggests the fix.
 
-**Symbolic dimensions.** Variables with unknown concrete size get symbolic names like `n`, `m`, `k`, and those names propagate through operations. Symbolic dimensions use a polynomial representation with rational coefficients, so `n+m` and `m+n` are recognized as equal, and `n+n` simplifies to `2*n`.
+Over 635 MATLAB builtins are recognized, and around 315 have explicit shape rules, including matrix constructors, reductions with dimension arguments, reshaping, type predicates, and linear algebra functions. User-defined functions are analyzed at each call site with the caller's argument shapes, and that includes nested functions, anonymous functions with closure capture, `nargin`/`nargout` patterns, `varargin`/`varargout`, and cross-file workspace resolution to sibling `.m` files.
 
-**Data structures.** Conformal tracks struct fields, cell array elements, and basic classdef objects. Missing field access on a known struct emits a warning. Cell arrays support per-element shape tracking with literal indexing.
+Variables with unknown concrete size get symbolic names like `n`, `m`, `k`, and those names propagate through operations with a polynomial representation, so `n+m` and `m+n` are recognized as equal, and `n+n` simplifies to `2*n`.
 
-**Control flow.** `if`/`elseif`/`else`, `for`, `while`, `switch`/`case`, `try`/`catch`, `break`, `continue`, and `return` are all supported. When branches assign different shapes to the same variable, Conformal joins them conservatively. Loops can use single-pass analysis or widening-based fixpoint iteration via `--fixpoint`.
+Conformal also tracks struct fields and cell array elements (including per-element shape tracking), handles basic `classdef` objects, and joins shapes conservatively across control flow branches. Loops can use single-pass analysis or widening-based fixpoint iteration via `--fixpoint`.
 
-**Interval analysis.** In parallel with shape inference, Conformal tracks scalar integer variables through an interval domain. This enables out-of-bounds indexing detection, division-by-zero detection, and negative dimension warnings. Branch conditions narrow intervals, and a Pentagon relational domain tracks upper-bound relations from loop ranges to suppress false positives.
+In parallel with shape inference, Conformal tracks scalar integer variables through an interval domain, which enables out-of-bounds indexing detection, division-by-zero detection, and negative dimension warnings. Branch conditions narrow intervals, and a Pentagon relational domain tracks upper-bound relations from loop ranges to suppress false positives.
 
-**Witness generation.** For dimension conflict warnings, Conformal can produce a concrete counterexample proving the bug is real. In `--witness filter` mode, only warnings with a verified witness are shown, which gives you zero false positives.
-
-**MATLAB Coder compatibility.** The `--coder` flag adds a post-analysis pass that checks for constructs MATLAB Coder can't handle, including variable-size arrays, cell arrays, dynamic field access, try/catch, unsupported builtins, and recursion.
+For dimension conflict warnings, Conformal can produce a concrete counterexample proving the bug is real. In `--witness filter` mode, only warnings with a verified witness are shown, which means zero false positives. The `--coder` flag adds a post-analysis pass that checks for constructs MATLAB Coder can't handle.
 
 ## VS Code Extension
 
-The VS Code extension runs the analyzer in-process, since the F# codebase is compiled to JavaScript using the Fable tool. There is no external runtime dependency: no Python, no .NET, no subprocess. The compiled analyzer is bundled directly into the extension.
+The VS Code extension runs the analyzer in-process, since the F# codebase is compiled to JavaScript using the Fable tool. The compiled analyzer is bundled directly into the extension with no external runtime dependency.
 
 Diagnostics appear as underlines as code is typed, with a configurable 500ms debounce. Hovering any variable shows its inferred shape. Go-to-definition works for user-defined and cross-file functions. Function definitions show in the sidebar via document symbols. The extension includes built-in MATLAB syntax highlighting, so the MathWorks extension isn't needed.
 
@@ -141,7 +144,7 @@ The `--strict` flag adds 11 lower-confidence codes like `W_SUSPICIOUS_COMPARISON
 
 ## Conformal Migrate (Preview)
 
-Conformal also includes a MATLAB-to-Python transpiler that uses the shape analysis to make better translation decisions than a purely syntactic tool can. It handles 168 MATLAB builtins, 1-to-0 index conversion with constant folding, `varargin` to `*args`, copy semantics, and shape-aware operator dispatch (for example, using `np.dot` for matrix multiply and `*` for element-wise). The transpiler is a separate tool and is under active development.
+Conformal also includes a MATLAB-to-Python transpiler that uses the shape analysis to make better translation decisions than a purely syntactic tool can. It handles 168 MATLAB builtins, 1-to-0 index conversion with constant folding, `varargin` to `*args`, copy semantics, and shape-aware operator dispatch (for example, using `np.dot` for matrix multiply and `*` for element-wise).
 
 ## Test Suite
 
@@ -165,7 +168,11 @@ tests/                  515 self-checking MATLAB programs in 22 categories
 
 ## Limitations
 
-Conformal analyzes a subset of MATLAB. It focuses on the matrix-heavy computational core where dimension errors are most common and most costly. There is no support for `eval` or `str2func`, no N-D arrays beyond 2-D matrices, no complex number tracking, and no cross-directory resolution with `addpath`. Basic `classdef` support is included (properties, constructor, method dispatch), but inheritance is not resolved. For the full details on what is and isn't covered, see [docs/analysis.md](docs/analysis.md).
+Conformal analyzes a subset of MATLAB, focused on the matrix-heavy computational core where dimension errors are most common and most costly.
+
+It does not support `eval`, `str2func`, N-D arrays beyond 2-D, or complex number tracking. Cross-directory resolution with `addpath` is not implemented yet. Basic `classdef` support is included (properties, constructor, method dispatch), but inheritance is not resolved.
+
+For the full details on what is and isn't covered, see [docs/analysis.md](docs/analysis.md).
 
 <details>
 <summary><h2>References</h2></summary>
