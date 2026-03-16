@@ -123,9 +123,14 @@
 
         .code-panel pre {
             font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
-            font-size: 0.875rem;
+            font-size: 0.85rem;
             line-height: 1.7;
             overflow-x: auto;
+        }
+
+        @media (max-width: 640px) {
+            .code-panel pre { font-size: 0.75rem; line-height: 1.5; }
+            .code-panel { padding: 16px; }
         }
 
         .code-panel code {
@@ -302,29 +307,26 @@
         <section class="example">
             <div class="code-grid">
                 <div class="code-panel">
-                    <div class="label">Kalman filter with a bug</div>
-                    <pre><code><span class="code-keyword">function</span> [x_upd, P_upd] = <span class="code-func">kalman_update</span>(x, P, H, z, R)
-    y = z - H * x;
-    S = H * P * H' + R;
-    K = P * H' * <span class="code-func">inv</span>(S);
-    x_upd = x + K * y;
-    P_upd = (<span class="code-func">eye</span>(<span class="code-num">3</span>) - K * H) * P;  <span class="code-comment">% bug: should be eye(4)</span>
+                    <div class="label">MATLAB code</div>
+                    <pre><code><span class="code-keyword">function</span> result = <span class="code-func">process</span>(data, weights)
+    scaled = data .* weights;
+    result = scaled' * scaled;
 <span class="code-keyword">end</span>
 
-x = <span class="code-func">zeros</span>(<span class="code-num">4</span>, <span class="code-num">1</span>);  P = <span class="code-func">eye</span>(<span class="code-num">4</span>);
-H = [<span class="code-num">1 0 0 0</span>; <span class="code-num">0 1 0 0</span>];  R = <span class="code-num">0.5</span> * <span class="code-func">eye</span>(<span class="code-num">2</span>);
-[x_upd, P_upd] = <span class="code-func">kalman_update</span>(x, P, H, z, R);</code></pre>
+A = <span class="code-func">rand</span>(<span class="code-num">10</span>, <span class="code-num">3</span>);
+w = <span class="code-func">rand</span>(<span class="code-num">4</span>, <span class="code-num">1</span>);  <span class="code-comment">% wrong size</span>
+R = <span class="code-func">process</span>(A, w);</code></pre>
                 </div>
                 <div class="code-panel">
                     <div class="label">Conformal output</div>
-                    <pre><code><span class="dim-err">W_ELEMENTWISE_MISMATCH line 6:</span>
-  <span class="dim-warn">eye(3) - (K * H):</span>
-  <span class="dim-warn">matrix[3 x 3] vs matrix[4 x 4]</span>
+                    <pre><code><span class="dim-err">W_ELEMENTWISE_MISMATCH line 2:</span>
+  data .* weights:
+  <span class="dim-warn">matrix[10 x 3] vs matrix[4 x 1]</span>
+  (in process, called from line 8)
 
-<span class="code-comment">Conformal tracks H, P, K through</span>
-<span class="code-comment">each multiply, follows H' as the</span>
-<span class="code-comment">transpose of H, and catches where</span>
-<span class="code-comment">eye(3) conflicts with K * H.</span></code></pre>
+<span class="code-comment">Conformal follows the shapes into</span>
+<span class="code-comment">the function call and catches the</span>
+<span class="code-comment">mismatch inside the body.</span></code></pre>
                 </div>
             </div>
         </section>
