@@ -35,6 +35,8 @@ type TranslateContext = {
     mutable usedImports: Set<string>
     /// Current function's output variable names (for return translation)
     mutable currentReturnVars: string list
+    /// Function nesting depth (0 = top level, 1 = inside function, 2+ = nested function)
+    mutable functionDepth: int
 }
 
 let lookupShape (tctx: TranslateContext) (loc: SrcLoc) : Shape option =
@@ -84,6 +86,7 @@ let rec translateExpr (expr: Expr) (tctx: TranslateContext) : PyExpr =
         | "inf" | "Inf" -> PyAttr(PyVar "np", "inf")
         | "nan" | "NaN" -> PyAttr(PyVar "np", "nan")
         | "eps" -> PyAttr(PyCall(PyAttr(PyVar "np", "finfo"), [PyAttr(PyVar "np", "float64")], []), "eps")
+        | "varargin" -> PyVar "args"  // bare varargin reference -> args
         | _ -> PyVar (safeName name)
     | Const(_, v) -> PyConst v
     | StringLit(_, s) -> PyStr s
@@ -109,6 +112,10 @@ let rec translateExpr (expr: Expr) (tctx: TranslateContext) : PyExpr =
         PyConst -1.0
     | Apply(_, base_, args) ->
         translateApply expr base_ args tctx
+    | CurlyApply(_, Var(_, "varargin"), args) ->
+        // varargin{i} -> args[i-1]
+        let pyIndices = args |> List.map (fun a -> translateIndexArg a tctx)
+        PyIndex(PyVar "args", pyIndices)
     | CurlyApply(_, base_, args) ->
         // Cell indexing: A{i} -> A[i-1] (same as regular indexing for migration)
         let pyBase = translateExpr base_ tctx
@@ -218,6 +225,27 @@ and private translateApply (expr: Expr) (base_: Expr) (args: IndexArg list) (tct
         | _ ->
             let pyIndices = args |> List.map (fun a -> translateIndexArg a tctx)
             PyIndex(pyBase, pyIndices)
+
+/// Translate an expression on the LHS of an assignment.
+/// In MATLAB, LHS expressions are always indexing (never function calls),
+/// and A(:) = v means "assign to all elements" (Python: A[:] = v), not ravel.
+and private translateLhsExpr (expr: Expr) (tctx: TranslateContext) : PyExpr =
+    match expr with
+    | Apply(_, base_, args) ->
+        let pyBase = translateLhsExpr base_ tctx
+        let pyIndices = args |> List.map (fun a -> translateIndexArg a tctx)
+        PyIndex(pyBase, pyIndices)
+    | CurlyApply(_, base_, args) ->
+        let pyBase = translateLhsExpr base_ tctx
+        let pyIndices = args |> List.map (fun a -> translateIndexArg a tctx)
+        PyIndex(pyBase, pyIndices)
+    | FieldAccess(_, base_, field) ->
+        if field = "<dynamic>" then
+            PyCall(PyVar "getattr", [translateLhsExpr base_ tctx; PyStr "<dynamic>"], [])
+        else
+            PyAttr(translateLhsExpr base_ tctx, safeName field)
+    | Var(_, name) -> PyVar (safeName name)
+    | _ -> translateExpr expr tctx
 
 and private translateBuiltinCall (mapping: BuiltinMapping) (fname: string) (args: IndexArg list) (tctx: TranslateContext) : PyExpr =
     let pyArgs = args |> List.map (fun a -> translateCallArg a tctx)
@@ -366,6 +394,29 @@ and private translateBuiltinCall (mapping: BuiltinMapping) (fname: string) (args
         match pyArgs with
         | [arg] -> PyAttr(PyCall(PyVar "type", [arg], []), "__name__")
         | _ -> PyCall(PyVar "type", pyArgs, [])
+    | IsTypeStyle typeName ->
+        // ischar(x) -> isinstance(x, str)
+        match pyArgs with
+        | [arg] -> PyCall(PyVar "isinstance", [arg; PyVar typeName], [])
+        | _ -> PyCall(PyVar "isinstance", pyArgs, [])
+    | StructStyle ->
+        // struct() -> SimpleNamespace()
+        // struct('a', 1, 'b', 2) -> SimpleNamespace(a=1, b=2)
+        tctx.usedImports <- Set.add "types" tctx.usedImports
+        match args with
+        | [] -> PyCall(PyVar "types.SimpleNamespace", [], [])
+        | _ ->
+            // Pair up: string key, value, string key, value, ...
+            let rec pairUp (lst: IndexArg list) acc =
+                match lst with
+                | IndexExpr(_, StringLit(_, key)) :: IndexExpr(_, valExpr) :: rest ->
+                    pairUp rest ((key, translateExpr valExpr tctx) :: acc)
+                | _ -> List.rev acc
+            let kwargs = pairUp args []
+            if kwargs.IsEmpty then
+                PyCall(PyVar "types.SimpleNamespace", pyArgs, [])
+            else
+                PyCall(PyVar "types.SimpleNamespace", [], kwargs)
     | ExistStyle ->
         // exist('x', 'var') -> x is not None  (variable existence)
         // exist(path, 'file') -> os.path.exists(path)  (file existence)
@@ -387,6 +438,51 @@ and private translateBuiltinCall (mapping: BuiltinMapping) (fname: string) (args
             let pyPath = translateCallArg pathArg tctx
             PyCall(PyVar "os.path.exists", [pyPath], [])
         | _ -> PyCall(PyVar "os.path.exists", pyArgs, [])
+    | FevalStyle ->
+        // feval(f, a1, a2, ...) -> f(a1, a2, ...)
+        // feval('sin', x) -> sin(x)  (string func name -> PyVar)
+        // feval(@cos, x) -> cos(x)   (handle already translated to PyVar)
+        match pyArgs with
+        | PyStr funcName :: fArgs -> PyCall(PyVar funcName, fArgs, [])
+        | func :: fArgs -> PyCall(func, fArgs, [])
+        | _ -> PyCall(PyVar "feval", pyArgs, [])
+    | RegexpStyle ->
+        // regexp(str, pat) -> re.search(pat, str)
+        // regexp(str, pat, 'match') -> re.findall(pat, str)
+        // regexp(str, pat, 'tokens') -> re.findall(pat, str)
+        tctx.usedImports <- Set.add "re" tctx.usedImports
+        match args with
+        | [IndexExpr(_, _); IndexExpr(_, _); IndexExpr(_, StringLit(_, opt))] ->
+            match opt with
+            | "match" | "tokens" ->
+                let pyStr = pyArgs.[0]
+                let pyPat = pyArgs.[1]
+                PyCall(PyVar "re.findall", [pyPat; pyStr], [])
+            | "split" ->
+                let pyStr = pyArgs.[0]
+                let pyPat = pyArgs.[1]
+                PyCall(PyVar "re.split", [pyPat; pyStr], [])
+            | _ ->
+                match pyArgs with
+                | [s; p] -> PyCall(PyVar "re.search", [p; s], [])
+                | _ -> PyCall(PyVar "re.search", pyArgs, [])
+        | _ ->
+            match pyArgs with
+            | [s; p] -> PyCall(PyVar "re.search", [p; s], [])
+            | _ -> PyCall(PyVar "re.search", pyArgs, [])
+    | RegexpRepStyle ->
+        // regexprep(str, pat, rep) -> re.sub(pat, rep, str)
+        tctx.usedImports <- Set.add "re" tctx.usedImports
+        match pyArgs with
+        | [s; p; r] -> PyCall(PyVar "re.sub", [p; r; s], [])
+        | _ -> PyCall(PyVar "re.sub", pyArgs, [])
+    | NanFullStyle ->
+        // nan(m, n) -> np.full((m, n), np.nan)
+        // nan(n) -> np.full((n, n), np.nan)  (MATLAB: square matrix)
+        match pyArgs with
+        | [] -> PyAttr(PyVar "np", "nan")  // just 'nan' constant
+        | [n] -> PyCall(PyVar "np.full", [PyTuple [n; n]; PyAttr(PyVar "np", "nan")], [])
+        | dims -> PyCall(PyVar "np.full", [PyTuple dims; PyAttr(PyVar "np", "nan")], [])
     | CatStyle ->
         // cat(dim, A, B, ...) -> np.concatenate((A, B, ...), axis=dim-1)
         match pyArgs with
@@ -554,8 +650,71 @@ and private stmtReferencesVar (name: string) (stmt: Stmt) : bool =
     | Switch(_, e, cases, ow) -> exprReferencesVar name e || cases |> List.exists (fun (v,b) -> exprReferencesVar name v || b |> List.exists (stmtReferencesVar name)) || ow |> List.exists (stmtReferencesVar name)
     | Try(_, t, c) -> t |> List.exists (stmtReferencesVar name) || c |> List.exists (stmtReferencesVar name)
     | IndexAssign(_, _, args, e) -> args |> List.exists (indexArgReferencesVar name) || exprReferencesVar name e
+    | LhsAssign(_, _, lhs, e) -> exprReferencesVar name lhs || exprReferencesVar name e
     | FunctionDef(_, _, _, _, b, _) -> b |> List.exists (stmtReferencesVar name)
     | _ -> false
+
+// -------------------------------------------------------------------------
+// Command-style call translation (for OpaqueStmt raw text)
+// -------------------------------------------------------------------------
+
+/// Try to translate common MATLAB command-style calls (hold on, axis equal, etc.)
+/// Returns Some [stmts] on success, None if unrecognized.
+let private translateCommandStyle (raw: string) (tctx: TranslateContext) : PyStmt list option =
+    let words = raw.Split([|' '; '\t'|], System.StringSplitOptions.RemoveEmptyEntries) |> Array.toList
+    match words with
+    // hold on/off → noop (matplotlib holds by default)
+    | ["hold"; "on"] | ["hold"; "off"] ->
+        tctx.usedImports <- Set.add "matplotlib" tctx.usedImports
+        Some [PyCommentStmt (sprintf "%s (matplotlib default)" raw)]
+    // axis commands → plt.axis(...)
+    | "axis" :: args when args.Length >= 1 ->
+        tctx.usedImports <- Set.add "matplotlib" tctx.usedImports
+        let argStr = args |> List.filter (fun a -> a <> "off" || args = ["off"]) |> String.concat " "
+        match args with
+        | ["off"] -> Some [PyExprStmt(PyCall(PyAttr(PyVar "plt", "axis"), [PyStr "off"], []))]
+        | ["equal"] | ["image"] | ["tight"] | ["square"] | ["manual"] | ["normal"] ->
+            Some [PyExprStmt(PyCall(PyAttr(PyVar "plt", "axis"), [PyStr args.Head], []))]
+        | _ ->
+            // Multi-word axis args: axis equal off tight → plt.axis('equal')  (best-effort)
+            let primary = args |> List.tryFind (fun a -> a <> "off" && a <> "on")
+            match primary with
+            | Some p -> Some [PyExprStmt(PyCall(PyAttr(PyVar "plt", "axis"), [PyStr p], []))]
+            | None -> Some [PyCommentStmt (sprintf "MATLAB: %s" raw)]
+    // grid on/off/minor → plt.grid(...)
+    | ["grid"; "on"] ->
+        tctx.usedImports <- Set.add "matplotlib" tctx.usedImports
+        Some [PyExprStmt(PyCall(PyAttr(PyVar "plt", "grid"), [PyBool true], []))]
+    | ["grid"; "off"] ->
+        tctx.usedImports <- Set.add "matplotlib" tctx.usedImports
+        Some [PyExprStmt(PyCall(PyAttr(PyVar "plt", "grid"), [PyBool false], []))]
+    | ["grid"; "minor"] ->
+        tctx.usedImports <- Set.add "matplotlib" tctx.usedImports
+        Some [PyExprStmt(PyCall(PyAttr(PyVar "plt", "grid"), [PyBool true], [("which", PyStr "minor")]))]
+    // close all → plt.close('all')
+    | ["close"; "all"] ->
+        tctx.usedImports <- Set.add "matplotlib" tctx.usedImports
+        Some [PyExprStmt(PyCall(PyAttr(PyVar "plt", "close"), [PyStr "all"], []))]
+    | ["close"] ->
+        tctx.usedImports <- Set.add "matplotlib" tctx.usedImports
+        Some [PyExprStmt(PyCall(PyAttr(PyVar "plt", "close"), [], []))]
+    // colormap X → plt.set_cmap('X')
+    | ["colormap"; cmap] ->
+        tctx.usedImports <- Set.add "matplotlib" tctx.usedImports
+        Some [PyExprStmt(PyCall(PyAttr(PyVar "plt", "set_cmap"), [PyStr cmap], []))]
+    // warning on/off → warnings.filterwarnings(...)
+    | ["warning"; "on"] ->
+        tctx.usedImports <- Set.add "warnings" tctx.usedImports
+        Some [PyExprStmt(PyCall(PyAttr(PyVar "warnings", "filterwarnings"), [PyStr "default"], []))]
+    | ["warning"; "off"] ->
+        tctx.usedImports <- Set.add "warnings" tctx.usedImports
+        Some [PyExprStmt(PyCall(PyAttr(PyVar "warnings", "filterwarnings"), [PyStr "ignore"], []))]
+    // drawnow → plt.draw(); plt.pause(0.001)
+    | ["drawnow"] ->
+        tctx.usedImports <- Set.add "matplotlib" tctx.usedImports
+        Some [PyExprStmt(PyCall(PyAttr(PyVar "plt", "draw"), [], []))
+              PyExprStmt(PyCall(PyAttr(PyVar "plt", "pause"), [PyConst 0.001], []))]
+    | _ -> None
 
 // -------------------------------------------------------------------------
 // Statement translation
@@ -692,36 +851,90 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
         [PyExprStmt(PyBinOp("=", PyIndex(PyVar (safeName baseName), pyIndices), pyExpr))]
 
     | IndexStructAssign(_, baseName, indexArgs, _, fields, expr) ->
+        // base(i, j).field1.field2 = expr -> base[i-1, j-1].field1.field2 = expr
         let pyExpr = translateExpr expr tctx
-        [PyCommentStmt (sprintf "CONFORMAL: complex index-struct assignment to %s" (safeName baseName))]
-         @ [PyAssign(safeName baseName, pyExpr)]
+        let pyIndices = indexArgs |> List.map (fun a -> translateIndexArg a tctx)
+        let indexedBase = PyIndex(PyVar (safeName baseName), pyIndices)
+        let target = fields |> List.fold (fun acc f -> PyAttr(acc, safeName f)) indexedBase
+        [PyExprStmt(PyBinOp("=", target, pyExpr))]
 
     | FieldIndexAssign(_, baseName, prefixFields, indexArgs, _, suffixFields, expr) ->
+        // base.field1(i).field2.field3 = expr -> base.field1[i-1].field2.field3 = expr
         let pyExpr = translateExpr expr tctx
-        [PyCommentStmt (sprintf "CONFORMAL: complex field-index assignment to %s" (safeName baseName))]
-         @ [PyAssign(safeName baseName, pyExpr)]
+        let base_ = prefixFields |> List.fold (fun acc f -> PyAttr(acc, safeName f)) (PyVar (safeName baseName))
+        let pyIndices = indexArgs |> List.map (fun a -> translateIndexArg a tctx)
+        let indexedBase = PyIndex(base_, pyIndices)
+        let target = suffixFields |> List.fold (fun acc f -> PyAttr(acc, safeName f)) indexedBase
+        [PyExprStmt(PyBinOp("=", target, pyExpr))]
+
+    | LhsAssign(_, _, lhsExpr, expr) ->
+        // General chain assignment: net.layers{l}.a{j} = expr -> net.layers[l-1].a[j-1] = expr
+        // Uses translateLhsExpr so Apply is always indexing (not function call) and A(:) = v -> A[:] = v
+        let pyLhs = translateLhsExpr lhsExpr tctx
+        let pyRhs = translateExpr expr tctx
+        [PyExprStmt(PyBinOp("=", pyLhs, pyRhs))]
 
     | OpaqueStmt(_, targets, raw) ->
-        let comment = [PyCommentStmt (sprintf "MATLAB: %s" (raw.Trim()))]
-        match targets with
-        | [] -> comment
-        | _ ->
-            (targets |> List.map (fun t -> PyAssign(t, PyNone)))
-            @ comment
+        let trimmed = raw.Trim()
+        // Handle global/persistent declarations
+        if trimmed.StartsWith("global ") || trimmed = "global" then
+            let vars = targets |> List.map safeName
+            if tctx.functionDepth > 1 then
+                // Inside nested function: use nonlocal
+                vars |> List.map (fun v -> PyExprStmt(PyVar (sprintf "nonlocal %s" v)))
+            else
+                // Top-level function: use global
+                vars |> List.map (fun v -> PyExprStmt(PyVar (sprintf "global %s" v)))
+        elif trimmed.StartsWith("persistent ") || trimmed = "persistent" then
+            let varNames = targets |> String.concat " "
+            [PyCommentStmt (sprintf "persistent %s (no Python equivalent; use module-level or function attributes)" varNames)]
+        else
+        // Try to translate common command-style calls before falling back
+        match translateCommandStyle trimmed tctx with
+        | Some stmts -> stmts
+        | None ->
+            let comment = [PyCommentStmt (sprintf "MATLAB: %s" (raw.Trim()))]
+            match targets with
+            | [] -> comment
+            | _ ->
+                (targets |> List.map (fun t -> PyAssign(t, PyNone)))
+                @ comment
 
     | FunctionDef(_, name, parms, outputVars, body, _) ->
         let savedReturnVars = tctx.currentReturnVars
+        let savedDepth = tctx.functionDepth
+        tctx.functionDepth <- tctx.functionDepth + 1
         let safeOutputVars = outputVars |> List.map safeName
         tctx.currentReturnVars <- safeOutputVars
+        // Check for varargin: if last param is "varargin", replace with *args
+        let hasVarargin = parms |> List.tryLast = Some "varargin"
+        let baseParms = if hasVarargin then parms |> List.filter (fun p -> p <> "varargin") else parms
         // Check if body references 'nargin' / 'nargout' — add preamble as needed
         let usesNargin = body |> List.exists (fun s -> stmtReferencesVar "nargin" s)
         let usesNargout = body |> List.exists (fun s -> stmtReferencesVar "nargout" s)
-        let safeParms = parms |> List.map safeName
-        let pyParms = if usesNargin && safeParms.Length > 0 then safeParms |> List.map (fun p -> p + "=None") else safeParms
+        let safeParms = baseParms |> List.map safeName
+        let pyParms =
+            let ps =
+                if hasVarargin then
+                    // With *args, fixed params stay required; nargin computed from len(args) + fixed count
+                    safeParms
+                elif usesNargin && safeParms.Length > 0 then
+                    safeParms |> List.map (fun p -> p + "=None")
+                else safeParms
+            if hasVarargin then ps @ ["*args"] else ps
         let narginPreamble =
-            if usesNargin && safeParms.Length > 0 then
-                let countExpr = sprintf "sum(1 for __x in [%s] if __x is not None)" (safeParms |> String.concat ", ")
-                [PyExprStmt(PyBinOp("=", PyVar "nargin", PyVar countExpr))]
+            if usesNargin then
+                if hasVarargin then
+                    // nargin = len(args) + <number of fixed params>
+                    let fixedCount = safeParms |> List.filter (fun p -> p <> "*args") |> List.length
+                    if fixedCount > 0 then
+                        [PyAssign("nargin", PyBinOp("+", PyCall(PyVar "len", [PyVar "args"], []), PyConst (float fixedCount)))]
+                    else
+                        [PyAssign("nargin", PyCall(PyVar "len", [PyVar "args"], []))]
+                elif safeParms.Length > 0 then
+                    let countExpr = sprintf "sum(1 for __x in [%s] if __x is not None)" (safeParms |> String.concat ", ")
+                    [PyExprStmt(PyBinOp("=", PyVar "nargin", PyVar countExpr))]
+                else []
             else []
         let nargoutPreamble =
             if usesNargout then
@@ -740,6 +953,7 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
             else
                 pyBody
         tctx.currentReturnVars <- savedReturnVars
+        tctx.functionDepth <- savedDepth
         [PyFuncDef(name, pyParms, (if fullBody.IsEmpty then [PyPass] else fullBody), safeOutputVars)]
 
 and private translateForIterator (it: Expr) (tctx: TranslateContext) : PyExpr =
@@ -766,7 +980,9 @@ let translateProgram (program: Ir.Program) (tctx: TranslateContext) (sourceFile:
         [ if Set.contains "warnings" tctx.usedImports then yield PyImport("warnings", None)
           if Set.contains "matplotlib" tctx.usedImports then yield PyFromImport("matplotlib", ["pyplot as plt"])
           if Set.contains "os" tctx.usedImports then yield PyImport("os", None)
-          if Set.contains "scipy" tctx.usedImports then yield PyImport("scipy", None) ]
+          if Set.contains "scipy" tctx.usedImports then yield PyImport("scipy", None)
+          if Set.contains "types" tctx.usedImports then yield PyImport("types", None)
+          if Set.contains "re" tctx.usedImports then yield PyImport("re", None) ]
 
     let baseImports = [
         PyCommentStmt (sprintf "Generated by conformal-migrate 3.4.0")

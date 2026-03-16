@@ -803,6 +803,14 @@ and analyzeStmtIr
         if isBottom existing then Env.set env baseName UnknownShape
         Normal
 
+    | LhsAssign(_, baseName, lhsExpr, expr) ->
+        // Evaluate RHS and LHS for side effects; set base to Unknown if uninitialized
+        wiredEvalExprFull expr env warnings ctx |> ignore
+        wiredEvalExprFull lhsExpr env warnings ctx |> ignore
+        let existing = Env.get env baseName
+        if isBottom existing then Env.set env baseName UnknownShape
+        Normal
+
     | ExprStmt({ line = stmtLine }, expr) ->
         let beforeCount = warnings.Count
         wiredEvalExprFull expr env warnings ctx |> ignore
@@ -1388,6 +1396,7 @@ and private collectModifiedVars (body: Stmt list) : Set<string> =
         | IndexAssign(_, baseName, _, _) -> vars <- Set.add baseName vars
         | IndexStructAssign(_, baseName, _, _, _, _) -> vars <- Set.add baseName vars
         | FieldIndexAssign(_, baseName, _, _, _, _, _) -> vars <- Set.add baseName vars
+        | LhsAssign(_, baseName, _, _) -> vars <- Set.add baseName vars
         | AssignMulti(_, targets, _) ->
             for t in targets do if t <> "~" then vars <- Set.add t vars
         | For(_, var_, _, innerBody) ->

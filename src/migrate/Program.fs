@@ -25,6 +25,7 @@ let private migrateFile (inputFile: string) (outputFile: string option) (toStdou
                 env = env
                 usedImports = Set.empty
                 currentReturnVars = []
+                functionDepth = 0
             }
 
             // Translate
@@ -89,6 +90,7 @@ let private runMigrateTests () : int =
                         env = env
                         usedImports = Set.empty
                         currentReturnVars = []
+                        functionDepth = 0
                     }
 
                     let sourceFileName = Path.GetFileName(mFile)
