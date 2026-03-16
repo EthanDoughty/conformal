@@ -28,6 +28,7 @@ let findCopySites
             | StructAssign(_, baseName, _, _) -> mutatedNames.Add(baseName) |> ignore
             | IndexStructAssign(_, baseName, _, _, _, _) -> mutatedNames.Add(baseName) |> ignore
             | FieldIndexAssign(_, baseName, _, _, _, _, _) -> mutatedNames.Add(baseName) |> ignore
+            | LhsAssign(_, baseName, _, _) -> mutatedNames.Add(baseName) |> ignore
             | If(_, _, thenBody, elseBody) ->
                 scanForMutations thenBody
                 scanForMutations elseBody

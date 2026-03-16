@@ -318,6 +318,15 @@ and private writeStmt (w: Writer) (stmt: Stmt) : unit =
             "suffix_fields", fun () -> w.WriteStringList suffixFields
             "expr",          fun () -> writeExpr w expr
         ]
+    | LhsAssign({ line = line; col = col }, baseName, lhsExpr, expr) ->
+        w.WriteObject [
+            "type",      fun () -> w.WriteStr "LhsAssign"
+            "line",      fun () -> w.WriteInt line
+            "col",       fun () -> w.WriteInt col
+            "base_name", fun () -> w.WriteStr baseName
+            "lhs",       fun () -> writeExpr w lhsExpr
+            "expr",      fun () -> writeExpr w expr
+        ]
     | ExprStmt({ line = line; col = col }, expr) ->
         w.WriteObject [
             "type", fun () -> w.WriteStr "ExprStmt"

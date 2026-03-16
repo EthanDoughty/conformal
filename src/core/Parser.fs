@@ -506,12 +506,12 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
             | _ ->
                 let node = this.ParseSimpleStmt()
                 let curKind = this.Current().kind
-                if curKind <> TkNewline && curKind <> TkEof && curKind <> TkSemicolon then
+                if curKind <> TkNewline && curKind <> TkEof && curKind <> TkSemicolon && curKind <> TkComma then
                     pos <- startPos
                     this.RecoverToStmtBoundary(startLine, startCol)
                 else
                     if this.Current().kind = TkNewline then this.Eat(TkNewline) |> ignore
-                    elif this.Current().kind = TkSemicolon then pos <- pos + 1
+                    elif this.Current().kind = TkSemicolon || this.Current().kind = TkComma then pos <- pos + 1
                     node
         with
         | :? ParseError as pe ->
@@ -586,7 +586,7 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
                 stop <- true
         chain |> Seq.toList
 
-    member private _.ChainToExpr(idTok: Token, chain: LhsSegment list) : Expr =
+    member private this.ChainToExpr(idTok: Token, chain: LhsSegment list) : Expr =
         let mutable expr: Expr = Var(loc idTok.line idTok.col, idTok.value)
         for seg in chain do
             match seg with
@@ -595,7 +595,7 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
             | Curly args -> expr <- CurlyApply(loc idTok.line idTok.col, expr, args)
         expr
 
-    member private _.ClassifyAssignment(idTok: Token, chain: LhsSegment list, eqTok: Token, rhs: Expr) : Stmt =
+    member private this.ClassifyAssignment(idTok: Token, chain: LhsSegment list, eqTok: Token, rhs: Expr) : Stmt =
         let baseName = idTok.value
         let isField = function Field _ -> true | _ -> false
         let fieldName = function Field n -> n | _ -> ""
@@ -634,13 +634,12 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
                         indexKind chain.[ip],
                         suffix |> List.map fieldName,
                         rhs)
-                elif chain.Length >= 2 && (match chain.[chain.Length-1] with Paren _ | Curly _ -> true | _ -> false) &&
-                     chain.[..chain.Length-2] |> List.forall isField then
-                    ExprStmt(loc eqTok.line eqTok.col, rhs)
                 else
-                    OpaqueStmt(loc eqTok.line eqTok.col, [baseName], "")
+                    let lhsExpr = this.ChainToExpr(idTok, chain)
+                    LhsAssign(loc eqTok.line eqTok.col, baseName, lhsExpr, rhs)
             | None ->
-                OpaqueStmt(loc eqTok.line eqTok.col, [baseName], "")
+                let lhsExpr = this.ChainToExpr(idTok, chain)
+                LhsAssign(loc eqTok.line eqTok.col, baseName, lhsExpr, rhs)
 
     member private this.ParseSimpleStmt() : Stmt =
         if this.Current().kind = TkLBracket then
@@ -769,11 +768,11 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
             varNames.Add(this.Eat(TkId).value)
         let varNamesList = Seq.toList varNames
         let rawText = kwTok.value + " " + String.concat " " varNamesList
-        // Consume trailing semicolon or newline so the caller doesn't see a stray token.
+        // Consume trailing semicolon, comma, or newline so the caller doesn't see a stray token.
         if not (this.AtEnd()) then
             let cur = this.Current()
             if cur.kind = TkNewline then pos <- pos + 1
-            elif cur.kind = TkSemicolon then pos <- pos + 1
+            elif cur.kind = TkSemicolon || cur.kind = TkComma then pos <- pos + 1
         OpaqueStmt(loc kwTok.line kwTok.col, varNamesList, rawText)
 
     member private this.ParseWhile() : Stmt =
@@ -843,7 +842,8 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
         Try(loc l c, tryBody, catchBody)
 
     member private this.ParseBlock(untilKinds: TokenKind[]) : Stmt list =
-        if this.Current().kind = TkNewline then this.Eat(TkNewline) |> ignore
+        while not (this.AtEnd()) && (this.Current().kind = TkNewline || this.Current().kind = TkComma) do
+            pos <- pos + 1
         let stmts = System.Collections.Generic.List<Stmt>()
         while not (this.AtEnd()) && not (Array.contains (this.Current().kind) untilKinds) do
             let savedPos = pos

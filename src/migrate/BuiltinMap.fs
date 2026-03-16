@@ -28,6 +28,12 @@ type ArgTransform =
     | CellfunStyle                                   // cellfun(@f, C) -> [f(x) for x in C]
     | ExistStyle                                    // exist('x','var') -> x is not None; exist(f,'file') -> os.path.exists(f)
     | ClassStyle                                    // class(x) -> type(x).__name__
+    | IsTypeStyle of string                          // ischar(x) -> isinstance(x, str)
+    | StructStyle                                    // struct('a',1,'b',2) -> SimpleNamespace(a=1, b=2)
+    | FevalStyle                                    // feval(f, a, b) -> f(a, b)
+    | RegexpStyle                                   // regexp(str, pat) -> re.search(pat, str)
+    | RegexpRepStyle                                // regexprep(str, pat, rep) -> re.sub(pat, rep, str)
+    | NanFullStyle                                  // nan(m, n) -> np.full((m, n), np.nan)
 
 type BuiltinMapping = {
     pythonFunc: string
@@ -228,6 +234,80 @@ let private builtinTable =
         "ifft",      { pythonFunc = "np.fft.ifft";      argTransform = Direct;         needsOrderF = false }
         "fft2",      { pythonFunc = "np.fft.fft2";      argTransform = Direct;         needsOrderF = false }
         "ifft2",     { pythonFunc = "np.fft.ifft2";     argTransform = Direct;         needsOrderF = false }
+        // Type queries (additional)
+        "ischar",    { pythonFunc = "isinstance";       argTransform = IsTypeStyle "str"; needsOrderF = false }
+        "isstring",  { pythonFunc = "isinstance";       argTransform = IsTypeStyle "str"; needsOrderF = false }
+        "isnumeric", { pythonFunc = "isinstance";       argTransform = IsTypeStyle "(int, float, np.ndarray)"; needsOrderF = false }
+        "islogical", { pythonFunc = "isinstance";       argTransform = IsTypeStyle "(bool, np.bool_)"; needsOrderF = false }
+        "iscell",    { pythonFunc = "isinstance";       argTransform = IsTypeStyle "list"; needsOrderF = false }
+        "isstruct",  { pythonFunc = "isinstance";       argTransform = IsTypeStyle "types.SimpleNamespace"; needsOrderF = false }
+        "isfloat",   { pythonFunc = "isinstance";       argTransform = IsTypeStyle "(float, np.floating)"; needsOrderF = false }
+        "isinteger", { pythonFunc = "isinstance";       argTransform = IsTypeStyle "(int, np.integer)"; needsOrderF = false }
+        "isscalar",  { pythonFunc = "np.isscalar";      argTransform = Direct;         needsOrderF = false }
+        "isvector",  { pythonFunc = "np.ndim";          argTransform = Direct;         needsOrderF = false }
+        // Struct constructor
+        "struct",    { pythonFunc = "types.SimpleNamespace"; argTransform = StructStyle; needsOrderF = false }
+        // String (additional)
+        "strncmp",   { pythonFunc = "";                 argTransform = BinOpStyle "=="; needsOrderF = false }
+        "strfind",   { pythonFunc = "find";             argTransform = MethodStyle "find"; needsOrderF = false }
+        "strrep",    { pythonFunc = "replace";          argTransform = MethodStyle "replace"; needsOrderF = false }
+        // Degree trig (wrapped: cosd(x) -> np.cos(np.radians(x)))
+        "cosd",      { pythonFunc = "np.cos";           argTransform = Direct;         needsOrderF = false }
+        "sind",      { pythonFunc = "np.sin";           argTransform = Direct;         needsOrderF = false }
+        "tand",      { pythonFunc = "np.tan";           argTransform = Direct;         needsOrderF = false }
+        // Plotting (additional)
+        "drawnow",   { pythonFunc = "plt.draw";         argTransform = Direct;         needsOrderF = false }
+        "clf",       { pythonFunc = "plt.clf";          argTransform = Direct;         needsOrderF = false }
+        "cla",       { pythonFunc = "plt.cla";          argTransform = Direct;         needsOrderF = false }
+        "gcf",       { pythonFunc = "plt.gcf";          argTransform = Direct;         needsOrderF = false }
+        "gca",       { pythonFunc = "plt.gca";          argTransform = Direct;         needsOrderF = false }
+        "set",       { pythonFunc = "plt.setp";         argTransform = Direct;         needsOrderF = false }
+        "get",       { pythonFunc = "plt.getp";         argTransform = Direct;         needsOrderF = false }
+        "text",      { pythonFunc = "plt.text";         argTransform = Direct;         needsOrderF = false }
+        "patch",     { pythonFunc = "plt.fill";         argTransform = Direct;         needsOrderF = false }
+        "line",      { pythonFunc = "plt.plot";         argTransform = Direct;         needsOrderF = false }
+        "fill",      { pythonFunc = "plt.fill";         argTransform = Direct;         needsOrderF = false }
+        "quiver",    { pythonFunc = "plt.quiver";       argTransform = Direct;         needsOrderF = false }
+        "clim",      { pythonFunc = "plt.clim";         argTransform = Direct;         needsOrderF = false }
+        "xlim",      { pythonFunc = "plt.xlim";         argTransform = Direct;         needsOrderF = false }
+        "ylim",      { pythonFunc = "plt.ylim";         argTransform = Direct;         needsOrderF = false }
+        "zlim",      { pythonFunc = "plt.zlim";         argTransform = Direct;         needsOrderF = false }
+        "view",      { pythonFunc = "plt.view";         argTransform = Direct;         needsOrderF = false }
+        "shading",   { pythonFunc = "plt.shading";      argTransform = Direct;         needsOrderF = false }
+        "saveas",    { pythonFunc = "plt.savefig";      argTransform = Direct;         needsOrderF = false }
+        "print",     { pythonFunc = "plt.savefig";      argTransform = Direct;         needsOrderF = false }
+        // I/O (additional)
+        "fopen",     { pythonFunc = "open";             argTransform = Direct;         needsOrderF = false }
+        "fclose",    { pythonFunc = "close";            argTransform = MethodStyle "close"; needsOrderF = false }
+        "fread",     { pythonFunc = "read";             argTransform = MethodStyle "read"; needsOrderF = false }
+        "fwrite",    { pythonFunc = "write";            argTransform = MethodStyle "write"; needsOrderF = false }
+        "fgets",     { pythonFunc = "readline";         argTransform = MethodStyle "readline"; needsOrderF = false }
+        "feof",      { pythonFunc = "";                 argTransform = Direct;         needsOrderF = false }
+        "ftell",     { pythonFunc = "tell";             argTransform = MethodStyle "tell"; needsOrderF = false }
+        "fseek",     { pythonFunc = "seek";             argTransform = MethodStyle "seek"; needsOrderF = false }
+        // Matrix operations (additional)
+        "chol",      { pythonFunc = "np.linalg.cholesky"; argTransform = Direct;       needsOrderF = false }
+        "lu",        { pythonFunc = "scipy.linalg.lu";    argTransform = Direct;       needsOrderF = false }
+        "qr",        { pythonFunc = "np.linalg.qr";      argTransform = Direct;       needsOrderF = false }
+        "rank",      { pythonFunc = "np.linalg.matrix_rank"; argTransform = Direct;    needsOrderF = false }
+        "cond",      { pythonFunc = "np.linalg.cond";    argTransform = Direct;        needsOrderF = false }
+        "null",      { pythonFunc = "scipy.linalg.null_space"; argTransform = Direct;  needsOrderF = false }
+        "orth",      { pythonFunc = "scipy.linalg.orth";  argTransform = Direct;       needsOrderF = false }
+        "expm",      { pythonFunc = "scipy.linalg.expm";  argTransform = Direct;       needsOrderF = false }
+        "logm",      { pythonFunc = "scipy.linalg.logm";  argTransform = Direct;       needsOrderF = false }
+        "sqrtm",     { pythonFunc = "scipy.linalg.sqrtm"; argTransform = Direct;       needsOrderF = false }
+        // Convolution
+        "conv2",     { pythonFunc = "scipy.signal.convolve2d"; argTransform = Direct;  needsOrderF = false }
+        "convn",     { pythonFunc = "scipy.ndimage.convolve";  argTransform = Direct;  needsOrderF = false }
+        // Dynamic dispatch
+        "feval",     { pythonFunc = "";                argTransform = FevalStyle;       needsOrderF = false }
+        // Regex
+        "regexp",    { pythonFunc = "re.search";       argTransform = RegexpStyle;      needsOrderF = false }
+        "regexpi",   { pythonFunc = "re.search";       argTransform = RegexpStyle;      needsOrderF = false }
+        "regexprep", { pythonFunc = "re.sub";          argTransform = RegexpRepStyle;   needsOrderF = false }
+        // NaN constructors
+        "nan",       { pythonFunc = "np.full";         argTransform = NanFullStyle;     needsOrderF = false }
+        "NaN",       { pythonFunc = "np.full";         argTransform = NanFullStyle;     needsOrderF = false }
     ]
 
 let tryMapBuiltin (name: string) : BuiltinMapping option =
