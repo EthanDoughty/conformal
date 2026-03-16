@@ -15,5 +15,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../core/ConformalCore.fsproj" />
+    <ProjectReference Include="../shared/ConformalShared.fsproj" />
   </ItemGroup>
 </Project>
