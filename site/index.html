@@ -286,7 +286,7 @@
         <section class="hero">
             <h1>Conformal</h1>
             <p class="tagline">
-                Catch matrix dimension errors in your MATLAB code before you run it. No MATLAB license required.
+                Static shape analysis for MATLAB. Catch dimension errors before runtime, no MATLAB license required.
             </p>
             <div class="buttons">
                 <a href="https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal" class="btn btn-primary">
@@ -302,19 +302,29 @@
         <section class="example">
             <div class="code-grid">
                 <div class="code-panel">
-                    <div class="label">Your MATLAB code</div>
-                    <pre><code>A = <span class="code-func">zeros</span>(<span class="code-num">3</span>, <span class="code-num">4</span>);
-B = <span class="code-func">ones</span>(<span class="code-num">5</span>, <span class="code-num">2</span>);
-C = A * B;
-D = [A; B];</code></pre>
+                    <div class="label">Kalman filter with a bug</div>
+                    <pre><code><span class="code-keyword">function</span> [x_upd, P_upd] = <span class="code-func">kalman_update</span>(x, P, H, z, R)
+    y = z - H * x;
+    S = H * P * H' + R;
+    K = P * H' * <span class="code-func">inv</span>(S);
+    x_upd = x + K * y;
+    P_upd = (<span class="code-func">eye</span>(<span class="code-num">3</span>) - K * H) * P;  <span class="code-comment">% bug: should be eye(4)</span>
+<span class="code-keyword">end</span>
+
+x = <span class="code-func">zeros</span>(<span class="code-num">4</span>, <span class="code-num">1</span>);  P = <span class="code-func">eye</span>(<span class="code-num">4</span>);
+H = [<span class="code-num">1 0 0 0</span>; <span class="code-num">0 1 0 0</span>];  R = <span class="code-num">0.5</span> * <span class="code-func">eye</span>(<span class="code-num">2</span>);
+[x_upd, P_upd] = <span class="code-func">kalman_update</span>(x, P, H, z, R);</code></pre>
                 </div>
                 <div class="code-panel">
-                    <div class="label">What Conformal catches</div>
-                    <pre><code><span class="dim-err">Line 3: inner dims 4 vs 5</span>
-  <span class="dim-warn">matrix[3 x 4] * matrix[5 x 2]</span>
+                    <div class="label">Conformal output</div>
+                    <pre><code><span class="dim-err">W_ELEMENTWISE_MISMATCH line 6:</span>
+  <span class="dim-warn">eye(3) - (K * H):</span>
+  <span class="dim-warn">matrix[3 x 3] vs matrix[4 x 4]</span>
 
-<span class="dim-err">Line 4: column counts 4 and 2</span>
-  <span class="dim-warn">vertical concat mismatch</span></code></pre>
+<span class="code-comment">Conformal tracks H, P, K through</span>
+<span class="code-comment">each multiply, follows H' as the</span>
+<span class="code-comment">transpose of H, and catches where</span>
+<span class="code-comment">eye(3) conflicts with K * H.</span></code></pre>
                 </div>
             </div>
         </section>
@@ -332,7 +342,7 @@ D = [A; B];</code></pre>
             <div class="features-grid">
                 <div class="feature">
                     <h3>No MATLAB license needed</h3>
-                    <p>Conformal analyzes your .m files directly. It doesn't call MATLAB, so you can run it on any machine, including CI servers and laptops without a license.</p>
+                    <p>Conformal analyzes .m files directly without calling MATLAB, so it runs on any machine, including CI servers and laptops without a license.</p>
                 </div>
                 <div class="feature">
                     <h3>Zero false positives</h3>
