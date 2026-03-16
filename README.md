@@ -20,24 +20,6 @@
 
 Conformal catches matrix dimension errors in MATLAB code before runtime. If `A * B` has an inner dimension mismatch, Conformal flags it at analysis time instead of letting it fail silently. It tracks shapes through assignments, function calls, control flow, loops, and symbolic dimensions, all without needing MATLAB installed.
 
-```matlab
-A = zeros(3, 4);
-B = ones(5, 2);
-C = A * B;
-D = [A; B];
-```
-
-```
-Warnings:
-  - Line 3: Dimension mismatch in expression (A * B):
-    inner dims 4 vs 5 (shapes matrix[3 x 4] and matrix[5 x 2])
-  - Line 4: Vertical concatenation requires equal column counts
-    across rows; got 4 and 2 in matrix literal.
-
-Final environment:
-    Env{A: matrix[3 x 4], B: matrix[5 x 2], C: unknown, D: unknown}
-```
-
 ## Screenshots
 
 ![Inline diagnostics](vscode-conformal/images/Conformal_Example_1.png)
