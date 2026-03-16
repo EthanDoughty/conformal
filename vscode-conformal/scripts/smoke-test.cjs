@@ -41,7 +41,7 @@ async function main() {
     console.log('\n1. Inner dimension mismatch');
     const r1 = analyzer.analyzeSource(
         'A = [1 2; 3 4]; B = [1 2 3; 4 5 6; 7 8 9]; C = A * B;',
-        false, false, false, []
+        false, false, []
     );
     assert(
         r1.diagnostics.some(d => d.code === 'W_INNER_DIM_MISMATCH'),
@@ -50,27 +50,27 @@ async function main() {
 
     // Test 2: Clean code produces no diagnostics
     console.log('\n2. Clean code');
-    const r2 = analyzer.analyzeSource('x = 1;', false, false, false, []);
+    const r2 = analyzer.analyzeSource('x = 1;', false, false, []);
     assert(r2.diagnostics.length === 0, 'No diagnostics for clean code');
 
-    // Test 3: Pro-tier warning present when pro=true
-    console.log('\n3. Pro-tier gating (pro=true)');
+    // Test 3: W_UNKNOWN_FUNCTION fires for unrecognized calls (no longer gated)
+    console.log('\n3. Unknown function detection');
     const r3 = analyzer.analyzeSource(
-        'x = unknownfunc(1);', false, false, true, []
+        'x = unknownfunc(1);', false, false, []
     );
     assert(
         r3.diagnostics.some(d => d.code === 'W_UNKNOWN_FUNCTION'),
-        'W_UNKNOWN_FUNCTION present with pro=true'
+        'W_UNKNOWN_FUNCTION detected for unrecognized call'
     );
 
-    // Test 4: Pro-tier warning absent when pro=false
-    console.log('\n4. Pro-tier gating (pro=false)');
+    // Test 4: Strict mode shows additional warnings
+    console.log('\n4. Strict mode');
     const r4 = analyzer.analyzeSource(
-        'x = unknownfunc(1);', false, false, false, []
+        'x = zeros(3,4); x = ones(2,2);', false, true, []
     );
     assert(
-        !r4.diagnostics.some(d => d.code === 'W_UNKNOWN_FUNCTION'),
-        'W_UNKNOWN_FUNCTION absent with pro=false'
+        r4.diagnostics.some(d => d.code === 'W_REASSIGN_INCOMPATIBLE'),
+        'W_REASSIGN_INCOMPATIBLE present with strict=true'
     );
 
     // Test 5: Result structure
