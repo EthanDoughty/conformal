@@ -116,7 +116,7 @@ let private masterPattern =
 let private masterPatternSimple =
     String.concat "|" [
         """(?<DQSTRING>"(?:[^"]|"")*")"""
-        """(?<NUMBER>\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)"""
+        """(?<NUMBER>\d+(?:\.\d+)?(?:[eE][+-]?\d+)?[ij](?!\w)|\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)"""
         """(?<ID>[A-Za-z_]\w*)"""
         """(?<CONTINUATION>\.\.\.[^\n]*\n?)"""
         """(?<DOTOP>\.\*|\./|\.\^|\.')"""

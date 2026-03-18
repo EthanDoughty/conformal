@@ -121,6 +121,7 @@ let private builtinTable =
         "dot",       { pythonFunc = "np.dot";            argTransform = Direct;        needsOrderF = false }
         "unique",    { pythonFunc = "np.unique";         argTransform = Direct;        needsOrderF = false }
         // Type conversion
+        "complex",   { pythonFunc = "complex";           argTransform = Direct;        needsOrderF = false }
         "double",    { pythonFunc = "np.float64";        argTransform = Direct;        needsOrderF = false }
         "single",    { pythonFunc = "np.float32";        argTransform = Direct;        needsOrderF = false }
         "int32",     { pythonFunc = "np.int32";          argTransform = Direct;        needsOrderF = false }
