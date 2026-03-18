@@ -1061,6 +1061,8 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
     // -------------------------------------------------------------------
 
     member private this.ParseDelimitedRows(endKind: TokenKind) : int * int * Expr list list =
+        // Skip leading newlines (e.g. `[\n1 2;\n3 4\n]`).
+        while this.Current().kind = TkNewline do pos <- pos + 1
         let cur = this.Current()
         let line = cur.line
         let col = cur.col
