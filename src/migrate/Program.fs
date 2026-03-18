@@ -129,53 +129,7 @@ let private runMigrateTests () : int =
             eprintfn "===== Migrate tests: %d/%d passed, %d failed =====" passed total failed
             1
 
-/// Resolve a license key from CLI args, environment variable, or file.
-let private resolveLicenseKey (args: string list) : string =
-    // 1. CLI flag: --license KEY
-    match args |> List.tryFindIndex (fun a -> a = "--license") with
-    | Some i when i + 1 < args.Length -> args.[i + 1]
-    | _ ->
-    // 2. Environment variable
-    match Environment.GetEnvironmentVariable("CONFORMAL_LICENSE") with
-    | null | "" ->
-        // 3. File: ~/.conformal/license.key
-        let home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
-        let keyFile = Path.Combine(home, ".conformal", "license.key")
-        if File.Exists keyFile then (File.ReadAllText(keyFile)).Trim()
-        else ""
-    | v -> v
-
-/// Check license and print status. Returns true if valid.
-let private checkLicense (args: string list) : bool =
-    let key = resolveLicenseKey args
-    if key = "" then
-        eprintfn "conformal-migrate requires a license key."
-        eprintfn "  --license KEY   or set CONFORMAL_LICENSE env var"
-        eprintfn "  or place your key in ~/.conformal/license.key"
-        false
-    else
-        match License.validateLicense key with
-        | License.Valid _ -> true
-        | License.GracePeriod p ->
-            let daysLeft = int ((p.exp + 14L * 86400L - DateTimeOffset.UtcNow.ToUnixTimeSeconds()) / 86400L)
-            eprintfn "[License] Valid, expiring in %d day%s" daysLeft (if daysLeft = 1 then "" else "s")
-            true
-        | License.Expired _ ->
-            eprintfn "License expired. Please renew."
-            false
-        | License.Invalid reason ->
-            eprintfn "Invalid license key: %s" reason
-            false
-
-/// Strip license-related args so they don't interfere with file parsing.
-let private stripLicenseArgs (args: string list) : string list =
-    let rec strip acc = function
-        | "--license" :: _ :: rest -> strip acc rest
-        | x :: rest -> strip (x :: acc) rest
-        | [] -> List.rev acc
-    strip [] args
-
-/// Usage: conformal-migrate <input.m> [-o output.py] [--stdout] [--license KEY] [--test-migrate]
+/// Usage: conformal-migrate <input.m> [-o output.py] [--stdout] [--test-migrate]
 [<EntryPoint>]
 let main argv =
     let args = Array.toList argv
@@ -183,17 +137,14 @@ let main argv =
     if List.contains "--test-migrate" args then
         runMigrateTests ()
     elif args.IsEmpty || List.contains "--help" args then
-        eprintfn "Usage: conformal-migrate <input.m> [-o output.py] [--stdout] [--license KEY]"
+        eprintfn "Usage: conformal-migrate <input.m> [-o output.py] [--stdout]"
         eprintfn "       conformal-migrate --test-migrate"
         if args.IsEmpty then 1 else 0
-    elif not (checkLicense args) then
-        1
     else
-        let cleanArgs = stripLicenseArgs args
-        let inputFile = cleanArgs.[0]
+        let inputFile = args.[0]
         let outputFile =
-            match cleanArgs |> List.tryFindIndex (fun a -> a = "-o") with
-            | Some i when i + 1 < cleanArgs.Length -> Some cleanArgs.[i + 1]
+            match args |> List.tryFindIndex (fun a -> a = "-o") with
+            | Some i when i + 1 < args.Length -> Some args.[i + 1]
             | _ -> None
-        let toStdout = List.contains "--stdout" cleanArgs
+        let toStdout = List.contains "--stdout" args
         migrateFile inputFile outputFile toStdout
