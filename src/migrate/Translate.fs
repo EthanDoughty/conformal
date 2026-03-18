@@ -423,8 +423,8 @@ and private translateBuiltinCall (mapping: BuiltinMapping) (fname: string) (args
         tctx.usedImports <- Set.add "os" tctx.usedImports
         match args with
         | [IndexExpr(_, StringLit(_, varName)); IndexExpr(_, StringLit(_, "var"))] ->
-            // exist('x', 'var') -> x is not None
-            PyBinOp("is not", PyVar varName, PyNone)
+            // exist('x', 'var') -> x is not None  (safeName guards against Python keywords)
+            PyBinOp("is not", PyVar (safeName varName), PyNone)
         | [pathArg; IndexExpr(_, StringLit(_, "file"))] ->
             // exist(path, 'file') -> os.path.exists(path)
             let pyPath = translateCallArg pathArg tctx
@@ -483,6 +483,17 @@ and private translateBuiltinCall (mapping: BuiltinMapping) (fname: string) (args
         | [] -> PyAttr(PyVar "np", "nan")  // just 'nan' constant
         | [n] -> PyCall(PyVar "np.full", [PyTuple [n; n]; PyAttr(PyVar "np", "nan")], [])
         | dims -> PyCall(PyVar "np.full", [PyTuple dims; PyAttr(PyVar "np", "nan")], [])
+    | FileIoStyle methodName ->
+        // fwrite(fd, data) -> fd.write(data) with special handling for fd=1 (stdout) and fd=2 (stderr)
+        tctx.usedImports <- Set.add "sys" tctx.usedImports
+        let receiver =
+            match pyArgs with
+            | PyConst 1.0 :: _ -> PyAttr(PyVar "sys", "stdout")
+            | PyConst 2.0 :: _ -> PyAttr(PyVar "sys", "stderr")
+            | obj :: _ -> obj
+            | [] -> PyVar "fd"
+        let restArgs = if pyArgs.Length > 1 then pyArgs.[1..] else []
+        PyCall(PyAttr(receiver, methodName), restArgs, [])
     | CatStyle ->
         // cat(dim, A, B, ...) -> np.concatenate((A, B, ...), axis=dim-1)
         match pyArgs with
@@ -714,6 +725,12 @@ let private translateCommandStyle (raw: string) (tctx: TranslateContext) : PyStm
         tctx.usedImports <- Set.add "matplotlib" tctx.usedImports
         Some [PyExprStmt(PyCall(PyAttr(PyVar "plt", "draw"), [], []))
               PyExprStmt(PyCall(PyAttr(PyVar "plt", "pause"), [PyConst 0.001], []))]
+    // clear / clear all / clear classes / clear functions / clear global → comment
+    | ["clear"] | ["clear"; "all"] | ["clear"; "classes"] | ["clear"; "functions"] | ["clear"; "global"] ->
+        Some [PyCommentStmt "clear all variables"]
+    // clear var1 var2 ... → comment listing the variables
+    | "clear" :: vars when vars.Length >= 1 ->
+        Some [PyCommentStmt (sprintf "clear %s" (vars |> String.concat " "))]
     | _ -> None
 
 // -------------------------------------------------------------------------
@@ -743,6 +760,9 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
         // MATLAB ~ (ignore output) -> Python _ convention
         let pyTargets = swappedTargets |> List.map (fun t -> if t = "~" then "_" else safeName t)
         [PyMultiAssign(pyTargets, translateExpr expr tctx)]
+    | ExprStmt(_, Var(_, "clear")) ->
+        // Bare 'clear' parses as Var, not OpaqueStmt; translate to comment
+        [PyCommentStmt "clear all variables"]
     | ExprStmt(_, expr) ->
         [PyExprStmt(translateExpr expr tctx)]
 
@@ -897,7 +917,7 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
             match targets with
             | [] -> comment
             | _ ->
-                (targets |> List.map (fun t -> PyAssign(t, PyNone)))
+                (targets |> List.map (fun t -> PyAssign(safeName t, PyNone)))
                 @ comment
 
     | FunctionDef(_, name, parms, outputVars, body, _) ->
@@ -981,6 +1001,7 @@ let translateProgram (program: Ir.Program) (tctx: TranslateContext) (sourceFile:
           if Set.contains "matplotlib" tctx.usedImports then yield PyFromImport("matplotlib", ["pyplot as plt"])
           if Set.contains "os" tctx.usedImports then yield PyImport("os", None)
           if Set.contains "scipy" tctx.usedImports then yield PyImport("scipy", None)
+          if Set.contains "sys" tctx.usedImports then yield PyImport("sys", None)
           if Set.contains "types" tctx.usedImports then yield PyImport("types", None)
           if Set.contains "re" tctx.usedImports then yield PyImport("re", None) ]
 
