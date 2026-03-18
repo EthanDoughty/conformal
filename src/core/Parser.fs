@@ -870,7 +870,16 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
         | TkNumber ->
             let numTok = tokens.[pos]
             pos <- pos + 1
-            Const(loc numTok.line numTok.col, float numTok.value)
+            let v = numTok.value
+            if v.Length > 0 && (v.[v.Length - 1] = 'i' || v.[v.Length - 1] = 'j') then
+                // Complex imaginary literal e.g. 3i, 1.5j, 1e-3i -> complex(0, coeff)
+                let numPart = v.[..v.Length - 2]
+                let coeff = float numPart
+                let l = loc numTok.line numTok.col
+                Apply(l, Var(l, "complex"),
+                      [IndexExpr(l, Const(l, 0.0)); IndexExpr(l, Const(l, coeff))])
+            else
+                Const(loc numTok.line numTok.col, float v)
 
         | TkString ->
             let strTok = tokens.[pos]

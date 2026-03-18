@@ -1981,6 +1981,8 @@ let evalBuiltinCall
         // Batch 6c: random generators with leading distribution params
         | _ when RANDOM_GENERATOR_PARAMS.ContainsKey fname ->
             handleRandomGenerator fname line args env warnings ctx evalExprFn getIntervalFn
+        // complex(re, im) always returns a scalar
+        | "complex" when args.Length = 2 -> Some Scalar
         // Batch 6d: complex handlers
         | "cov" | "corrcoef" -> handleCovCorrcoef args env warnings ctx evalExprFn
         | "rot90"            -> handleRot90 args env warnings ctx evalExprFn
