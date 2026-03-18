@@ -34,6 +34,7 @@ type ArgTransform =
     | RegexpStyle                                   // regexp(str, pat) -> re.search(pat, str)
     | RegexpRepStyle                                // regexprep(str, pat, rep) -> re.sub(pat, rep, str)
     | NanFullStyle                                  // nan(m, n) -> np.full((m, n), np.nan)
+    | FileIoStyle of string                         // fwrite(fd, data) -> sys.stderr.write(data) for fd=2
 
 type BuiltinMapping = {
     pythonFunc: string
@@ -279,13 +280,13 @@ let private builtinTable =
         "print",     { pythonFunc = "plt.savefig";      argTransform = Direct;         needsOrderF = false }
         // I/O (additional)
         "fopen",     { pythonFunc = "open";             argTransform = Direct;         needsOrderF = false }
-        "fclose",    { pythonFunc = "close";            argTransform = MethodStyle "close"; needsOrderF = false }
-        "fread",     { pythonFunc = "read";             argTransform = MethodStyle "read"; needsOrderF = false }
-        "fwrite",    { pythonFunc = "write";            argTransform = MethodStyle "write"; needsOrderF = false }
-        "fgets",     { pythonFunc = "readline";         argTransform = MethodStyle "readline"; needsOrderF = false }
+        "fclose",    { pythonFunc = "close";            argTransform = FileIoStyle "close"; needsOrderF = false }
+        "fread",     { pythonFunc = "read";             argTransform = FileIoStyle "read"; needsOrderF = false }
+        "fwrite",    { pythonFunc = "write";            argTransform = FileIoStyle "write"; needsOrderF = false }
+        "fgets",     { pythonFunc = "readline";         argTransform = FileIoStyle "readline"; needsOrderF = false }
         "feof",      { pythonFunc = "";                 argTransform = Direct;         needsOrderF = false }
-        "ftell",     { pythonFunc = "tell";             argTransform = MethodStyle "tell"; needsOrderF = false }
-        "fseek",     { pythonFunc = "seek";             argTransform = MethodStyle "seek"; needsOrderF = false }
+        "ftell",     { pythonFunc = "tell";             argTransform = FileIoStyle "tell"; needsOrderF = false }
+        "fseek",     { pythonFunc = "seek";             argTransform = FileIoStyle "seek"; needsOrderF = false }
         // Matrix operations (additional)
         "chol",      { pythonFunc = "np.linalg.cholesky"; argTransform = Direct;       needsOrderF = false }
         "lu",        { pythonFunc = "scipy.linalg.lu";    argTransform = Direct;       needsOrderF = false }
