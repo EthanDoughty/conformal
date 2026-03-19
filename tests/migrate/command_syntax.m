@@ -1,0 +1,8 @@
+warning off MATLAB:xlsfinfo:ActiveX
+warning on MATLAB:singularMatrix
+load mnist_uint8
+load data.mat
+import javax.xml.xpath.*
+rotate3d off
+shading interp
+lighting gouraud

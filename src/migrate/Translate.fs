@@ -720,6 +720,24 @@ let private translateCommandStyle (raw: string) (tctx: TranslateContext) : PyStm
     | ["warning"; "off"] ->
         tctx.usedImports <- Set.add "warnings" tctx.usedImports
         Some [PyExprStmt(PyCall(PyAttr(PyVar "warnings", "filterwarnings"), [PyStr "ignore"], []))]
+    // warning off/on <ID> → comment (MATLAB warning IDs have no Python equivalent)
+    | "warning" :: "off" :: rest when rest.Length >= 1 ->
+        Some [PyCommentStmt (sprintf "warning off %s" (rest |> String.concat " "))]
+    | "warning" :: "on" :: rest when rest.Length >= 1 ->
+        Some [PyCommentStmt (sprintf "warning on %s" (rest |> String.concat " "))]
+    // load file → comment (workspace load has no Python equivalent)
+    | "load" :: rest when rest.Length >= 1 ->
+        Some [PyCommentStmt (sprintf "load %s" (rest |> String.concat " "))]
+    // import pkg.* → comment (Java/MATLAB package imports have no Python equivalent)
+    | "import" :: rest when rest.Length >= 1 ->
+        Some [PyCommentStmt (sprintf "import %s" (rest |> String.concat " "))]
+    // graphics toggle commands → comment
+    | "rotate3d" :: rest ->
+        Some [PyCommentStmt (sprintf "rotate3d %s" (rest |> String.concat " "))]
+    | "shading" :: rest ->
+        Some [PyCommentStmt (sprintf "shading %s" (rest |> String.concat " "))]
+    | "lighting" :: rest ->
+        Some [PyCommentStmt (sprintf "lighting %s" (rest |> String.concat " "))]
     // drawnow → plt.draw(); plt.pause(0.001)
     | ["drawnow"] ->
         tctx.usedImports <- Set.add "matplotlib" tctx.usedImports
@@ -763,6 +781,12 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
     | ExprStmt(_, Var(_, "clear")) ->
         // Bare 'clear' parses as Var, not OpaqueStmt; translate to comment
         [PyCommentStmt "clear all variables"]
+    | ExprStmt(_, Var(_, "load")) ->
+        // Bare 'load' parses as Var; no Python equivalent
+        [PyCommentStmt "load (no file specified)"]
+    | ExprStmt(_, Var(_, "import")) ->
+        // Bare 'import' parses as Var; no Python equivalent
+        [PyCommentStmt "import (no package specified)"]
     | ExprStmt(_, expr) ->
         [PyExprStmt(translateExpr expr tctx)]
 
