@@ -41,8 +41,9 @@ let private propagateConcretes (ctx: AnalysisContext) : bool =
             | Some n ->
                 let exact = { lo = Finite n; hi = Finite n }
                 match Map.tryFind key ctx.cst.valueRanges with
-                | Some existing when existing = exact -> ()
-                | _ ->
+                | Some existing when existing = exact -> ()  // already correct
+                | Some _ -> ()  // key has a current value; don't overwrite with stale DimEquiv
+                | None ->
                     ctx.cst.valueRanges <- Map.add key exact ctx.cst.valueRanges
                     changed <- true
             | None -> ()
