@@ -23,6 +23,7 @@
     <Compile Include="../../src/core/Intervals.fs" />
     <Compile Include="../../src/core/DimExtract.fs" />
     <Compile Include="../../src/core/Constraints.fs" />
+    <Compile Include="../../src/core/TightenDomains.fs" />
     <Compile Include="../../src/core/MatrixLiterals.fs" />
     <Compile Include="../../src/core/EvalBinop.fs" />
     <Compile Include="../../src/core/EvalExpr.fs" />
