@@ -539,7 +539,7 @@ and private resolveSizeDim (argShape: Shape) (dimIdx: Dim) : Dim option =
 // Apply size() DimEquiv aliasing for targetName linked to source dimension dim.
 // Unions targetName with dim in DimEquiv. For Concrete dims, also calls setConcrete.
 // For Symbolic dims, adds to dimAliases.
-// When applyNow=true, immediately sets valueRanges and calls bridgeToDimEquiv for Concrete.
+// When applyNow=true, immediately sets valueRanges and calls tightenDomains for Concrete.
 // Returns Some(exact interval) for Concrete dims, None otherwise.
 and private applySizeAlias
     (ctx: AnalysisContext) (env: Env) (targetName: string) (dim: Dim) (applyNow: bool)
@@ -551,7 +551,7 @@ and private applySizeAlias
         let exact = { lo = Finite n; hi = Finite n }
         if applyNow then
             ctx.cst.valueRanges <- Map.add targetName exact ctx.cst.valueRanges
-            Intervals.bridgeToDimEquiv ctx targetName exact
+            TightenDomains.tightenDomains ctx env
         Some exact
     | Symbolic _ ->
         env.dimAliases <- Map.add targetName dim env.dimAliases
@@ -732,7 +732,7 @@ and analyzeStmtIr
             match iv with
             | Some i ->
                 ctx.cst.valueRanges <- Map.add name i ctx.cst.valueRanges
-                Intervals.bridgeToDimEquiv ctx name i
+                TightenDomains.tightenDomains ctx env
             | None   -> ctx.cst.valueRanges <- Map.remove name ctx.cst.valueRanges
         else
             ctx.cst.valueRanges <- Map.remove name ctx.cst.valueRanges
@@ -742,7 +742,7 @@ and analyzeStmtIr
         match builtinConcreteExact with
         | Some exact ->
             ctx.cst.valueRanges <- Map.add name exact ctx.cst.valueRanges
-            Intervals.bridgeToDimEquiv ctx name exact
+            TightenDomains.tightenDomains ctx env
         | None -> ()
         Normal
 
@@ -830,6 +830,7 @@ and analyzeStmtIr
 
         let refinements = extractConditionRefinements cond env ctx
         applyRefinements ctx refinements false
+        TightenDomains.tightenDomains ctx env
 
         // Pentagon: extract relational bounds from while condition and record them.
         // These are valid at loop entry and during body analysis (i <= n holds throughout).
@@ -914,6 +915,7 @@ and analyzeStmtIr
 
         // Then branch
         applyRefinements ctx refinements false
+        TightenDomains.tightenDomains ctx env
         ctx.cst.pathConstraints.Push(cond, true, line)
         let thenFlow = runStmts thenBody thenEnv warnings ctx
         let thenReturned = thenFlow <> Normal
@@ -928,6 +930,7 @@ and analyzeStmtIr
 
         // Else branch
         applyRefinements ctx refinements true
+        TightenDomains.tightenDomains ctx env
         ctx.cst.pathConstraints.Push(cond, false, line)
         let elseFlow = runStmts elseBody elseEnv warnings ctx
         let elseReturned = elseFlow <> Normal
@@ -959,6 +962,7 @@ and analyzeStmtIr
 
             if idx < allRefinements.Length then
                 applyRefinements ctx allRefinements.[idx] false
+                TightenDomains.tightenDomains ctx env
                 ctx.cst.pathConstraints.Push(conditions.[idx], true, line)
 
             let branchEnv = Env.copy env
@@ -1009,6 +1013,7 @@ and analyzeStmtIr
                     when v = System.Math.Floor(v) && not (System.Double.IsInfinity v) ->
                     let refinements = [ (varName, "==", Shapes.Concrete (int v)) ]
                     Intervals.applyRefinements ctx refinements false
+                    TightenDomains.tightenDomains ctx env
                 | Some varName, Ir.CellLit(_, rows) ->
                     // Extract all integer constants from the cell literal and apply hull [min, max].
                     let constants =
@@ -1024,6 +1029,7 @@ and analyzeStmtIr
                         let refinements = [ (varName, ">=", Shapes.Concrete lo)
                                             (varName, "<=", Shapes.Concrete hi) ]
                         Intervals.applyRefinements ctx refinements false
+                        TightenDomains.tightenDomains ctx env
                 | _ -> ()
 
             let branchEnv = Env.copy env
@@ -1297,7 +1303,7 @@ and private analyzeAssignMulti
                             | Matrix(Concrete m, Concrete n) ->
                                 let len = max m n
                                 ctx.cst.valueRanges <- Map.add tgt { lo = Finite len; hi = Finite len } ctx.cst.valueRanges
-                                Intervals.bridgeToDimEquiv ctx tgt { lo = Finite len; hi = Finite len }
+                                TightenDomains.tightenDomains ctx env
                             | _ -> ()
                         | _ -> ()
                 // numel() propagation: inject concrete interval
@@ -1313,7 +1319,7 @@ and private analyzeAssignMulti
                             | Matrix(Concrete m, Concrete n) ->
                                 let count = m * n
                                 ctx.cst.valueRanges <- Map.add tgt { lo = Finite count; hi = Finite count } ctx.cst.valueRanges
-                                Intervals.bridgeToDimEquiv ctx tgt { lo = Finite count; hi = Finite count }
+                                TightenDomains.tightenDomains ctx env
                             | _ -> ()
                         | _ -> ()
             else
@@ -1439,8 +1445,7 @@ and analyzeLoopBody
 
     if not ctx.call.fixpoint then
         // Pentagon bridge: tighten loop var interval before body analysis
-        Intervals.applyPentagonBridge ctx
-        Intervals.applyPentagonLowerBridge ctx
+        TightenDomains.tightenDomains ctx env
         runStmts body env warnings ctx |> ignore
     else
         // Snapshot value ranges before loop body (persistent map: O(1) snapshot)
@@ -1467,8 +1472,7 @@ and analyzeLoopBody
         // Phase 1 (Discover)
         let preLoopEnv = Env.copy env
         // Pentagon bridge: tighten loop var interval before body analysis
-        Intervals.applyPentagonBridge ctx
-        Intervals.applyPentagonLowerBridge ctx
+        TightenDomains.tightenDomains ctx env
         runStmts body env warnings ctx |> ignore
 
         // Widen shapes
@@ -1486,8 +1490,7 @@ and analyzeLoopBody
             Env.replaceLocal env widened
         if shapesChanged || intervalsChanged then
             // Pentagon bridge: re-tighten before Phase 2 body re-analysis
-            Intervals.applyPentagonBridge ctx
-            Intervals.applyPentagonLowerBridge ctx
+            TightenDomains.tightenDomains ctx env
             runStmts body env warnings ctx |> ignore
 
         // Widen intervals again before post-loop join (mirrors finalWidened for shapes).
@@ -1513,8 +1516,7 @@ and analyzeLoopBody
         let preNarrowEnv = Env.copy env
         let throwawayWarnings = ResizeArray<Diagnostic>()
         // Pentagon bridge: re-tighten before narrowing pass
-        Intervals.applyPentagonBridge ctx
-        Intervals.applyPentagonLowerBridge ctx
+        TightenDomains.tightenDomains ctx env
         runStmts body env throwawayWarnings ctx |> ignore
         ctx.cst.valueRanges <- narrowValueRanges preNarrowRanges ctx.cst.valueRanges loopVar
         restoreStableRanges ()
