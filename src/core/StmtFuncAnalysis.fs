@@ -651,6 +651,10 @@ and analyzeStmtIr
 
         Env.set env name newShape
 
+        // Pentagon kill: invalidate stale relational bounds after reassignment.
+        ctx.cst.upperBounds <- Intervals.killUpperBoundsFor name ctx.cst.upperBounds
+        ctx.cst.lowerBounds <- Intervals.killLowerBoundsFor name ctx.cst.lowerBounds
+
         // Class binding: record which class a variable belongs to when a constructor is called.
         // This enables obj.method(args) dispatch later.
         match expr with
