@@ -57,3 +57,4 @@ dogfood/
 # Fable compiler output (generated .js from .fs)
 src/**/*.fs.js
 vscode-conformal/fable/*.fs.js
+matlab_files_for_dad/
