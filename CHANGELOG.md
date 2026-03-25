@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-03-25
+### Added
+- **TightenDomains**: formal reduced product replacing 11 scattered cross-domain bridges with a single `tightenDomains` function that iterates Phase 1 (Interval-DimEquiv concrete propagation), Phase 2 (Pentagon-Interval tightening), and Phase 3 (eager shape resolution)
+- Pentagon kill on reassignment: `killUpperBoundsFor`/`killLowerBoundsFor` called after variable assignment to invalidate stale relational bounds (soundness fix)
+- Complex imaginary literals (`3i`, `1.5j`, `1e-3i`) and trailing-dot NUMBER lexer fix (`5.*y`)
+- Multiline matrix and cell literal support in parser (leading/trailing newlines inside `[...]` and `{...}`)
+- Conformal Migrate: `clear` statement, `safeName` keyword escaping, `FileIoStyle` for file I/O builtins, command-syntax gaps translated to comments
+- Conformal Migrate: license gate removed (free for now)
+- 3 cross-domain propagation tests (simple chain, multi-hop alias, non-exact negative test)
+- 527 analyzer tests (up from 515), 46 migrate tests (up from 40)
+
+### Changed
+- All `bridgeToDimEquiv` and `applyPentagonBridge`/`applyPentagonLowerBridge` calls consolidated into `TightenDomains.tightenDomains`
+- Conformal Migrate: 204 builtins (up from 168), ~2,100 LOC (up from ~1,700)
+
 ## [3.5.0] - 2026-03-16
 ### Changed
 - All 53 warning codes are now free with no license key required

@@ -4,7 +4,7 @@ For a summary, see the [README](../README.md).
 
 ## Test Suite
 
-Conformal is validated by 515 self-checking MATLAB programs organized into 22 categories. Each test embeds its expected behavior as inline assertions:
+Conformal is validated by 527 self-checking MATLAB programs organized into 23 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -25,7 +25,7 @@ The test runner checks that Conformal's output matches these expectations. In ad
 ---
 
 <details open>
-<summary><h3>Basics (19 tests)</h3></summary>
+<summary><h3>Basics (23 tests)</h3></summary>
 
 Foundation tests for core matrix operations and dimension compatibility.
 
@@ -50,6 +50,10 @@ Foundation tests for core matrix operations and dimension compatibility.
 | `matrix_literal_transpose.m` | Transpose of a matrix literal `[1 2; 3 4]'` parses correctly and returns transposed shape | 0 |
 | `expect_warning_demo.m` | Inline `EXPECT_WARNING` directive: `W_INNER_DIM_MISMATCH` fires on the exact line of the mismatch | 1 |
 | `not_type_mismatch.m` | Logical NOT `~` on a function handle emits `W_NOT_TYPE_MISMATCH` | 1 |
+| `complex_literal.m` | Complex imaginary literals (`3i`, `1.5j`, `1e-3i`) parsed as scalars | 0 |
+| `dotop_after_int.m` | `5.*y` lexes as `NUMBER(5) + DOTOP(.*) + ID(y)`, not `NUMBER(5.) + OP(*) + ID(y)` | 0 |
+| `multiline_matrix.m` | Matrix literal with leading and trailing newlines inside `[...]` parsed correctly | 0 |
+| `symbolic_colon_range.m` | Symbolic colon range `1:n` gives `matrix[1 x n]`, arithmetic ranges like `3:n` give `matrix[1 x (n-2)]` | 0 |
 
 </details>
 
@@ -513,9 +517,9 @@ Dimension constraint solving: equality constraints recorded during operations, v
 </details>
 
 <details>
-<summary><h3>Intervals (40 tests)</h3></summary>
+<summary><h3>Intervals (43 tests)</h3></summary>
 
-Integer interval domain tracking scalar value ranges for division-by-zero, out-of-bounds indexing, and negative-dimension checks. Conditional interval refinement, symbolic interval bounds, threshold-based widening, switch/case narrowing (including multi-value cell cases), cross-domain propagation into dimension equivalence classes, Pentagon upper and lower-bound tracking, and while-loop condition extraction.
+Integer interval domain tracking scalar value ranges for division-by-zero, out-of-bounds indexing, and negative-dimension checks. Conditional interval refinement, symbolic interval bounds, threshold-based widening, switch/case narrowing (including multi-value cell cases), cross-domain propagation into dimension equivalence classes via `tightenDomains`, Pentagon upper and lower-bound tracking, and while-loop condition extraction.
 
 | Test | What It Validates | Warnings |
 |------|-------------------|----------|
@@ -559,6 +563,9 @@ Integer interval domain tracking scalar value ranges for division-by-zero, out-o
 | `pentagon_lower_branch.m` | Lower-bound entry survives an if/else join inside the loop body, so OOB suppression holds in both branches | 0 |
 | `while_pentagon_upper.m` | `while i <= n` records `i <= n` in the Pentagon domain; `pentagonProvesInBounds` suppresses OOB on `A(i, 1)` inside the loop | 0 |
 | `while_pentagon_compound.m` | Compound condition `while i >= one && i <= n` extracts both upper and lower bounds; both OOB warnings suppressed | 0 |
+| `cross_domain_tighten.m` | Simple Interval-DimEquiv-Shape chain via `tightenDomains`: concrete `size(A,1)` propagates through DimEquiv to resolve `zeros(n,3)` | 0 |
+| `cross_domain_tighten_multihop.m` | Multi-hop alias chain requiring Phase 1 iteration: `m = n` creates a second alias, tightenDomains iterates to propagate | 0 |
+| `cross_domain_tighten_nonexact.m` | Negative test: non-exact interval (symbolic `size(A,1)` on unknown `A`) does not propagate a concrete dim | 0 |
 
 >Interval analysis runs in parallel with shape inference. `W_INDEX_OUT_OF_BOUNDS` and `W_DIVISION_BY_ZERO` have Error severity (definite runtime errors). Conditional refinement eliminates false positives when branch guards prove safety; symbolic bounds fall back soundly. The cross-domain bridge connects the interval domain to dimension equivalence classes so that a concretized interval can resolve symbolic dimensions that are equated to the narrowed variable. The Pentagon domain suppresses `W_INDEX_OUT_OF_BOUNDS` when it can prove an index stays in bounds, covering both concrete and symbolic cases via `pentagonProvesInBounds` and `pentagonProvesLowerBound`. While-loop conditions are now also scanned for Pentagon bounds, so `while i <= n` works the same way a for-loop does.
 

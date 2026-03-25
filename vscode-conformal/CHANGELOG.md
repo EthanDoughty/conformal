@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.6.0
+
+- TightenDomains: formal reduced product replacing scattered cross-domain bridges
+- Pentagon kill on reassignment (soundness fix)
+- Complex imaginary literals, multiline matrix/cell literals
+- 527 analyzer tests, 46 migrate tests
+
 ## 3.5.0
 
 - All warning codes now free, no license key required
