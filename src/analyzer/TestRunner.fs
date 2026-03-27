@@ -192,7 +192,12 @@ let private runTest (path: string) (fixpoint: bool) (forceCoder: bool) (quiet: b
 
     let dirPath = Path.GetDirectoryName(Path.GetFullPath(path))
     let fileName = Path.GetFileName(path)
-    let (extMap, classdefMap) = scanWorkspace dirPath fileName 1
+    let (flatFuncs, flatClasses) = scanWorkspace dirPath fileName 0
+    let addpathDirs = extractAddpathDirs irProg
+    let (addpathFuncs, addpathClasses) = scanAddpathDirs dirPath addpathDirs fileName
+    let (depthFuncs, depthClasses) = scanWorkspace dirPath fileName 1
+    let extMap = mergeMaps [flatFuncs; addpathFuncs; depthFuncs]
+    let classdefMap = mergeMaps [flatClasses; addpathClasses; depthClasses]
     let privateMap = scanPrivateDir dirPath
 
     let ctx = AnalysisContext()

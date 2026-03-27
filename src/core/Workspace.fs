@@ -60,6 +60,89 @@ let extractFunctionSignature (source: string) : (string * int * int) option =
         Some (funcName, paramCount, returnCount)
 
 
+/// Merge multiple maps with first-found-wins semantics.
+/// Maps earlier in the list have higher priority.
+let mergeMaps (maps: Map<'k,'v> list) : Map<'k,'v> =
+    let d = System.Collections.Generic.Dictionary<'k,'v>()
+    for m in maps do
+        for kv in m do
+            if not (d.ContainsKey(kv.Key)) then d.[kv.Key] <- kv.Value
+    d |> Seq.map (fun kv -> (kv.Key, kv.Value)) |> Map.ofSeq
+
+
+/// Try to constant-fold a fullfile(...) call with all-string-literal args.
+/// Returns Some "a/b/c" if all args are StringLit, None otherwise.
+let private tryFoldFullfile (args: Ir.IndexArg list) : string option =
+    let strings =
+        args |> List.choose (fun arg ->
+            match arg with
+            | Ir.IndexExpr(_, Ir.StringLit(_, s)) -> Some s
+            | _ -> None)
+    if strings.Length = args.Length && strings.Length > 0 then
+        Some (String.concat "/" strings)
+    else
+        None
+
+
+let private extractAddpathArgs (args: Ir.IndexArg list) : (string * bool) list =
+    args |> List.choose (fun arg ->
+        match arg with
+        | Ir.IndexExpr(_, Ir.StringLit(_, s)) ->
+            Some (s, false)
+        | Ir.IndexExpr(_, Ir.Apply(_, Ir.Var(_, "genpath"), [Ir.IndexExpr(_, Ir.Apply(_, Ir.Var(_, "fullfile"), innerArgs))])) ->
+            // genpath(fullfile('a','b')) -> fold then recursive
+            tryFoldFullfile innerArgs |> Option.map (fun s -> (s, true))
+        | Ir.IndexExpr(_, Ir.Apply(_, Ir.Var(_, "genpath"), innerArgs)) ->
+            // genpath('dir') -> recursive scan
+            match innerArgs with
+            | [Ir.IndexExpr(_, Ir.StringLit(_, s))] -> Some (s, true)
+            | _ -> None
+        | Ir.IndexExpr(_, Ir.Apply(_, Ir.Var(_, "fullfile"), innerArgs)) ->
+            // fullfile('a', 'b') -> constant fold
+            tryFoldFullfile innerArgs |> Option.map (fun s -> (s, false))
+        | _ -> None)
+
+
+let private addpathCmdRegex = Regex(@"^\s*addpath\s+(.+)$")
+
+let private extractAddpathFromRaw (raw: string) : (string * bool) list =
+    let m = addpathCmdRegex.Match(raw)
+    if not m.Success then []
+    else
+        let rest = m.Groups.[1].Value.Trim()
+        // Strip trailing comment if present
+        let rest =
+            match rest.IndexOf('%') with
+            | -1 -> rest
+            | i  -> rest.[..i-1].TrimEnd()
+        // Command syntax: addpath dir1 dir2 ...
+        // Strip surrounding quotes if present
+        rest.Split([| ' '; '\t' |], StringSplitOptions.RemoveEmptyEntries)
+        |> Array.toList
+        |> List.map (fun s -> (s.Trim('\'').Trim('"'), false))
+
+
+let rec private extractFromStmts (stmts: Ir.Stmt list) : (string * bool) list =
+    stmts |> List.collect (fun stmt ->
+        match stmt with
+        | Ir.ExprStmt(_, Ir.Apply(_, Ir.Var(_, "addpath"), args)) ->
+            extractAddpathArgs args
+        | Ir.If(_, _, thenBody, elseBody) ->
+            extractFromStmts thenBody @ extractFromStmts elseBody
+        | Ir.IfChain(_, _, bodies, elseBody) ->
+            (bodies |> List.collect extractFromStmts) @ extractFromStmts elseBody
+        | Ir.OpaqueStmt(_, _, raw) ->
+            extractAddpathFromRaw raw
+        | _ -> [])
+
+
+/// Extract addpath directory strings from a parsed IR program.
+/// Walks top-level statements looking for addpath calls.
+/// Returns list of (dirString, isRecursive) in order of appearance.
+let extractAddpathDirs (program: Ir.Program) : (string * bool) list =
+    extractFromStmts program.body
+
+
 #if !FABLE_COMPILER
 // Matches a line starting with 'classdef' (after optional whitespace), ignoring comments.
 let private classdefRegex =
@@ -151,6 +234,34 @@ let scanPrivateDir (dirPath: string) : Map<string, ExternalSignature> =
                     }
             with _ -> ()
         result |> Seq.map (fun kv -> (kv.Key, kv.Value)) |> Map.ofSeq
+
+
+/// Scan directories discovered via addpath() calls.
+/// Returns a map of function name -> ExternalSignature and classdef map.
+/// - baseDir: the directory of the file being analyzed (for resolving relative paths)
+/// - dirs: list of (dirString, isRecursive) from extractAddpathDirs
+/// First-found-wins across all addpath dirs (earlier addpath takes priority).
+let scanAddpathDirs (baseDir: string) (dirs: (string * bool) list) (excludeFile: string)
+    : Map<string, ExternalSignature> * Map<string, string> =
+    let funcResult  = System.Collections.Generic.Dictionary<string, ExternalSignature>()
+    let classResult = System.Collections.Generic.Dictionary<string, string>()
+    for (dirStr, isRecursive) in dirs do
+        let resolved =
+            if Path.IsPathRooted(dirStr) then dirStr
+            else Path.GetFullPath(Path.Combine(baseDir, dirStr))
+        if Directory.Exists(resolved) then
+            let depth = if isRecursive then 5 else 0
+            let (funcs, classes) = scanWorkspace resolved "" depth
+            // First-found-wins: don't overwrite earlier addpath entries
+            for kv in funcs do
+                if not (funcResult.ContainsKey(kv.Key)) then
+                    funcResult.[kv.Key] <- kv.Value
+            for kv in classes do
+                if not (classResult.ContainsKey(kv.Key)) then
+                    classResult.[kv.Key] <- kv.Value
+    let funcMap  = funcResult  |> Seq.map (fun kv -> (kv.Key, kv.Value)) |> Map.ofSeq
+    let classMap = classResult |> Seq.map (fun kv -> (kv.Key, kv.Value)) |> Map.ofSeq
+    funcMap, classMap
 #endif
 
 

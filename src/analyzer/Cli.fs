@@ -74,7 +74,12 @@ let runFile (filePath: string) (strict: bool) (fixpoint: bool) (benchmark: bool)
 
         let dirPath = Path.GetDirectoryName(Path.GetFullPath(filePath))
         let fileName = Path.GetFileName(filePath)
-        let (extMap, classdefMap) = scanWorkspace dirPath fileName 3
+        let (flatFuncs, flatClasses) = scanWorkspace dirPath fileName 0
+        let addpathDirs = extractAddpathDirs irProg
+        let (addpathFuncs, addpathClasses) = scanAddpathDirs dirPath addpathDirs fileName
+        let (depthFuncs, depthClasses) = scanWorkspace dirPath fileName 3
+        let extMap = mergeMaps [flatFuncs; addpathFuncs; depthFuncs]
+        let classdefMap = mergeMaps [flatClasses; addpathClasses; depthClasses]
         let privateMap = scanPrivateDir dirPath
 
         let tScan = DateTime.UtcNow

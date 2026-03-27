@@ -37,6 +37,8 @@ type TranslateContext = {
     mutable currentReturnVars: string list
     /// Function nesting depth (0 = top level, 1 = inside function, 2+ = nested function)
     mutable functionDepth: int
+    /// Directories discovered via addpath() calls (for future cross-file import resolution)
+    mutable addpathDirs: string list
 }
 
 let lookupShape (tctx: TranslateContext) (loc: SrcLoc) : Shape option =
@@ -787,6 +789,24 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
     | ExprStmt(_, Var(_, "import")) ->
         // Bare 'import' parses as Var; no Python equivalent
         [PyCommentStmt "import (no package specified)"]
+    | ExprStmt(_, Apply(_, Var(_, "addpath"), args)) ->
+        tctx.usedImports <- Set.add "sys" tctx.usedImports
+        let paths =
+            args |> List.choose (fun arg ->
+                match arg with
+                | IndexExpr(_, StringLit(_, s)) -> Some s
+                | IndexExpr(_, Apply(_, Var(_, "genpath"), [IndexExpr(_, StringLit(_, s))])) -> Some s
+                | IndexExpr(_, Apply(_, Var(_, "fullfile"), innerArgs)) ->
+                    let strs = innerArgs |> List.choose (fun a -> match a with IndexExpr(_, StringLit(_, s)) -> Some s | _ -> None)
+                    if strs.Length = innerArgs.Length then Some (String.concat "/" strs) else None
+                | _ -> None)
+        tctx.addpathDirs <- tctx.addpathDirs @ paths
+        if paths.IsEmpty then
+            [PyCommentStmt (sprintf "MATLAB: addpath (dynamic args)")]
+        else
+            paths |> List.map (fun p ->
+                PyExprStmt(PyCall(PyAttr(PyAttr(PyVar "sys", "path"), "insert"), [PyConst 0.0; PyStr p], [])))
+
     | ExprStmt(_, expr) ->
         [PyExprStmt(translateExpr expr tctx)]
 
@@ -932,6 +952,15 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
         elif trimmed.StartsWith("persistent ") || trimmed = "persistent" then
             let varNames = targets |> String.concat " "
             [PyCommentStmt (sprintf "persistent %s (no Python equivalent; use module-level or function attributes)" varNames)]
+        elif trimmed.StartsWith("addpath ") then
+            tctx.usedImports <- Set.add "sys" tctx.usedImports
+            let paths =
+                trimmed.Substring(8).Split([|' '; '\t'|], System.StringSplitOptions.RemoveEmptyEntries)
+                |> Array.toList
+                |> List.map (fun s -> s.Trim('\'').Trim('"'))
+            tctx.addpathDirs <- tctx.addpathDirs @ paths
+            paths |> List.map (fun p ->
+                PyExprStmt(PyCall(PyAttr(PyAttr(PyVar "sys", "path"), "insert"), [PyConst 0.0; PyStr p], [])))
         else
         // Try to translate common command-style calls before falling back
         match translateCommandStyle trimmed tctx with
