@@ -127,11 +127,19 @@ type ConformalLspServer(client: ConformalClient) =
         else
 
         try
-            // Scan workspace for external functions
+            // Parse first (needed for addpath extraction)
+            let (irProg, recoveredParseErrors) = Parser.parseMATLAB source
+
+            // Scan workspace for external functions (3-tier: flat > addpath > depth)
             let filePath = uriToPath uri
             let dirPath  = Path.GetDirectoryName(Path.GetFullPath(filePath))
             let fileName = Path.GetFileName(filePath)
-            let (extMap, classdefMap) = scanWorkspace dirPath fileName 3
+            let (flatFuncs, flatClasses) = scanWorkspace dirPath fileName 0
+            let addpathDirs = extractAddpathDirs irProg
+            let (addpathFuncs, addpathClasses) = scanAddpathDirs dirPath addpathDirs fileName
+            let (depthFuncs, depthClasses) = scanWorkspace dirPath fileName 3
+            let extMap = mergeMaps [flatFuncs; addpathFuncs; depthFuncs]
+            let classdefMap = mergeMaps [flatClasses; addpathClasses; depthClasses]
             let privateMap = scanPrivateDir dirPath
 
             // Build analysis context
@@ -144,9 +152,6 @@ type ConformalLspServer(client: ConformalClient) =
             for kv in privateMap do
                 ctx.ws.privateFunctions.[kv.Key] <- kv.Value
             ctx.ws.workspaceDir <- dirPath
-
-            // Parse and analyze
-            let (irProg, recoveredParseErrors) = Parser.parseMATLAB source
             let (env, warnings) = analyzeProgramIr irProg ctx
 
             // Filter: suppress strict-only codes unless strict mode is active
