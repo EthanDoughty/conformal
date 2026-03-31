@@ -110,6 +110,28 @@ let getConcreteDimSize (dim: Dim) (ctx: AnalysisContext) : int option =
 
 
 // ---------------------------------------------------------------------------
+// Inheritance chain method lookup
+// ---------------------------------------------------------------------------
+
+/// Walk the class inheritance chain to find a method by name.
+/// Returns the method signature if found in the class or any ancestor.
+let private findMethodInChain (className: string) (methodName: string) (ctx: AnalysisContext) : FunctionSignature option =
+    let rec walk (cn: string) (visited: Set<string>) =
+        if visited.Contains(cn) then None  // cycle guard
+        else
+            match ctx.call.classRegistry.TryGetValue(cn) with
+            | true, classInfo ->
+                match Map.tryFind methodName classInfo.methods with
+                | Some sig_ -> Some sig_
+                | None ->
+                    match classInfo.superclass with
+                    | Some parent -> walk parent (visited.Add(cn))
+                    | None -> None
+            | false, _ -> None
+    walk className Set.empty
+
+
+// ---------------------------------------------------------------------------
 // Main expression evaluator
 // ---------------------------------------------------------------------------
 
@@ -548,19 +570,18 @@ and private evalApply
                 evalIndexing baseShape args line env warnings ctx builtinDispatch
     | FieldAccess(_, Var(_, objName), methodName) ->
         // Method dispatch: obj.method(args) -- check if objName is a known class instance.
-        // Look up the class in classBindings, then look up the method in classRegistry.
+        // Look up the class in classBindings, then walk the inheritance chain for the method.
         // Dispatch as method(obj, args) (MATLAB implicit self-parameter convention).
         let mutable className = ""
         if ctx.call.classBindings.TryGetValue(objName, &className) then
-            let mutable classInfo = Unchecked.defaultof<ClassInfo>
-            if ctx.call.classRegistry.TryGetValue(className, &classInfo) &&
-               classInfo.methods.ContainsKey(methodName) then
+            match findMethodInChain className methodName ctx with
+            | Some _ ->
                 // Prepend obj as first argument: obj.method(a, b) -> method(obj, a, b)
                 let objArg = IndexExpr(loc line 0, Var(loc line 0, objName))
                 let allArgs = objArg :: args
                 builtinDispatch methodName line baseExpr allArgs env warnings ctx
-            else
-                // Method not found in class: graceful fallback
+            | None ->
+                // Method not found in class or ancestors: graceful fallback
                 let baseShape = evalExprIr baseExpr env warnings ctx None builtinDispatch
                 evalIndexing baseShape args line env warnings ctx builtinDispatch
         else
