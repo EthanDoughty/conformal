@@ -320,8 +320,17 @@ and private translateBuiltinCall (mapping: BuiltinMapping) (fname: string) (args
         | _ -> PyCall(PyVar mapping.pythonFunc, pyArgs, [])
     | WithKwarg(key, value) ->
         // std(A) -> np.std(A, ddof=1)
-        let extraKwargs = [(key, PyConst (float value))]
+        let extraKwargs = [(key, PyConst value)]
         PyCall(PyVar mapping.pythonFunc, pyArgs, kwargs @ extraKwargs)
+    | StrjoinStyle ->
+        // strjoin(parts) -> ''.join(parts); strjoin(parts, sep) -> sep.join(parts)
+        match pyArgs with
+        | [parts] -> PyCall(PyAttr(PyStr "", "join"), [parts], [])
+        | [parts; sep] -> PyCall(PyAttr(sep, "join"), [parts], [])
+        | _ -> PyCall(PyVar mapping.pythonFunc, pyArgs, kwargs)
+    | SortStyle ->
+        // sort(A) -> np.sort(A) for single return; multi-return handled in AssignMulti
+        PyCall(PyVar "np.sort", pyArgs, kwargs)
     | BinOpStyle op ->
         // strcmp(a, b) -> a == b
         match pyArgs with
@@ -767,6 +776,17 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
     | Assign(_, name, expr) ->
         [PyAssign(safeName name, translateExpr expr tctx)]
     | AssignMulti(_, targets, expr) ->
+        // Handle special multi-return builtins
+        match expr with
+        | Apply(_, Var(_, "sort"), args) when targets.Length = 2 ->
+            // [sorted, idx] = sort(A) -> sorted = np.sort(A); idx = np.argsort(A) + 1
+            let pyArgs = args |> List.map (fun a -> translateCallArg a tctx)
+            let t0 = if targets.[0] = "~" then "_" else safeName targets.[0]
+            let t1 = if targets.[1] = "~" then "_" else safeName targets.[1]
+            let sortCall = PyCall(PyVar "np.sort", pyArgs, [])
+            let argsortCall = PyBinOp("+", PyCall(PyVar "np.argsort", pyArgs, []), PyConst 1.0)
+            [PyAssign(t0, sortCall); PyAssign(t1, argsortCall)]
+        | _ ->
         // Handle return-order swaps for builtins with different conventions
         let swappedTargets =
             match expr with

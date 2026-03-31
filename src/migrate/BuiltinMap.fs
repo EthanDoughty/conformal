@@ -11,7 +11,9 @@ type ArgTransform =
     | SizeAttr
     | MinMaxDispatch of elemwise: string  // np.maximum / np.minimum for 2-arg
     | FlatNonzero                         // find(A) -> np.flatnonzero(A)
-    | WithKwarg of key: string * value: string  // adds a keyword argument
+    | WithKwarg of key: string * value: float  // adds a keyword argument
+    | StrjoinStyle                              // strjoin(parts, sep) -> sep.join(parts)
+    | SortStyle                                 // [s, i] = sort(A) needs special multi-return
     | BinOpStyle of string                        // strcmp(a,b) -> a == b
     | IsEmptyStyle                                // isempty(A) -> A.size == 0
     | RaiseStyle                                  // error(msg) -> raise ValueError(msg)
@@ -71,7 +73,7 @@ let private builtinTable =
         "disp",      { pythonFunc = "print";             argTransform = Direct;        needsOrderF = false }
         "fprintf",   { pythonFunc = "print";             argTransform = FprintfStyle;   needsOrderF = false }
         "sprintf",   { pythonFunc = "";                  argTransform = SprintfStyle;   needsOrderF = false }
-        "sort",      { pythonFunc = "np.sort";           argTransform = Direct;        needsOrderF = false }
+        "sort",      { pythonFunc = "np.sort";           argTransform = SortStyle;     needsOrderF = false }
         "find",      { pythonFunc = "np.flatnonzero";    argTransform = FlatNonzero;   needsOrderF = false }
         "transpose", { pythonFunc = ".T";                argTransform = AttrStyle "T"; needsOrderF = false }
         "true",      { pythonFunc = "True";              argTransform = Direct;        needsOrderF = false }
@@ -101,8 +103,8 @@ let private builtinTable =
         "conj",      { pythonFunc = "np.conj";           argTransform = Direct;        needsOrderF = false }
         // Statistics
         "mean",      { pythonFunc = "np.mean";           argTransform = DimArgStyle;   needsOrderF = false }
-        "std",       { pythonFunc = "np.std";            argTransform = WithKwarg ("ddof", "1"); needsOrderF = false }
-        "var",       { pythonFunc = "np.var";            argTransform = WithKwarg ("ddof", "1"); needsOrderF = false }
+        "std",       { pythonFunc = "np.std";            argTransform = WithKwarg ("ddof", 1.0); needsOrderF = false }
+        "var",       { pythonFunc = "np.var";            argTransform = WithKwarg ("ddof", 1.0); needsOrderF = false }
         "median",    { pythonFunc = "np.median";         argTransform = DimArgStyle;   needsOrderF = false }
         "prod",      { pythonFunc = "np.prod";           argTransform = DimArgStyle;   needsOrderF = false }
         "cumsum",    { pythonFunc = "np.cumsum";         argTransform = DimArgStyle;   needsOrderF = false }
@@ -200,7 +202,7 @@ let private builtinTable =
         "accumarray", { pythonFunc = "np.add.at";       argTransform = Direct;         needsOrderF = false }
         // String additional
         "strsplit",  { pythonFunc = "split";            argTransform = MethodStyle "split"; needsOrderF = false }
-        "strjoin",   { pythonFunc = "join";             argTransform = Direct;         needsOrderF = false }
+        "strjoin",   { pythonFunc = "join";             argTransform = StrjoinStyle;    needsOrderF = false }
         "contains",  { pythonFunc = "in";               argTransform = BinOpStyle "in"; needsOrderF = false }
         // I/O
         "load",      { pythonFunc = "scipy.io.loadmat"; argTransform = Direct;         needsOrderF = false }
