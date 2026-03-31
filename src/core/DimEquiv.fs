@@ -108,9 +108,31 @@ let snapshot (eq: DimEquiv) : DimEquiv = {
     concrete = System.Collections.Generic.Dictionary<string, int>(eq.concrete)
 }
 
+/// Check if two DimEquiv stores are identical (same keys, same values).
+let private storesIdentical (eq1: DimEquiv) (eq2: DimEquiv) : bool =
+    if eq1.parent.Count <> eq2.parent.Count || eq1.concrete.Count <> eq2.concrete.Count then false
+    else
+        let mutable identical = true
+        for kv in eq1.parent do
+            if identical then
+                match eq2.parent.TryGetValue(kv.Key) with
+                | true, v when v = kv.Value -> ()
+                | _ -> identical <- false
+        if identical then
+            for kv in eq1.concrete do
+                if identical then
+                    match eq2.concrete.TryGetValue(kv.Key) with
+                    | true, v when v = kv.Value -> ()
+                    | _ -> identical <- false
+        identical
+
 /// Intersect two DimEquiv stores: keep only equivalences present in BOTH.
 /// Used for branch joins. Conservative: drops any equivalence not established in all branches.
 let intersect (eq1: DimEquiv) (eq2: DimEquiv) : DimEquiv =
+    // Short-circuit: if both stores are identical, skip O(n²) walk
+    if storesIdentical eq1 eq2 then snapshot eq1
+    else
+
     let result = create ()
 
     // Collect all unique keys across both stores

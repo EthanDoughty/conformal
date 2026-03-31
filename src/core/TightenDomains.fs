@@ -73,14 +73,17 @@ let private resolveShapes (ctx: AnalysisContext) (env: Env.Env) : unit =
 let tightenDomains (ctx: AnalysisContext) (env: Env.Env) : unit =
     // Phase 1: iterate until stable, capped at 3 iterations
     let mutable i = 0
+    let mutable anyChanged = false
     let mutable keepGoing = true
     while keepGoing && i < 3 do
         let changed = propagateConcretes ctx
+        if changed then anyChanged <- true
         i <- i + 1
         if not changed then keepGoing <- false
 
     // Phase 2: Pentagon -> Interval (single pass, non-recursive)
     applyPentagonBridges ctx
 
-    // Phase 3: eager shape resolution
-    resolveShapes ctx env
+    // Phase 3: eager shape resolution (skip if no concretes propagated)
+    if anyChanged then
+        resolveShapes ctx env
