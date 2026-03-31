@@ -158,7 +158,7 @@ tests/                  527 self-checking MATLAB programs in 23 categories
 
 Conformal analyzes a subset of MATLAB, focused on the matrix-heavy computational core where dimension errors are most common and most costly.
 
-It does not support `eval`, `str2func`, N-D arrays beyond 2-D, or complex number tracking. Cross-directory resolution with `addpath` is not implemented yet. Basic `classdef` support is included (properties, constructor, method dispatch), but inheritance is not resolved.
+It does not support `eval` (inherently undecidable), N-D arrays beyond 2-D, or complex number tracking.
 
 For the full details on what is and isn't covered, see [docs/analysis.md](docs/analysis.md).
 
