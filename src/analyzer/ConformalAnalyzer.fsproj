@@ -17,6 +17,7 @@
     <Compile Include="LspServer.fs" />
     <Compile Include="TestRunner.fs" />
     <Compile Include="PropertyTests.fs" />
+    <Compile Include="SarifEmitter.fs" />
     <Compile Include="Cli.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

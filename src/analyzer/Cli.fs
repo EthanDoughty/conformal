@@ -160,17 +160,17 @@ let runTests (strict: bool) (fixpoint: bool) (benchmark: bool) (quiet: bool) : i
 type CliArgs = {
     tests: bool; testProps: bool; strict: bool; fixpoint: bool
     bench: bool; coder: bool; file: string; parseJson: bool
-    quiet: bool; help: bool; version: bool
+    quiet: bool; help: bool; version: bool; formatSarif: bool
 }
 
 let private defaultArgs =
     { tests = false; testProps = false; strict = false; fixpoint = false
       bench = false; coder = false; file = ""; parseJson = false
-      quiet = false; help = false; version = false }
+      quiet = false; help = false; version = false; formatSarif = false }
 
 // Fold state: Ready accepts flags, ConsumeFile means next arg is a file path,
 // ConsumeWitness means next arg is an optional witness mode or file path.
-type private ParseState = Ready | ConsumeFile | ConsumeWitness
+type private ParseState = Ready | ConsumeFile | ConsumeWitness | ConsumeFormat
 
 let private parseArgv (argv: string array) : CliArgs =
     argv
@@ -178,6 +178,11 @@ let private parseArgv (argv: string array) : CliArgs =
         match state with
         | ConsumeFile ->
             ({ acc with file = arg }, Ready)
+        | ConsumeFormat ->
+            if arg = "sarif" then
+                ({ acc with formatSarif = true }, Ready)
+            else
+                (acc, Ready) // unknown format, ignore
         | ConsumeWitness ->
             if arg.StartsWith("--") then
                 // Not a mode/file arg; re-parse as a flag on the next fold iteration won't work
@@ -190,6 +195,7 @@ let private parseArgv (argv: string array) : CliArgs =
                 | "--benchmark"    -> ({ acc with bench = true }, Ready)
                 | "--coder"        -> ({ acc with coder = true }, Ready)
                 | "--parse-json"   -> ({ acc with parseJson = true }, ConsumeFile)
+                | "--format"       -> (acc, ConsumeFormat)
                 | "--witness"      -> (acc, ConsumeWitness)
                 | "--quiet"        -> ({ acc with quiet = true }, Ready)
                 | "--help" | "-h"  -> ({ acc with help = true }, Ready)
@@ -208,6 +214,7 @@ let private parseArgv (argv: string array) : CliArgs =
             | "--benchmark"    -> ({ acc with bench = true }, Ready)
             | "--coder"        -> ({ acc with coder = true }, Ready)
             | "--parse-json"   -> ({ acc with parseJson = true }, ConsumeFile)
+            | "--format"       -> (acc, ConsumeFormat)
             | "--witness"      -> (acc, ConsumeWitness)
             | "--quiet"        -> ({ acc with quiet = true }, Ready)
             | "--help" | "-h"  -> ({ acc with help = true }, Ready)
@@ -227,8 +234,89 @@ let private printUsage () =
     printfn "  --benchmark     Print timing breakdown"
     printfn "  --coder         Enable MATLAB Coder compatibility warnings (W_CODER_*)"
     printfn "  --parse-json    Parse file and emit JSON IR"
+    printfn "  --format sarif  Output diagnostics as SARIF 2.1.0 JSON"
     printfn "  --help, -h      Show this help message"
     printfn "  --version       Show version"
+
+/// Analyze one .m file and emit SARIF 2.1.0 JSON to stdout. Returns exit code.
+let runFileSarif (filePath: string) (strict: bool) (fixpoint: bool) (coder: bool) : int =
+    if not (File.Exists filePath) then
+        eprintfn "ERROR: file not found: %s" filePath
+        1
+    else
+        let src =
+            try File.ReadAllText(filePath)
+            with ex ->
+                eprintfn "Error reading %s: %s" filePath ex.Message
+                ""
+
+        if src = "" && not (File.Exists filePath) then 1
+        else
+
+        let irProgOpt =
+            try
+                let (prog, _parseErrs) = Parser.parseMATLAB src
+                Some prog
+            with
+            | Parser.ParseError(msg, _, _, _, _) ->
+                eprintfn "Error while parsing %s: ParseError: %s" filePath msg
+                None
+            | Lexer.LexError(msg, _, _, _, _) ->
+                eprintfn "Error while parsing %s: LexError: %s" filePath msg
+                None
+            | ex ->
+                eprintfn "Error while parsing %s: %s" filePath ex.Message
+                None
+
+        match irProgOpt with
+        | None -> 1
+        | Some irProg ->
+
+        let dirPath = Path.GetDirectoryName(Path.GetFullPath(filePath))
+        let fileName = Path.GetFileName(filePath)
+        let (flatFuncs, flatClasses) = Workspace.scanWorkspace dirPath fileName 0
+        let addpathDirs = Workspace.extractAddpathDirs irProg
+        let (addpathFuncs, addpathClasses) = Workspace.scanAddpathDirs dirPath addpathDirs fileName
+        let (depthFuncs, depthClasses) = Workspace.scanWorkspace dirPath fileName 3
+        let extMap = Workspace.mergeMaps [flatFuncs; addpathFuncs; depthFuncs]
+        let classdefMap = Workspace.mergeMaps [flatClasses; addpathClasses; depthClasses]
+        let privateMap = Workspace.scanPrivateDir dirPath
+
+        let ctx = Context.AnalysisContext()
+        ctx.call.fixpoint <- fixpoint
+        ctx.cst.coderMode <- coder
+        for kv in extMap do
+            ctx.ws.externalFunctions.[kv.Key] <- kv.Value
+        for kv in classdefMap do
+            ctx.ws.externalClassdefs.[kv.Key] <- kv.Value
+        for kv in privateMap do
+            ctx.ws.privateFunctions.[kv.Key] <- kv.Value
+        ctx.ws.workspaceDir <- dirPath
+
+        let (_env, warnings) = Analysis.analyzeProgramIr irProg ctx
+
+        // Filter: suppress strict-only codes unless --strict is active
+        let displayWarnings =
+            warnings
+            |> (if strict then id else List.filter (fun w -> not (Set.contains w.code Diagnostics.STRICT_ONLY_CODES)))
+
+        // Compute relative URI from CWD
+        let cwd = Directory.GetCurrentDirectory()
+        let fullPath = Path.GetFullPath(filePath)
+        let relUri =
+            if fullPath.StartsWith(cwd + string Path.DirectorySeparatorChar) then
+                fullPath.Substring(cwd.Length + 1)
+            elif fullPath.StartsWith(cwd) && cwd.Length = fullPath.Length then
+                fileName
+            else
+                filePath
+        let relUri = relUri.Replace('\\', '/')
+
+        use stream = Console.OpenStandardOutput()
+        SarifEmitter.emitSarif stream relUri displayWarnings "3.5.0"
+        // Write trailing newline so shell prompt starts on new line
+        stream.WriteByte(10uy)
+        0
 
 /// Parse argv and dispatch. Returns exit code.
 let run (argv: string array) : int =
@@ -269,6 +357,8 @@ let run (argv: string array) : int =
             | ex ->
                 eprintfn "Error: %s" ex.Message
                 3
+    elif args.formatSarif && args.file <> "" then
+        runFileSarif args.file args.strict args.fixpoint args.coder
     elif args.file <> "" then
         runFile args.file args.strict args.fixpoint args.bench args.coder
     else
