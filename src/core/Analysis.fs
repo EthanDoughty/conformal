@@ -57,6 +57,13 @@ let analyzeProgramIr
                     { name = className; properties = propNames; methods = methodSigs; superclass = superName }
         | _ -> ()
 
+    // Seed known MATLAB base classes so inheritance chain walking doesn't break
+    let knownBaseClasses = ["handle"; "matlab.unittest.TestCase"; "double"; "single"; "int32"; "uint32"; "int64"; "uint64"; "int16"; "uint16"; "int8"; "uint8"; "logical"; "char"]
+    for name in knownBaseClasses do
+        if not (ctx.call.classRegistry.ContainsKey(name)) then
+            ctx.call.classRegistry.[name] <-
+                { name = name; properties = []; methods = Map.empty; superclass = None }
+
     // Pass 2: analyze script statements (non-function bodies); top level eats all control flow
     for item in program.body do
         match item with

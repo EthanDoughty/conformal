@@ -444,6 +444,49 @@ let private tryLoadExternalClassdef
 
 
 // ---------------------------------------------------------------------------
+// Inheritance chain helpers
+// ---------------------------------------------------------------------------
+
+/// Resolve a superclass by name: check classRegistry first, then try external classdef.
+let private resolveSuperclass (name: string) (ctx: AnalysisContext) : ClassInfo option =
+    match ctx.call.classRegistry.TryGetValue(name) with
+    | true, info -> Some info
+    | false, _ -> tryLoadExternalClassdef name ctx
+
+/// Walk the inheritance chain and collect all properties (parent first, child last).
+/// Deduplicates so child properties shadow parent properties of the same name.
+let private collectInheritedProperties (classInfo: ClassInfo) (ctx: AnalysisContext) : string list =
+    let rec walk (info: ClassInfo) (visited: Set<string>) =
+        if visited.Contains(info.name) then []  // cycle guard
+        else
+            let parentProps =
+                match info.superclass with
+                | Some parentName ->
+                    match resolveSuperclass parentName ctx with
+                    | Some parentInfo -> walk parentInfo (visited.Add(info.name))
+                    | None -> []
+                | None -> []
+            parentProps @ info.properties
+    walk classInfo Set.empty |> List.distinct
+
+/// Walk the inheritance chain and collect all methods (child overrides parent).
+let private collectInheritedMethods (classInfo: ClassInfo) (ctx: AnalysisContext) : Map<string, FunctionSignature> =
+    let rec walk (info: ClassInfo) (visited: Set<string>) =
+        if visited.Contains(info.name) then Map.empty
+        else
+            let parentMethods =
+                match info.superclass with
+                | Some parentName ->
+                    match resolveSuperclass parentName ctx with
+                    | Some parentInfo -> walk parentInfo (visited.Add(info.name))
+                    | None -> Map.empty
+                | None -> Map.empty
+            // Child methods override parent: fold parent into result, skip if child already has it
+            Map.foldBack (fun k v acc -> if Map.containsKey k acc then acc else Map.add k v acc) parentMethods info.methods
+    walk classInfo Set.empty
+
+
+// ---------------------------------------------------------------------------
 // Call resolution: unified dispatch priority for function name resolution
 // ---------------------------------------------------------------------------
 
@@ -507,10 +550,12 @@ and private resolveCall (fname: string) (ctx: AnalysisContext) : CallResolution 
 
 // Build Struct shape from a class constructor call. If the class has a user-defined
 // constructor in functionRegistry, analyze it and merge declared properties with analyzed fields.
+// Includes inherited properties from superclasses.
 and private makeClassConstructorShape
     (cc: CallConfig) (classInfo: ClassInfo) (env: Env)
     (warnings: ResizeArray<Diagnostic>) (ctx: AnalysisContext)
     : Shape =
+    let allProps = collectInheritedProperties classInfo ctx
     if ctx.call.functionRegistry.ContainsKey(cc.fname) then
         let outputShapes = analyzeFunctionCall cc env warnings ctx
         let baseShape = if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
@@ -518,15 +563,15 @@ and private makeClassConstructorShape
         | Struct(fields, isOpen) ->
             let fieldMap = Map.ofList fields
             let allFields =
-                classInfo.properties |> List.map (fun p ->
+                allProps |> List.map (fun p ->
                     (p, defaultArg (Map.tryFind p fieldMap) UnknownShape))
                 |> List.sortBy fst
             Struct(allFields, isOpen)
         | _ ->
-            let allFields = classInfo.properties |> List.map (fun p -> (p, UnknownShape)) |> List.sortBy fst
+            let allFields = allProps |> List.map (fun p -> (p, UnknownShape)) |> List.sortBy fst
             Struct(allFields, false)
     else
-        let allFields = classInfo.properties |> List.map (fun p -> (p, UnknownShape)) |> List.sortBy fst
+        let allFields = allProps |> List.map (fun p -> (p, UnknownShape)) |> List.sortBy fst
         Struct(allFields, false)
 
 // Extract the target dimension from size(argShape, dimIdx).
