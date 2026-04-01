@@ -112,6 +112,41 @@ const ERROR_CODES = new Set([
 ]);
 
 // ---------------------------------------------------------------------------
+// Human-readable descriptions for warning codes (shown in diagnostic messages)
+// ---------------------------------------------------------------------------
+
+const CODE_DESCRIPTIONS: Record<string, string> = {
+    'W_INNER_DIM_MISMATCH': 'Inner dimensions must match for matrix multiplication.',
+    'W_ELEMENTWISE_MISMATCH': 'Operand shapes must match for element-wise operations.',
+    'W_HORZCAT_ROW_MISMATCH': 'Row counts must match for horizontal concatenation.',
+    'W_VERTCAT_COL_MISMATCH': 'Column counts must match for vertical concatenation.',
+    'W_RESHAPE_MISMATCH': 'Total element count must be preserved by reshape.',
+    'W_MLDIVIDE_DIM_MISMATCH': 'Row counts must match for left division (A\\b).',
+    'W_MATRIX_POWER_NON_SQUARE': 'Matrix power requires a square matrix.',
+    'W_CONCAT_TYPE_MISMATCH': 'Cannot concatenate non-numeric types in a matrix literal.',
+    'W_ARITHMETIC_TYPE_MISMATCH': 'Cannot perform arithmetic on non-numeric types.',
+    'W_TRANSPOSE_TYPE_MISMATCH': 'Cannot transpose a non-numeric type.',
+    'W_NEGATE_TYPE_MISMATCH': 'Cannot negate a non-numeric type.',
+    'W_NOT_TYPE_MISMATCH': 'Cannot apply logical NOT to a non-numeric type.',
+    'W_STRING_ARITHMETIC': 'Arithmetic on string operands is usually a mistake.',
+    'W_INDEX_OUT_OF_BOUNDS': 'Index is provably outside the matrix dimensions.',
+    'W_DIVISION_BY_ZERO': 'Divisor is provably zero.',
+    'W_POSSIBLY_NEGATIVE_DIM': 'Dimension expression is provably non-positive.',
+    'W_CONSTRAINT_CONFLICT': 'Symbolic dimension constraints are unsatisfiable.',
+    'W_UNKNOWN_FUNCTION': 'Function not recognized as a builtin or workspace file.',
+    'W_FUNCTION_ARG_COUNT_MISMATCH': 'Too many arguments passed to this function.',
+    'W_PROCEDURE_IN_EXPR': 'This function has no return value and cannot be used in an expression.',
+    'W_RECURSIVE_FUNCTION': 'Recursive call detected; shapes cannot be inferred.',
+    'W_LAMBDA_ARG_COUNT_MISMATCH': 'Lambda called with the wrong number of arguments.',
+    'W_MULTI_ASSIGN_COUNT_MISMATCH': 'Number of outputs does not match function return count.',
+    'W_STRUCT_FIELD_NOT_FOUND': 'Field does not exist on this struct.',
+    'W_CURLY_INDEXING_NON_CELL': 'Curly-brace indexing requires a cell array.',
+    'W_BREAK_OUTSIDE_LOOP': 'break can only be used inside a loop.',
+    'W_CONTINUE_OUTSIDE_LOOP': 'continue can only be used inside a loop.',
+    'W_RETURN_OUTSIDE_FUNCTION': 'return at script level has no effect.',
+};
+
+// ---------------------------------------------------------------------------
 // Server state
 // ---------------------------------------------------------------------------
 
@@ -257,7 +292,9 @@ function toLspDiagnostic(d: SerializedDiagnostic, sourceLines: string[], uri: st
             href: `https://github.com/EthanDoughty/conformal/blob/main/docs/warnings/${d.code}.md`,
         },
         source: 'conformal',
-        message: d.message,
+        message: CODE_DESCRIPTIONS[d.code]
+            ? `${CODE_DESCRIPTIONS[d.code]}\n${d.message}`
+            : d.message,
         tags,
         relatedInformation,
     };
