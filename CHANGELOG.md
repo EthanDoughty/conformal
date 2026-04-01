@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.7.0] - 2026-04-01
+### Added
+- **addpath support**: `addpath('dir')`, `addpath dir`, `addpath(genpath(...))`, and `addpath(fullfile(...))` now scan referenced directories for cross-file function resolution
+- **Classdef inheritance**: child classes inherit parent properties and methods; `handle`, `matlab.unittest.TestCase`, and other MATLAB base classes registered as known empty bases
+- **SARIF output**: `--format sarif` emits SARIF 2.1.0 JSON for CI integration (GitHub Code Scanning, Azure DevOps, Jenkins, reviewdog)
+- Conformal Migrate: `sort` two-output form (`[Y, I] = sort(A)` emits `np.sort` + `np.argsort`), `strjoin` uses `str.join`, `WithKwarg` type safety fix
+- Conformal Migrate: `addpath('dir')` translates to `sys.path.insert(0, 'dir')` with scaffolding for future cross-file imports
+- VS Code extension: plain-English descriptions prepended to diagnostic hover text for 28 warning codes
+- VS Code extension: one-time notification when `.m` file is reclassified from Objective-C to MATLAB
+- 541 analyzer tests (up from 527), 49 migrate tests (up from 47)
+
+### Changed
+- DimEquiv branch-join short-circuits when stores are identical, skipping O(n²) intersection walk
+- tightenDomains Phase 3 (resolveShapes) skipped when no concretes propagated, avoiding redundant env walks
+- README limitations section updated: addpath, inheritance, and str2func no longer listed as missing
+
 ## [3.6.0] - 2026-03-25
 ### Added
 - **TightenDomains**: formal reduced product replacing 11 scattered cross-domain bridges with a single `tightenDomains` function that iterates Phase 1 (Interval-DimEquiv concrete propagation), Phase 2 (Pentagon-Interval tightening), and Phase 3 (eager shape resolution)

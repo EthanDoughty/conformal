@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.7.0
+
+- addpath cross-directory resolution for function lookup
+- Classdef inheritance: child classes inherit parent properties and methods
+- SARIF 2.1.0 output via `--format sarif` for CI integration
+- Plain-English descriptions in diagnostic hover text
+- One-time .m file reclassification notification
+- DimEquiv and tightenDomains performance optimizations
+- 541 analyzer tests, 49 migrate tests
+
 ## 3.6.0
 
 - TightenDomains: formal reduced product replacing scattered cross-domain bridges
