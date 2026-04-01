@@ -4,10 +4,10 @@
 
 ### Static Shape & Dimension Analysis for MATLAB
 
-[![Version](https://img.shields.io/badge/version-3.6.0-orange.svg)](#cli-options)
+[![Version](https://img.shields.io/badge/version-3.7.0-orange.svg)](#cli-options)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4.svg)](https://dotnet.microsoft.com/download)
-[![Tests](https://img.shields.io/badge/tests-527%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-541%20passing-brightgreen.svg)](#test-suite)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
 *Matrices must be **conformable** before they can perform. Conformal makes sure they are.*
@@ -103,11 +103,12 @@ dotnet run --project src/analyzer/ConformalAnalyzer.fsproj -- file.m
 
 | Flag | What it does |
 |------|-------------|
-| `--tests` | Run the full test suite (527 tests across 23 categories) |
+| `--tests` | Run the full test suite (541 tests across 24 categories) |
 | `--strict` | Show all warnings including informational and low-confidence diagnostics |
 | `--fixpoint` | Use widening-based fixpoint iteration for loop analysis |
 | `--witness [MODE]` | Attach incorrectness witnesses (`enrich`, `filter`, or `tag`) |
 | `--coder` | Run the MATLAB Coder compatibility pass (combine with `--strict`) |
+| `--format sarif` | Emit diagnostics as SARIF 2.1.0 JSON to stdout |
 | `--quiet` | Suppress per-test output during `--tests`, only print failures |
 | `--lsp` | Start the native Language Server Protocol server |
 | `--version` | Print version and exit |
@@ -136,7 +137,7 @@ Conformal also includes a MATLAB-to-Python transpiler that uses the shape analys
 
 ## Test Suite
 
-Conformal is validated by 527 self-checking MATLAB programs organized into 23 categories, plus 28 property-based lattice tests via FsCheck. Each test file embeds its expected behavior as inline assertions (`% EXPECT: A = matrix[3 x 4]`, `% EXPECT_WARNING: W_INNER_DIM_MISMATCH`), and the test runner checks that Conformal's output matches.
+Conformal is validated by 541 self-checking MATLAB programs organized into 24 categories, plus 28 property-based lattice tests via FsCheck. Each test file embeds its expected behavior as inline assertions (`% EXPECT: A = matrix[3 x 4]`, `% EXPECT_WARNING: W_INNER_DIM_MISMATCH`), and the test runner checks that Conformal's output matches.
 
 For the full test listing, see [docs/tests.md](docs/tests.md).
 
@@ -150,7 +151,7 @@ src/migrate/            MATLAB-to-Python transpiler (~2,100 LOC)
 vscode-conformal/       VS Code extension (TypeScript client + Fable-compiled analyzer)
   fable/                Fable compilation project (F# to JavaScript, shares core .fs files)
   src/                  TypeScript extension and LSP server code
-tests/                  527 self-checking MATLAB programs in 23 categories
+tests/                  541 self-checking MATLAB programs in 24 categories
 .github/                CI workflow (build, test, compile Fable, package VSIX)
 ```
 

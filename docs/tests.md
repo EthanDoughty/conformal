@@ -4,7 +4,7 @@ For a summary, see the [README](../README.md).
 
 ## Test Suite
 
-Conformal is validated by 527 self-checking MATLAB programs organized into 23 categories. Each test embeds its expected behavior as inline assertions:
+Conformal is validated by 541 self-checking MATLAB programs organized into 24 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
