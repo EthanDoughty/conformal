@@ -23,9 +23,18 @@ function getConformalSettings(): { fixpoint: boolean; strict: boolean; analyzeOn
     };
 }
 
+let shownReclassifyHint = false;
+
 function reclassifyIfMatlab(doc: vscode.TextDocument): void {
     if (doc.fileName.endsWith('.m') && doc.languageId !== 'matlab') {
         vscode.languages.setTextDocumentLanguage(doc, 'matlab');
+        if (!shownReclassifyHint) {
+            shownReclassifyHint = true;
+            vscode.window.showInformationMessage(
+                'Conformal reclassified this .m file as MATLAB. ' +
+                'If diagnostics are missing, check the language mode in the status bar.'
+            );
+        }
     }
 }
 
