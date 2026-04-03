@@ -154,9 +154,11 @@ type ConformalLspServer(client: ConformalClient) =
             ctx.ws.workspaceDir <- dirPath
             let (env, warnings) = analyzeProgramIr irProg ctx
 
-            // Filter: suppress strict-only codes unless strict mode is active
+            // Filter: apply suppression directives then strict-only filter
+            let suppressions = Suppressions.parseSuppressions source
             let filteredWarnings =
                 warnings
+                |> Suppressions.filterDiagnostics suppressions
                 |> (if settings.strict then id else List.filter (fun w -> not (Set.contains w.code STRICT_ONLY_CODES)))
 
             // Generate witnesses from conflict sites

@@ -226,7 +226,11 @@ let private runTest (path: string) (fixpoint: bool) (forceCoder: bool) (quiet: b
             printfn "ASSERTIONS: FAIL"
             printfn ""
         false
-    | Some (env, warnings) ->
+    | Some (env, rawWarnings) ->
+
+    // Apply suppression directives (% conformal:disable)
+    let suppressions = Suppressions.parseSuppressions src
+    let warnings = Suppressions.filterDiagnostics suppressions rawWarnings
 
     // Verbose mode: print warnings and env unconditionally
     if not quiet then
