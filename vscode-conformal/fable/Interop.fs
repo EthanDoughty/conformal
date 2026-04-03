@@ -181,9 +181,11 @@ let analyzeSource
             // Analysis crash — return what we have
             (Env.Env.create (), [])
 
-    // Filter strict-only codes when strict mode is off
+    // Filter: apply suppression directives then strict-only filter
+    let suppressions = Suppressions.parseSuppressions source
     let displayWarnings =
         warnings
+        |> Suppressions.filterDiagnostics suppressions
         |> (if strict then id else List.filter (fun w -> not (Set.contains w.code STRICT_ONLY_CODES)))
 
     // Serialize diagnostics

@@ -16,6 +16,7 @@
     <Compile Include="DimEquiv.fs" />
     <Compile Include="Env.fs" />
     <Compile Include="Diagnostics.fs" />
+    <Compile Include="Suppressions.fs" />
     <Compile Include="Builtins.fs" />
     <Compile Include="PathConstraints.fs" />
     <Compile Include="SharedTypes.fs" />

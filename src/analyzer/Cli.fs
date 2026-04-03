@@ -99,9 +99,11 @@ let runFile (filePath: string) (strict: bool) (fixpoint: bool) (benchmark: bool)
 
         let tAnalyze = DateTime.UtcNow
 
-        // Filter: suppress strict-only codes unless --strict is active
+        // Filter: apply suppression directives then strict-only filter
+        let suppressions = Suppressions.parseSuppressions src
         let displayWarnings =
             warnings
+            |> Suppressions.filterDiagnostics suppressions
             |> (if strict then id else List.filter (fun w -> not (Set.contains w.code STRICT_ONLY_CODES)))
 
         printfn "=== Analysis for %s ===" filePath
@@ -295,9 +297,11 @@ let runFileSarif (filePath: string) (strict: bool) (fixpoint: bool) (coder: bool
 
         let (_env, warnings) = Analysis.analyzeProgramIr irProg ctx
 
-        // Filter: suppress strict-only codes unless --strict is active
+        // Filter: apply suppression directives then strict-only filter
+        let suppressions = Suppressions.parseSuppressions src
         let displayWarnings =
             warnings
+            |> Suppressions.filterDiagnostics suppressions
             |> (if strict then id else List.filter (fun w -> not (Set.contains w.code Diagnostics.STRICT_ONLY_CODES)))
 
         // Compute relative URI from CWD

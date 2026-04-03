@@ -14,6 +14,7 @@
     <Compile Include="../../src/core/DimEquiv.fs" />
     <Compile Include="../../src/core/Env.fs" />
     <Compile Include="../../src/core/Diagnostics.fs" />
+    <Compile Include="../../src/core/Suppressions.fs" />
     <Compile Include="../../src/core/Builtins.fs" />
     <Compile Include="../../src/core/PathConstraints.fs" />
     <Compile Include="../../src/core/SharedTypes.fs" />
