@@ -149,10 +149,12 @@ let KNOWN_BUILTINS : Set<string> =
         "contour"; "contourf"; "drawnow"; "errorbar"; "ezcontour"; "figure"; "fill"; "gca"; "gcf"
         "linkaxes"
         "grid"; "hold"; "image"; "imagesc"; "legend"; "light"; "line"; "loglog"
-        "maxk"; "mesh"; "meshgrid"; "mnrnd"; "mvnpdf"; "patch"; "pause"; "pcolor"; "quiver"; "scatter"
+        "maxk"; "mesh"; "meshgrid"; "mnrnd"; "mvnpdf"; "msgbox"; "patch"; "pause"; "pcolor"; "pie"; "quiver"; "scatter"; "scatter3"
         "semilogx"; "semilogy"; "set"; "get"; "shading"; "stem"; "subplot"; "surf"
-        "surface"; "text"; "title"; "uicontrol"; "uimenu"; "view"; "xlabel"; "xlim"; "ylabel"; "ylim"
+        "surface"; "system"; "text"; "tic"; "toc"; "title"; "uicontrol"; "uimenu"; "uistack"; "view"; "xlabel"; "xlim"; "ylabel"; "ylim"
         "zlabel"; "zlim"
+        // Batch 7: dogfood corpus (v3.7.0)
+        "cholupdate"; "gammaln"; "getpref"; "help"; "hsv"; "ispref"; "randperm"; "rng"; "setpref"; "usejava"
     ]
 
 // ---------------------------------------------------------------------------
