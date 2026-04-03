@@ -22,7 +22,8 @@ let PASSTHROUGH_BUILTINS : Set<string> =
     Set.ofList [
         "abs"; "sqrt"; "sin"; "cos"; "tan"; "asin"; "acos"; "atan"
         "tanh"; "cosh"; "sinh"; "atanh"; "acosh"; "asinh"; "conj"; "not"
-        "flipud"; "fliplr"; "triu"; "tril"; "sort"; "unique"
+        "flipud"; "fliplr"; "triu"; "tril"; "sort"; "unique"; "cholupdate"
+        "gammaln"
         "exp"; "log"; "log2"; "log10"; "ceil"; "floor"; "round"; "sign"
         "real"; "imag"; "cumsum"; "cumprod"
         "expm"; "logm"; "sqrtm"; "circshift"; "null"; "orth"
@@ -52,7 +53,7 @@ let SCALAR_PREDICATE_BUILTINS : Set<string> =
         "isscalar"; "iscell"; "isempty"; "isnumeric"; "islogical"; "ischar"
         "isnan"; "isinf"; "isfinite"; "issymmetric"; "isstruct"; "isreal"
         "issparse"; "isvector"; "isinteger"; "isfloat"; "isstring"; "issorted"
-        "isfield"
+        "isfield"; "ispref"; "usejava"
     ]
 
 let TYPE_CAST_BUILTINS : Set<string> =
@@ -74,6 +75,7 @@ let SCALAR_QUERY_BUILTINS : Set<string> =
         "length"; "numel"; "det"; "norm"; "trace"; "rank"; "cond"; "rcond"
         "nnz"; "sprank"; "str2double"; "dot"
         "quatnorm"; "nchoosek"
+        "tic"; "toc"; "system"
     ]
 
 let MATRIX_CONSTRUCTOR_BUILTINS : Set<string> =
@@ -2014,6 +2016,26 @@ let evalBuiltinCall
                 ctx.call.nextLambdaId <- handleId + 1
                 ctx.call.handleRegistry.[handleId] <- funcName
                 Some (FunctionHandle(Some (Set.singleton handleId)))
+            | _ -> Some UnknownShape
+        | "randperm" ->
+            // randperm(n) -> 1 x n; randperm(n, k) -> 1 x k
+            match args with
+            | [nArg] ->
+                match unwrapArg nArg with
+                | Some e -> Some (Matrix(Concrete 1, exprToDimIrCtx e env (Some ctx)))
+                | None -> Some UnknownShape
+            | [_; kArg] ->
+                match unwrapArg kArg with
+                | Some e -> Some (Matrix(Concrete 1, exprToDimIrCtx e env (Some ctx)))
+                | None -> Some UnknownShape
+            | _ -> Some UnknownShape
+        | "hsv" ->
+            // hsv(n) -> n x 3 colormap
+            match args with
+            | [nArg] ->
+                match unwrapArg nArg with
+                | Some e -> Some (Matrix(exprToDimIrCtx e env (Some ctx), Concrete 3))
+                | None -> Some UnknownShape
             | _ -> Some UnknownShape
         | _                -> None
 
