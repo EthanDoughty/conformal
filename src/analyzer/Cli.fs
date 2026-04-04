@@ -328,7 +328,7 @@ let runFileSarif (filePath: string) (strict: bool) (fixpoint: bool) (coder: bool
         let relUri = relUri.Replace('\\', '/')
 
         use stream = Console.OpenStandardOutput()
-        SarifEmitter.emitSarif stream relUri displayWarnings "3.5.0"
+        SarifEmitter.emitSarif stream relUri displayWarnings "3.7.0" src
         // Write trailing newline so shell prompt starts on new line
         stream.WriteByte(10uy)
         0

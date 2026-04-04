@@ -88,4 +88,27 @@ let codeActionsForDiagnostic
                 Data        = None
             })
 
+    // 3. Suppress action: available for any Conformal diagnostic code
+    if codeStr.StartsWith("W_") then
+        let disableMarker = "% conformal:disable"
+        let newText =
+            let idx = lineText.IndexOf(disableMarker)
+            if idx >= 0 then
+                // Append the new code to the existing directive
+                lineText + " " + codeStr
+            else
+                // Append a new disable comment
+                lineText + "  " + disableMarker + " " + codeStr
+        let edit = makeLineEdit uri lineNum lineLen newText
+        actions.Add({
+            Title       = $"Suppress {codeStr} on this line"
+            Kind        = Some CodeActionKind.QuickFix
+            Diagnostics = Some [| diagnostic |]
+            Edit        = Some edit
+            Command     = None
+            IsPreferred = None
+            Disabled    = None
+            Data        = None
+        })
+
     actions.ToArray()

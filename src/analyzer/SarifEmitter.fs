@@ -1,6 +1,8 @@
 module SarifEmitter
 
 open System.IO
+open System.Security.Cryptography
+open System.Text
 open System.Text.Json
 open WarningCodes
 open Diagnostics
@@ -120,7 +122,13 @@ let private sarifLevel (code: WarningCode) : string =
 // ---------------------------------------------------------------------------
 
 /// Emit SARIF 2.1.0 JSON for the given diagnostics to the provided stream.
-let emitSarif (stream: Stream) (relativeUri: string) (diagnostics: Diagnostic list) (version: string) : unit =
+/// Compute SHA-256 hex digest of source text.
+let private computeSha256 (source: string) : string =
+    let bytes = Encoding.UTF8.GetBytes(source)
+    let hash = SHA256.HashData(bytes)
+    hash |> Array.map (fun b -> b.ToString("x2")) |> String.concat ""
+
+let emitSarif (stream: Stream) (relativeUri: string) (diagnostics: Diagnostic list) (version: string) (source: string) : unit =
     let opts = JsonWriterOptions(Indented = true)
     use writer = new Utf8JsonWriter(stream, opts)
 
@@ -159,6 +167,18 @@ let emitSarif (stream: Stream) (relativeUri: string) (diagnostics: Diagnostic li
 
     // Normalize URI: forward slashes only
     let uri = relativeUri.Replace('\\', '/')
+
+    // artifacts array with file hash for audit traceability
+    writer.WriteStartArray("artifacts")
+    writer.WriteStartObject()
+    writer.WriteStartObject("location")
+    writer.WriteString("uri", uri)
+    writer.WriteEndObject() // location
+    writer.WriteStartObject("hashes")
+    writer.WriteString("sha-256", computeSha256 source)
+    writer.WriteEndObject() // hashes
+    writer.WriteEndObject() // artifact
+    writer.WriteEndArray() // artifacts
 
     // results array
     writer.WriteStartArray("results")

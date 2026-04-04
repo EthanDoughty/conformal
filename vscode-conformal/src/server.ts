@@ -524,6 +524,27 @@ function getCodeActions(uri: string, diagnostics: Diagnostic[], sourceLines: str
                 });
             }
         }
+
+        // Suppress action: available for any Conformal diagnostic code
+        if (code.startsWith('W_')) {
+            const disableMarker = '% conformal:disable';
+            const newText = lineText.includes(disableMarker)
+                ? lineText + ' ' + code
+                : lineText + '  ' + disableMarker + ' ' + code;
+            actions.push({
+                title: `Suppress ${code} on this line`,
+                kind: CodeActionKind.QuickFix,
+                diagnostics: [diag],
+                edit: {
+                    changes: {
+                        [uri]: [TextEdit.replace(
+                            { start: { line: lineNum, character: 0 }, end: { line: lineNum, character: lineLen } },
+                            newText
+                        )],
+                    },
+                },
+            });
+        }
     }
 
     return actions;
