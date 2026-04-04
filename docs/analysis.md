@@ -234,12 +234,12 @@ Conformal analyzes a subset of MATLAB. Here's what it doesn't cover:
 
 | Category | What's missing |
 |----------|---------------|
-| Scope | Workspace analysis covers sibling `.m` files in the same directory. No `addpath` handling or cross-directory resolution yet. |
-| Functions | `varargin` and `varargout` are supported. No `eval` or `str2func`. `nargin`/`nargout` are tracked with concrete intervals at each call site. Nested functions are supported (read/write parent scope, sibling calls, forward references). `global` and `persistent` variables are tracked. |
-| Builtins | 635 builtins recognized (including Control System, Signal Processing, Aerospace, Optimization, Mapping, Image Processing, Robotics, Statistics, Communications, Computer Vision, Deep Learning, and Symbolic Math Toolbox functions); 315 have explicit shape rules. Unrecognized calls produce a `W_UNKNOWN_FUNCTION` warning. |
+| Scope | Workspace analysis covers sibling `.m` files, `addpath` directories (with `fullfile` and `genpath` constant folding), and recursive depth scanning. Cross-directory function resolution is supported. |
+| Functions | `varargin` and `varargout` are supported. No `eval`. `str2func` with string literal arguments is resolved. `nargin`/`nargout` are tracked with concrete intervals at each call site. Nested functions are supported (read/write parent scope, sibling calls, forward references). `global` and `persistent` variables are tracked. |
+| Builtins | 646+ builtins recognized (including Control System, Signal Processing, Aerospace, Optimization, Mapping, Image Processing, Robotics, Statistics, Communications, Computer Vision, Deep Learning, and Symbolic Math Toolbox functions); 325+ have explicit shape rules. Unrecognized calls produce a `W_UNKNOWN_FUNCTION` warning. |
 | Cell arrays | Per-element tracking available for literal-indexed cells. Dynamic indexing conservatively joins all elements. |
 | Indexing | `end` keyword supported with arithmetic (`C{end}`, `C{end-1}`, `A(1:end)`, `A(end-2:end, :)`). Variable operands in `end` arithmetic fall through to conservative join. |
-| Data types | Basic `classdef` support: properties extracted, constructor analyzed as a struct-returning function, and `obj.method(args)` dispatched through registered method definitions. Inheritance not resolved. No maps, no tables, no N-D arrays (only 2-D matrices). No complex number tracking. |
+| Data types | `classdef` support: properties extracted, constructor analyzed, `obj.method(args)` dispatched through registered method definitions, superclass inheritance chain walking for properties and methods. No maps, no tables, no N-D arrays (only 2-D matrices). No complex number tracking. |
 | Syntax | No command-style calls (`save file.mat`). `global`/`persistent` variables are tracked across function boundaries. `parfor` is treated as a regular `for` loop. |
 | I/O and graphics | `load`, `save`, `fprintf`, `plot`, and other side-effecting functions are recognized (no spurious `W_UNKNOWN_FUNCTION`) but their return shapes are not tracked. |
 | Dynamic features | No `eval`, no `str2func`. Dynamic field access `s.(expr)` is parsed and evaluates to `unknown`. Runtime type introspection beyond type predicates (`iscell`, `isscalar`, `isnumeric`, etc.) is not tracked. |

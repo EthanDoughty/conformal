@@ -2,11 +2,49 @@ module Cli
 
 open System
 open System.IO
+open System.Text.Json
 open Context
 open Diagnostics
 open WarningCodes
 open Analysis
 open Workspace
+
+// ---------------------------------------------------------------------------
+// Project config (.conformal.json)
+// ---------------------------------------------------------------------------
+
+/// Walk up from startDir looking for .conformal.json, stopping at a .git boundary
+/// or the filesystem root. Returns (strict, coder, fixpoint) or (false, false, false).
+let private loadConfig (startDir: string) : bool * bool * bool =
+    let rec walk (dir: string) =
+        if dir = null || not (Directory.Exists dir) then
+            false, false, false
+        else
+            let cfgPath = Path.Combine(dir, ".conformal.json")
+            if File.Exists cfgPath then
+                try
+                    let text = File.ReadAllText cfgPath
+                    use doc = JsonDocument.Parse(text)
+                    let root = doc.RootElement
+                    let getBool (name: string) =
+                        match root.TryGetProperty(name) with
+                        | true, prop when prop.ValueKind = JsonValueKind.True -> true
+                        | _ -> false
+                    getBool "strict", getBool "coder", getBool "fixpoint"
+                with _ ->
+                    false, false, false
+            else
+                // Stop at a .git boundary
+                let gitPath = Path.Combine(dir, ".git")
+                if Directory.Exists gitPath || File.Exists gitPath then
+                    false, false, false
+                else
+                    let parent = Path.GetDirectoryName dir
+                    if parent = null || parent = dir then
+                        false, false, false
+                    else
+                        walk parent
+    walk startDir
 
 // ---------------------------------------------------------------------------
 // Output helpers
@@ -483,6 +521,15 @@ let runFileSarif (filePath: string) (strict: bool) (fixpoint: bool) (coder: bool
 /// Parse argv and dispatch. Returns exit code.
 let run (argv: string array) : int =
     let args = parseArgv argv
+
+    // Load .conformal.json from CWD upward and OR with CLI flags.
+    let (cfgStrict, cfgCoder, cfgFixpoint) =
+        loadConfig (Directory.GetCurrentDirectory())
+    let args =
+        { args with
+            strict   = args.strict   || cfgStrict
+            coder    = args.coder    || cfgCoder
+            fixpoint = args.fixpoint || cfgFixpoint }
 
     if args.version then
         printfn "Conformal 3.5.0"
