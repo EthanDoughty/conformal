@@ -485,6 +485,13 @@ let private collectInheritedMethods (classInfo: ClassInfo) (ctx: AnalysisContext
             Map.foldBack (fun k v acc -> if Map.containsKey k acc then acc else Map.add k v acc) parentMethods info.methods
     walk classInfo Set.empty
 
+/// Return true if funcName is declared as a method in any class currently in classRegistry.
+/// Used to suppress false W_FUNCTION_ARG_COUNT_MISMATCH for implicit-self calls like
+/// method(a, b) where the MATLAB declaration is function y = method(obj, a, b).
+let private isKnownClassdefMethod (funcName: string) (ctx: AnalysisContext) : bool =
+    ctx.call.classRegistry.Values
+    |> Seq.exists (fun classInfo -> Map.containsKey funcName classInfo.methods)
+
 
 // ---------------------------------------------------------------------------
 // Call resolution: unified dispatch priority for function name resolution
@@ -1598,8 +1605,15 @@ and analyzeFunctionCall
         let hasVarargin = sig_.parms.Length > 0 && List.last sig_.parms = "varargin"
         let maxFixedParams = if hasVarargin then sig_.parms.Length - 1 else sig_.parms.Length
 
+        // Classdef methods include self/obj as the first declared parameter. When called via
+        // obj.method(a, b), EvalExpr prepends obj so the total arg count equals the declared
+        // param count. When invoked directly or as a constructor through method dispatch, the
+        // effective user-visible arg count is args.Length - 1. Subtract 1 before the check so
+        // that one "extra" arg (the implicit self) does not trigger a false positive.
+        let selfOffset = if isKnownClassdefMethod funcName ctx then 1 else 0
+
         // Check argument count: too many args = error unless varargin; too few = optional args (nargin support)
-        if args.Length > maxFixedParams && not hasVarargin then
+        if (args.Length - selfOffset) > maxFixedParams && not hasVarargin then
             warnings.Add(warnFunctionArgCountMismatch line funcName sig_.parms.Length args.Length)
             List.replicate (max sig_.outputVars.Length 1) UnknownShape
         else
@@ -1749,9 +1763,11 @@ and analyzeNestedFunctionCall
         // Detect varargin: last param named "varargin" means the function accepts extra args
         let hasVarargin = sig_.parms.Length > 0 && List.last sig_.parms = "varargin"
         let maxFixedParams = if hasVarargin then sig_.parms.Length - 1 else sig_.parms.Length
+        // Same self-offset adjustment as analyzeFunctionCall (see comment there).
+        let selfOffset = if isKnownClassdefMethod funcName ctx then 1 else 0
 
         // Too many args = error unless varargin; too few = optional args (nargin support)
-        if args.Length > maxFixedParams && not hasVarargin then
+        if (args.Length - selfOffset) > maxFixedParams && not hasVarargin then
             warnings.Add(warnFunctionArgCountMismatch line funcName sig_.parms.Length args.Length)
             List.replicate (max sig_.outputVars.Length 1) UnknownShape
         else
@@ -1911,9 +1927,11 @@ and analyzeExternalFunctionCall
     // Detect varargin: last param named "varargin" means the function accepts extra args
     let hasVararginExt = primarySig.parms.Length > 0 && List.last primarySig.parms = "varargin"
     let maxFixedParamsExt = if hasVararginExt then primarySig.parms.Length - 1 else primarySig.parms.Length
+    // Same self-offset adjustment as analyzeFunctionCall (see comment there).
+    let selfOffsetExt = if isKnownClassdefMethod fname ctx then 1 else 0
 
     // Too many args = error unless varargin; too few = optional args (nargin support)
-    if args.Length > maxFixedParamsExt && not hasVararginExt then
+    if (args.Length - selfOffsetExt) > maxFixedParamsExt && not hasVararginExt then
         warnings.Add(warnFunctionArgCountMismatch line fname primarySig.parms.Length args.Length)
         List.replicate (max primarySig.outputVars.Length 1) UnknownShape
     else
