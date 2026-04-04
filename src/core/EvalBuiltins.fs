@@ -24,7 +24,7 @@ let PASSTHROUGH_BUILTINS : Set<string> =
         "tanh"; "cosh"; "sinh"; "atanh"; "acosh"; "asinh"; "conj"; "not"
         "flipud"; "fliplr"; "triu"; "tril"; "sort"; "unique"; "cholupdate"
         "gammaln"
-        "exp"; "log"; "log2"; "log10"; "ceil"; "floor"; "round"; "sign"
+        "exp"; "log"; "log2"; "log10"; "ceil"; "fix"; "floor"; "round"; "sign"
         "real"; "imag"; "cumsum"; "cumprod"
         "expm"; "logm"; "sqrtm"; "circshift"; "null"; "orth"
         "sgolayfilt"; "squeeze"; "fftshift"; "ifftshift"; "unwrap"
@@ -50,6 +50,7 @@ let PASSTHROUGH_BUILTINS : Set<string> =
 
 let SCALAR_PREDICATE_BUILTINS : Set<string> =
     Set.ofList [
+        "isa"
         "isscalar"; "iscell"; "isempty"; "isnumeric"; "islogical"; "ischar"
         "isnan"; "isinf"; "isfinite"; "issymmetric"; "isstruct"; "isreal"
         "issparse"; "isvector"; "isinteger"; "isfloat"; "isstring"; "issorted"
@@ -73,7 +74,7 @@ let REDUCTION_BUILTINS : Set<string> =
 let SCALAR_QUERY_BUILTINS : Set<string> =
     Set.ofList [
         "length"; "numel"; "det"; "norm"; "trace"; "rank"; "cond"; "rcond"
-        "nnz"; "sprank"; "str2double"; "dot"
+        "nnz"; "sprank"; "str2double"; "str2num"; "datenum"; "dot"
         "quatnorm"; "nchoosek"
         "tic"; "toc"; "system"
     ]
@@ -86,6 +87,7 @@ let MATRIX_CONSTRUCTOR_BUILTINS : Set<string> =
 let STRING_RETURN_BUILTINS : Set<string> =
     Set.ofList [
         "num2str"; "int2str"; "mat2str"; "char"; "string"; "sprintf"; "fullfile"; "regexprep"
+        "strcat"; "fgetl"; "which"
     ]
 
 let SCALAR_NARY_BUILTINS : Set<string> =

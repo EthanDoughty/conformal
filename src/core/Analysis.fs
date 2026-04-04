@@ -118,3 +118,34 @@ let analyzeProgramIr
     // Deduplicate warnings while preserving order
     let deduped = Seq.toList warnings |> List.distinctBy id
     (env, deduped)
+
+/// Three-bucket shape coverage over the final top-level environment.
+/// Returns (tracked, partial, untracked, total) where:
+///   tracked   = concrete known shape (Scalar, Matrix(non-Unknown dims), Struct, Cell with known dims, etc.)
+///   partial   = Matrix or Cell with at least one Unknown dim
+///   untracked = UnknownShape
+/// Excludes: Bottom entries, "nargin", "nargout", "ans", and names starting with "_".
+let computeShapeCoverage (env: Env) : int * int * int * int =
+    let excluded = Set.ofList ["nargin"; "nargout"; "ans"]
+    let bindings =
+        env.bindings
+        |> Map.toList
+        |> List.filter (fun (name, shape) ->
+            shape <> Shapes.Bottom &&
+            not (Set.contains name excluded) &&
+            not (name.StartsWith("_")))
+    let total = bindings.Length
+    let untracked =
+        bindings
+        |> List.filter (fun (_, s) -> s = Shapes.UnknownShape)
+        |> List.length
+    let partial =
+        bindings
+        |> List.filter (fun (_, s) ->
+            match s with
+            | Shapes.Matrix(r, c) -> r = Shapes.Unknown || c = Shapes.Unknown
+            | Shapes.Cell(r, c, _) -> r = Shapes.Unknown || c = Shapes.Unknown
+            | _ -> false)
+        |> List.length
+    let tracked = total - untracked - partial
+    (tracked, partial, untracked, total)

@@ -4,6 +4,7 @@ open System
 open System.IO
 open Context
 open Diagnostics
+open WarningCodes
 open Analysis
 open Workspace
 
@@ -116,6 +117,16 @@ let runFile (filePath: string) (strict: bool) (fixpoint: bool) (benchmark: bool)
 
         printfn ""
         printEnv env
+
+        let (tracked, partial, untracked, total) = computeShapeCoverage env
+        if untracked > 0 || partial > 0 then
+            let unresolvedFns =
+                warnings
+                |> List.filter (fun w -> w.code = W_UNKNOWN_FUNCTION)
+                |> List.length
+            printfn ""
+            printfn "Shape coverage: %d/%d tracked, %d partial, %d untracked (%d unresolved functions)"
+                tracked total partial untracked unresolvedFns
 
         if benchmark then
             let lineCount = src.Split('\n').Length
