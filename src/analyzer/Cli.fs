@@ -174,16 +174,19 @@ type CliArgs = {
     tests: bool; testProps: bool; strict: bool; fixpoint: bool
     bench: bool; coder: bool; file: string; parseJson: bool
     quiet: bool; help: bool; version: bool; formatSarif: bool
+    batch: bool; batchArgs: string list
 }
 
 let private defaultArgs =
     { tests = false; testProps = false; strict = false; fixpoint = false
       bench = false; coder = false; file = ""; parseJson = false
-      quiet = false; help = false; version = false; formatSarif = false }
+      quiet = false; help = false; version = false; formatSarif = false
+      batch = false; batchArgs = [] }
 
 // Fold state: Ready accepts flags, ConsumeFile means next arg is a file path,
-// ConsumeWitness means next arg is an optional witness mode or file path.
-type private ParseState = Ready | ConsumeFile | ConsumeWitness | ConsumeFormat
+// ConsumeWitness means next arg is an optional witness mode or file path,
+// ConsumeBatch collects all remaining non-flag args as batch targets.
+type private ParseState = Ready | ConsumeFile | ConsumeWitness | ConsumeFormat | ConsumeBatch
 
 let private parseArgv (argv: string array) : CliArgs =
     argv
@@ -218,6 +221,16 @@ let private parseArgv (argv: string array) : CliArgs =
                 match arg with
                 | "enrich" | "filter" | "tag" -> (acc, Ready)  // witness mode string, ignore
                 | f -> ({ acc with file = f }, Ready)
+        | ConsumeBatch ->
+            // Collect all remaining args as batch targets (dirs or files); flags end batch mode
+            if arg.StartsWith("--") then
+                match arg with
+                | "--strict"    -> ({ acc with strict = true }, ConsumeBatch)
+                | "--fixpoint"  -> ({ acc with fixpoint = true }, ConsumeBatch)
+                | "--coder"     -> ({ acc with coder = true }, ConsumeBatch)
+                | _ -> (acc, ConsumeBatch)
+            else
+                ({ acc with batchArgs = acc.batchArgs @ [arg] }, ConsumeBatch)
         | Ready ->
             match arg with
             | "--tests"        -> ({ acc with tests = true }, Ready)
@@ -229,12 +242,145 @@ let private parseArgv (argv: string array) : CliArgs =
             | "--parse-json"   -> ({ acc with parseJson = true }, ConsumeFile)
             | "--format"       -> (acc, ConsumeFormat)
             | "--witness"      -> (acc, ConsumeWitness)
+            | "--batch"        -> ({ acc with batch = true }, ConsumeBatch)
             | "--quiet"        -> ({ acc with quiet = true }, Ready)
             | "--help" | "-h"  -> ({ acc with help = true }, Ready)
             | "--version"      -> ({ acc with version = true }, Ready)
             | a when not (a.StartsWith("--")) -> ({ acc with file = a }, Ready)
             | _ -> (acc, Ready)
     ) (defaultArgs, Ready) |> fst
+
+// ---------------------------------------------------------------------------
+// --batch mode
+// ---------------------------------------------------------------------------
+
+/// Result of analyzing a single file in batch mode.
+type private BatchFileResult =
+    | BatchClean
+    | BatchWarned of int   // warning count
+    | BatchError           // parse / read failure
+
+/// Collect all .m files from a mix of file paths and directory paths.
+let private collectMFiles (targets: string list) : string list =
+    targets
+    |> List.collect (fun t ->
+        if Directory.Exists(t) then
+            Directory.GetFiles(t, "*.m", SearchOption.AllDirectories)
+            |> Array.toList
+            |> List.sort
+        elif File.Exists(t) then
+            [t]
+        else
+            eprintfn "WARNING: --batch target not found: %s" t
+            [])
+
+/// Analyze all .m files listed and print per-file one-liners plus a final summary.
+/// Returns 0 if no crashes, 1 if any file crashed (parse/read error).
+let runBatch (targets: string list) (strict: bool) (fixpoint: bool) (coder: bool) : int =
+    let files = collectMFiles targets
+    if files.IsEmpty then
+        eprintfn "No .m files found in batch targets."
+        1
+    else
+
+    // Pre-scan workspace for each unique directory once (avoid N^2 scanning).
+    let wsCache = System.Collections.Generic.Dictionary<string, _>()
+    let getWs (dirPath: string) =
+        match wsCache.TryGetValue(dirPath) with
+        | true, v -> v
+        | false, _ ->
+            let (flatFuncs, flatClasses) = scanWorkspace dirPath "" 0
+            let (depthFuncs, depthClasses) = scanWorkspace dirPath "" 3
+            let extMap = mergeMaps [flatFuncs; depthFuncs]
+            let classdefMap = mergeMaps [flatClasses; depthClasses]
+            let privateMap = scanPrivateDir dirPath
+            let v = (extMap, classdefMap, privateMap)
+            wsCache.[dirPath] <- v
+            v
+
+    let mutable cleanCount = 0
+    let mutable warnedCount = 0
+    let mutable errorCount = 0
+    let mutable hadCrash = false
+
+    for filePath in files do
+        let shortPath =
+            let cwd = Directory.GetCurrentDirectory()
+            let full = Path.GetFullPath(filePath)
+            if full.StartsWith(cwd + string Path.DirectorySeparatorChar) then
+                full.Substring(cwd.Length + 1)
+            else full
+
+        let result =
+            try
+                let src =
+                    try File.ReadAllText(filePath)
+                    with ex ->
+                        eprintfn "Error reading %s: %s" filePath ex.Message
+                        ""
+
+                if src = "" then
+                    BatchError
+                else
+
+                let irProgOpt =
+                    try
+                        let (prog, _) = Parser.parseMATLAB src
+                        Some prog
+                    with _ ->
+                        None
+
+                match irProgOpt with
+                | None -> BatchError
+                | Some irProg ->
+
+                let dirPath = Path.GetDirectoryName(Path.GetFullPath(filePath))
+                let (extMap, classdefMap, privateMap) = getWs dirPath
+
+                let ctx = AnalysisContext()
+                ctx.call.fixpoint <- fixpoint
+                ctx.cst.coderMode <- coder
+                for kv in extMap do
+                    ctx.ws.externalFunctions.[kv.Key] <- kv.Value
+                for kv in classdefMap do
+                    ctx.ws.externalClassdefs.[kv.Key] <- kv.Value
+                for kv in privateMap do
+                    ctx.ws.privateFunctions.[kv.Key] <- kv.Value
+                ctx.ws.workspaceDir <- dirPath
+
+                let (_env, warnings) = analyzeProgramIr irProg ctx
+
+                let suppressions = Suppressions.parseSuppressions src
+                let displayWarnings =
+                    warnings
+                    |> Suppressions.filterDiagnostics suppressions
+                    |> (if strict then id else List.filter (fun w -> not (Set.contains w.code STRICT_ONLY_CODES)))
+
+                if displayWarnings.IsEmpty then
+                    BatchClean
+                else
+                    BatchWarned displayWarnings.Length
+            with ex ->
+                eprintfn "Unexpected error on %s: %s" filePath ex.Message
+                hadCrash <- true
+                BatchError
+
+        match result with
+        | BatchClean ->
+            cleanCount <- cleanCount + 1
+            printfn "✓ %s" shortPath
+        | BatchWarned n ->
+            warnedCount <- warnedCount + 1
+            printfn "! %s  (%d %s)" shortPath n (if n = 1 then "warning" else "warnings")
+        | BatchError ->
+            errorCount <- errorCount + 1
+            printfn "✗ %s  (parse error)" shortPath
+
+    printfn ""
+    printfn "Batch: %d files, %d clean, %d warned, %d errors"
+        files.Length cleanCount warnedCount errorCount
+
+    if hadCrash then 1 else 0
 
 let private printUsage () =
     printfn "Usage: conformal [OPTIONS] <file.m>"
@@ -248,6 +394,7 @@ let private printUsage () =
     printfn "  --coder         Enable MATLAB Coder compatibility warnings (W_CODER_*)"
     printfn "  --parse-json    Parse file and emit JSON IR"
     printfn "  --format sarif  Output diagnostics as SARIF 2.1.0 JSON"
+    printfn "  --batch <dir|files...>  Analyze multiple files in one process"
     printfn "  --help, -h      Show this help message"
     printfn "  --version       Show version"
 
@@ -372,6 +519,12 @@ let run (argv: string array) : int =
             | ex ->
                 eprintfn "Error: %s" ex.Message
                 3
+    elif args.batch then
+        if args.batchArgs.IsEmpty then
+            eprintfn "Usage: conformal --batch <dir|file.m ...>"
+            1
+        else
+            runBatch args.batchArgs args.strict args.fixpoint args.coder
     elif args.formatSarif && args.file <> "" then
         runFileSarif args.file args.strict args.fixpoint args.coder
     elif args.file <> "" then
