@@ -103,7 +103,8 @@ dotnet run --project src/analyzer/ConformalAnalyzer.fsproj -- file.m
 
 | Flag | What it does |
 |------|-------------|
-| `--tests` | Run the full test suite (541 tests across 24 categories) |
+| `--tests` | Run the full test suite (552 tests across 24 categories) |
+| `--batch <dir\|files>` | Analyze multiple files in one process (no per-file startup cost) |
 | `--strict` | Show all warnings including informational and low-confidence diagnostics |
 | `--fixpoint` | Use widening-based fixpoint iteration for loop analysis |
 | `--witness [MODE]` | Attach incorrectness witnesses (`enrich`, `filter`, or `tag`) |

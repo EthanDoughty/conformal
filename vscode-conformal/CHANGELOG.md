@@ -1,5 +1,19 @@
 # Changelog
 
+## 3.8.0
+
+- Shape coverage metric: detects analytically hollow files where Unknown shapes mask potential errors
+- `% conformal:type` annotation: seed entry-point variable shapes from design contracts
+- `% conformal:disable` quick-fix code action in the editor (lightbulb to suppress warnings inline)
+- `.conformal.json` project config file for per-repo strict/coder/fixpoint defaults
+- `--batch` CLI mode: analyze directories of .m files in one process, eliminating per-file startup cost
+- Pentagon offset composition: suppresses false OOB warnings on stencil patterns like `A(i+1)` in `for i=1:N-1`
+- Classdef method arg-count fix: eliminates ~192 false W_FUNCTION_ARG_COUNT_MISMATCH from implicit self parameter
+- SHA-256 file hash in SARIF artifacts for DO-178C audit traceability
+- 11 new builtins with shape rules (isa, fix, fgetl, strcat, datenum, str2num, odeset, ode45, spdiags, which, datetick)
+- DO-178C false-negative policy document
+- 552 analyzer tests, 49 migrate tests
+
 ## 3.7.0
 
 - addpath cross-directory resolution for function lookup
