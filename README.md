@@ -4,10 +4,10 @@
 
 ### Static Shape & Dimension Analysis for MATLAB
 
-[![Version](https://img.shields.io/badge/version-3.7.0-orange.svg)](#cli-options)
+[![Version](https://img.shields.io/badge/version-3.8.0-orange.svg)](#cli-options)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4.svg)](https://dotnet.microsoft.com/download)
-[![Tests](https://img.shields.io/badge/tests-541%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-552%20passing-brightgreen.svg)](#test-suite)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
 *Matrices must be **conformable** before they can perform. Conformal makes sure they are.*
@@ -72,7 +72,7 @@ Conformal follows `H`, `P`, `K`, and `x` through each multiply, tracks `H'` as t
 
 Conformal detects dimension mismatches across arithmetic (`+`, `-`, `*`, `.*`, `./`, `^`, `.^`, `\`), concatenation (`[A B]`, `[A; B]`), and indexing (`A(i,j)`, `A(:,j)`, `C{i}`, `A(end-1, :)`). Scalar-matrix broadcasting is handled, so `s * A` works without a false warning. If `*` is used where `.*` was probably intended, Conformal suggests the fix.
 
-Over 635 MATLAB builtins are recognized, and around 315 have explicit shape rules, including matrix constructors, reductions with dimension arguments, reshaping, type predicates, and linear algebra functions. User-defined functions are analyzed at each call site with the caller's argument shapes, and that includes nested functions, anonymous functions with closure capture, `nargin`/`nargout` patterns, `varargin`/`varargout`, and cross-file workspace resolution to sibling `.m` files.
+Over 650 MATLAB builtins are recognized, and around 325 have explicit shape rules, including matrix constructors, reductions with dimension arguments, reshaping, type predicates, and linear algebra functions. User-defined functions are analyzed at each call site with the caller's argument shapes, and that includes nested functions, anonymous functions with closure capture, `nargin`/`nargout` patterns, `varargin`/`varargout`, and cross-file workspace resolution to sibling `.m` files.
 
 Variables with unknown concrete size get symbolic names like `n`, `m`, `k`, and those names propagate through operations with a polynomial representation, so `n+m` and `m+n` are recognized as equal, and `n+n` simplifies to `2*n`.
 
@@ -122,9 +122,9 @@ The single-file analysis takes under 100ms, even for 700-line files with dozens 
 
 ## Real-World Compatibility
 
-To check how Conformal holds up on real MATLAB code, a corpus of 1,197 `.m` files was drawn from 11 open-source repos on GitHub, covering robotics, signal processing, scientific computing, and computer vision. In default mode, the corpus produces zero crashes and zero false positives.
+To check how Conformal holds up on real MATLAB code, a corpus of 15,085 `.m` files was drawn from 34 open-source projects on GitHub, covering aerospace, optimization, numerical methods, biomedical signal processing, power systems, geophysics, computer vision, CFD, and more. In default mode, the corpus produces zero crashes across all 15,085 files with a 97% clean rate.
 
-The repos include gptoolbox, vlfeat, prmlt, petercorke/robotics-toolbox-matlab, rpng/kalibr_allan, and others. These files use a wide range of MATLAB idioms: pre-2016 end-less function definitions, space-separated multi-return syntax, Latin-1 encoded files, `\` for linear solves, and complex matrix literal spacing. Parser robustness improvements came directly from failures on this corpus.
+The projects include chebfun (3,435 files), PlatEMO (2,416), YALMIP (1,665), ecg-kit (1,195), MATPOWER (979), gptoolbox (700), GISMO (689), eeglab (658), LADAC (607), and NASA MUSCAT (251). These files use a wide range of MATLAB idioms: classdef OOP, pre-2016 end-less function definitions, space-separated multi-return syntax, stencil patterns, symbolic toolbox calls, and complex matrix literal spacing.
 
 ## Warning Tiers
 
@@ -138,7 +138,7 @@ Conformal also includes a MATLAB-to-Python transpiler that uses the shape analys
 
 ## Test Suite
 
-Conformal is validated by 541 self-checking MATLAB programs organized into 24 categories, plus 28 property-based lattice tests via FsCheck. Each test file embeds its expected behavior as inline assertions (`% EXPECT: A = matrix[3 x 4]`, `% EXPECT_WARNING: W_INNER_DIM_MISMATCH`), and the test runner checks that Conformal's output matches.
+Conformal is validated by 552 self-checking MATLAB programs organized into 24 categories, plus 28 property-based lattice tests via FsCheck. Each test file embeds its expected behavior as inline assertions (`% EXPECT: A = matrix[3 x 4]`, `% EXPECT_WARNING: W_INNER_DIM_MISMATCH`), and the test runner checks that Conformal's output matches.
 
 For the full test listing, see [docs/tests.md](docs/tests.md).
 
@@ -152,7 +152,7 @@ src/migrate/            MATLAB-to-Python transpiler (~2,100 LOC)
 vscode-conformal/       VS Code extension (TypeScript client + Fable-compiled analyzer)
   fable/                Fable compilation project (F# to JavaScript, shares core .fs files)
   src/                  TypeScript extension and LSP server code
-tests/                  541 self-checking MATLAB programs in 24 categories
+tests/                  552 self-checking MATLAB programs in 24 categories
 .github/                CI workflow (build, test, compile Fable, package VSIX)
 ```
 

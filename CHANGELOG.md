@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.8.0] - 2026-04-06
+### Added
+- **Shape coverage metric**: detects analytically hollow files where Unknown shapes mask potential errors; three-bucket classification (tracked/partial/untracked) printed on CLI when hollowness detected
+- **`% conformal:type` annotation**: seed entry-point variable shapes from design contracts (e.g., `% conformal:type x [17x1]`)
+- **`.conformal.json` config**: project-level config file for per-repo `strict`, `coder`, and `fixpoint` defaults; walks up from CWD to `.git` boundary
+- **`--batch` mode**: analyze directories of .m files in a single process with per-directory workspace caching
+- **Suppress warning code action**: lightbulb quick-fix in VS Code inserts `% conformal:disable W_CODE` inline; handles appending to existing directives
+- **SHA-256 file hash in SARIF**: `artifacts[].hashes.sha-256` for DO-178C audit traceability
+- **Pentagon offset composition**: suppresses false `W_INDEX_OUT_OF_BOUNDS` on stencil patterns like `A(i+1)` in `for i=1:N-1`; extends while-loop bounds and symbolic lower bound proofs
+- **DO-178C false-negative policy**: `docs/false-negative-policy.md` defining what "zero warnings" means and what Conformal does not check
+- 11 new builtins with shape rules: `isa`, `fix`, `fgetl`, `strcat`, `datenum`, `str2num`, `odeset`, `ode45`, `spdiags`, `which`, `datetick`
+- 552 analyzer tests (up from 546), 49 migrate tests
+
+### Fixed
+- `W_FUNCTION_ARG_COUNT_MISMATCH` false positives on classdef methods eliminated by accounting for implicit self/obj parameter (~192 corpus FPs removed)
+
+### Changed
+- SARIF version string updated to 3.8.0
+- `--version` output updated to 3.8.0
+- `docs/analysis.md` limitations section updated: addpath, inheritance, and builtins counts refreshed
+
 ## [3.7.0] - 2026-04-01
 ### Added
 - **addpath support**: `addpath('dir')`, `addpath dir`, `addpath(genpath(...))`, and `addpath(fullfile(...))` now scan referenced directories for cross-file function resolution
