@@ -152,6 +152,7 @@ type ConformalLspServer(client: ConformalClient) =
             for kv in privateMap do
                 ctx.ws.privateFunctions.[kv.Key] <- kv.Value
             ctx.ws.workspaceDir <- dirPath
+            ctx.typeAnnotations <- Suppressions.parseTypeAnnotations source
             let (env, warnings) = analyzeProgramIr irProg ctx
 
             // Filter: apply suppression directives then strict-only filter

@@ -189,6 +189,8 @@ type AnalysisContext() =
     member val ws   : WorkspaceContext   = WorkspaceContext()  with get
     /// Accumulated diagnostics
     member val diagnostics : Diagnostics.Diagnostic list = [] with get, set
+    /// Variable shapes seeded by % conformal:type directives before analysis.
+    member val typeAnnotations : Map<string, Shape> = Map.empty with get, set
     /// Per-expression inferred shapes. Populated during analysis.
     /// Key: SrcLoc of the expression. Value: its inferred result shape.
     /// Last-write-wins (fixpoint re-analysis may refine shapes).

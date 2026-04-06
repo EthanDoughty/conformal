@@ -26,6 +26,10 @@ let analyzeProgramIr
     let env = Env.create ()
     let warnings = ResizeArray<Diagnostic>()
 
+    // Seed variables from % conformal:type directives
+    for kv in ctx.typeAnnotations do
+        Env.set env kv.Key kv.Value
+
     // Pass 1: register function definitions
     for item in program.body do
         match item with

@@ -211,6 +211,7 @@ let private runTest (path: string) (fixpoint: bool) (forceCoder: bool) (quiet: b
     for kv in privateMap do
         ctx.ws.privateFunctions.[kv.Key] <- kv.Value
     ctx.ws.workspaceDir <- dirPath
+    ctx.typeAnnotations <- Suppressions.parseTypeAnnotations src
 
     let analyzeResult =
         try

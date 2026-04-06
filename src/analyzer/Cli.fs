@@ -133,6 +133,7 @@ let runFile (filePath: string) (strict: bool) (fixpoint: bool) (benchmark: bool)
         for kv in privateMap do
             ctx.ws.privateFunctions.[kv.Key] <- kv.Value
         ctx.ws.workspaceDir <- dirPath
+        ctx.typeAnnotations <- Suppressions.parseTypeAnnotations src
 
         let (env, warnings) = analyzeProgramIr irProg ctx
 

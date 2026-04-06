@@ -100,3 +100,66 @@ let isSuppressed (info: SuppressionInfo) (line: int) (code: string) : bool =
 let filterDiagnostics (info: SuppressionInfo) (diagnostics: Diagnostic list) : Diagnostic list =
     diagnostics |> List.filter (fun d ->
         not (isSuppressed info d.line (codeString d.code)))
+
+// ---------------------------------------------------------------------------
+// Type annotation directives: parse % conformal:type varname shape
+// from raw MATLAB source text (file header only).
+// Pure module (no I/O, no mutation). Fable-compatible.
+// ---------------------------------------------------------------------------
+
+/// Parse a shape spec token: "[NxM]", "scalar", or "string".
+/// Returns Some shape on success, None if unrecognised.
+let private parseShapeSpec (spec: string) : Shapes.Shape option =
+    let s = spec.Trim()
+    if s = "scalar" then
+        Some Shapes.Scalar
+    elif s = "string" then
+        Some Shapes.StringShape
+    elif s.StartsWith("[") && s.EndsWith("]") then
+        // Strip brackets and split on 'x'
+        let inner = s.Substring(1, s.Length - 2)
+        let parts = inner.Split('x')
+        if parts.Length = 2 then
+            match System.Int32.TryParse(parts.[0].Trim()), System.Int32.TryParse(parts.[1].Trim()) with
+            | (true, r), (true, c) ->
+                Some (Shapes.Matrix(Shapes.Concrete r, Shapes.Concrete c))
+            | _ -> None
+        else None
+    else None
+
+/// Parse % conformal:type directives from the file header (lines before any
+/// non-comment code). Returns a map from variable name to seeded shape.
+let parseTypeAnnotations (source: string) : Map<string, Shapes.Shape> =
+    let lines = source.Split('\n')
+    let mutable result = Map.empty<string, Shapes.Shape>
+    let mutable seenNonComment = false
+    let typeMarker = "conformal:type"
+
+    for i in 0 .. lines.Length - 1 do
+        let line = lines.[i]
+        let trimmed = line.Trim()
+
+        // Stop collecting annotations once non-comment code appears
+        if not seenNonComment then
+            if trimmed <> "" && not (trimmed.StartsWith("%")) then
+                seenNonComment <- true
+
+        if not seenNonComment then
+            let percentIdx = line.IndexOf('%')
+            if percentIdx >= 0 then
+                let commentPart = line.Substring(percentIdx + 1)
+                let tIdx = commentPart.IndexOf(typeMarker)
+                if tIdx >= 0 then
+                    let afterDirective = commentPart.Substring(tIdx + typeMarker.Length).Trim()
+                    // afterDirective should be "varname shapespec"
+                    // Split on first whitespace to get varname and shapespec
+                    let spaceIdx = afterDirective.IndexOfAny([|' '; '\t'|])
+                    if spaceIdx > 0 then
+                        let varName  = afterDirective.Substring(0, spaceIdx).Trim()
+                        let specStr  = afterDirective.Substring(spaceIdx + 1).Trim()
+                        if varName.Length > 0 && specStr.Length > 0 then
+                            match parseShapeSpec specStr with
+                            | Some shape -> result <- Map.add varName shape result
+                            | None -> ()
+
+    result
