@@ -762,15 +762,18 @@ and private evalIndexing
                 | Some iv ->
                     let fmt = $"[{iv.lo}, {iv.hi}]"
                     let dimStr = string ms
-                    // Pentagon suppression: if index var has relational bound matching dim, suppress.
+                    // Pentagon suppression: decompose index expression into (var, offset) and
+                    // check relational bounds with offset composition.
                     let suppressedByUpperPentagon =
-                        match idxExpr with
-                        | Var(_, varName) -> Intervals.pentagonProvesInBounds ctx varName m
-                        | _ -> false
+                        match Intervals.tryDecomposeVarPlusConst idxExpr with
+                        | Some (varName, exprOffset) ->
+                            Intervals.pentagonProvesInBoundsWithOffset ctx varName exprOffset m
+                        | None -> false
                     let suppressedByLowerPentagon =
-                        match idxExpr with
-                        | Var(_, varName) -> Intervals.pentagonProvesLowerBound ctx varName
-                        | _ -> false
+                        match Intervals.tryDecomposeVarPlusConst idxExpr with
+                        | Some (varName, exprOffset) ->
+                            Intervals.pentagonProvesLowerBoundWithOffset ctx varName exprOffset
+                        | None -> false
                     if not suppressedByUpperPentagon then
                         match iv.lo, iv.hi with
                         | Finite lo, _ when lo > ms ->
@@ -792,15 +795,18 @@ and private evalIndexing
                 | Some iv ->
                     let fmt = $"[{iv.lo}, {iv.hi}]"
                     let dimStr = string ns
-                    // Pentagon suppression: if index var has relational bound matching dim, suppress.
+                    // Pentagon suppression: decompose index expression into (var, offset) and
+                    // check relational bounds with offset composition.
                     let suppressedByUpperPentagon =
-                        match idxExpr with
-                        | Var(_, varName) -> Intervals.pentagonProvesInBounds ctx varName n
-                        | _ -> false
+                        match Intervals.tryDecomposeVarPlusConst idxExpr with
+                        | Some (varName, exprOffset) ->
+                            Intervals.pentagonProvesInBoundsWithOffset ctx varName exprOffset n
+                        | None -> false
                     let suppressedByLowerPentagon =
-                        match idxExpr with
-                        | Var(_, varName) -> Intervals.pentagonProvesLowerBound ctx varName
-                        | _ -> false
+                        match Intervals.tryDecomposeVarPlusConst idxExpr with
+                        | Some (varName, exprOffset) ->
+                            Intervals.pentagonProvesLowerBoundWithOffset ctx varName exprOffset
+                        | None -> false
                     if not suppressedByUpperPentagon then
                         match iv.lo, iv.hi with
                         | Finite lo, _ when lo > ns ->

@@ -558,41 +558,66 @@ let killUpperBoundsFor (varName: string) (bounds: Map<string, string * int>) : M
     |> Map.filter (fun key (bVar, _) -> key <> varName && bVar <> varName)
 
 
-/// Check if the Pentagon upper-bound relation proves that index variable varName is
-/// within matrix dimension matDim. Returns true if:
-///   (a) upperBounds[varName] = (boundVar, offset) and boundVar has exact interval
-///       [k,k] in valueRanges and k + offset <= concrete matDim size, OR
-///   (b) upperBounds[varName] = (boundVar, offset) and the DimEquiv root of boundVar
-///       matches the DimEquiv root of matDim's symbolic key and offset <= 0.
-let pentagonProvesInBounds
+/// Decompose an expression into (baseVar, offset) if it is Var or Var +/- Const.
+/// Returns None for anything more complex (e.g. 2*i, i+j, etc.).
+let tryDecomposeVarPlusConst (expr: Ir.Expr) : (string * int) option =
+    match expr with
+    | Ir.Var(_, name) -> Some (name, 0)
+    | Ir.BinOp(_, "+", Ir.Var(_, name), Ir.Const(_, v))
+    | Ir.BinOp(_, "+", Ir.Const(_, v), Ir.Var(_, name))
+        when v = System.Math.Floor(v) -> Some (name, int v)
+    | Ir.BinOp(_, "-", Ir.Var(_, name), Ir.Const(_, v))
+        when v = System.Math.Floor(v) -> Some (name, -(int v))
+    | _ -> None
+
+
+/// Check if the Pentagon upper-bound relation proves that the expression
+/// (varName + exprOffset) is within matrix dimension matDim. Returns true if:
+///   (a) upperBounds[varName] = (boundVar, pentOffset) and boundVar has exact
+///       interval [k,k] in valueRanges and k + pentOffset + exprOffset <= concrete matDim size, OR
+///   (b) upperBounds[varName] = (boundVar, pentOffset) and the DimEquiv root of
+///       boundVar matches matDim's symbolic key and pentOffset + exprOffset <= 0.
+let pentagonProvesInBoundsWithOffset
     (ctx: Context.AnalysisContext)
     (varName: string)
+    (exprOffset: int)
     (matDim: Shapes.Dim)
     : bool =
     match Map.tryFind varName ctx.cst.upperBounds with
     | None -> false
-    | Some (boundVar, offset) ->
-        // Case (a): boundVar is concretely known and k + offset <= concrete matDim
+    | Some (boundVar, pentOffset) ->
+        let totalOffset = pentOffset + exprOffset
+        // Case (a): boundVar is concretely known and k + totalOffset <= concrete matDim
         let concreteProof =
             match Map.tryFind boundVar ctx.cst.valueRanges with
             | Some iv ->
                 match iv.lo, iv.hi with
                 | Finite lo, Finite hi when lo = hi ->
                     match matDim with
-                    | Shapes.Concrete ms -> lo + offset <= ms
+                    | Shapes.Concrete ms -> lo + totalOffset <= ms
                     | _ -> false
                 | _ -> false
             | None -> false
         if concreteProof then true
         else
-        // Case (b): boundVar's DimEquiv root matches matDim's symbolic key and offset <= 0
+        // Case (b): boundVar's DimEquiv root matches matDim's symbolic key and totalOffset <= 0
         match matDim with
-        | Shapes.Symbolic _ when offset <= 0 ->
+        | Shapes.Symbolic _ when totalOffset <= 0 ->
             let matDimKey = Shapes.dimStr matDim
             let boundVarRoot = DimEquiv.find ctx.cst.dimEquiv boundVar
             let matDimRoot = DimEquiv.find ctx.cst.dimEquiv matDimKey
             boundVarRoot = matDimRoot
         | _ -> false
+
+
+/// Check if the Pentagon upper-bound relation proves that index variable varName is
+/// within matrix dimension matDim (no expression offset).
+let pentagonProvesInBounds
+    (ctx: Context.AnalysisContext)
+    (varName: string)
+    (matDim: Shapes.Dim)
+    : bool =
+    pentagonProvesInBoundsWithOffset ctx varName 0 matDim
 
 
 /// Intersect two lower-bound maps (keep only facts present in both).
@@ -621,22 +646,42 @@ let killLowerBoundsFor (varName: string) (bounds: Map<string, string * int>) : M
     |> Map.filter (fun key (bVar, _) -> key <> varName && bVar <> varName)
 
 
+/// Check if the Pentagon lower-bound relation proves that (varName + exprOffset) >= 1.
+/// Returns true when:
+///   (a) lowerBounds[varName] = (boundVar, pentOffset) and boundVar has exact
+///       interval [k,k] and k + pentOffset + exprOffset >= 1, OR
+///   (b) lowerBounds[varName] = (boundVar, pentOffset) and boundVar has a symbolic
+///       DimEquiv root and pentOffset + exprOffset >= 0 (i.e. var+offset >= boundVar >= 1
+///       by convention that symbolic dims represent valid sizes >= 1).
+let pentagonProvesLowerBoundWithOffset
+    (ctx: Context.AnalysisContext)
+    (varName: string)
+    (exprOffset: int)
+    : bool =
+    match Map.tryFind varName ctx.cst.lowerBounds with
+    | None -> false
+    | Some (boundVar, pentOffset) ->
+        let totalOffset = pentOffset + exprOffset
+        // Case (a): boundVar is concretely known
+        match Map.tryFind boundVar ctx.cst.valueRanges with
+        | Some iv ->
+            match iv.lo, iv.hi with
+            | Finite lo, Finite hi when lo = hi -> lo + totalOffset >= 1
+            | _ -> false
+        | None ->
+            // Case (b): symbolic bound -- if the lower bound is a symbolic var and
+            // totalOffset >= 0, then varName + exprOffset >= boundVar + pentOffset + exprOffset
+            // >= 1 + 0 = 1 (symbolic dims are >= 1).
+            totalOffset >= 0
+
+
 /// Check if the Pentagon lower-bound relation proves that index variable varName is >= 1.
-/// Returns true when lowerBounds[varName] = (boundVar, offset) and boundVar has
-/// exact interval [k,k] and k + offset >= 1.
+/// Returns true when lowerBounds[varName] = (boundVar, offset) and the bound implies >= 1.
 let pentagonProvesLowerBound
     (ctx: Context.AnalysisContext)
     (varName: string)
     : bool =
-    match Map.tryFind varName ctx.cst.lowerBounds with
-    | None -> false
-    | Some (boundVar, offset) ->
-        match Map.tryFind boundVar ctx.cst.valueRanges with
-        | Some iv ->
-            match iv.lo, iv.hi with
-            | Finite lo, Finite hi when lo = hi -> lo + offset >= 1
-            | _ -> false
-        | None -> false
+    pentagonProvesLowerBoundWithOffset ctx varName 0
 
 
 /// Parse a while-condition expression and extract relational bounds of the form
@@ -664,6 +709,32 @@ let rec extractPentagonBoundsFromCondition
         [ (varName, boundVar, 0, false) ]
     | Ir.BinOp(_, ">", Ir.Var(_, varName), Ir.Var(_, boundVar)) ->
         [ (varName, boundVar, 1, false) ]
+    // Q2: Var +/- Const on either side of a comparison.
+    // e.g. `i+1 <= n`  -> i <= n + (-1)  i.e. (varName="i", boundVar="n", offset=-1, isUpper=true)
+    //      `i <= n-1`  -> i <= n + (-1)
+    //      `i-1 >= n`  -> i >= n + 1
+    | Ir.BinOp(_, "<=", lhs, rhs) ->
+        match tryDecomposeVarPlusConst lhs, tryDecomposeVarPlusConst rhs with
+        | Some (varName, lhsOff), Some (boundVar, rhsOff) when varName <> boundVar ->
+            // varName + lhsOff <= boundVar + rhsOff  ->  varName <= boundVar + (rhsOff - lhsOff)
+            [ (varName, boundVar, rhsOff - lhsOff, true) ]
+        | _ -> []
+    | Ir.BinOp(_, "<", lhs, rhs) ->
+        match tryDecomposeVarPlusConst lhs, tryDecomposeVarPlusConst rhs with
+        | Some (varName, lhsOff), Some (boundVar, rhsOff) when varName <> boundVar ->
+            [ (varName, boundVar, rhsOff - lhsOff - 1, true) ]
+        | _ -> []
+    | Ir.BinOp(_, ">=", lhs, rhs) ->
+        match tryDecomposeVarPlusConst lhs, tryDecomposeVarPlusConst rhs with
+        | Some (varName, lhsOff), Some (boundVar, rhsOff) when varName <> boundVar ->
+            // varName + lhsOff >= boundVar + rhsOff  ->  varName >= boundVar + (rhsOff - lhsOff)
+            [ (varName, boundVar, rhsOff - lhsOff, false) ]
+        | _ -> []
+    | Ir.BinOp(_, ">", lhs, rhs) ->
+        match tryDecomposeVarPlusConst lhs, tryDecomposeVarPlusConst rhs with
+        | Some (varName, lhsOff), Some (boundVar, rhsOff) when varName <> boundVar ->
+            [ (varName, boundVar, rhsOff - lhsOff + 1, false) ]
+        | _ -> []
     // Note: flipped patterns (n >= i → i <= n) are structurally identical to
     // the above in F# pattern matching, so the left Var is always treated as
     // the variable and the right as the bound. This is correct for the common

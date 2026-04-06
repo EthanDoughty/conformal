@@ -930,16 +930,16 @@ and analyzeStmtIr
                     | Some v -> Finite v
                     | None -> match hiDim with Concrete n -> Finite n | Symbolic s -> SymBound s | Range _ -> Unbounded | Unknown -> Unbounded
                 ctx.cst.valueRanges <- Map.add var_ { lo = loBound; hi = hiBound } ctx.cst.valueRanges
-                // Pentagon: record relational upper bound when hi endpoint is a variable
-                match right with
-                | Var(_, boundVarName) ->
-                    ctx.cst.upperBounds <- Map.add var_ (boundVarName, 0) ctx.cst.upperBounds
-                | _ -> ()
-                // Pentagon: record relational lower bound when lo endpoint is a variable
-                match left with
-                | Var(_, startVarName) ->
-                    ctx.cst.lowerBounds <- Map.add var_ (startVarName, 0) ctx.cst.lowerBounds
-                | _ -> ()
+                // Pentagon: record relational upper bound when hi endpoint is Var or Var +/- Const.
+                match Intervals.tryDecomposeVarPlusConst right with
+                | Some (boundVarName, offset) ->
+                    ctx.cst.upperBounds <- Map.add var_ (boundVarName, offset) ctx.cst.upperBounds
+                | None -> ()
+                // Pentagon: record relational lower bound when lo endpoint is Var or Var +/- Const.
+                match Intervals.tryDecomposeVarPlusConst left with
+                | Some (startVarName, offset) ->
+                    ctx.cst.lowerBounds <- Map.add var_ (startVarName, offset) ctx.cst.lowerBounds
+                | None -> ()
         | _ -> ()
 
         // Fixpoint-only: accumulation refinement
