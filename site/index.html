@@ -525,41 +525,40 @@ R = <span class="code-func">process</span>(A, w);</code></pre>
 
         <!-- MATLAB IDE -->
         <section class="section">
-            <h2>Works in the MATLAB IDE too</h2>
+            <h2>Using Conformal from the MATLAB IDE</h2>
             <p>
-                Don't use VS Code? No problem. Three steps:
+                Conformal ships as a standalone CLI binary. To use it from MATLAB's command window:
             </p>
             <div class="steps">
                 <div class="step">
                     <span class="step-num">1</span>
                     <div>
-                        <strong>Download the binary</strong><br>
-                        <span class="step-detail">Grab <code class="inline">conformal</code> for your OS from
+                        <strong>Download the CLI</strong><br>
+                        <span class="step-detail">Get the <code class="inline">conformal</code> binary for your OS from
                         <a href="https://github.com/EthanDoughty/conformal/releases" style="color:var(--accent)">GitHub Releases</a>.
-                        Extract it and put it somewhere on your PATH.</span>
+                        Extract it, put it somewhere on your system PATH. No .NET or MATLAB license needed.</span>
                     </div>
                 </div>
                 <div class="step">
                     <span class="step-num">2</span>
                     <div>
-                        <strong>Download conformal_check.m</strong><br>
-                        <span class="step-detail">Get <a href="https://github.com/EthanDoughty/conformal/blob/main/site/conformal_check.m" style="color:var(--accent)">conformal_check.m</a>
-                        and put it on your MATLAB path. Or paste this into your startup.m:<br>
-                        <code class="inline">addpath('/path/to/conformal')</code></span>
+                        <strong>Add conformal_check.m to your MATLAB path</strong><br>
+                        <span class="step-detail">Download <a href="https://github.com/EthanDoughty/conformal/blob/main/site/conformal_check.m" style="color:var(--accent)">conformal_check.m</a>
+                        and save it anywhere on your MATLAB path. This is a small wrapper that calls the CLI binary and prints results
+                        in the command window.</span>
                     </div>
                 </div>
                 <div class="step">
                     <span class="step-num">3</span>
                     <div>
-                        <strong>Run it</strong><br>
-                        <span class="step-detail"><code class="inline">&gt;&gt; conformal_check</code> analyzes whatever file you have open.<br>
-                        <code class="inline">&gt;&gt; conformal_check('ekf_update.m')</code> analyzes a specific file.</span>
+                        <strong>Analyze</strong><br>
+                        <span class="step-detail"><code class="inline">&gt;&gt; conformal_check</code> to analyze whatever file you have open in the editor.<br>
+                        <code class="inline">&gt;&gt; conformal_check('ekf_update.m')</code> to analyze a specific file.</span>
                     </div>
                 </div>
             </div>
             <p style="margin-top:16px">
-                Same analysis as VS Code, same warnings, same output. For a team, put both files on a shared drive
-                and everyone gets it through <code class="inline">startup.m</code>.
+                For a team: put both files on a shared drive and add it in everyone's <code class="inline">startup.m</code>.
             </p>
         </section>
 
