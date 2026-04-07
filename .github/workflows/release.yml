@@ -1,0 +1,102 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+            ext: ''
+            archive: tar.gz
+          - os: ubuntu-latest
+            rid: linux-arm64
+            ext: ''
+            archive: tar.gz
+          - os: macos-13
+            rid: osx-x64
+            ext: ''
+            archive: tar.gz
+          - os: macos-14
+            rid: osx-arm64
+            ext: ''
+            archive: tar.gz
+          - os: windows-latest
+            rid: win-x64
+            ext: '.exe'
+            archive: zip
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish native binary
+        run: >
+          dotnet publish src/analyzer/ConformalAnalyzer.fsproj
+          -c Release
+          -r ${{ matrix.rid }}
+          --self-contained
+          -p:NuGetAudit=false
+          -o dist/${{ matrix.rid }}
+
+      - name: Verify binary runs
+        if: matrix.rid != 'linux-arm64'
+        run: dist/${{ matrix.rid }}/conformal-parse${{ matrix.ext }} --version
+        shell: bash
+
+      - name: Package (tar.gz)
+        if: matrix.archive == 'tar.gz'
+        run: |
+          cd dist/${{ matrix.rid }}
+          tar czf ../conformal-${{ github.ref_name }}-${{ matrix.rid }}.tar.gz conformal-parse${{ matrix.ext }}
+
+      - name: Package (zip)
+        if: matrix.archive == 'zip'
+        shell: bash
+        run: |
+          cd dist/${{ matrix.rid }}
+          7z a ../conformal-${{ github.ref_name }}-${{ matrix.rid }}.zip conformal-parse${{ matrix.ext }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformal-${{ matrix.rid }}
+          path: dist/conformal-${{ github.ref_name }}-${{ matrix.rid }}.*
+          retention-days: 7
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+          merge-multiple: true
+
+      - name: List artifacts
+        run: find artifacts/ -type f | sort
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false
