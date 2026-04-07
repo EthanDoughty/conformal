@@ -1,7 +1,7 @@
 # W_CURLY_INDEXING_NON_CELL
 
 **Severity**: Warning
-**Tier**: Pro
+**Tier**: Default
 
 Curly-brace indexing on a non-cell value.
 

@@ -1,7 +1,7 @@
 # W_POSSIBLY_NEGATIVE_DIM
 
 **Severity**: Error
-**Tier**: Pro
+**Tier**: Default
 
 A dimension value may be non-positive.
 

@@ -1,7 +1,7 @@
 # W_DIVISION_BY_ZERO
 
 **Severity**: Error
-**Tier**: Pro
+**Tier**: Default
 
 Division by a value that is definitely zero.
 

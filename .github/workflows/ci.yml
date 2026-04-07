@@ -54,7 +54,6 @@ jobs:
 
       - name: TypeScript type check
         run: cd vscode-conformal && npx tsc --noEmit
-        continue-on-error: true
 
       - name: Build extension
         run: |

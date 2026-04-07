@@ -1,7 +1,7 @@
 # W_CELL_ASSIGN_NON_CELL
 
 **Severity**: Warning
-**Tier**: Pro
+**Tier**: Default
 
 Cell assignment to a non-cell variable.
 

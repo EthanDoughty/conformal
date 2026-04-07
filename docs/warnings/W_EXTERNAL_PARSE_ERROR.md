@@ -1,7 +1,7 @@
 # W_EXTERNAL_PARSE_ERROR
 
 **Severity**: Warning
-**Tier**: Pro
+**Tier**: Default
 
 Parse error in an external function file.
 

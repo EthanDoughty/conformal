@@ -1,7 +1,7 @@
 # W_FIELD_ACCESS_NON_STRUCT
 
 **Severity**: Warning
-**Tier**: Pro
+**Tier**: Default
 
 Dot-access on a non-struct value.
 

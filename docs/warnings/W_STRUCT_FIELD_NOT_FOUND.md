@@ -1,7 +1,7 @@
 # W_STRUCT_FIELD_NOT_FOUND
 
 **Severity**: Warning
-**Tier**: Pro
+**Tier**: Default
 
 Accessed field does not exist on the struct.
 

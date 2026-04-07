@@ -1,7 +1,7 @@
 # W_INDEX_OUT_OF_BOUNDS
 
 **Severity**: Error
-**Tier**: Pro
+**Tier**: Default
 
 Index exceeds the dimension size.
 

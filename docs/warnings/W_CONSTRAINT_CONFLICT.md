@@ -1,7 +1,7 @@
 # W_CONSTRAINT_CONFLICT
 
 **Severity**: Error
-**Tier**: Pro
+**Tier**: Default
 
 Dimension constraint conflict detected.
 

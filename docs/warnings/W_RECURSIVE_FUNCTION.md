@@ -1,7 +1,7 @@
 # W_RECURSIVE_FUNCTION
 
 **Severity**: Warning
-**Tier**: Pro
+**Tier**: Default
 
 Recursive function call detected.
 
