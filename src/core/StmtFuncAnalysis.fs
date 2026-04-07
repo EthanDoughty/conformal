@@ -356,10 +356,7 @@ let private joinBranchResults
 // ---------------------------------------------------------------------------
 
 let private formatDualLocationWarning (funcWarn: Diagnostic) (funcName: string) (callLine: int) : Diagnostic =
-    if funcWarn.message.Contains("(in ") then funcWarn
-    else
-        let augMsg = $"{funcWarn.message} (in {funcName}, called from line {callLine})"
-        { funcWarn with message = augMsg; relatedLine = Some callLine }
+    { funcWarn with callStack = funcWarn.callStack @ [(funcName, callLine)] }
 
 
 // ---------------------------------------------------------------------------

@@ -41,6 +41,7 @@ interface SerializedDiagnostic {
     message: string;
     relatedLine: number | undefined;
     relatedCol: number | undefined;
+    callStack: [string, number][];  // (funcName, callLine) pairs, innermost first
 }
 
 interface FunctionSymbol {
@@ -284,6 +285,18 @@ function toLspDiagnostic(d: SerializedDiagnostic, sourceLines: string[], uri: st
         }];
     }
 
+    // Render call stack as indented lines below the main message
+    const callStackLines = (d.callStack || []).map(([funcName, callLine], i) => {
+        const indent = '  '.repeat(i + 1);
+        return `${indent}in ${funcName}, called from line ${callLine}`;
+    });
+    const baseMessage = CODE_DESCRIPTIONS[d.code]
+        ? `${CODE_DESCRIPTIONS[d.code]}\n${d.message}`
+        : d.message;
+    const message = callStackLines.length > 0
+        ? `${baseMessage}\n${callStackLines.join('\n')}`
+        : baseMessage;
+
     return {
         range,
         severity,
@@ -292,9 +305,7 @@ function toLspDiagnostic(d: SerializedDiagnostic, sourceLines: string[], uri: st
             href: `https://github.com/EthanDoughty/conformal/blob/main/docs/warnings/${d.code}.md`,
         },
         source: 'conformal',
-        message: CODE_DESCRIPTIONS[d.code]
-            ? `${CODE_DESCRIPTIONS[d.code]}\n${d.message}`
-            : d.message,
+        message,
         tags,
         relatedInformation,
     };

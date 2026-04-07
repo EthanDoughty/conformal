@@ -101,12 +101,23 @@ let toLspDiagnostic
             }
             Some [| relInfo |]
 
+    // Render call stack as indented lines below the main message
+    let messageWithCallStack =
+        if d.callStack.IsEmpty then d.message
+        else
+            let frames =
+                d.callStack
+                |> List.mapi (fun i (funcName, callLine) ->
+                    let indent = String.replicate (i + 1) "  "
+                    $"{indent}in {funcName}, called from line {callLine}")
+            d.message + "\n" + (frames |> String.concat "\n")
+
     // Enrich message with witness if available
     let message =
         match witness with
-        | None -> d.message
+        | None -> messageWithCallStack
         | Some w ->
-            let baseMsg = $"{d.message}\nWitness: {w.explanation}"
+            let baseMsg = $"{messageWithCallStack}\nWitness: {w.explanation}"
             if w.path.IsEmpty then baseMsg
             else
                 let parts =

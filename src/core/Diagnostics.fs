@@ -48,14 +48,25 @@ type Diagnostic = {
     relatedLine: int option
     col:        int
     relatedCol: int option
+    callStack:  (string * int) list  // (funcName, callLine) pairs, innermost first
 }
 
 let diagnosticToString (d: Diagnostic) : string =
     let cs = codeString d.code
     // Special case: W_UNSUPPORTED_STMT uses line= format
-    match d.code with
-    | W_UNSUPPORTED_STMT -> $"{cs} line={d.line} {d.message}"
-    | _                  -> $"{cs} line {d.line}: {d.message}"
+    let mainLine =
+        match d.code with
+        | W_UNSUPPORTED_STMT -> $"{cs} line={d.line} {d.message}"
+        | _                  -> $"{cs} line {d.line}: {d.message}"
+    if d.callStack.IsEmpty then
+        mainLine
+    else
+        let frames =
+            d.callStack
+            |> List.mapi (fun i (funcName, callLine) ->
+                let indent = String.replicate (i + 1) "  "
+                $"{indent}in {funcName}, called from line {callLine}")
+        mainLine + "\n" + (frames |> String.concat "\n")
 
 // ---------------------------------------------------------------------------
 // Pretty-printing helpers for IR expressions
@@ -115,10 +126,10 @@ and prettyIndexArgIr (arg: IndexArg) : string =
 // ---------------------------------------------------------------------------
 
 let makeDiag line code message =
-    { line = line; code = code; message = message; relatedLine = None; col = 0; relatedCol = None }
+    { line = line; code = code; message = message; relatedLine = None; col = 0; relatedCol = None; callStack = [] }
 
 let makeDiagRel line code message relLine =
-    { line = line; code = code; message = message; relatedLine = Some relLine; col = 0; relatedCol = None }
+    { line = line; code = code; message = message; relatedLine = Some relLine; col = 0; relatedCol = None; callStack = [] }
 
 let hasUnsupported (diags: Diagnostic list) : bool =
     diags |> List.exists (fun d ->
