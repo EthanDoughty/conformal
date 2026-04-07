@@ -362,7 +362,7 @@
         <section class="hero">
             <h1><span>Conformal</span></h1>
             <p class="tagline">
-                Static shape analysis for MATLAB. Catches matrix dimension errors before runtime. No MATLAB license required.
+                Reads your .m files, tracks every matrix dimension, and tells you where they don't line up. Runs without MATLAB.
             </p>
             <div class="buttons">
                 <a href="https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal" class="btn btn-primary">
@@ -395,9 +395,9 @@ R = <span class="code-func">process</span>(A, w);</code></pre>
   <span class="dim-warn">matrix[10 x 3] vs matrix[4 x 1]</span>
   (in process, called from line 8)
 
-<span class="code-comment">Shapes are tracked into the function</span>
-<span class="code-comment">body. The mismatch is caught at the</span>
-<span class="code-comment">exact line where it happens.</span></code></pre>
+<span class="code-comment">The shapes follow into the function.</span>
+<span class="code-comment">data is 10x3, weights is 4x1.</span>
+<span class="code-comment">Line 2 is where it breaks.</span></code></pre>
                 </div>
             </div>
         </section>
@@ -444,49 +444,47 @@ R = <span class="code-func">process</span>(A, w);</code></pre>
 
         <!-- Symbolic dimensions -->
         <section class="section">
-            <h2>Symbolic dimension tracking</h2>
+            <h2>Symbolic dimensions</h2>
             <p>
-                Conformal doesn't just check concrete sizes. If you write <code class="inline">zeros(n+1, 2*m)</code>, it tracks
-                that as <code class="inline">matrix[(n+1) x (2*m)]</code> and carries those expressions through every operation.
-                When a variable gets narrowed to a concrete value later (inside an <code class="inline">if n == 5</code> branch, for example),
-                the resolution propagates back through all the symbolic dimensions that depend on it.
+                <code class="inline">zeros(n+1, 2*m)</code> is tracked as <code class="inline">matrix[(n+1) x (2*m)]</code>, not just "some matrix."
+                Those expressions follow through arithmetic, concatenation, and function calls. If <code class="inline">n</code> gets
+                pinned to a value inside a branch (<code class="inline">if n == 5</code>), every dimension that depends on <code class="inline">n</code> resolves too.
             </p>
             <p>
-                This is what lets Conformal catch mismatches in code where sizes come from function arguments or
-                <code class="inline">size(A,1)</code> calls, not just hardcoded numbers.
+                Most real MATLAB code gets its sizes from <code class="inline">size(A,1)</code> or function arguments, not from literals. That's what this handles.
             </p>
         </section>
 
         <!-- Two-col: What it analyzes / CI integration -->
         <div class="two-col">
             <div>
-                <h2>What it analyzes</h2>
+                <h2>What it covers</h2>
                 <p>
-                    Arithmetic, concatenation, indexing, struct fields, cell arrays, classdef objects, cross-file function calls,
-                    nested functions, closures, nargin/nargout, varargin. Loops use single-pass analysis or widening-based fixpoint
-                    iteration. An interval domain catches out-of-bounds indexing and division by zero. A relational pentagon domain
-                    tracks loop index bounds to suppress false positives on stencil patterns.
+                    The usual stuff: <code class="inline">+</code> <code class="inline">*</code> <code class="inline">.*</code> <code class="inline">[A B]</code> <code class="inline">[A; B]</code> <code class="inline">A(i,j)</code>, struct fields, cell arrays, classdef objects.
+                    Also cross-file calls, nested functions, closures, <code class="inline">nargin</code>/<code class="inline">nargout</code>, <code class="inline">varargin</code>.
+                    An interval domain catches index-out-of-bounds. A pentagon domain tracks loop variable bounds so
+                    <code class="inline">for i=1:n-1; A(i+1)</code> doesn't false-positive.
                 </p>
             </div>
             <div>
-                <h2>CI and verification</h2>
+                <h2>For CI pipelines</h2>
                 <p>
-                    <code class="inline">--format sarif</code> outputs SARIF 2.1.0 with SHA-256 file hashes for audit traceability.
-                    <code class="inline">--batch dir/</code> analyzes entire directories in one process.
-                    <code class="inline">.conformal.json</code> sets per-repo analysis modes.
-                    <code class="inline">--coder</code> checks for MATLAB Coder compatibility.
-                    Deterministic output: same file, same version, same result.
+                    <code class="inline">--format sarif</code> for SARIF 2.1.0 with SHA-256 file hashes.
+                    <code class="inline">--batch dir/</code> to sweep a whole directory in one process.
+                    <code class="inline">.conformal.json</code> for per-repo settings.
+                    <code class="inline">--coder</code> for MATLAB Coder compatibility checks.
+                    Output is deterministic. Same file, same version, same result, every time.
                 </p>
             </div>
         </div>
 
         <!-- Tested across -->
         <section class="section">
-            <h2>Tested on real code</h2>
+            <h2>Where it's been tested</h2>
             <p>
-                The analyzer has been run against 15,085 .m files from 34 open-source projects. Zero crashes.
-                These aren't toy files. They include dense numerical analysis, control systems, EEG processing,
-                power flow solvers, evolutionary optimization, seismic analysis, and NASA spacecraft simulation.
+                15,085 .m files from 34 public projects. chebfun (3,435 files of numerical analysis), PlatEMO (2,416 optimization algorithms),
+                MATPOWER (979 power flow files), NASA's MUSCAT spacecraft toolkit, the KU CReSIS polar radar toolbox,
+                LADAC aircraft dynamics, eeglab, ecg-kit. No crashes on any of them.
             </p>
             <div class="domains">
                 <span class="domain-tag">aerospace</span>
@@ -499,6 +497,7 @@ R = <span class="code-func">process</span>(A, w);</code></pre>
                 <span class="domain-tag">signal processing</span>
                 <span class="domain-tag">CFD</span>
                 <span class="domain-tag">controls</span>
+                <span class="domain-tag">radar</span>
                 <span class="domain-tag">robotics</span>
                 <span class="domain-tag">rocketry</span>
             </div>
@@ -508,9 +507,8 @@ R = <span class="code-func">process</span>(A, w);</code></pre>
         <section class="migrate-section">
             <h2>Conformal Migrate</h2>
             <p>
-                A MATLAB-to-Python transpiler that uses shape analysis to make better translation decisions
-                than a purely syntactic tool. Handles 204 builtins, 1-to-0 index conversion with constant folding,
-                and shape-aware operator dispatch. Included in the repo, free to use.
+                Also in the repo: a MATLAB-to-Python transpiler. 204 builtins, 1-to-0 index conversion with constant folding,
+                <code class="inline">*</code> vs <code class="inline">np.dot</code> dispatch based on the shapes Conformal already knows. Free to use.
             </p>
         </section>
 
