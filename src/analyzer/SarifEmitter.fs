@@ -128,7 +128,7 @@ let private computeSha256 (source: string) : string =
     let hash = SHA256.HashData(bytes)
     hash |> Array.map (fun b -> b.ToString("x2")) |> String.concat ""
 
-let emitSarif (stream: Stream) (relativeUri: string) (diagnostics: Diagnostic list) (version: string) (source: string) : unit =
+let emitSarif (stream: Stream) (relativeUri: string) (diagnostics: Diagnostic list) (version: string) (source: string) (coverage: (int * int * int * int) option) : unit =
     let opts = JsonWriterOptions(Indented = true)
     use writer = new Utf8JsonWriter(stream, opts)
 
@@ -208,6 +208,19 @@ let emitSarif (stream: Stream) (relativeUri: string) (diagnostics: Diagnostic li
         writer.WriteEndArray() // locations
         writer.WriteEndObject() // result
     writer.WriteEndArray() // results
+
+    // run.properties: shape coverage metrics
+    match coverage with
+    | Some (tracked, partial, untracked, total) ->
+        writer.WriteStartObject("properties")
+        writer.WriteNumber("shapeCoverage.tracked", tracked)
+        writer.WriteNumber("shapeCoverage.partial", partial)
+        writer.WriteNumber("shapeCoverage.untracked", untracked)
+        writer.WriteNumber("shapeCoverage.total", total)
+        if total > 0 then
+            writer.WriteNumber("shapeCoverage.rate", System.Math.Round(float tracked / float total, 3))
+        writer.WriteEndObject() // properties
+    | None -> ()
 
     writer.WriteEndObject() // run
     writer.WriteEndArray() // runs

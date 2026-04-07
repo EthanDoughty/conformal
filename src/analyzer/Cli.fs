@@ -492,7 +492,7 @@ let runFileSarif (filePath: string) (strict: bool) (fixpoint: bool) (coder: bool
             ctx.ws.privateFunctions.[kv.Key] <- kv.Value
         ctx.ws.workspaceDir <- dirPath
 
-        let (_env, warnings) = Analysis.analyzeProgramIr irProg ctx
+        let (env, warnings) = Analysis.analyzeProgramIr irProg ctx
 
         // Filter: apply suppression directives then strict-only filter
         let suppressions = Suppressions.parseSuppressions src
@@ -500,6 +500,9 @@ let runFileSarif (filePath: string) (strict: bool) (fixpoint: bool) (coder: bool
             warnings
             |> Suppressions.filterDiagnostics suppressions
             |> (if strict then id else List.filter (fun w -> not (Set.contains w.code Diagnostics.STRICT_ONLY_CODES)))
+
+        // Compute shape coverage
+        let coverage = Some (Analysis.computeShapeCoverage env)
 
         // Compute relative URI from CWD
         let cwd = Directory.GetCurrentDirectory()
@@ -514,7 +517,7 @@ let runFileSarif (filePath: string) (strict: bool) (fixpoint: bool) (coder: bool
         let relUri = relUri.Replace('\\', '/')
 
         use stream = Console.OpenStandardOutput()
-        SarifEmitter.emitSarif stream relUri displayWarnings "3.8.0" src
+        SarifEmitter.emitSarif stream relUri displayWarnings "3.8.0" src coverage
         // Write trailing newline so shell prompt starts on new line
         stream.WriteByte(10uy)
         0
