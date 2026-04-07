@@ -54,21 +54,21 @@ jobs:
 
       - name: Verify binary runs
         if: matrix.rid != 'linux-arm64'
-        run: dist/${{ matrix.rid }}/conformal-parse${{ matrix.ext }} --version
+        run: dist/${{ matrix.rid }}/conformal${{ matrix.ext }} --version
         shell: bash
 
       - name: Package (tar.gz)
         if: matrix.archive == 'tar.gz'
         run: |
           cd dist/${{ matrix.rid }}
-          tar czf ../conformal-${{ github.ref_name }}-${{ matrix.rid }}.tar.gz conformal-parse${{ matrix.ext }}
+          tar czf ../conformal-${{ github.ref_name }}-${{ matrix.rid }}.tar.gz conformal${{ matrix.ext }}
 
       - name: Package (zip)
         if: matrix.archive == 'zip'
         shell: bash
         run: |
           cd dist/${{ matrix.rid }}
-          7z a ../conformal-${{ github.ref_name }}-${{ matrix.rid }}.zip conformal-parse${{ matrix.ext }}
+          7z a ../conformal-${{ github.ref_name }}-${{ matrix.rid }}.zip conformal${{ matrix.ext }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

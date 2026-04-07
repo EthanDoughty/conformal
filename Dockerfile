@@ -25,9 +25,9 @@ RUN dotnet publish src/analyzer/ConformalAnalyzer.fsproj -c Release -o /app -p:P
 FROM mcr.microsoft.com/dotnet/runtime:8.0 AS runtime
 WORKDIR /app
 COPY --from=build /app .
-ENTRYPOINT ["dotnet", "conformal-parse.dll"]
+ENTRYPOINT ["dotnet", "conformal.dll"]
 
 # Test (runtime + test files)
 FROM runtime AS test
 COPY tests/ /app/tests/
-ENTRYPOINT ["dotnet", "conformal-parse.dll"]
+ENTRYPOINT ["dotnet", "conformal.dll"]

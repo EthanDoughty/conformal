@@ -30,7 +30,7 @@ publish_target() {
         -o "$DIST/$rid" \
         2>&1 | tail -1
 
-    local binary="$DIST/$rid/conformal-parse${ext}"
+    local binary="$DIST/$rid/conformal${ext}"
     if [ -f "$binary" ]; then
         local size=$(du -h "$binary" | cut -f1)
         echo "  $rid: $binary ($size)"
@@ -38,9 +38,9 @@ publish_target() {
         # Package as tar.gz (Unix) or zip (Windows)
         pushd "$DIST/$rid" > /dev/null
         if [ "$ext" = ".exe" ]; then
-            zip -q "../conformal-${VERSION}-${rid}.zip" "conformal-parse${ext}"
+            zip -q "../conformal-${VERSION}-${rid}.zip" "conformal${ext}"
         else
-            tar czf "../conformal-${VERSION}-${rid}.tar.gz" "conformal-parse${ext}"
+            tar czf "../conformal-${VERSION}-${rid}.tar.gz" "conformal${ext}"
         fi
         popd > /dev/null
     else

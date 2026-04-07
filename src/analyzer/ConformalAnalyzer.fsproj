@@ -5,7 +5,7 @@
     <PublishAot>true</PublishAot>
     <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
     <Nullable>enable</Nullable>
-    <AssemblyName>conformal-parse</AssemblyName>
+    <AssemblyName>conformal</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="LspDiagnostics.fs" />

@@ -4,7 +4,7 @@ function conformal_check(filepath)
 %   conformal_check (no args) analyzes the current editor file.
 %
 %   Setup:
-%     1. Download conformal-parse from:
+%     1. Download conformal from:
 %        https://github.com/EthanDoughty/conformal/releases
 %     2. Put it somewhere on your system PATH
 %     3. Put this file on your MATLAB path
@@ -25,10 +25,10 @@ function conformal_check(filepath)
         error('File not found: %s', filepath);
     end
 
-    [status, output] = system(sprintf('conformal-parse "%s"', filepath));
+    [status, output] = system(sprintf('conformal "%s"', filepath));
 
     if status == -1
-        error(['Could not find conformal-parse on PATH. ' ...
+        error(['Could not find conformal on PATH. ' ...
                'Download it from https://github.com/EthanDoughty/conformal/releases']);
     end
 

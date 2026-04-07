@@ -548,7 +548,7 @@ let run (argv: string array) : int =
     elif args.parseJson then
         // Legacy --parse-json mode: just parse and emit JSON
         if args.file = "" then
-            eprintfn "Usage: conformal-parse --parse-json <file.m>"
+            eprintfn "Usage: conformal --parse-json <file.m>"
             1
         elif not (File.Exists args.file) then
             eprintfn "File not found: %s" args.file

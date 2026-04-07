@@ -2,7 +2,7 @@
 # Conformal pre-commit hook: analyzes staged .m files.
 # Install: cp pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
 
-CONFORMAL="conformal-parse"  # adjust path if needed
+CONFORMAL="conformal"  # adjust path if needed
 
 staged=$(git diff --cached --name-only --diff-filter=ACM | grep '\.m$')
 if [ -z "$staged" ]; then
