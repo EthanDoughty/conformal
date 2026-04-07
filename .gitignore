@@ -17,6 +17,9 @@ Thumbs.db
 *.vsix
 .cache/
 
+# Release artifacts
+dist/
+
 # Development tooling (local only)
 .claude/
 CLAUDE.md
