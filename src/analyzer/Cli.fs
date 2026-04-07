@@ -71,8 +71,8 @@ let private printEnv (env: Env.Env) : unit =
 // Single-file analysis
 // ---------------------------------------------------------------------------
 
-/// Analyze one .m file and print results. Returns exit code: 0 = success, 1 = error.
-let runFile (filePath: string) (strict: bool) (fixpoint: bool) (benchmark: bool) (coder: bool) : int =
+/// Analyze one .m file and print results. Returns exit code: 0 = success, 1 = error/warnings.
+let runFile (filePath: string) (strict: bool) (fixpoint: bool) (benchmark: bool) (coder: bool) (failOnWarnings: bool) : int =
     if not (File.Exists filePath) then
         eprintfn "ERROR: file not found: %s" filePath
         1
@@ -184,6 +184,8 @@ let runFile (filePath: string) (strict: bool) (fixpoint: bool) (benchmark: bool)
             printfn ""
             printfn "STRICT MODE: Unsupported constructs detected (W_UNSUPPORTED_*)"
             1
+        elif failOnWarnings && not displayWarnings.IsEmpty then
+            1
         else
             0
 
@@ -213,14 +215,14 @@ type CliArgs = {
     tests: bool; testProps: bool; strict: bool; fixpoint: bool
     bench: bool; coder: bool; file: string; parseJson: bool
     quiet: bool; help: bool; version: bool; formatSarif: bool
-    batch: bool; batchArgs: string list
+    batch: bool; batchArgs: string list; failOnWarnings: bool
 }
 
 let private defaultArgs =
     { tests = false; testProps = false; strict = false; fixpoint = false
       bench = false; coder = false; file = ""; parseJson = false
       quiet = false; help = false; version = false; formatSarif = false
-      batch = false; batchArgs = [] }
+      batch = false; batchArgs = []; failOnWarnings = false }
 
 // Fold state: Ready accepts flags, ConsumeFile means next arg is a file path,
 // ConsumeWitness means next arg is an optional witness mode or file path,
@@ -253,6 +255,7 @@ let private parseArgv (argv: string array) : CliArgs =
                 | "--format"       -> (acc, ConsumeFormat)
                 | "--witness"      -> (acc, ConsumeWitness)
                 | "--quiet"        -> ({ acc with quiet = true }, Ready)
+                | "--fail-on-warnings" -> ({ acc with failOnWarnings = true }, Ready)
                 | "--help" | "-h"  -> ({ acc with help = true }, Ready)
                 | "--version"      -> ({ acc with version = true }, Ready)
                 | _ -> (acc, Ready)
@@ -267,6 +270,7 @@ let private parseArgv (argv: string array) : CliArgs =
                 | "--strict"    -> ({ acc with strict = true }, ConsumeBatch)
                 | "--fixpoint"  -> ({ acc with fixpoint = true }, ConsumeBatch)
                 | "--coder"     -> ({ acc with coder = true }, ConsumeBatch)
+                | "--fail-on-warnings" -> ({ acc with failOnWarnings = true }, ConsumeBatch)
                 | _ -> (acc, ConsumeBatch)
             else
                 ({ acc with batchArgs = acc.batchArgs @ [arg] }, ConsumeBatch)
@@ -283,6 +287,7 @@ let private parseArgv (argv: string array) : CliArgs =
             | "--witness"      -> (acc, ConsumeWitness)
             | "--batch"        -> ({ acc with batch = true }, ConsumeBatch)
             | "--quiet"        -> ({ acc with quiet = true }, Ready)
+            | "--fail-on-warnings" -> ({ acc with failOnWarnings = true }, Ready)
             | "--help" | "-h"  -> ({ acc with help = true }, Ready)
             | "--version"      -> ({ acc with version = true }, Ready)
             | a when not (a.StartsWith("--")) -> ({ acc with file = a }, Ready)
@@ -315,7 +320,7 @@ let private collectMFiles (targets: string list) : string list =
 
 /// Analyze all .m files listed and print per-file one-liners plus a final summary.
 /// Returns 0 if no crashes, 1 if any file crashed (parse/read error).
-let runBatch (targets: string list) (strict: bool) (fixpoint: bool) (coder: bool) : int =
+let runBatch (targets: string list) (strict: bool) (fixpoint: bool) (coder: bool) (failOnWarnings: bool) : int =
     let files = collectMFiles targets
     if files.IsEmpty then
         eprintfn "No .m files found in batch targets."
@@ -419,7 +424,9 @@ let runBatch (targets: string list) (strict: bool) (fixpoint: bool) (coder: bool
     printfn "Batch: %d files, %d clean, %d warned, %d errors"
         files.Length cleanCount warnedCount errorCount
 
-    if hadCrash then 1 else 0
+    if hadCrash then 1
+    elif failOnWarnings && warnedCount > 0 then 1
+    else 0
 
 let private printUsage () =
     printfn "Usage: conformal [OPTIONS] <file.m>"
@@ -434,11 +441,12 @@ let private printUsage () =
     printfn "  --parse-json    Parse file and emit JSON IR"
     printfn "  --format sarif  Output diagnostics as SARIF 2.1.0 JSON"
     printfn "  --batch <dir|files...>  Analyze multiple files in one process"
+    printfn "  --fail-on-warnings     Exit with code 1 if any warnings are found"
     printfn "  --help, -h      Show this help message"
     printfn "  --version       Show version"
 
 /// Analyze one .m file and emit SARIF 2.1.0 JSON to stdout. Returns exit code.
-let runFileSarif (filePath: string) (strict: bool) (fixpoint: bool) (coder: bool) : int =
+let runFileSarif (filePath: string) (strict: bool) (fixpoint: bool) (coder: bool) (failOnWarnings: bool) : int =
     if not (File.Exists filePath) then
         eprintfn "ERROR: file not found: %s" filePath
         1
@@ -520,7 +528,7 @@ let runFileSarif (filePath: string) (strict: bool) (fixpoint: bool) (coder: bool
         SarifEmitter.emitSarif stream relUri displayWarnings "3.8.0" src coverage
         // Write trailing newline so shell prompt starts on new line
         stream.WriteByte(10uy)
-        0
+        if failOnWarnings && not displayWarnings.IsEmpty then 1 else 0
 
 /// Parse argv and dispatch. Returns exit code.
 let run (argv: string array) : int =
@@ -575,11 +583,11 @@ let run (argv: string array) : int =
             eprintfn "Usage: conformal --batch <dir|file.m ...>"
             1
         else
-            runBatch args.batchArgs args.strict args.fixpoint args.coder
+            runBatch args.batchArgs args.strict args.fixpoint args.coder args.failOnWarnings
     elif args.formatSarif && args.file <> "" then
-        runFileSarif args.file args.strict args.fixpoint args.coder
+        runFileSarif args.file args.strict args.fixpoint args.coder args.failOnWarnings
     elif args.file <> "" then
-        runFile args.file args.strict args.fixpoint args.bench args.coder
+        runFile args.file args.strict args.fixpoint args.bench args.coder args.failOnWarnings
     else
         printUsage ()
         1
