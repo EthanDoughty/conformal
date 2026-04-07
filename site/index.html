@@ -404,7 +404,7 @@
         <section class="hero">
             <h1><span>Conformal</span></h1>
             <p class="tagline">
-                Reads your .m files, tracks every matrix dimension, and tells you where they don't line up. Runs without MATLAB.
+                Static shape analysis for MATLAB. Finds matrix dimension mismatches before your code runs. No MATLAB license needed.
             </p>
             <div class="buttons">
                 <a href="https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal" class="btn btn-primary">
@@ -487,38 +487,27 @@ R = <span class="code-func">process</span>(A, w);</code></pre>
             </div>
         </div>
 
-        <!-- Symbolic dimensions -->
-        <section class="section">
-            <h2>Symbolic dimensions</h2>
-            <p>
-                <code class="inline">zeros(n+1, 2*m)</code> is tracked as <code class="inline">matrix[(n+1) x (2*m)]</code>, not just "some matrix."
-                Those expressions follow through arithmetic, concatenation, and function calls. If <code class="inline">n</code> gets
-                pinned to a value inside a branch (<code class="inline">if n == 5</code>), every dimension that depends on <code class="inline">n</code> resolves too.
-            </p>
-            <p>
-                Most real MATLAB code gets its sizes from <code class="inline">size(A,1)</code> or function arguments, not from literals. That's what this handles.
-            </p>
-        </section>
-
-        <!-- Two-col: What it analyzes / CI integration -->
+        <!-- What it covers -->
         <div class="two-col">
             <div>
                 <h2>What it covers</h2>
                 <p>
-                    The usual stuff: <code class="inline">+</code> <code class="inline">*</code> <code class="inline">.*</code> <code class="inline">[A B]</code> <code class="inline">[A; B]</code> <code class="inline">A(i,j)</code>, struct fields, cell arrays, classdef objects.
-                    Also cross-file calls, nested functions, closures, <code class="inline">nargin</code>/<code class="inline">nargout</code>, <code class="inline">varargin</code>.
-                    An interval domain catches index-out-of-bounds. A pentagon domain tracks loop variable bounds so
-                    <code class="inline">for i=1:n-1; A(i+1)</code> doesn't false-positive.
+                    Arithmetic, concatenation, indexing, struct fields, cell arrays, classdef objects, cross-file
+                    function calls, nested functions, closures, <code class="inline">nargin</code>/<code class="inline">nargout</code>,
+                    <code class="inline">varargin</code>. Dimensions can be symbolic:
+                    <code class="inline">zeros(n+1, 2*m)</code> tracks as <code class="inline">matrix[(n+1) x (2*m)]</code>,
+                    and those expressions carry through the whole program. Loop index bounds are tracked relationally,
+                    so <code class="inline">for i=1:n-1; A(i+1)</code> won't false-positive.
                 </p>
             </div>
             <div>
                 <h2>For CI pipelines</h2>
                 <p>
-                    <code class="inline">--format sarif</code> for SARIF 2.1.0 with SHA-256 file hashes.
-                    <code class="inline">--batch dir/</code> to sweep a whole directory in one process.
-                    <code class="inline">.conformal.json</code> for per-repo settings.
-                    <code class="inline">--coder</code> for MATLAB Coder compatibility checks.
-                    Output is deterministic. Same file, same version, same result, every time.
+                    <code class="inline">--format sarif</code> produces SARIF 2.1.0 with SHA-256 file hashes for traceability.
+                    <code class="inline">--batch dir/</code> sweeps a directory in one process.
+                    <code class="inline">.conformal.json</code> locks per-repo settings so the whole team runs the same checks.
+                    <code class="inline">--coder</code> flags constructs that MATLAB Coder can't compile.
+                    Output is deterministic.
                 </p>
             </div>
         </div>
@@ -535,8 +524,8 @@ R = <span class="code-func">process</span>(A, w);</code></pre>
                     <div>
                         <strong>Download the CLI</strong><br>
                         <span class="step-detail">Get the <code class="inline">conformal</code> binary for your OS from
-                        <a href="https://github.com/EthanDoughty/conformal/releases" style="color:var(--accent)">GitHub Releases</a>.
-                        Extract it, put it somewhere on your system PATH. No .NET or MATLAB license needed.</span>
+                        <a href="https://github.com/EthanDoughty/conformal/releases" style="color:var(--accent)">GitHub Releases</a>
+                        and put it on your system PATH. It's a single native executable with no dependencies.</span>
                     </div>
                 </div>
                 <div class="step">
@@ -566,9 +555,9 @@ R = <span class="code-func">process</span>(A, w);</code></pre>
         <section class="section">
             <h2>Where it's been tested</h2>
             <p>
-                15,085 .m files from 34 public projects. chebfun (3,435 files of numerical analysis), PlatEMO (2,416 optimization algorithms),
-                MATPOWER (979 power flow files), NASA's MUSCAT spacecraft toolkit, the KU CReSIS polar radar toolbox,
-                LADAC aircraft dynamics, eeglab, ecg-kit. No crashes on any of them.
+                15,085 .m files from 34 public projects, including chebfun (3,435 files), PlatEMO (2,416),
+                MATPOWER (979), NASA's MUSCAT spacecraft toolkit, the KU CReSIS polar radar toolbox,
+                LADAC aircraft dynamics, eeglab, and ecg-kit. Zero crashes across the full corpus.
             </p>
             <div class="domains">
                 <span class="domain-tag">aerospace</span>
@@ -591,8 +580,9 @@ R = <span class="code-func">process</span>(A, w);</code></pre>
         <section class="migrate-section">
             <h2>Conformal Migrate</h2>
             <p>
-                Also in the repo: a MATLAB-to-Python transpiler. 204 builtins, 1-to-0 index conversion with constant folding,
-                <code class="inline">*</code> vs <code class="inline">np.dot</code> dispatch based on the shapes Conformal already knows. Free to use.
+                The repo also includes a MATLAB-to-Python transpiler. It uses the shape analysis to pick
+                <code class="inline">*</code> vs <code class="inline">np.dot</code>, handles 204 builtins,
+                and converts 1-based indexing to 0-based with constant folding. Free to use.
             </p>
         </section>
 
