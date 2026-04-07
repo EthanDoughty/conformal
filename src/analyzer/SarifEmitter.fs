@@ -206,6 +206,27 @@ let emitSarif (stream: Stream) (relativeUri: string) (diagnostics: Diagnostic li
         writer.WriteEndObject() // physicalLocation
         writer.WriteEndObject() // location
         writer.WriteEndArray() // locations
+
+        // relatedLocations: call stack frames
+        if not d.callStack.IsEmpty then
+            writer.WriteStartArray("relatedLocations")
+            for i, (funcName, callLine) in d.callStack |> List.indexed do
+                writer.WriteStartObject()
+                writer.WriteNumber("id", i)
+                writer.WriteStartObject("physicalLocation")
+                writer.WriteStartObject("artifactLocation")
+                writer.WriteString("uri", uri)
+                writer.WriteEndObject() // artifactLocation
+                writer.WriteStartObject("region")
+                writer.WriteNumber("startLine", callLine)
+                writer.WriteEndObject() // region
+                writer.WriteEndObject() // physicalLocation
+                writer.WriteStartObject("message")
+                writer.WriteString("text", $"in {funcName}, called from line {callLine}")
+                writer.WriteEndObject() // message
+                writer.WriteEndObject() // relatedLocation
+            writer.WriteEndArray() // relatedLocations
+
         writer.WriteEndObject() // result
     writer.WriteEndArray() // results
 

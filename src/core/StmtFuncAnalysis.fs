@@ -1611,7 +1611,7 @@ and analyzeFunctionCall
 
         // Check argument count: too many args = error unless varargin; too few = optional args (nargin support)
         if (args.Length - selfOffset) > maxFixedParams && not hasVarargin then
-            warnings.Add(warnFunctionArgCountMismatch line funcName sig_.parms.Length args.Length)
+            warnings.Add(warnFunctionArgCountMismatch line funcName (sig_.parms.Length - selfOffset) (args.Length - selfOffset))
             List.replicate (max sig_.outputVars.Length 1) UnknownShape
         else
 
@@ -1765,7 +1765,7 @@ and analyzeNestedFunctionCall
 
         // Too many args = error unless varargin; too few = optional args (nargin support)
         if (args.Length - selfOffset) > maxFixedParams && not hasVarargin then
-            warnings.Add(warnFunctionArgCountMismatch line funcName sig_.parms.Length args.Length)
+            warnings.Add(warnFunctionArgCountMismatch line funcName (sig_.parms.Length - selfOffset) (args.Length - selfOffset))
             List.replicate (max sig_.outputVars.Length 1) UnknownShape
         else
 
@@ -1929,7 +1929,7 @@ and analyzeExternalFunctionCall
 
     // Too many args = error unless varargin; too few = optional args (nargin support)
     if (args.Length - selfOffsetExt) > maxFixedParamsExt && not hasVararginExt then
-        warnings.Add(warnFunctionArgCountMismatch line fname primarySig.parms.Length args.Length)
+        warnings.Add(warnFunctionArgCountMismatch line fname (primarySig.parms.Length - selfOffsetExt) (args.Length - selfOffsetExt))
         List.replicate (max primarySig.outputVars.Length 1) UnknownShape
     else
 
