@@ -10,44 +10,27 @@
 [![Tests](https://img.shields.io/badge/tests-552%20passing-brightgreen.svg)](#test-suite)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
-*Matrices must be **conformable** before they can perform. Conformal makes sure they are.*
-
 > Conformal is an independent project and is not affiliated with, endorsed by, or connected to MathWorks, Inc. MATLAB is a registered trademark of MathWorks, Inc.
 
 </div>
 
 ---
 
-Conformal catches matrix dimension errors in MATLAB code before runtime. If `A * B` has an inner dimension mismatch, Conformal flags it at analysis time instead of letting it fail silently. It tracks shapes through assignments, function calls, control flow, loops, and symbolic dimensions, all without needing MATLAB installed.
+Conformal catches matrix dimension errors in MATLAB code before runtime, without needing MATLAB installed.
 
-## Screenshots
-
-![Inline diagnostics](vscode-conformal/images/Conformal_Example_1.png)
-
-Conformal also shows the inferred shape of any variable on hover, and can annotate first assignments with inlay hints:
-
-![Hover shape](vscode-conformal/images/Conformal_Example_2.png)
-
-![Inlay hints](vscode-conformal/images/Conformal_Example_3.png)
-
-## Quick Start
-
-**VS Code** (the recommended option): Install Conformal from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal) by searching "Conformal" in Extensions, or run the following command:
-```bash
-code --install-extension EthanDoughty.conformal
-```
-Open any `.m` file and the diagnostics appear as underlines. Hover a variable to see its inferred shape. No configuration is needed.
-
-**CLI**: Requires [.NET 8.0 SDK](https://dotnet.microsoft.com/download) or later. Again, no MATLAB installation is required.
-```bash
-git clone https://github.com/EthanDoughty/conformal.git
-cd conformal
-dotnet run --project src/analyzer/ConformalAnalyzer.fsproj -- tests/basics/inner_dim_mismatch.m
+```matlab
+A = zeros(3, 4);
+B = zeros(5, 2);
+C = A * B;
 ```
 
-## What Conformal Catches
+```
+W_INNER_DIM_MISMATCH line 3: A * B: inner dims 4 vs 5
+```
 
-Conformal tracks the shape of every variable and flags dimension mismatches, type errors, and structural problems. Consider a Kalman filter update with a hardcoded identity matrix:
+Conformal tracks the shapes of `A` and `B` from their assignments, and the `*` on line 3 requires `A`'s column count to match `B`'s row count. The mismatch is caught at analysis time instead of failing at runtime.
+
+That works for simple cases, but the real value is in longer code where shapes flow through function calls, loops, and control flow. Consider a Kalman filter update with a hardcoded identity matrix:
 
 ```matlab
 function [x_upd, P_upd] = kalman_update(x, P, H, z, R)
@@ -68,7 +51,43 @@ W_ELEMENTWISE_MISMATCH line 6: eye(3) - (K * H): matrix[3 x 3] vs matrix[4 x 4]
   (in kalman_update, called from line 12)
 ```
 
-Conformal follows `H`, `P`, `K`, and `x` through each multiply, tracks `H'` as the transpose of `H`, knows that `inv(S)` preserves shape, and catches the mismatch where `eye(3)` produces `3 x 3` but `K * H` is `4 x 4`.
+Conformal follows `H`, `P`, `K`, and `x` through each multiply, tracks `H'` as the transpose of `H`, knows that `inv(S)` preserves shape, and catches the mismatch where `eye(3)` produces `3 x 3` but `K * H` is `4 x 4`. The diagnostic includes the full call stack, so the error traces back to the call site on line 12.
+
+## Installation
+
+**[Prebuilt binaries for Linux, macOS, and Windows are available on the releases page.](https://github.com/EthanDoughty/conformal/releases)** These are self-contained executables with no dependencies.
+
+```bash
+conformal file.m
+```
+
+The **VS Code extension** is the recommended option for regular use. Install it from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal) by searching "Conformal" in Extensions, or with:
+
+```bash
+code --install-extension EthanDoughty.conformal
+```
+
+Open any `.m` file and diagnostics appear as squiggly red/yellow underlines. Additionally, you can hover a variable to see its inferred shape.
+
+To **build from source**, clone the repository and use the [.NET 8.0 SDK](https://dotnet.microsoft.com/download).
+
+```bash
+git clone https://github.com/EthanDoughty/conformal.git
+cd conformal
+dotnet run --project src/analyzer/ConformalAnalyzer.fsproj -- file.m
+```
+
+## Screenshots
+
+![Inline diagnostics](vscode-conformal/images/Conformal_Example_1.png)
+
+Conformal can also show the inferred shape of any variable on hover, and annotate first assignments with inlay hints:
+
+![Hover shape](vscode-conformal/images/Conformal_Example_2.png)
+
+![Inlay hints](vscode-conformal/images/Conformal_Example_3.png)
+
+## What Conformal Tracks
 
 Conformal detects dimension mismatches across arithmetic (`+`, `-`, `*`, `.*`, `./`, `^`, `.^`, `\`), concatenation (`[A B]`, `[A; B]`), and indexing (`A(i,j)`, `A(:,j)`, `C{i}`, `A(end-1, :)`). Scalar-matrix broadcasting is handled, so `s * A` works without a false warning. If `*` is used where `.*` was probably intended, Conformal suggests the fix.
 
@@ -98,7 +117,7 @@ Diagnostics appear as underlines as code is typed, with a configurable 500ms deb
 ## CLI Options
 
 ```bash
-dotnet run --project src/analyzer/ConformalAnalyzer.fsproj -- file.m
+conformal file.m
 ```
 
 | Flag | What it does |
@@ -107,6 +126,7 @@ dotnet run --project src/analyzer/ConformalAnalyzer.fsproj -- file.m
 | `--batch <dir\|files>` | Analyze multiple files in one process (no per-file startup cost) |
 | `--strict` | Show all warnings including informational and low-confidence diagnostics |
 | `--fixpoint` | Use widening-based fixpoint iteration for loop analysis |
+| `--fail-on-warnings` | Exit with code 1 if any warnings are found |
 | `--witness [MODE]` | Attach incorrectness witnesses (`enrich`, `filter`, or `tag`) |
 | `--coder` | Run the MATLAB Coder compatibility pass (combine with `--strict`) |
 | `--format sarif` | Emit diagnostics as SARIF 2.1.0 JSON to stdout |
@@ -114,7 +134,23 @@ dotnet run --project src/analyzer/ConformalAnalyzer.fsproj -- file.m
 | `--lsp` | Start the native Language Server Protocol server |
 | `--version` | Print version and exit |
 
-The exit code is `0` on success and `1` on a parse error or test failure.
+The exit code is `0` on success and `1` on a parse error, test failure, or when `--fail-on-warnings` is set and warnings are found.
+
+## CI Integration
+
+Conformal produces [SARIF 2.1.0](https://sarifweb.azurewebsites.net/) output, which can be uploaded to GitHub Code Scanning for inline PR annotations. Each SARIF artifact includes a SHA-256 hash of the analyzed source file for audit traceability, and the `--fail-on-warnings` flag can be used as a required status check.
+
+```yaml
+- name: Run Conformal
+  run: conformal --batch src/ --format sarif --fail-on-warnings > results.sarif
+
+- name: Upload SARIF
+  uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: results.sarif
+```
+
+A pre-commit hook and a MATLAB wrapper (`conformal_check.m`) are also available in the [site/](site/) directory.
 
 ## Performance
 
@@ -122,7 +158,7 @@ The single-file analysis takes under 100ms, even for 700-line files with dozens 
 
 ## Real-World Compatibility
 
-To check how Conformal holds up on real MATLAB code, a corpus of 15,085 `.m` files was drawn from 34 open-source projects on GitHub, covering aerospace, optimization, numerical methods, biomedical signal processing, power systems, geophysics, computer vision, CFD, and more. In default mode, the corpus produces zero crashes across all 15,085 files with a 97% clean rate.
+To check how Conformal holds up on real MATLAB code, a corpus of 15,085 `.m` files was drawn from 34 open-source projects on GitHub, covering aerospace, optimization, numerical methods, biomedical signal processing, power systems, geophysics, computer vision, CFD, and more. In default mode, the corpus produces zero crashes across all 15,085 files.
 
 The projects include chebfun (3,435 files), PlatEMO (2,416), YALMIP (1,665), ecg-kit (1,195), MATPOWER (979), gptoolbox (700), GISMO (689), eeglab (658), LADAC (607), and NASA MUSCAT (251). These files use a wide range of MATLAB idioms: classdef OOP, pre-2016 end-less function definitions, space-separated multi-return syntax, stencil patterns, symbolic toolbox calls, and complex matrix literal spacing.
 
@@ -130,7 +166,7 @@ The projects include chebfun (3,435 files), PlatEMO (2,416), YALMIP (1,665), ecg
 
 By default, Conformal shows all high-confidence warnings, including shape errors, type errors, indexing checks, interval-based checks like `W_INDEX_OUT_OF_BOUNDS` and `W_DIVISION_BY_ZERO`, constraint conflicts, and cross-file resolution. All 36 default codes are available with no configuration required.
 
-The `--strict` flag adds 11 lower-confidence codes like `W_SUSPICIOUS_COMPARISON` and `W_REASSIGN_INCOMPATIBLE`, so default mode works well in CI without false-positive noise, and strict mode gives a fuller picture when needed.
+The `--strict` flag adds 11 lower-confidence codes like `W_SUSPICIOUS_COMPARISON` and `W_REASSIGN_INCOMPATIBLE`, so default mode works well in CI without false-positive noise, and strict mode gives more context when needed.
 
 ## Conformal Migrate (Preview)
 
