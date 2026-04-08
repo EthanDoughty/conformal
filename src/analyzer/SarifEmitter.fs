@@ -230,18 +230,19 @@ let emitSarif (stream: Stream) (relativeUri: string) (diagnostics: Diagnostic li
         writer.WriteEndObject() // result
     writer.WriteEndArray() // results
 
-    // run.properties: shape coverage metrics
+    // run.properties: analysis scope and shape coverage metrics
+    writer.WriteStartObject("properties")
+    writer.WriteString("analysisScope", "https://conformaltools.com/docs/false-negative-policy")
     match coverage with
     | Some (tracked, partial, untracked, total) ->
-        writer.WriteStartObject("properties")
         writer.WriteNumber("shapeCoverage.tracked", tracked)
         writer.WriteNumber("shapeCoverage.partial", partial)
         writer.WriteNumber("shapeCoverage.untracked", untracked)
         writer.WriteNumber("shapeCoverage.total", total)
         if total > 0 then
             writer.WriteNumber("shapeCoverage.rate", System.Math.Round(float tracked / float total, 3))
-        writer.WriteEndObject() // properties
     | None -> ()
+    writer.WriteEndObject() // properties
 
     writer.WriteEndObject() // run
     writer.WriteEndArray() // runs
