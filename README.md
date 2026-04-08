@@ -168,6 +168,10 @@ Analysis time scales with code complexity rather than just line count. A 700-lin
 
 The total cost for a single file works out to O(n) + O(n · k) + O(s · m) + O(b · v log v), where b is the number of branch/loop join points. Since k, m, and v are all small bounded constants for typical MATLAB code, the analysis is effectively linear in the source length.
 
+![Analysis Pipeline](docs/images/conformal_analysis_pipeline.svg)
+
+![Scaling Curves](docs/images/conformal_scaling_curves_verified.svg)
+
 ## Real-World Compatibility
 
 Conformal was tested against a corpus of 15,085 .m files from 34 open-source projects on GitHub, covering aerospace, optimization, numerical methods, biomedical signal processing, power systems, geophysics, computer vision, and CFD. The corpus produces zero crashes across all 15,085 files.
