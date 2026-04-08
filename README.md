@@ -28,7 +28,7 @@ C = A * B;
 W_INNER_DIM_MISMATCH line 3: A * B: inner dims 4 vs 5
 ```
 
-Conformal tracks the shapes of `A` and `B` from their assignments, and the `*` on line 3 requires `A`'s column count to match `B`'s row count. The mismatch is caught at analysis time instead of failing at runtime.
+Conformal tracks the shapes of both matrices, A and B, from their assignments, and the `*` on line 3 requires A's column count to match B's row count. The mismatch is caught at analysis time instead of failing at runtime.
 
 That works for simple cases, but the real value is in longer code where shapes flow through function calls, loops, and control flow. Consider a Kalman filter update with a hardcoded identity matrix:
 
@@ -51,25 +51,25 @@ W_ELEMENTWISE_MISMATCH line 6: eye(3) - (K * H): matrix[3 x 3] vs matrix[4 x 4]
   (in kalman_update, called from line 12)
 ```
 
-Conformal follows `H`, `P`, `K`, and `x` through each multiply, tracks `H'` as the transpose of `H`, knows that `inv(S)` preserves shape, and catches the mismatch where `eye(3)` produces `3 x 3` but `K * H` is `4 x 4`. The diagnostic includes the full call stack, so the error traces back to the call site on line 12.
+Conformal follows H, P, K, and x through each multiply, tracks H' as the transpose of H, knows that inv(S) preserves shape, and catches the mismatch where eye(3) produces `3 x 3` but K * H is `4 x 4`. The diagnostic includes the full call stack, so the error traces back to the call site on line 12.
 
 ## Installation
 
-**[Prebuilt binaries for Linux, macOS, and Windows are available on the releases page.](https://github.com/EthanDoughty/conformal/releases)** These are self-contained executables with no dependencies.
+[Prebuilt binaries for Linux, macOS, and Windows are available on the releases page.](https://github.com/EthanDoughty/conformal/releases) These are self-contained executables with no dependencies.
 
 ```bash
 conformal file.m
 ```
 
-The **VS Code extension** is the recommended option for regular use. Install it from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal) by searching "Conformal" in Extensions, or with:
+The VS Code extension is the recommended option for regular use. Install it from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal) by searching "Conformal" in Extensions, or with:
 
 ```bash
 code --install-extension EthanDoughty.conformal
 ```
 
-Open any `.m` file and diagnostics appear as squiggly red/yellow underlines. Additionally, you can hover a variable to see its inferred shape.
+Open any .m file and diagnostics appear as squiggly red/yellow underlines. Additionally, you can hover a variable to see its inferred shape.
 
-To **build from source**, clone the repository and use the [.NET 8.0 SDK](https://dotnet.microsoft.com/download).
+To build from source, clone the repository and use the [.NET 8.0 SDK](https://dotnet.microsoft.com/download).
 
 ```bash
 git clone https://github.com/EthanDoughty/conformal.git
@@ -89,23 +89,23 @@ Conformal can also show the inferred shape of any variable on hover, and annotat
 
 ## What Conformal Tracks
 
-Conformal detects dimension mismatches across arithmetic (`+`, `-`, `*`, `.*`, `./`, `^`, `.^`, `\`), concatenation (`[A B]`, `[A; B]`), and indexing (`A(i,j)`, `A(:,j)`, `C{i}`, `A(end-1, :)`). Scalar-matrix broadcasting is handled, so `s * A` works without a false warning. If `*` is used where `.*` was probably intended, Conformal suggests the fix.
+Conformal detects dimension mismatches across arithmetic (+, -, *, .*, ./, ^, .^, \), concatenation ([A B], [A; B]), and indexing (A(i,j), A(:,j), C{i}, A(end-1, :)). Conformal handles scalar-matrix broadcasting, so s * A works without a false warning. When * appears where .* was probably intended, Conformal can suggest the fix.
 
-Over 650 MATLAB builtins are recognized, and around 325 have explicit shape rules, including matrix constructors, reductions with dimension arguments, reshaping, type predicates, and linear algebra functions. User-defined functions are analyzed at each call site with the caller's argument shapes, and that includes nested functions, anonymous functions with closure capture, `nargin`/`nargout` patterns, `varargin`/`varargout`, and cross-file workspace resolution to sibling `.m` files.
+Conformal recognizes over 650 MATLAB builtins, and around 325 have explicit shape rules, including matrix constructors, reductions with dimension arguments, reshaping, type predicates, and linear algebra functions. Conformal analyzes user-defined functions at each call site with the caller's argument shapes, and that includes nested functions, anonymous functions with closure capture, nargin/nargout patterns, varargin/varargout, and cross-file workspace resolution to sibling .m files.
 
-Variables with unknown concrete size get symbolic names like `n`, `m`, `k`, and those names propagate through operations with a polynomial representation, so `n+m` and `m+n` are recognized as equal, and `n+n` simplifies to `2*n`.
+Variables with unknown concrete size get symbolic names like n, m, k, and those names propagate through operations with a polynomial representation, so n+m and m+n are recognized as equal, and n+n simplifies to 2*n.
 
-Conformal also tracks struct fields and cell array elements (including per-element shape tracking), handles basic `classdef` objects, and joins shapes conservatively across control flow branches. Loops can use single-pass analysis or widening-based fixpoint iteration via `--fixpoint`.
+Conformal also tracks struct fields and cell array elements (including per-element shape tracking), handles basic classdef objects, and joins shapes conservatively across control flow branches. Loops can use single-pass analysis or widening-based fixpoint iteration via `--fixpoint`.
 
-In parallel with shape inference, Conformal tracks scalar integer variables through an interval domain, which enables out-of-bounds indexing detection, division-by-zero detection, and negative dimension warnings. Branch conditions narrow intervals, and a Pentagon relational domain tracks upper-bound relations from loop ranges to suppress false positives.
+In parallel with shape inference, Conformal tracks scalar integer variables through an interval domain, which enables out-of-bounds indexing detection, division-by-zero detection, and negative dimension warnings. Branch conditions narrow intervals, and a relational domain tracks upper-bound relations from loop ranges to suppress false positives.
 
-For dimension conflict warnings, Conformal can produce a concrete counterexample proving the bug is real. In `--witness filter` mode, only warnings with a verified witness are shown, which means zero false positives. The `--coder` flag adds a post-analysis pass that checks for constructs MATLAB Coder can't handle.
+For dimension conflict warnings, Conformal can produce a concrete counterexample proving the bug is real. In `--witness filter` mode, only warnings backed by a concrete counterexample are shown. `--coder` adds a post-analysis pass that checks for constructs MATLAB Coder can't handle.
 
 ## VS Code Extension
 
 The VS Code extension runs the analyzer in-process, since the F# codebase is compiled to JavaScript using the Fable tool. The compiled analyzer is bundled directly into the extension with no external runtime dependency.
 
-Diagnostics appear as underlines as code is typed, with a configurable 500ms debounce. Hovering any variable shows its inferred shape. Go-to-definition works for user-defined and cross-file functions. Function definitions show in the sidebar via document symbols. The extension includes built-in MATLAB syntax highlighting, so the MathWorks extension isn't needed.
+Diagnostics appear as underlines as code is typed, with a configurable 500ms debounce. Hovering a variable shows its inferred shape, and go-to-definition works for both local and cross-file functions. Document symbols populate the sidebar, and built-in MATLAB syntax highlighting is included, so the MathWorks extension isn't needed.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -150,17 +150,29 @@ Conformal produces [SARIF 2.1.0](https://sarifweb.azurewebsites.net/) output, wh
     sarif_file: results.sarif
 ```
 
-A pre-commit hook and a MATLAB wrapper (`conformal_check.m`) are also available in the [site/](site/) directory.
+A pre-commit hook and a MATLAB wrapper called conformal_check.m are also available in the [site/](site/) directory.
 
 ## Performance
 
-The single-file analysis takes under 100ms, even for 700-line files with dozens of warnings. The full test suite finishes in about one second. The VS Code extension runs the analyzer on every keystroke with a 500ms debounce, since it is compiled to JavaScript and runs in-process with no subprocess startup cost.
+Conformal runs single-threaded in a single pass over the IR. On a Ryzen 9 5900X at 3.7 GHz (single core, WSL2), the full 552-test suite covering 8,618 lines of MATLAB finishes in about one second, which comes out to roughly 7,800 LOC/s end-to-end. Single-file analysis typically takes under 100ms for files up to a few thousand lines, though .NET startup adds roughly 600ms to each CLI invocation. The VS Code extension avoids this startup cost entirely since it runs the analyzer in-process as compiled JavaScript.
+
+Analysis time scales with code complexity rather than just line count. A 700-line stress test with 26 warnings takes about 190ms to analyze, while a 2,500-line file that is mostly data declarations finishes in 60ms. Each stage of the pipeline has bounded complexity:
+
+- Lexer: O(n), a single linear scan over the source characters.
+- Parser: O(n · k), recursive descent where k is the max expression nesting depth, bounded to roughly 10 in practice.
+- Shape analysis: O(s · m), one pass over s statements with O(log m) environment lookups per statement via immutable balanced maps, where m is the number of live variables.
+- Interval and relational domains: O(1) per variable per statement, since all bound operations are constant-time arithmetic on [lo, hi] pairs.
+- Loop widening: bounded to exactly 3 phases (discover, stabilize, narrow) rather than iterating to a true fixpoint, so each loop body is analyzed at most 3 times.
+- Dimension equivalence: O(α(k)) amortized per operation via union-find with path compression, where k is the number of symbolic dimension names.
+- Reduced product (TightenDomains): at most 3 propagation rounds per call, each O(v log v) in the number of tracked variables v.
+
+The total cost for a single file works out to O(n) + O(n · k) + O(s · m) + O(b · v log v), where b is the number of branch/loop join points. Since k, m, and v are all small bounded constants for typical MATLAB code, the analysis is effectively linear in the source length.
 
 ## Real-World Compatibility
 
-To check how Conformal holds up on real MATLAB code, a corpus of 15,085 `.m` files was drawn from 34 open-source projects on GitHub, covering aerospace, optimization, numerical methods, biomedical signal processing, power systems, geophysics, computer vision, CFD, and more. In default mode, the corpus produces zero crashes across all 15,085 files.
+Conformal was tested against a corpus of 15,085 .m files from 34 open-source projects on GitHub, covering aerospace, optimization, numerical methods, biomedical signal processing, power systems, geophysics, computer vision, and CFD. The corpus produces zero crashes across all 15,085 files.
 
-The projects include chebfun (3,435 files), PlatEMO (2,416), YALMIP (1,665), ecg-kit (1,195), MATPOWER (979), gptoolbox (700), GISMO (689), eeglab (658), LADAC (607), and NASA MUSCAT (251). These files use a wide range of MATLAB idioms: classdef OOP, pre-2016 end-less function definitions, space-separated multi-return syntax, stencil patterns, symbolic toolbox calls, and complex matrix literal spacing.
+The projects include chebfun (3,435 files), PlatEMO (2,416), YALMIP (1,665), ecg-kit (1,195), MATPOWER (979), gptoolbox (700), GISMO (689), eeglab (658), LADAC (607), and NASA MUSCAT (251). These files include classdef OOP, pre-2016 end-less function definitions, space-separated multi-return syntax, stencil patterns, symbolic toolbox calls, and complex matrix literal spacing.
 
 ## Warning Tiers
 
@@ -170,7 +182,7 @@ The `--strict` flag adds 11 lower-confidence codes like `W_SUSPICIOUS_COMPARISON
 
 ## Conformal Migrate (Preview)
 
-Conformal also includes a MATLAB-to-Python transpiler that uses the shape analysis to make better translation decisions than a purely syntactic tool can. It handles 204 MATLAB builtins, 1-to-0 index conversion with constant folding, `varargin` to `*args`, copy semantics, and shape-aware operator dispatch (for example, using `np.dot` for matrix multiply and `*` for element-wise).
+Conformal also includes a MATLAB-to-Python transpiler that uses shape information to pick the right numpy operator rather than relying on syntactic patterns alone. It handles 204 MATLAB builtins, 1-to-0 index conversion, varargin to *args, copy semantics, and shape-aware operator dispatch, using np.dot for matrix multiply and * for element-wise.
 
 ## Test Suite
 
@@ -196,7 +208,7 @@ tests/                  552 self-checking MATLAB programs in 24 categories
 
 Conformal analyzes a subset of MATLAB, focused on the matrix-heavy computational core where dimension errors are most common and most costly.
 
-It does not support `eval` (inherently undecidable), N-D arrays beyond 2-D, or complex number tracking.
+It does not support the eval function, which is inherently undecidable to analyze statically, N-D arrays beyond 2-D, or complex number tracking.
 
 For the full details on what is and isn't covered, see [docs/analysis.md](docs/analysis.md).
 
