@@ -1,11 +1,15 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Document symbol provider that feeds the editor's outline/breadcrumb
+// view. Walks FunctionDef nodes in the IR and emits a DocumentSymbol
+// per top-level function with the right source range so the outline
+// is clickable.
+
 module LspSymbols
 
 open Ionide.LanguageServerProtocol.Types
 open Ir
-
-// ---------------------------------------------------------------------------
-// Document symbol provider for outline view.
-// ---------------------------------------------------------------------------
 
 /// Walk IR program body for FunctionDef nodes.
 /// Returns DocumentSymbol array (one per function definition).

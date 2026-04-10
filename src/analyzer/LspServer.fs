@@ -1,3 +1,12 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Native .NET Language Server Protocol implementation, built on
+// Ionide.LanguageServerProtocol. Wires the analysis pipeline to LSP
+// requests for diagnostics, hover, go-to-definition, document symbols,
+// inlay hints, and code actions. Used by the VS Code extension when
+// running outside the in-process Fable path.
+
 module LspServer
 
 open System

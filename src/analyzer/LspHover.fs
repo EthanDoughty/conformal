@@ -1,13 +1,17 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Hover provider that shows the inferred shape of the identifier under
+// the cursor. Reads from the post-analysis environment and formats the
+// shape for display, also recognizing builtin and user-defined function
+// names to give a short signature instead of a shape.
+
 module LspHover
 
 open System.Text.RegularExpressions
 open Ionide.LanguageServerProtocol.Types
 open Shapes
 open Context
-
-// ---------------------------------------------------------------------------
-// Hover provider showing inferred shapes.
-// ---------------------------------------------------------------------------
 
 /// Return hover information for identifier at (line, character).
 /// Line and character are 0-based (LSP convention).

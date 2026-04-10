@@ -1,11 +1,18 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Property-based tests for the abstract domain lattice. Uses FsCheck to
+// generate random shapes, dimensions, and intervals, then verifies that
+// lattice operations satisfy their mathematical contracts (join is
+// commutative and associative, widen is monotone, meet is the greatest
+// lower bound, etc.).
+
 module PropertyTests
 
 open FsCheck
 open FsCheck.FSharp
 
-// ---------------------------------------------------------------------------
-// Generators
-// ---------------------------------------------------------------------------
+// --- Generators ---
 
 let private varNames = [| "n"; "m"; "k"; "p" |]
 let private fieldNames = [| "x"; "y"; "z"; "w" |]

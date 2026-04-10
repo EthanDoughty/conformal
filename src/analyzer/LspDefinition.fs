@@ -1,13 +1,16 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Go-to-definition provider for user-defined functions. Resolves
+// identifier-under-cursor to a source location by consulting the
+// function registry and external workspace map, returning a Location
+// that the editor uses for Ctrl+Click or F12 navigation.
+
 module LspDefinition
 
 open System.Text.RegularExpressions
 open Ionide.LanguageServerProtocol.Types
 open Context
-
-// ---------------------------------------------------------------------------
-// Go-to-definition provider for user-defined functions.
-// Returns Location option for Ctrl+Click / F12 navigation.
-// ---------------------------------------------------------------------------
 
 /// Return definition location for identifier at (line, character).
 /// Line and character are 0-based (LSP convention).

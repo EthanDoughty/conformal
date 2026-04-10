@@ -1,11 +1,15 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Quick-fix code actions for the LSP server. Offers fixes like
+// replacing * with .* for elementwise intent, swapping & for && in
+// scalar contexts, and inserting % conformal:disable comments to
+// suppress a specific warning on the current line.
+
 module LspCodeActions
 
 open System.Text.RegularExpressions
 open Ionide.LanguageServerProtocol.Types
-
-// ---------------------------------------------------------------------------
-// Quick fix code actions.
-// ---------------------------------------------------------------------------
 
 // Make a WorkspaceEdit replacing lineNum's text entirely with newText.
 let private makeLineEdit (uri: string) (lineNum: int) (lineLen: int) (newText: string) : WorkspaceEdit =

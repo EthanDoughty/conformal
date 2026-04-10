@@ -1,3 +1,11 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Command-line entry point. Parses argv into a CliArgs record, walks up
+// from the current directory for a .conformal.json config, and dispatches
+// to one of the run modes (single file, --batch, --format sarif, --tests,
+// or --parse-json).
+
 module Cli
 
 open System
@@ -9,9 +17,7 @@ open WarningCodes
 open Analysis
 open Workspace
 
-// ---------------------------------------------------------------------------
-// Project config (.conformal.json)
-// ---------------------------------------------------------------------------
+// --- Project config (.conformal.json) ---
 
 /// Walk up from startDir looking for .conformal.json, stopping at a .git boundary
 /// or the filesystem root. Returns (strict, coder, fixpoint) or (false, false, false).

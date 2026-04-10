@@ -1,3 +1,11 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Converts Conformal's internal Diagnostic records into LSP Diagnostic
+// objects, mapping warning codes to the right severity (error for
+// definite shape conflicts, warning for everything else) and attaching
+// witness counterexamples as related information.
+
 module LspDiagnostics
 
 open Ionide.LanguageServerProtocol.Types
@@ -5,9 +13,7 @@ open Diagnostics
 open Witness
 open WarningCodes
 
-// ---------------------------------------------------------------------------
-// Codes that represent definite errors (will crash at runtime).
-// ---------------------------------------------------------------------------
+// --- Codes that represent definite errors (will crash at runtime) ---
 
 let ERROR_CODES : Set<WarningCode> =
     Set.ofList [

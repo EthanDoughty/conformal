@@ -1,12 +1,17 @@
+// Conformal Migrate: MATLAB-to-Python Transpiler
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// License key validation for the Migrate product. Currently dormant
+// (no CLI gates on it) but preserved for future commercial licensing
+// of the transpiler.
+//
+// Key format: CONF-<base64url(payload_json)>.<base64url(signature_64bytes)>
+// Payload JSON carries { sub, exp, tier, kid }. Signature is Ed25519
+// over the raw payload bytes, not the base64url encoding.
+
 module License
 
-// Key format: CONF-<base64url(payload_json)>.<base64url(signature_64bytes)>
-// Payload: JSON { sub, exp, tier, kid }
-// Signature: Ed25519 over raw payload bytes (not the base64url encoding)
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+// --- Types ---
 
 type LicensePayload = {
     sub:  string   // email

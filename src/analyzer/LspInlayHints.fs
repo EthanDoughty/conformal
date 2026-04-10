@@ -1,14 +1,17 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Inlay hint provider. Walks the IR looking for first-assignment sites
+// and emits a ": matrix[3 x 4]" annotation next to the variable name,
+// giving the editor a ghost-text hint that reveals the inferred shape
+// without requiring the user to hover.
+
 module LspInlayHints
 
 open Ionide.LanguageServerProtocol.Types
 open Ir
 open Shapes
 open Env
-
-// ---------------------------------------------------------------------------
-// Inlay hints: show shape annotations at first assignment of each variable.
-// Format: ": matrix[3 x 4]" displayed after the variable name.
-// ---------------------------------------------------------------------------
 
 /// Collect inlay hints from IR statements, tracking first-seen variables.
 /// rangeStart and rangeEnd are 0-based LSP line numbers.

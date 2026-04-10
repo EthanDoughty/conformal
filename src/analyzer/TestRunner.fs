@@ -1,3 +1,12 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Self-checking test runner. Parses inline assertion directives like
+// % EXPECT: A = matrix[3 x 4] and % EXPECT_WARNING: W_INNER_DIM_MISMATCH
+// from each test file, runs Conformal, and compares the output to the
+// expectations embedded in the source. No external expected-output
+// files to maintain.
+
 module TestRunner
 
 open System
@@ -9,9 +18,7 @@ open Analysis
 open Workspace
 open WarningCodes
 
-// ---------------------------------------------------------------------------
-// Expectation parsing
-// ---------------------------------------------------------------------------
+// --- Expectation parsing ---
 
 let private expectRe            = Regex(@"%\s*EXPECT:\s*(.+)$",                       RegexOptions.Multiline)
 let private expectFixpointRe    = Regex(@"%\s*EXPECT_FIXPOINT:\s*(.+)$",              RegexOptions.Multiline)

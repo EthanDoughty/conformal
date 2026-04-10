@@ -1,3 +1,12 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// SARIF 2.1.0 emitter for CI integration. Writes a full run object
+// with tool metadata, a rule per warning code, result locations, and
+// per-artifact SHA-256 hashes for DO-178C audit traceability. Links
+// the false-negative policy via the analysisScope property so an
+// auditor can understand the tool's scope without leaving the file.
+
 module SarifEmitter
 
 open System.IO
@@ -7,9 +16,7 @@ open System.Text.Json
 open WarningCodes
 open Diagnostics
 
-// ---------------------------------------------------------------------------
-// Rule metadata: short descriptions for all 53 W_* codes
-// ---------------------------------------------------------------------------
+// --- Rule metadata: short descriptions for all 53 W_* codes ---
 
 let private ruleDescription (code: WarningCode) : string =
     match code with
