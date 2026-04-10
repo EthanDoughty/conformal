@@ -1,3 +1,10 @@
+// Conformal Migrate: MATLAB-to-Python Transpiler
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Python AST definitions used as the target language for translation.
+// Kept deliberately small: just enough node types to express what
+// MATLAB source can be translated into, not a full CPython AST.
+
 module PyAst
 
 type PyExpr =

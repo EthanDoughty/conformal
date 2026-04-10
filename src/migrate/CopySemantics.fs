@@ -1,3 +1,12 @@
+// Conformal Migrate: MATLAB-to-Python Transpiler
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Copy semantics analysis. MATLAB has pass-by-value semantics while
+// Python uses reference semantics, so whenever a MATLAB assignment
+// would have forked state (y = x followed by in-place mutation of y),
+// the transpiler must insert an explicit .copy() to preserve meaning.
+// This module finds all the source locations where that is needed.
+
 module CopySemantics
 
 open Ir

@@ -1,3 +1,11 @@
+// Conformal Migrate: MATLAB-to-Python Transpiler
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Executable entry point for the Migrate CLI. Reads a .m file, runs
+// Conformal's shape analysis to get type information, then feeds the
+// annotated IR through copy-semantics analysis, translation, and the
+// Python emitter.
+
 module Program
 
 open System

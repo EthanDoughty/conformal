@@ -1,10 +1,15 @@
+// Conformal Migrate: MATLAB-to-Python Transpiler
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Pretty-printer for the Python AST. Handles operator precedence,
+// parenthesization, and indentation to produce source that runs through
+// black or autopep8 without complaints.
+
 module Emit
 
 open PyAst
 
-// -------------------------------------------------------------------------
-// Operator precedence (lower number = binds less tightly)
-// -------------------------------------------------------------------------
+// --- Operator precedence (lower number = binds less tightly) ---
 
 let private precedence (op: string) : int =
     match op with

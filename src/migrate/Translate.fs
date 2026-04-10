@@ -1,3 +1,12 @@
+// Conformal Migrate: MATLAB-to-Python Transpiler
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Core translation pass from Conformal's MATLAB IR to the Python AST.
+// Uses shape information from the analyzer to pick the right numpy
+// operator (np.dot for matrix multiply, * for element-wise), resolve
+// 1-to-0 index offsets, rename Python-reserved identifiers, and turn
+// varargin/varargout into *args/return tuples.
+
 module Translate
 
 open Ir

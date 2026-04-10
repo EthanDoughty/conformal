@@ -1,3 +1,11 @@
+// Conformal Migrate: MATLAB-to-Python Transpiler
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Builtin translation table for the transpiler. Maps each recognized
+// MATLAB builtin to a Python equivalent plus an ArgTransform describing
+// how to massage the arguments (attribute-style, keyword injection,
+// multi-return handling, etc.). Currently covers 204 builtins.
+
 module BuiltinMap
 
 open PyAst
