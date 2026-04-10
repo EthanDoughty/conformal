@@ -19,8 +19,8 @@ open Workspace
 
 // --- Project config (.conformal.json) ---
 
-/// Walk up from startDir looking for .conformal.json, stopping at a .git boundary
-/// or the filesystem root. Returns (strict, coder, fixpoint) or (false, false, false).
+// Walk up from startDir looking for .conformal.json, stopping at a .git boundary
+// or the filesystem root. Returns (strict, coder, fixpoint) or (false, false, false).
 let private loadConfig (startDir: string) : bool * bool * bool =
     let rec walk (dir: string) =
         if dir = null || not (Directory.Exists dir) then
@@ -52,9 +52,7 @@ let private loadConfig (startDir: string) : bool * bool * bool =
                         walk parent
     walk startDir
 
-// ---------------------------------------------------------------------------
-// Output helpers
-// ---------------------------------------------------------------------------
+// --- Output helpers ---
 
 // Format a single diagnostic for CLI output.
 // Python format: "W_CODE line N: message" or "W_UNSUPPORTED_STMT line=N targets=..."
@@ -73,9 +71,7 @@ let private printEnv (env: Env.Env) : unit =
     printfn "Final environment:"
     printfn "%s" envStr
 
-// ---------------------------------------------------------------------------
-// Single-file analysis
-// ---------------------------------------------------------------------------
+// --- Single-file analysis ---
 
 /// Analyze one .m file and print results. Returns exit code: 0 = success, 1 = error/warnings.
 let runFile (filePath: string) (strict: bool) (fixpoint: bool) (benchmark: bool) (coder: bool) (failOnWarnings: bool) : int =
@@ -195,9 +191,7 @@ let runFile (filePath: string) (strict: bool) (fixpoint: bool) (benchmark: bool)
         else
             0
 
-// ---------------------------------------------------------------------------
-// --tests dispatch
-// ---------------------------------------------------------------------------
+// --- --tests dispatch ---
 
 let runTests (strict: bool) (fixpoint: bool) (benchmark: bool) (quiet: bool) : int =
     let tStart = DateTime.UtcNow
@@ -213,9 +207,7 @@ let runTests (strict: bool) (fixpoint: bool) (benchmark: bool) (quiet: bool) : i
 
     result
 
-// ---------------------------------------------------------------------------
-// Argument parsing and entry point
-// ---------------------------------------------------------------------------
+// --- Argument parsing and entry point ---
 
 type CliArgs = {
     tests: bool; testProps: bool; strict: bool; fixpoint: bool
@@ -300,17 +292,15 @@ let private parseArgv (argv: string array) : CliArgs =
             | _ -> (acc, Ready)
     ) (defaultArgs, Ready) |> fst
 
-// ---------------------------------------------------------------------------
-// --batch mode
-// ---------------------------------------------------------------------------
+// --- --batch mode ---
 
-/// Result of analyzing a single file in batch mode.
+// Result of analyzing a single file in batch mode.
 type private BatchFileResult =
     | BatchClean
     | BatchWarned of int   // warning count
     | BatchError           // parse / read failure
 
-/// Collect all .m files from a mix of file paths and directory paths.
+// Collect all .m files from a mix of file paths and directory paths.
 let private collectMFiles (targets: string list) : string list =
     targets
     |> List.collect (fun t ->

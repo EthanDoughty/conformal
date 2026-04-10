@@ -1,10 +1,18 @@
 // Conformal: Static Shape Analysis for MATLAB
 // author: matrix[1 x 1] Ethan Doughty, 2026
 //
-// Union-find equivalence store for dimension equality classes, with
-// path compression and union-by-rank for near constant-time operations.
-// Each class can carry a concrete integer value once the analyzer
-// discovers one, which then back-propagates through TightenDomains.
+// Union-find equivalence store for dimension equality classes, used
+// everywhere the analyzer needs to know whether two dimensions are
+// guaranteed to be the same value. Keys are dimStr strings, which
+// avoids an encoding pass between the constraint store and this
+// structure, and each class can carry a concrete integer value once
+// the analyzer finds one.
+//
+// Find uses path compression, union uses union-by-rank, giving
+// O(alpha(k)) amortized per operation. The intersect operation
+// merges two stores at control-flow joins and can be costly worst
+// case, but a fast-path identity check short-circuits the common
+// case, since branches often leave the store untouched.
 
 module DimEquiv
 
@@ -110,7 +118,7 @@ let snapshot (eq: DimEquiv) : DimEquiv = {
     concrete = System.Collections.Generic.Dictionary<string, int>(eq.concrete)
 }
 
-/// Check if two DimEquiv stores are identical (same keys, same values).
+// Check if two DimEquiv stores are identical (same keys, same values).
 let private storesIdentical (eq1: DimEquiv) (eq2: DimEquiv) : bool =
     if eq1.parent.Count <> eq2.parent.Count || eq1.concrete.Count <> eq2.concrete.Count then false
     else

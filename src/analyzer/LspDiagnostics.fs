@@ -43,9 +43,7 @@ let ERROR_CODES : Set<WarningCode> =
         W_MATRIX_POWER_NON_SQUARE
     ]
 
-// ---------------------------------------------------------------------------
-// Convert a Conformal Diagnostic to an LSP Diagnostic.
-// ---------------------------------------------------------------------------
+// --- Convert a Conformal Diagnostic to an LSP Diagnostic ---
 
 let toLspDiagnostic
     (d: Diagnostics.Diagnostic)

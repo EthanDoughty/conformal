@@ -96,9 +96,7 @@ let SCALAR_NARY_BUILTINS : Set<string> =
     Set.ofList [ "strcmpi"; "strcmp"; "exist" ]
 
 
-// ---------------------------------------------------------------------------
-// Helper: unwrap an IndexArg to Expr (raises on Colon/Range without expr)
-// ---------------------------------------------------------------------------
+// --- Helper: unwrap an IndexArg to Expr (raises on Colon/Range without expr) ---
 
 let unwrapArg (arg: IndexArg) : Expr option =
     match arg with
@@ -106,9 +104,7 @@ let unwrapArg (arg: IndexArg) : Expr option =
     | _ -> None
 
 
-// ---------------------------------------------------------------------------
-// Handler helpers
-// ---------------------------------------------------------------------------
+// --- Handler helpers ---
 
 // Evaluate an IndexArg to a Shape.
 let private evalArgShape
@@ -138,9 +134,7 @@ let private checkNegativeDimArg
         warnings.Add(warnPossiblyNegativeDim line ivStr)
 
 
-// ---------------------------------------------------------------------------
-// Individual handler functions
-// ---------------------------------------------------------------------------
+// --- Individual handler functions ---
 
 let private handleZerosOnes
     (fname: string)
@@ -1032,9 +1026,7 @@ let private handleHorzcatVertcat
             Some (Matrix(r, col))
 
 
-// ---------------------------------------------------------------------------
-// Batch 6b: Fixed-dimension robotics/CV transform handlers
-// ---------------------------------------------------------------------------
+// --- Batch 6b: Fixed-dimension robotics/CV transform handlers ---
 
 // Fixed output dimensions regardless of input.
 let private FIXED_DIM_BUILTINS : Map<string, int * int> =
@@ -1049,9 +1041,7 @@ let private FIXED_DIM_BUILTINS : Map<string, int * int> =
     ]
 
 
-// ---------------------------------------------------------------------------
-// Batch 6c: Random number generator handlers
-// ---------------------------------------------------------------------------
+// --- Batch 6c: Random number generator handlers ---
 
 // Distribution parameter count for each random generator.
 // Remaining args after skipping these are treated as size dimensions.
@@ -1101,9 +1091,7 @@ let private handleRandomGenerator
         else None
 
 
-// ---------------------------------------------------------------------------
-// Batch 6d: Complex handler functions
-// ---------------------------------------------------------------------------
+// --- Batch 6d: Complex handler functions ---
 
 // [n x p] -> [p x p]
 let private handleCovCorrcoef
@@ -1198,9 +1186,7 @@ let private handleJacobian
     else None
 
 
-// ---------------------------------------------------------------------------
-// Multi-return handler helpers
-// ---------------------------------------------------------------------------
+// --- Multi-return handler helpers ---
 
 let private evalFirstArgShape
     (args: IndexArg list)
@@ -1220,9 +1206,7 @@ let private evalFirstArgShape
             else None
 
 
-// ---------------------------------------------------------------------------
-// Control System Toolbox helpers (defined here to use evalFirstArgShape above)
-// ---------------------------------------------------------------------------
+// --- Control System Toolbox helpers (defined here to use evalFirstArgShape above) ---
 
 // Extract (n, m) from A(n×n) and B(n×m) -- shared by lqr/dlqr/place/acker/care/dare/ctrb
 let private extractStateFeedbackDims
@@ -1576,9 +1560,7 @@ let private handleMultiDcm2angle
         Some [ Scalar; Scalar; Scalar ]
 
 
-// ---------------------------------------------------------------------------
-// Batch 6e: Multi-return handlers
-// ---------------------------------------------------------------------------
+// --- Batch 6e: Multi-return handlers ---
 
 // pca: X [n x p] -> coeff [p x p], score [n x p], latent [p x 1]
 let private handleMultiPca
@@ -1706,9 +1688,7 @@ let private handleMultiFsolve
         Some results.[..numTargets - 1]
 
 
-// ---------------------------------------------------------------------------
-// cellfun / arrayfun helpers
-// ---------------------------------------------------------------------------
+// --- cellfun / arrayfun helpers ---
 
 // Scan name-value pairs starting at index 2 for 'UniformOutput', false (or 0). Default is true.
 let private detectUniformOutput (args: IndexArg list) : bool =
@@ -1903,9 +1883,7 @@ let MULTI_SUPPORTED_FORMS : Map<string, string> =
     ]
 
 
-// ---------------------------------------------------------------------------
-// Main dispatch functions
-// ---------------------------------------------------------------------------
+// --- Main dispatch functions ---
 
 /// Dispatch a builtin call and return the inferred shape.
 /// evalExprFn and getIntervalFn break the circular dependency with EvalExpr.

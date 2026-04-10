@@ -79,10 +79,8 @@ let private opValueToKind (v: string) : TokenKind =
     | "," -> TkComma | ";" -> TkSemicolon
     | _ -> TkOp
 
-// ---------------------------------------------------------------------------
-// Token patterns – ordered by priority.
+// --- Token patterns – ordered by priority ---
 // We build one alternation regex with named groups.
-// ---------------------------------------------------------------------------
 
 // Named pattern fragments used in the master regex.
 // Token pattern order:
@@ -157,9 +155,7 @@ let private commandSyntaxNames =
         "addpath"; "rmpath"; "rehash"; "mex"
     ]
 
-// ---------------------------------------------------------------------------
-// lex : string -> Token list
-// ---------------------------------------------------------------------------
+// --- lex : string -> Token list ---
 // Context-sensitive lexing for single quotes:
 //   After ID / ) / ] / } / NUMBER / TRANSPOSE -> ' is TRANSPOSE
 //   Otherwise -> ' starts a STRING

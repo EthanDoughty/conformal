@@ -164,11 +164,9 @@ let KNOWN_BUILTINS : Set<string> =
         "cholupdate"; "gammaln"; "getpref"; "help"; "hsv"; "ispref"; "randperm"; "rng"; "setpref"; "usejava"
     ]
 
-// ---------------------------------------------------------------------------
-// CODER_UNSUPPORTED_BUILTINS: builtins with no MATLAB Coder equivalent.
+// --- CODER_UNSUPPORTED_BUILTINS: builtins with no MATLAB Coder equivalent ---
 // Conservative set: high-confidence entries only.
 // Note: MathWorks expands Coder support over time; revisit periodically.
-// ---------------------------------------------------------------------------
 
 let CODER_UNSUPPORTED_BUILTINS : Set<string> =
     Set.ofList [
@@ -185,10 +183,7 @@ let CODER_UNSUPPORTED_BUILTINS : Set<string> =
         "diary"; "type"; "doc"; "help"; "lookfor"; "which"; "what"; "who"; "whos"
     ]
 
-// ---------------------------------------------------------------------------
-// SUPPRESSED_CMD_STMTS: command-syntax statements that are silently ignored.
-// Statements silently ignored in command-syntax context.
-// ---------------------------------------------------------------------------
+// --- SUPPRESSED_CMD_STMTS: command-syntax statements that are silently ignored ---
 
 let SUPPRESSED_CMD_STMTS : Set<string> =
     Set.ofList [

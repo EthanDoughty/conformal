@@ -124,12 +124,10 @@ let private sarifLevel (code: WarningCode) : string =
     | c when Set.contains c errorCodes -> "error"
     | _ -> "warning"
 
-// ---------------------------------------------------------------------------
-// SARIF 2.1.0 emitter
-// ---------------------------------------------------------------------------
+// --- SARIF 2.1.0 emitter ---
 
-/// Emit SARIF 2.1.0 JSON for the given diagnostics to the provided stream.
-/// Compute SHA-256 hex digest of source text.
+// Emit SARIF 2.1.0 JSON for the given diagnostics to the provided stream.
+// Compute SHA-256 hex digest of source text.
 let private computeSha256 (source: string) : string =
     let bytes = Encoding.UTF8.GetBytes(source)
     let hash = SHA256.HashData(bytes)

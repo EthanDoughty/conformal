@@ -18,9 +18,7 @@ type DimBound =
     | BSymbolic of SymDim
     | BUnknown
 
-// ---------------------------------------------------------------------------
-// Dim: abstract dimension (concrete int, symbolic SymDim, range interval, or unknown)
-// ---------------------------------------------------------------------------
+// --- Dim: abstract dimension (concrete int, symbolic SymDim, range interval, or unknown) ---
 
 type Dim =
     | Concrete of int
@@ -28,9 +26,7 @@ type Dim =
     | Range    of lo: DimBound * hi: DimBound   // lo <= hi semantically
     | Unknown
 
-// ---------------------------------------------------------------------------
-// Shape: abstract shape domain (discriminated union)
-// ---------------------------------------------------------------------------
+// --- Shape: abstract shape domain (discriminated union) ---
 
 type Shape =
     | Scalar
@@ -42,9 +38,7 @@ type Shape =
     | UnknownShape
     | Bottom
 
-// ---------------------------------------------------------------------------
-// DimBound helpers
-// ---------------------------------------------------------------------------
+// --- DimBound helpers ---
 
 // Minimum of two DimBounds (for lo of hull). BUnknown as lo represents 0.
 let private minBound (a: DimBound) (b: DimBound) : DimBound =
@@ -105,9 +99,7 @@ let private boundsDisjoint (alo: DimBound) (ahi: DimBound) (blo: DimBound) (bhi:
 let private extendRange (lo: DimBound) (hi: DimBound) (pt: DimBound) : Dim =
     canonicalizeDim (Range(minBound lo pt, maxBound hi pt))
 
-// ---------------------------------------------------------------------------
-// Dimension helpers
-// ---------------------------------------------------------------------------
+// --- Dimension helpers ---
 
 let private toSymDim (d: Dim) : SymDim =
     match d with
@@ -161,9 +153,7 @@ let dimStr (d: Dim) : string =
         dimStrCache.[d] <- result
         result
 
-// ---------------------------------------------------------------------------
-// Shape -> string (must be character-identical to Python __str__)
-// ---------------------------------------------------------------------------
+// --- Shape -> string (must be character-identical to Python __str__) ---
 
 let private shapeStringCache = System.Collections.Generic.Dictionary<Shape, string>()
 
@@ -196,9 +186,7 @@ and private shapeToStringCore (s: Shape) : string =
     | UnknownShape     -> "unknown"
     | Bottom           -> "bottom"
 
-// ---------------------------------------------------------------------------
-// Dimension lattice operations
-// ---------------------------------------------------------------------------
+// --- Dimension lattice operations ---
 
 // join_dim: same -> same; Range + anything -> convex hull; different non-Range -> Unknown
 // IMPORTANT: joinDim is Range-PRESERVING but NOT Range-CREATING.
@@ -339,9 +327,7 @@ let sumDims (dims: Dim list) : Dim =
     | []    -> Concrete 0
     | first :: rest -> List.fold addDim first rest
 
-// ---------------------------------------------------------------------------
-// Generic shape traversal (join_shape / widen_shape share the same structure)
-// ---------------------------------------------------------------------------
+// --- Generic shape traversal (join_shape / widen_shape share the same structure) ---
 
 let rec traverseShapes (dimOp: Dim -> Dim -> Dim) (s1: Shape) (s2: Shape) : Shape =
     match s1, s2 with
@@ -404,9 +390,7 @@ let rec traverseShapes (dimOp: Dim -> Dim -> Dim) (s1: Shape) (s2: Shape) : Shap
 let joinShape (s1: Shape) (s2: Shape) : Shape = traverseShapes joinDim s1 s2
 let widenShape (old: Shape) (newShape: Shape) : Shape = traverseShapes widenDim old newShape
 
-// ---------------------------------------------------------------------------
-// Predicates (convenience)
-// ---------------------------------------------------------------------------
+// --- Predicates (convenience) ---
 
 let isScalar s         = s = Scalar
 let isMatrix s         = match s with Matrix _ -> true | _ -> false
@@ -433,9 +417,7 @@ let annotToShape (r: int option) (c: int option) : Shape =
 let argAnnotationsToShapes (anns: (string * int option * int option) list) : Map<string, Shape> =
     anns |> List.map (fun (p, r, c) -> (p, annotToShape r c)) |> Map.ofList
 
-// ---------------------------------------------------------------------------
-// Active patterns for Shape/Dim (additive — existing predicates kept)
-// ---------------------------------------------------------------------------
+// --- Active patterns for Shape/Dim (additive — existing predicates kept) ---
 
 // --- Shape classification ---
 let (|IsScalar|_|)  s = if s = Scalar       then Some () else None

@@ -31,10 +31,8 @@ let private formatConditionExpr (expr: Expr) : string =
         | _              -> "condition at line " + string expr.Line
     | _ -> "condition at line " + string expr.Line
 
-// ---------------------------------------------------------------------------
-// PathConstraintStack: branch condition tracking
+// --- PathConstraintStack: branch condition tracking ---
 // Each entry: (condition_description, branch_taken, line)
-// ---------------------------------------------------------------------------
 
 type PathConstraintEntry = {
     description: string

@@ -54,10 +54,8 @@ type Rational private (num: int64, den: int64) =
         | _ -> false
     override this.GetHashCode() = hash (this.Numerator, this.Denominator)
 
-// ---------------------------------------------------------------------------
-// Monomial: sorted list of (variable_name, exponent) pairs
+// --- Monomial: sorted list of (variable_name, exponent) pairs ---
 // Empty list = constant monomial (1)
-// ---------------------------------------------------------------------------
 
 type Monomial = (string * int) list
 
@@ -67,17 +65,13 @@ let private monoKey (mono: Monomial) : int * Monomial =
     let degree = mono |> List.sumBy snd
     (-degree, mono)
 
-// ---------------------------------------------------------------------------
-// SymDim: multivariate polynomial over rational coefficients
+// --- SymDim: multivariate polynomial over rational coefficients ---
 // Represented as a sorted association list: (Monomial * Rational) list
 // Canonical: sorted by monoKey, no zero coefficients
-// ---------------------------------------------------------------------------
 
 type SymDim = { _terms: (Monomial * Rational) list }
 
-// ---------------------------------------------------------------------------
-// Module SymDim: constructors and operations
-// ---------------------------------------------------------------------------
+// --- Module SymDim: constructors and operations ---
 
 module SymDim =
 

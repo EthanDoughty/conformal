@@ -18,8 +18,8 @@ type SuppressionInfo = {
 
 let empty : SuppressionInfo = { fileCodes = Set.empty; lineCodes = Map.empty }
 
-/// Extract W_* codes from the text after the directive keyword.
-/// E.g. "W_UNKNOWN_FUNCTION W_STRUCT_FIELD_NOT_FOUND" -> ["W_UNKNOWN_FUNCTION"; "W_STRUCT_FIELD_NOT_FOUND"]
+// Extract W_* codes from the text after the directive keyword.
+// E.g. "W_UNKNOWN_FUNCTION W_STRUCT_FIELD_NOT_FOUND" -> ["W_UNKNOWN_FUNCTION"; "W_STRUCT_FIELD_NOT_FOUND"]
 let private extractCodes (text: string) : string list =
     text.Split(' ')
     |> Array.toList
@@ -103,14 +103,12 @@ let filterDiagnostics (info: SuppressionInfo) (diagnostics: Diagnostic list) : D
     diagnostics |> List.filter (fun d ->
         not (isSuppressed info d.line (codeString d.code)))
 
-// ---------------------------------------------------------------------------
-// Type annotation directives: parse % conformal:type varname shape
+// --- Type annotation directives: parse % conformal:type varname shape ---
 // from raw MATLAB source text (file header only).
 // Pure module (no I/O, no mutation). Fable-compatible.
-// ---------------------------------------------------------------------------
 
-/// Parse a shape spec token: "[NxM]", "scalar", or "string".
-/// Returns Some shape on success, None if unrecognised.
+// Parse a shape spec token: "[NxM]", "scalar", or "string".
+// Returns Some shape on success, None if unrecognised.
 let private parseShapeSpec (spec: string) : Shapes.Shape option =
     let s = spec.Trim()
     if s = "scalar" then

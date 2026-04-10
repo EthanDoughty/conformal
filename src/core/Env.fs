@@ -64,9 +64,7 @@ module Env =
     let localBindingsEqual (env: Env) (other: Env) : bool =
         env.bindings = other.bindings
 
-// ---------------------------------------------------------------------------
-// Module-level join/widen (mirror Python's join_env / widen_env)
-// ---------------------------------------------------------------------------
+// --- Module-level join/widen (mirror Python's join_env / widen_env) ---
 
 let joinEnv (env1: Env) (env2: Env) : Env =
     let result = {

@@ -26,10 +26,8 @@ type LicenseStatus =
     | GracePeriod of LicensePayload   // expired within last 14 days
     | Invalid     of string           // reason
 
-// ---------------------------------------------------------------------------
-// Embedded keys (production key pair, generated 2026-03-04)
+// --- Embedded keys (production key pair, generated 2026-03-04) ---
 // Private key is #if !FABLE_COMPILER only -- never compiled into JS output.
-// ---------------------------------------------------------------------------
 
 let private PUBLIC_KEY_BYTES : byte[] =
     [| 0x22uy; 0x9duy; 0x21uy; 0x74uy; 0x07uy; 0x84uy; 0xd3uy; 0xceuy
@@ -45,9 +43,7 @@ let private PRIVATE_KEY_SEED : byte[] =
        0x20uy; 0x4duy; 0xa2uy; 0x15uy; 0x56uy; 0x14uy; 0x4auy; 0xd2uy |]
 #endif
 
-// ---------------------------------------------------------------------------
-// Base64url helpers (no padding, - for +, _ for /)
-// ---------------------------------------------------------------------------
+// --- Base64url helpers (no padding, - for +, _ for /) ---
 
 let private toBase64Url (bytes: byte[]) : string =
     System.Convert.ToBase64String(bytes)
@@ -68,10 +64,8 @@ let private fromBase64Url (s: string) : Result<byte[], string> =
     with ex ->
         Error ("base64url decode failed: " + ex.Message)
 
-// ---------------------------------------------------------------------------
-// Minimal JSON parser for LicensePayload
+// --- Minimal JSON parser for LicensePayload ---
 // Handles only the specific shape: {"sub":..., "exp":..., "tier":..., "kid":...}
-// ---------------------------------------------------------------------------
 
 let private extractJsonField (json: string) (field: string) : string option =
     // Find  "field": <value>  and return the raw value string (trimmed)
@@ -114,9 +108,7 @@ let private decodePayload (payloadBytes: byte[]) : Result<LicensePayload, string
     with ex ->
         Error ("payload decode failed: " + ex.Message)
 
-// ---------------------------------------------------------------------------
-// Ed25519 signature verification
-// ---------------------------------------------------------------------------
+// --- Ed25519 signature verification ---
 
 let private verifySignature (payloadBytes: byte[]) (signatureBytes: byte[]) : bool =
 #if FABLE_COMPILER
@@ -136,9 +128,7 @@ let private verifySignature (payloadBytes: byte[]) (signatureBytes: byte[]) : bo
         with _ -> false
 #endif
 
-// ---------------------------------------------------------------------------
-// Key parsing
-// ---------------------------------------------------------------------------
+// --- Key parsing ---
 
 let private parseKey (keyStr: string) : Result<byte[] * byte[], string> =
     if not (keyStr.StartsWith("CONF-")) then
@@ -158,9 +148,7 @@ let private parseKey (keyStr: string) : Result<byte[] * byte[], string> =
                 | Error e -> Error ("signature decode: " + e)
                 | Ok sigBytes -> Ok (payloadBytes, sigBytes)
 
-// ---------------------------------------------------------------------------
-// Grace period / expiry logic
-// ---------------------------------------------------------------------------
+// --- Grace period / expiry logic ---
 
 let private GRACE_SECONDS = 14L * 86400L
 
@@ -176,9 +164,7 @@ let private checkExpiry (payload: LicensePayload) : LicenseStatus =
         else
             Expired payload
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
+// --- Public API ---
 
 /// Validate a license key string. Returns Valid, GracePeriod, Expired, or Invalid.
 let validateLicense (keyStr: string) : LicenseStatus =

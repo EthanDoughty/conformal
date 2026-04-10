@@ -14,7 +14,7 @@ open Shapes
 open PyAst
 open BuiltinMap
 
-/// Python 3 reserved keywords that cannot be used as identifiers.
+// Python 3 reserved keywords that cannot be used as identifiers.
 let private pythonKeywords = set [
     "False"; "None"; "True"; "and"; "as"; "assert"; "async"; "await"
     "break"; "class"; "continue"; "def"; "del"; "elif"; "else"; "except"
@@ -23,12 +23,12 @@ let private pythonKeywords = set [
     "try"; "while"; "with"; "yield"
 ]
 
-/// Rename a MATLAB identifier if it collides with a Python keyword.
+// Rename a MATLAB identifier if it collides with a Python keyword.
 let private safeName (name: string) : string =
     if Set.contains name pythonKeywords then name + "_"
     else name
 
-/// Constant-folding binary op constructor: folds arithmetic on two constants at build time.
+// Constant-folding binary op constructor: folds arithmetic on two constants at build time.
 let private mkBinOp (op: string) (left: PyExpr) (right: PyExpr) : PyExpr =
     match op, left, right with
     | "+", PyConst a, PyConst b -> PyConst(a + b)
@@ -71,19 +71,17 @@ let inferExprShape (tctx: TranslateContext) (expr: Expr) : Shape option =
         | Neg(_, _) -> Some Scalar  // conservative
         | _ -> None
 
-/// Check if shape is definitely a matrix (2D non-scalar)
+// Check if shape is definitely a matrix (2D non-scalar)
 let private isMatrixShape (s: Shape) =
     match s with Matrix _ -> true | _ -> false
 
-/// Filter out synthetic parser sentinels (ExprStmt at line 0 with Const 0)
+// Filter out synthetic parser sentinels (ExprStmt at line 0 with Const 0)
 let private isSyntheticSentinel (stmt: Stmt) =
     match stmt with
     | ExprStmt({ line = 0; col = 0 }, Const({ line = 0; col = 0 }, 0.0)) -> true
     | _ -> false
 
-// -------------------------------------------------------------------------
-// Expression translation
-// -------------------------------------------------------------------------
+// --- Expression translation ---
 
 let rec translateExpr (expr: Expr) (tctx: TranslateContext) : PyExpr =
     tctx.usedImports <- Set.add "numpy" tctx.usedImports
@@ -237,9 +235,9 @@ and private translateApply (expr: Expr) (base_: Expr) (args: IndexArg list) (tct
             let pyIndices = args |> List.map (fun a -> translateIndexArg a tctx)
             PyIndex(pyBase, pyIndices)
 
-/// Translate an expression on the LHS of an assignment.
-/// In MATLAB, LHS expressions are always indexing (never function calls),
-/// and A(:) = v means "assign to all elements" (Python: A[:] = v), not ravel.
+// Translate an expression on the LHS of an assignment.
+// In MATLAB, LHS expressions are always indexing (never function calls),
+// and A(:) = v means "assign to all elements" (Python: A[:] = v), not ravel.
 and private translateLhsExpr (expr: Expr) (tctx: TranslateContext) : PyExpr =
     match expr with
     | Apply(_, base_, args) ->
@@ -649,7 +647,7 @@ and private translateMatrixLit (rows: Expr list list) (tctx: TranslateContext) :
     | [] -> PyCall(PyVar "np.array", [PyList []], [])  // [] -> np.array([])
     | _ -> PyCall(PyVar "np.array", [PyList (pyRows |> List.map PyList)], [])
 
-/// Check if an expression references a variable name
+// Check if an expression references a variable name
 let rec private exprReferencesVar (name: string) (expr: Expr) : bool =
     match expr with
     | Var(_, n) -> n = name
@@ -669,7 +667,7 @@ and private indexArgReferencesVar (name: string) (arg: IndexArg) : bool =
     | Ir.Range(_, s, e) -> exprReferencesVar name s || exprReferencesVar name e
     | Ir.SteppedRange(_, s, st, e) -> exprReferencesVar name s || exprReferencesVar name st || exprReferencesVar name e
 
-/// Check if a statement (or its children) references a variable name
+// Check if a statement (or its children) references a variable name
 and private stmtReferencesVar (name: string) (stmt: Stmt) : bool =
     match stmt with
     | Assign(_, _, e) | ExprStmt(_, e) -> exprReferencesVar name e
@@ -685,12 +683,10 @@ and private stmtReferencesVar (name: string) (stmt: Stmt) : bool =
     | FunctionDef(_, _, _, _, b, _) -> b |> List.exists (stmtReferencesVar name)
     | _ -> false
 
-// -------------------------------------------------------------------------
-// Command-style call translation (for OpaqueStmt raw text)
-// -------------------------------------------------------------------------
+// --- Command-style call translation (for OpaqueStmt raw text) ---
 
-/// Try to translate common MATLAB command-style calls (hold on, axis equal, etc.)
-/// Returns Some [stmts] on success, None if unrecognized.
+// Try to translate common MATLAB command-style calls (hold on, axis equal, etc.)
+// Returns Some [stmts] on success, None if unrecognized.
 let private translateCommandStyle (raw: string) (tctx: TranslateContext) : PyStmt list option =
     let words = raw.Split([|' '; '\t'|], System.StringSplitOptions.RemoveEmptyEntries) |> Array.toList
     match words with
@@ -771,9 +767,7 @@ let private translateCommandStyle (raw: string) (tctx: TranslateContext) : PyStm
         Some [PyCommentStmt (sprintf "clear %s" (vars |> String.concat " "))]
     | _ -> None
 
-// -------------------------------------------------------------------------
-// Statement translation
-// -------------------------------------------------------------------------
+// --- Statement translation ---
 
 let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
     // Filter out synthetic parser sentinels
@@ -1071,9 +1065,7 @@ and private translateForIterator (it: Expr) (tctx: TranslateContext) : PyExpr =
         // General expression as iterator
         translateExpr it tctx
 
-// -------------------------------------------------------------------------
-// Program translation
-// -------------------------------------------------------------------------
+// --- Program translation ---
 
 let translateProgram (program: Ir.Program) (tctx: TranslateContext) (sourceFile: string) : PyProgram =
     let body = program.body |> List.collect (fun s -> translateStmt s tctx)

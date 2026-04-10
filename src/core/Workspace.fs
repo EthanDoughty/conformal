@@ -77,8 +77,8 @@ let mergeMaps (maps: Map<'k,'v> list) : Map<'k,'v> =
     d |> Seq.map (fun kv -> (kv.Key, kv.Value)) |> Map.ofSeq
 
 
-/// Try to constant-fold a fullfile(...) call with all-string-literal args.
-/// Returns Some "a/b/c" if all args are StringLit, None otherwise.
+// Try to constant-fold a fullfile(...) call with all-string-literal args.
+// Returns Some "a/b/c" if all args are StringLit, None otherwise.
 let private tryFoldFullfile (args: Ir.IndexArg list) : string option =
     let strings =
         args |> List.choose (fun arg ->
@@ -272,9 +272,7 @@ let scanAddpathDirs (baseDir: string) (dirs: (string * bool) list) (excludeFile:
 #endif
 
 
-// ---------------------------------------------------------------------------
-// Parse cache: path -> (content_hash, primary_sig * subfunctions)
-// ---------------------------------------------------------------------------
+// --- Parse cache: path -> (content_hash, primary_sig * subfunctions) ---
 
 let private parsedCache =
     System.Collections.Generic.Dictionary<string, string * (FunctionSignature * Map<string, FunctionSignature>)>()

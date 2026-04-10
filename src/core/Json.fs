@@ -47,9 +47,7 @@ let private jFloat (v: float) : string =
         if s.Contains(".") || s.Contains("e") || s.Contains("n") then s
         else s + ".0"
 
-// ---------------------------------------------------------------------------
-// Indented builder
-// ---------------------------------------------------------------------------
+// --- Indented builder ---
 
 // We build the JSON by emitting structured nodes and tracking indentation.
 // This matches Python's json.dumps(obj, indent=2) output character-for-character.
@@ -96,9 +94,7 @@ type private Writer(sb: StringBuilder) =
     member this.WriteStringList(ss: string list) =
         this.WriteArray(ss |> List.map (fun s -> fun () -> this.WriteStr(s)))
 
-// ---------------------------------------------------------------------------
-// Serialization of IR nodes
-// ---------------------------------------------------------------------------
+// --- Serialization of IR nodes ---
 
 let rec private writeExpr (w: Writer) (expr: Expr) : unit =
     match expr with
@@ -447,9 +443,7 @@ and private writeStmt (w: Writer) (stmt: Stmt) : unit =
         ]
 
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
+// --- Public API ---
 
 let programToJson (program: Program) : string =
     let sb = StringBuilder()

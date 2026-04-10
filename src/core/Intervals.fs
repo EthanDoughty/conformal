@@ -57,12 +57,12 @@ let joinInterval (a: Interval option) (b: Interval option) : Interval option =
         Some { lo = newLo; hi = newHi }
 
 
-/// Threshold set for widening (sorted ascending).
-/// When a bound moves outward, it is snapped to the next threshold in the
-/// direction of movement.  This keeps intervals finite longer and gives the
-/// fixpoint loop more iterations at useful precision before collapsing to
-/// Unbounded.  Convergence is still guaranteed: each widening step moves the
-/// bound to a strictly larger threshold or to Unbounded; the set is finite.
+// Threshold set for widening (sorted ascending).
+// When a bound moves outward, it is snapped to the next threshold in the
+// direction of movement.  This keeps intervals finite longer and gives the
+// fixpoint loop more iterations at useful precision before collapsing to
+// Unbounded.  Convergence is still guaranteed: each widening step moves the
+// bound to a strictly larger threshold or to Unbounded; the set is finite.
 let private WIDEN_THRESHOLDS = [| -1000; -100; -10; -1; 0; 1; 10; 100; 1000 |]
 
 /// Push bounds outward to the next threshold when they move,
@@ -356,9 +356,7 @@ let narrowValueRanges
             | None -> iv)  // variable disappeared: keep widened (sound)
 
 
-// ---------------------------------------------------------------------------
-// Conditional interval refinement (v1.8.0)
-// ---------------------------------------------------------------------------
+// --- Conditional interval refinement (v1.8.0) ---
 
 /// Negate a comparison operator for else-branch refinement.
 let negateComparisonOp (op: string) : string =
@@ -529,9 +527,7 @@ let applyRefinements
                 bridgeToDimEquiv ctx varName guard
 
 
-// ---------------------------------------------------------------------------
-// Pentagon domain helpers (relational upper-bound constraints)
-// ---------------------------------------------------------------------------
+// --- Pentagon domain helpers (relational upper-bound constraints) ---
 
 /// Intersect two upper-bound maps (keep only facts present in both).
 /// When the same variable appears in both maps with different offsets, take the max offset

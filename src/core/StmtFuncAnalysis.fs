@@ -1,11 +1,23 @@
 // Conformal: Static Shape Analysis for MATLAB
 // author: matrix[1 x 1] Ethan Doughty, 2026
 //
-// Statement-level dispatcher and the call analysis for user-defined
-// functions and anonymous lambdas. Uses F#'s mutual recursion (let
-// rec ... and ...) to let statement analysis call back into function
-// analysis without forward declarations. Also implements the bounded
-// 3-phase widening scheme for loop bodies.
+// Statement-level dispatcher and call analysis for user-defined
+// functions and anonymous lambdas. Uses F#'s mutual recursion so
+// statement analysis can call back into function analysis without
+// forward declarations.
+//
+// This module also holds the loop analysis, which is the subtlest
+// piece of the whole analyzer. Textbook abstract interpretation
+// iterates the loop body until the environment stops changing, which
+// works in theory but often runs into unbounded iteration and tricky
+// widening tuning. A bounded multi-phase scheme works better. First,
+// a discover pass that executes the body once with widening. Second,
+// an optional stabilize pass if anything changed. Third, a narrow
+// pass that tightens intervals back down using the loop condition. A
+// bounded number of passes, no convergence check, guaranteed
+// termination. The tradeoff is a precision loss on loops whose
+// invariants only emerge after more iterations, which is rare for
+// the numerical patterns the analyzer targets.
 
 module StmtFuncAnalysis
 
@@ -42,9 +54,7 @@ let private SUPPRESSED_CMD_STMTS : Set<string> =
     ]
 
 
-// ---------------------------------------------------------------------------
-// Accumulation pattern detection (fixpoint mode only)
-// ---------------------------------------------------------------------------
+// --- Accumulation pattern detection (fixpoint mode only) ---
 
 [<Struct>]
 type private AccumAxis = Vert | Horz
@@ -290,9 +300,7 @@ let private refineAccumulation
                         | _ -> ()
 
 
-// ---------------------------------------------------------------------------
-// Branch join helper
-// ---------------------------------------------------------------------------
+// --- Branch join helper ---
 
 // Join analyzed branches; propagate if all returned.
 let private joinBranchResults
@@ -355,17 +363,13 @@ let private joinBranchResults
         Normal
 
 
-// ---------------------------------------------------------------------------
-// Dual-location warning formatter
-// ---------------------------------------------------------------------------
+// --- Dual-location warning formatter ---
 
 let private formatDualLocationWarning (funcWarn: Diagnostic) (funcName: string) (callLine: int) : Diagnostic =
     { funcWarn with callStack = funcWarn.callStack @ [(funcName, callLine)] }
 
 
-// ---------------------------------------------------------------------------
-// Struct field update helper
-// ---------------------------------------------------------------------------
+// --- Struct field update helper ---
 
 let rec private updateStructField
     (baseShape: Shape)
@@ -413,9 +417,7 @@ let rec private updateStructField
             Struct([ (firstField, updatedInner) ], false)
 
 
-// ---------------------------------------------------------------------------
-// External classdef lazy-loading helper
-// ---------------------------------------------------------------------------
+// --- External classdef lazy-loading helper ---
 
 // Check externalClassdefs for fname, parse on first access, populate classRegistry +
 // functionRegistry, and return the class info. .NET-only; always returns None under Fable.
@@ -444,18 +446,16 @@ let private tryLoadExternalClassdef
 #endif
 
 
-// ---------------------------------------------------------------------------
-// Inheritance chain helpers
-// ---------------------------------------------------------------------------
+// --- Inheritance chain helpers ---
 
-/// Resolve a superclass by name: check classRegistry first, then try external classdef.
+// Resolve a superclass by name: check classRegistry first, then try external classdef.
 let private resolveSuperclass (name: string) (ctx: AnalysisContext) : ClassInfo option =
     match ctx.call.classRegistry.TryGetValue(name) with
     | true, info -> Some info
     | false, _ -> tryLoadExternalClassdef name ctx
 
-/// Walk the inheritance chain and collect all properties (parent first, child last).
-/// Deduplicates so child properties shadow parent properties of the same name.
+// Walk the inheritance chain and collect all properties (parent first, child last).
+// Deduplicates so child properties shadow parent properties of the same name.
 let private collectInheritedProperties (classInfo: ClassInfo) (ctx: AnalysisContext) : string list =
     let rec walk (info: ClassInfo) (visited: Set<string>) =
         if visited.Contains(info.name) then []  // cycle guard
@@ -470,7 +470,7 @@ let private collectInheritedProperties (classInfo: ClassInfo) (ctx: AnalysisCont
             parentProps @ info.properties
     walk classInfo Set.empty |> List.distinct
 
-/// Walk the inheritance chain and collect all methods (child overrides parent).
+// Walk the inheritance chain and collect all methods (child overrides parent).
 let private collectInheritedMethods (classInfo: ClassInfo) (ctx: AnalysisContext) : Map<string, FunctionSignature> =
     let rec walk (info: ClassInfo) (visited: Set<string>) =
         if visited.Contains(info.name) then Map.empty
@@ -486,17 +486,15 @@ let private collectInheritedMethods (classInfo: ClassInfo) (ctx: AnalysisContext
             Map.foldBack (fun k v acc -> if Map.containsKey k acc then acc else Map.add k v acc) parentMethods info.methods
     walk classInfo Set.empty
 
-/// Return true if funcName is declared as a method in any class currently in classRegistry.
-/// Used to suppress false W_FUNCTION_ARG_COUNT_MISMATCH for implicit-self calls like
-/// method(a, b) where the MATLAB declaration is function y = method(obj, a, b).
+// Return true if funcName is declared as a method in any class currently in classRegistry.
+// Used to suppress false W_FUNCTION_ARG_COUNT_MISMATCH for implicit-self calls like
+// method(a, b) where the MATLAB declaration is function y = method(obj, a, b).
 let private isKnownClassdefMethod (funcName: string) (ctx: AnalysisContext) : bool =
     ctx.call.classRegistry.Values
     |> Seq.exists (fun classInfo -> Map.containsKey funcName classInfo.methods)
 
 
-// ---------------------------------------------------------------------------
-// Call resolution: unified dispatch priority for function name resolution
-// ---------------------------------------------------------------------------
+// --- Call resolution: unified dispatch priority for function name resolution ---
 
 type CallResolution =
     | BuiltinCall
@@ -516,11 +514,9 @@ type CallConfig = {
     numTargets: int
 }
 
-// ---------------------------------------------------------------------------
-// Wired eval functions (break circular dependency EvalExpr <-> StmtFuncAnalysis)
-// ---------------------------------------------------------------------------
+// --- Wired eval functions (break circular dependency EvalExpr <-> StmtFuncAnalysis) ---
 
-/// Record the inferred shape at a source location (last-write-wins).
+// Record the inferred shape at a source location (last-write-wins).
 let inline private recordShape (ctx: AnalysisContext) (loc: SrcLoc) (shape: Shape) =
     ctx.shapeAnnotations.[loc] <- shape
 
@@ -683,9 +679,7 @@ and private wiredEvalExprFull
     shape
 
 
-// ---------------------------------------------------------------------------
-// analyzeStmtIr: main statement dispatcher
-// ---------------------------------------------------------------------------
+// --- analyzeStmtIr: main statement dispatcher ---
 
 and analyzeStmtIr
     (stmt: Stmt)
@@ -1182,9 +1176,7 @@ and analyzeStmtIr
         Normal
 
 
-// ---------------------------------------------------------------------------
-// runStmts helper: execute a list of statements, propagating the first non-Normal flow
-// ---------------------------------------------------------------------------
+// --- runStmts helper: execute a list of statements, propagating the first non-Normal flow ---
 
 and runStmts
     (stmts: Stmt list)
@@ -1200,9 +1192,7 @@ and runStmts
         | flow -> flow
 
 
-// ---------------------------------------------------------------------------
-// CellAssign helper
-// ---------------------------------------------------------------------------
+// --- CellAssign helper ---
 
 and private evalArgShapeHelper
     (arg: IndexArg)
@@ -1286,9 +1276,7 @@ and private analyzeCellAssignArgs
         | _ -> ()
 
 
-// ---------------------------------------------------------------------------
-// AssignMulti dispatcher
-// ---------------------------------------------------------------------------
+// --- AssignMulti dispatcher ---
 
 and private analyzeAssignMulti
     (line: int)
@@ -1443,11 +1431,9 @@ and private analyzeAssignMulti
         for target in targets do bindTarget target UnknownShape
 
 
-// ---------------------------------------------------------------------------
-// collectModifiedVars: syntactic scan of loop body for assigned variables.
+// --- collectModifiedVars: syntactic scan of loop body for assigned variables ---
 // Over-approximates: any variable written anywhere in the body (including
 // nested loops and branches) is considered modified.  Conservative is fine.
-// ---------------------------------------------------------------------------
 
 and private collectModifiedVars (body: Stmt list) : Set<string> =
     let mutable vars = Set.empty
@@ -1484,9 +1470,7 @@ and private collectModifiedVars (body: Stmt list) : Set<string> =
     vars
 
 
-// ---------------------------------------------------------------------------
-// analyzeLoopBody: 3-phase widening algorithm (fixpoint mode)
-// ---------------------------------------------------------------------------
+// --- analyzeLoopBody: 3-phase widening algorithm (fixpoint mode) ---
 
 and analyzeLoopBody
     (body: Stmt list)
@@ -1587,9 +1571,7 @@ and analyzeLoopBody
         ctx.call.insideLoop <- savedInsideLoop
 
 
-// ---------------------------------------------------------------------------
-// analyzeFunctionCall: interprocedural analysis with polymorphic caching
-// ---------------------------------------------------------------------------
+// --- analyzeFunctionCall: interprocedural analysis with polymorphic caching ---
 
 and analyzeFunctionCall
     ({ fname = funcName; args = args; line = line; numTargets = numTargets }: CallConfig)
@@ -1746,9 +1728,7 @@ and analyzeFunctionCall
                 ctx.call.analyzingFunctions.Remove(funcName) |> ignore
 
 
-// ---------------------------------------------------------------------------
-// analyzeNestedFunctionCall
-// ---------------------------------------------------------------------------
+// --- analyzeNestedFunctionCall ---
 
 and analyzeNestedFunctionCall
     ({ fname = funcName; args = args; line = line; numTargets = numTargets }: CallConfig)
@@ -1900,9 +1880,7 @@ and analyzeNestedFunctionCall
                 ctx.call.analyzingFunctions.Remove(funcName) |> ignore
 
 
-// ---------------------------------------------------------------------------
-// analyzeExternalFunctionCall: cross-file analysis
-// ---------------------------------------------------------------------------
+// --- analyzeExternalFunctionCall: cross-file analysis ---
 
 and analyzeExternalFunctionCall
     ({ fname = fname; args = args; line = line; numTargets = numTargets }: CallConfig)

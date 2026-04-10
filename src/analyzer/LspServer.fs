@@ -27,9 +27,7 @@ open Workspace
 open Witness
 open Builtins
 
-// ---------------------------------------------------------------------------
-// Analysis cache per document URI
-// ---------------------------------------------------------------------------
+// --- Analysis cache per document URI ---
 
 type AnalysisCache = {
     mutable env:               Env.Env
@@ -41,18 +39,14 @@ type AnalysisCache = {
     mutable externalFunctions: System.Collections.Generic.Dictionary<string, ExternalSignature>
 }
 
-// ---------------------------------------------------------------------------
-// Server settings
-// ---------------------------------------------------------------------------
+// --- Server settings ---
 
 type ServerSettings() =
     member val fixpoint      : bool   = false with get, set
     member val strict        : bool   = false with get, set
     member val analyzeOnChange : bool = false with get, set
 
-// ---------------------------------------------------------------------------
-// ConformalClient: sends notifications/requests to the IDE
-// ---------------------------------------------------------------------------
+// --- ConformalClient: sends notifications/requests to the IDE ---
 
 type ConformalClient(notifier: ClientNotificationSender, _requester: ClientRequestSender) =
     inherit LspClient()
@@ -66,9 +60,7 @@ type ConformalClient(notifier: ClientNotificationSender, _requester: ClientReque
     override _.WindowLogMessage(p: LogMessageParams) : Async<unit> =
         notifier "window/logMessage" (box p) |> Async.Ignore
 
-// ---------------------------------------------------------------------------
-// ConformalLspServer: handles requests from the IDE
-// ---------------------------------------------------------------------------
+// --- ConformalLspServer: handles requests from the IDE ---
 
 type ConformalLspServer(client: ConformalClient) =
     inherit LspServer()
@@ -82,9 +74,7 @@ type ConformalLspServer(client: ConformalClient) =
     // Server settings
     let settings = ServerSettings()
 
-    // ---------------------------------------------------------------------------
-    // Helpers
-    // ---------------------------------------------------------------------------
+    // --- Helpers ---
 
     let computeHash (text: string) : string =
         use sha256 = SHA256.Create()
@@ -113,9 +103,7 @@ type ConformalLspServer(client: ConformalClient) =
     let logErr (msg: string) =
         Console.Error.WriteLine("[conformal-lsp] " + msg)
 
-    // ---------------------------------------------------------------------------
-    // _validate: parse + analyze + publish diagnostics
-    // ---------------------------------------------------------------------------
+    // --- _validate: parse + analyze + publish diagnostics ---
 
     let validate (uri: string) (source: string) (force: bool) =
         let sourceHash   = computeHash source
@@ -266,9 +254,7 @@ type ConformalLspServer(client: ConformalClient) =
             publishDiagnostics uri [| errorDiag |]
             logErr ("Analysis error for " + uri + ": " + ex.Message)
 
-    // ---------------------------------------------------------------------------
-    // LspServer overrides
-    // ---------------------------------------------------------------------------
+    // --- LspServer overrides ---
 
     override _.Initialize(p: InitializeParams) = async {
         // Read initializationOptions (may be a JObject from JSON-RPC deserialization)
@@ -568,9 +554,7 @@ type ConformalLspServer(client: ConformalClient) =
 
     override _.Dispose() = ()
 
-// ---------------------------------------------------------------------------
-// Bootstrap: start the LSP server
-// ---------------------------------------------------------------------------
+// --- Bootstrap: start the LSP server ---
 
 let startLsp () : int =
     let input  = Console.OpenStandardInput()

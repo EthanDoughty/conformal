@@ -144,9 +144,7 @@ let private parseExpectations (src: string) (fixpoint: bool) : Expectations =
       expectWarnings = expectWarns; rejectWarnings = rejectWarns }
 
 
-// ---------------------------------------------------------------------------
-// Single test runner
-// ---------------------------------------------------------------------------
+// --- Single test runner ---
 
 // Analyze one .m file and check assertions. Returns true if all assertions pass.
 let private runTest (path: string) (fixpoint: bool) (forceCoder: bool) (quiet: bool) : bool =
@@ -331,9 +329,7 @@ let private runTest (path: string) (fixpoint: bool) (forceCoder: bool) (quiet: b
     passed
 
 
-// ---------------------------------------------------------------------------
-// Discover test files
-// ---------------------------------------------------------------------------
+// --- Discover test files ---
 
 // Discover all .m test files under the given root directory, sorted.
 let private discoverTestFiles (rootDir: string) : string list =
@@ -344,9 +340,7 @@ let private discoverTestFiles (rootDir: string) : string list =
         |> Array.toList
 
 
-// ---------------------------------------------------------------------------
-// Main entry point
-// ---------------------------------------------------------------------------
+// --- Main entry point ---
 
 /// Run all tests. Returns exit code: 0 if all pass, 1 if any fail.
 let run (strict: bool) (fixpoint: bool) (coder: bool) (quiet: bool) : int =

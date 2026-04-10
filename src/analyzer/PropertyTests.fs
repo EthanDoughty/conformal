@@ -142,9 +142,7 @@ let private genProgram : Gen<Ir.Program> =
         return { Ir.body = stmts }
     }
 
-// ---------------------------------------------------------------------------
-// Arbitraries
-// ---------------------------------------------------------------------------
+// --- Arbitraries ---
 
 let private arbShape = Arb.fromGen genShape
 let private arbDim = Arb.fromGen genDim
@@ -163,9 +161,7 @@ let private arbIntervalPair = Arb.fromGen (Gen.two genConcreteInterval)
 let private arbIntervalOptPair = Arb.fromGen (Gen.two genIntervalOpt)
 let private arbEnvPair = Arb.fromGen (Gen.two genEnv)
 
-// ---------------------------------------------------------------------------
-// Runner
-// ---------------------------------------------------------------------------
+// --- Runner ---
 
 let private checkProp (name: string) (prop: Lazy<unit>) : bool =
     try

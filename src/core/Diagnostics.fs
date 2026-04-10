@@ -42,9 +42,7 @@ let CODER_ONLY_CODES : Set<WarningCode> =
         W_CODER_RECURSION
     ]
 
-// ---------------------------------------------------------------------------
-// Diagnostic record
-// ---------------------------------------------------------------------------
+// --- Diagnostic record ---
 
 type Diagnostic = {
     line:       int
@@ -73,9 +71,7 @@ let diagnosticToString (d: Diagnostic) : string =
                 $"{indent}in {funcName}, called from line {callLine}")
         mainLine + "\n" + (frames |> String.concat "\n")
 
-// ---------------------------------------------------------------------------
-// Pretty-printing helpers for IR expressions
-// ---------------------------------------------------------------------------
+// --- Pretty-printing helpers for IR expressions ---
 
 let rec prettyExprIr (expr: Expr) : string =
     match expr with
@@ -126,9 +122,7 @@ and prettyIndexArgIr (arg: IndexArg) : string =
     | Ir.SteppedRange(_, s, t, e) -> $"{prettyExprIr s}:{prettyExprIr t}:{prettyExprIr e}"
     | IndexExpr(_, e)            -> prettyExprIr e
 
-// ---------------------------------------------------------------------------
-// Warning message builders
-// ---------------------------------------------------------------------------
+// --- Warning message builders ---
 
 let makeDiag line code message =
     { line = line; code = code; message = message; relatedLine = None; col = 0; relatedCol = None; callStack = [] }
@@ -355,9 +349,7 @@ let warnCellfunNonUniform (line: int) : Diagnostic =
     makeDiag line W_CELLFUN_NON_UNIFORM
         "cellfun: non-scalar output, use 'UniformOutput',false"
 
-// ---------------------------------------------------------------------------
-// Coder-mode warning builders (W_CODER_* family)
-// ---------------------------------------------------------------------------
+// --- Coder-mode warning builders (W_CODER_* family) ---
 
 let warnCoderVariableSize (line: int) (varName: string) (shape: Shape) : Diagnostic =
     makeDiag line W_CODER_VARIABLE_SIZE

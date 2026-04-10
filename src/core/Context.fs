@@ -21,9 +21,7 @@ type CacheEntry =
     | LambdaResult   of Shape * Diagnostic list
     | FunctionResult  of Shape list * Diagnostic list
 
-// ---------------------------------------------------------------------------
-// Function signatures
-// ---------------------------------------------------------------------------
+// --- Function signatures ---
 
 type FunctionSignature = {
     name:       string
@@ -58,9 +56,7 @@ type ExternalSignature = {
     outputNames: string list
 }
 
-// ---------------------------------------------------------------------------
-// Control flow (replaces EarlyReturn/EarlyBreak/EarlyContinue exceptions)
-// ---------------------------------------------------------------------------
+// --- Control flow (replaces EarlyReturn/EarlyBreak/EarlyContinue exceptions) ---
 
 type ControlFlow =
     | Normal
@@ -68,9 +64,7 @@ type ControlFlow =
     | FlowBreak
     | FlowContinue
 
-// ---------------------------------------------------------------------------
-// Sub-contexts
-// ---------------------------------------------------------------------------
+// --- Sub-contexts ---
 
 type CallContext() =
     /// Maps function name -> FunctionSignature (same-file user functions)
@@ -171,10 +165,8 @@ type WorkspaceContext() =
     member val privateFunctions : System.Collections.Generic.Dictionary<string, ExternalSignature>
                                   = System.Collections.Generic.Dictionary<string, ExternalSignature>() with get, set
 
-// ---------------------------------------------------------------------------
-// ConstraintSnapshot: captures the 5 branch-sensitive fields for save/restore.
+// --- ConstraintSnapshot: captures the 5 branch-sensitive fields for save/restore ---
 // Used by branch handlers (If, IfChain, Switch, TryCatch) and joinBranchResults.
-// ---------------------------------------------------------------------------
 
 type ConstraintSnapshot = {
     constraints: Set<string * string>
@@ -184,9 +176,7 @@ type ConstraintSnapshot = {
     lowerBounds: Map<string, string * int>
 }
 
-// ---------------------------------------------------------------------------
-// AnalysisContext: root container for all analysis state
-// ---------------------------------------------------------------------------
+// --- AnalysisContext: root container for all analysis state ---
 
 type AnalysisContext() =
     member val call : CallContext        = CallContext()       with get

@@ -32,9 +32,7 @@ let private needsParens (parentOp: string) (child: PyExpr) (isRight: bool) : boo
         else false
     | _ -> false
 
-// -------------------------------------------------------------------------
-// Expression emission
-// -------------------------------------------------------------------------
+// --- Expression emission ---
 
 let rec emitExpr (expr: PyExpr) : string =
     match expr with
@@ -104,14 +102,12 @@ and private emitIdx (idx: PyIdx) : string =
         | Some s -> sprintf "%s:%s:%s" sLo sHi (emitExpr s)
         | None -> sprintf "%s:%s" sLo sHi
 
-// -------------------------------------------------------------------------
-// Statement emission
-// -------------------------------------------------------------------------
+// --- Statement emission ---
 
-/// Returns true when every line in `lines` is blank or a comment (starts with #
-/// after stripping leading whitespace). Python requires at least one real
-/// statement inside every compound-statement block; if all we have are comments
-/// we must inject `pass`.
+// Returns true when every line in `lines` is blank or a comment (starts with #
+// after stripping leading whitespace). Python requires at least one real
+// statement inside every compound-statement block; if all we have are comments
+// we must inject `pass`.
 let private allComments (lines: string list) : bool =
     lines |> List.forall (fun l ->
         let t = l.TrimStart()
@@ -193,9 +189,7 @@ let rec emitStmt (indent: int) (stmt: PyStmt) : string list =
         let exceptLines = if exceptLines.IsEmpty || allComments exceptLines then exceptLines @ [sprintf "%s    pass" pad] else exceptLines
         tryLine @ tryLines @ exceptLine @ exceptLines
 
-// -------------------------------------------------------------------------
-// Program emission
-// -------------------------------------------------------------------------
+// --- Program emission ---
 
 let emitProgram (program: PyProgram) : string list =
     let importLines = program.imports |> List.collect (emitStmt 0)

@@ -22,12 +22,9 @@ open DimExtract
 open SharedTypes
 
 /// Callback type for builtin function dispatch.
-/// Signature: fname -> line -> baseExpr -> args -> env -> warnings -> ctx -> Shape
 type BuiltinDispatch = string -> int -> Expr -> IndexArg list -> Env -> ResizeArray<Diagnostics.Diagnostic> -> AnalysisContext -> Shape
 
-// ---------------------------------------------------------------------------
-// MATLAB predefined constants
-// ---------------------------------------------------------------------------
+// --- MATLAB predefined constants ---
 
 let private matlabConstants : Map<string, Shape> =
     Map.ofList [
@@ -42,9 +39,7 @@ let private matlabConstants : Map<string, Shape> =
     ]
 
 
-// ---------------------------------------------------------------------------
-// Interval evaluator (parallel to shape inference, no shape side effects)
-// ---------------------------------------------------------------------------
+// --- Interval evaluator (parallel to shape inference, no shape side effects) ---
 
 /// Compute integer interval for an expression.
 let rec getExprInterval (expr: Expr) (env: Env) (ctx: AnalysisContext) : Interval option =
@@ -110,12 +105,10 @@ let getConcreteDimSize (dim: Dim) (ctx: AnalysisContext) : int option =
 
 
 
-// ---------------------------------------------------------------------------
-// Inheritance chain method lookup
-// ---------------------------------------------------------------------------
+// --- Inheritance chain method lookup ---
 
-/// Walk the class inheritance chain to find a method by name.
-/// Returns the method signature if found in the class or any ancestor.
+// Walk the class inheritance chain to find a method by name.
+// Returns the method signature if found in the class or any ancestor.
 let private findMethodInChain (className: string) (methodName: string) (ctx: AnalysisContext) : FunctionSignature option =
     let rec walk (cn: string) (visited: Set<string>) =
         if visited.Contains(cn) then None  // cycle guard
@@ -132,9 +125,7 @@ let private findMethodInChain (className: string) (methodName: string) (ctx: Ana
     walk className Set.empty
 
 
-// ---------------------------------------------------------------------------
-// Main expression evaluator
-// ---------------------------------------------------------------------------
+// --- Main expression evaluator ---
 
 // Join all element shapes from a cell element tracking map.
 let private joinAllElements (elemMap: Map<int, Shape>) : Shape =
@@ -254,9 +245,7 @@ let rec evalExprIr
     : Shape =
 
     match expr with
-    // ------------------------------------------------------------------
-    // Variables / constants
-    // ------------------------------------------------------------------
+    // --- Variables / constants ---
     | Var(_, name) ->
         let shape = Env.get env name
         if shape = Bottom then
@@ -276,9 +265,7 @@ let rec evalExprIr
             UnknownShape
         | Some _ -> Scalar   // End resolves to scalar index
 
-    // ------------------------------------------------------------------
-    // Matrix literal
-    // ------------------------------------------------------------------
+    // --- Matrix literal ---
     | MatrixLit({ line = line }, rows) ->
         let shapeRows =
             rows |> List.map (fun row ->
@@ -286,9 +273,7 @@ let rec evalExprIr
         let warningsRef = warnings
         MatrixLiterals.inferMatrixLiteralShape shapeRows line warningsRef ctx env
 
-    // ------------------------------------------------------------------
-    // Cell literal
-    // ------------------------------------------------------------------
+    // --- Cell literal ---
     | CellLit(_, rows) ->
         if rows.IsEmpty then
             Cell(Concrete 0, Concrete 0, Some Map.empty)
@@ -313,9 +298,7 @@ let rec evalExprIr
                     elemShapes |> Seq.map (fun kv -> (kv.Key, kv.Value)) |> Map.ofSeq
                 Cell(Concrete numRows, Concrete numCols, Some elemMap)
 
-    // ------------------------------------------------------------------
-    // Curly indexing: c{i} or c{i,j}
-    // ------------------------------------------------------------------
+    // --- Curly indexing: c{i} or c{i,j} ---
     | CurlyApply({ line = line }, baseExpr, args) ->
         let baseShape = evalExprIr baseExpr env warnings ctx None builtinDispatch
 
@@ -423,15 +406,11 @@ let rec evalExprIr
                     UnknownShape
             | _ -> UnknownShape
 
-    // ------------------------------------------------------------------
-    // Apply: function call or array indexing
-    // ------------------------------------------------------------------
+    // --- Apply: function call or array indexing ---
     | Apply({ line = line }, baseExpr, args) ->
         evalApply line baseExpr args env warnings ctx builtinDispatch
 
-    // ------------------------------------------------------------------
-    // Transpose
-    // ------------------------------------------------------------------
+    // --- Transpose ---
     | Transpose({ line = line }, operand) ->
         let inner = evalExprIr operand env warnings ctx None builtinDispatch
         if not (isNumeric inner) && not (isUnknown inner) then
@@ -442,9 +421,7 @@ let rec evalExprIr
             | Matrix(r, c) -> Matrix(c, r)
             | _ -> inner
 
-    // ------------------------------------------------------------------
-    // Negation / logical Not
-    // ------------------------------------------------------------------
+    // --- Negation / logical Not ---
     | Neg({ line = line }, operand) ->
         let s = evalExprIr operand env warnings ctx None builtinDispatch
         if not (isNumeric s) && not (isUnknown s) then
@@ -459,9 +436,7 @@ let rec evalExprIr
             UnknownShape
         else s
 
-    // ------------------------------------------------------------------
-    // Field access: s.field
-    // ------------------------------------------------------------------
+    // --- Field access: s.field ---
     | FieldAccess({ line = line }, baseExpr, field) ->
         let baseShape = evalExprIr baseExpr env warnings ctx None builtinDispatch
         if field = "<dynamic>" then
@@ -485,9 +460,7 @@ let rec evalExprIr
                     warnings.Add(warnFieldAccessNonStruct line baseShape)
                 UnknownShape
 
-    // ------------------------------------------------------------------
-    // Lambda: @(params) body
-    // ------------------------------------------------------------------
+    // --- Lambda: @(params) body ---
     | Lambda(_, parms, body) ->
         let lambdaId = ctx.call.nextLambdaId
         ctx.call.nextLambdaId <- lambdaId + 1
@@ -495,9 +468,7 @@ let rec evalExprIr
         ctx.call.lambdaMetadata.[lambdaId] <- (parms, body, Env.copy env)
         FunctionHandle(Some (Set.singleton lambdaId))
 
-    // ------------------------------------------------------------------
-    // Function handle: @funcName
-    // ------------------------------------------------------------------
+    // --- Function handle: @funcName ---
     | FuncHandle({ line = line }, name) ->
         let handleId = ctx.call.nextLambdaId
         ctx.call.nextLambdaId <- handleId + 1
@@ -511,14 +482,10 @@ let rec evalExprIr
             warnings.Add(warnUnknownFunction line name)
             FunctionHandle None   // opaque
 
-    // ------------------------------------------------------------------
-    // Metaclass operator: ?ClassName -> unknown
-    // ------------------------------------------------------------------
+    // --- Metaclass operator: ?ClassName -> unknown ---
     | MetaClass _ -> UnknownShape
 
-    // ------------------------------------------------------------------
-    // BinOp
-    // ------------------------------------------------------------------
+    // --- BinOp ---
     | BinOp({ line = line }, op, left, right) ->
         let leftShape  = evalExprIr left  env warnings ctx containerShape builtinDispatch
         let rightShape = evalExprIr right env warnings ctx containerShape builtinDispatch

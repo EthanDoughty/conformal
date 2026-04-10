@@ -2,10 +2,19 @@
 // author: matrix[1 x 1] Ethan Doughty, 2026
 //
 // Recursive descent parser for MATLAB, emitting IR directly with no
-// intermediate AST. Uses a try-parse-then-retry strategy for MATLAB's
-// ambiguous syntax (function call vs. indexing vs. matrix literal) and
-// accumulates recovered errors so a single malformed line does not
-// abort analysis of the rest of the file.
+// intermediate AST. The interesting choice is the try-parse-then-
+// retry strategy for handling MATLAB's ambiguous productions. Some
+// of them cannot be distinguished until a few tokens into the parse,
+// like A(i,j) which could be a function call or a matrix index, or
+// [a b] which could be a matrix literal or a multi-return destructure.
+// The parser commits to one interpretation, saves the token position,
+// and if the chosen production fails downstream, rewinds and retries.
+//
+// The parser also accumulates recovered errors instead of aborting
+// on the first malformed line, which is what lets the analyzer run
+// cleanly across a large corpus of real-world files. A single bad
+// line can fail locally without preventing the rest of the file from
+// being analyzed.
 
 module Parser
 
@@ -32,9 +41,7 @@ type LhsSegment =
     | Paren of args: IndexArg list
     | Curly of args: IndexArg list
 
-// ---------------------------------------------------------------------------
-// extract_targets_from_tokens
-// ---------------------------------------------------------------------------
+// --- extract_targets_from_tokens ---
 
 let extractTargetsFromTokens (toks: Token list) : string list =
     if toks.IsEmpty then []
@@ -101,9 +108,7 @@ let extractTargetsFromTokens (toks: Token list) : string list =
         else []
 
 
-// ---------------------------------------------------------------------------
-// Operator precedence table
-// ---------------------------------------------------------------------------
+// --- Operator precedence table ---
 
 let private precedenceTable : System.Collections.Generic.Dictionary<string,int> =
     let d = System.Collections.Generic.Dictionary<string,int>()
@@ -116,9 +121,7 @@ let private precedenceTable : System.Collections.Generic.Dictionary<string,int> 
     d
 
 
-// ---------------------------------------------------------------------------
-// MatlabParser
-// ---------------------------------------------------------------------------
+// --- MatlabParser ---
 
 type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
 
@@ -353,9 +356,7 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
             this.SkipNewlines()
             [OpaqueStmt(loc line col, [], "classdef")]
 
-    // -------------------------------------------------------------------
-    // Top-level program
-    // -------------------------------------------------------------------
+    // --- Top-level program ---
 
     member this.ParseProgram() : Program =
         let items = System.Collections.Generic.List<Stmt>()
@@ -379,9 +380,7 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
                     if pos = savedPos then pos <- pos + 1
         { body = items |> Seq.toList }
 
-    // -------------------------------------------------------------------
-    // Function definition
-    // -------------------------------------------------------------------
+    // --- Function definition ---
 
     // Eat a function name: accepts ID or END (MATLAB allows `end` as a function name
     // for operator overloading, e.g. @classname/end.m).
@@ -473,9 +472,7 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
 
         FunctionDef(loc line col, name, Seq.toList parms, Seq.toList outputVars, body, argAnns)
 
-    // -------------------------------------------------------------------
-    // Statements
-    // -------------------------------------------------------------------
+    // --- Statements ---
 
     member this.ParseStmt() : Stmt =
         let tok = this.Current()
@@ -669,9 +666,7 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
             let expr = this.ParseExpr(0, false, true)
             ExprStmt(loc expr.Line expr.Col, expr)
 
-    // -------------------------------------------------------------------
-    // arguments block (R2019b+)
-    // -------------------------------------------------------------------
+    // --- arguments block (R2019b+) ---
 
     /// Parse an `arguments ... end` block, extracting parameter size annotations.
     /// For (Input) or plain blocks, extracts (paramName, rowDim, colDim) tuples from
@@ -752,9 +747,7 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
             lastArgSpecs <- Seq.toList specs
         ExprStmt(loc argTok.line argTok.col, Const(loc argTok.line argTok.col, 0.0))
 
-    // -------------------------------------------------------------------
-    // Control flow
-    // -------------------------------------------------------------------
+    // --- Control flow ---
 
     member private this.ParseFor(isParfor: bool) : Stmt =
         this.Eat(if isParfor then TkParfor else TkFor) |> ignore
@@ -863,9 +856,7 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
         else
             stmts |> Seq.toList
 
-    // -------------------------------------------------------------------
-    // Expressions
-    // -------------------------------------------------------------------
+    // --- Expressions ---
 
     member private this.ParseExpr(minPrec: int, matrixContext: bool, colonVisible: bool) : Expr =
         let left = this.ParsePrefix(matrixContext, colonVisible)
@@ -1065,9 +1056,7 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
                     left <- BinOp(loc opTok.line opTok.col, op, left, right)
         left
 
-    // -------------------------------------------------------------------
-    // Matrix / cell literals
-    // -------------------------------------------------------------------
+    // --- Matrix / cell literals ---
 
     member private this.ParseDelimitedRows(endKind: TokenKind) : int * int * Expr list list =
         // Skip leading newlines (e.g. `[\n1 2;\n3 4\n]`).
@@ -1127,9 +1116,7 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
         let l, c = if rows.IsEmpty then lcurly.line, lcurly.col else line, col
         CellLit(loc l c, rows)
 
-    // -------------------------------------------------------------------
-    // Index args
-    // -------------------------------------------------------------------
+    // --- Index args ---
 
     member private this.ParseIndexArg() : IndexArg =
         if this.Current().value = ":" then
@@ -1166,14 +1153,12 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
         args |> Seq.toList
 
 
-// ---------------------------------------------------------------------------
-// Public entry point
-// ---------------------------------------------------------------------------
+// --- Public entry point ---
 
-/// Quick pre-scan: detect multi-function files that use end-less style.
-/// In end-terminated files, end count = block openers + function count.
-/// In end-less files, end count = block openers only (functions lack end).
-/// If there are 2+ functions and fewer ends than openers + functions, it's end-less.
+// Quick pre-scan: detect multi-function files that use end-less style.
+// In end-terminated files, end count = block openers + function count.
+// In end-less files, end count = block openers only (functions lack end).
+// If there are 2+ functions and fewer ends than openers + functions, it's end-less.
 let private detectEndless (tokens: Token list) : bool =
     let mutable funcCount = 0
     let mutable openerCount = 0
