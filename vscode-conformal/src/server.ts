@@ -1,3 +1,11 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// In-process LSP server for the VS Code extension. Imports the
+// Fable-compiled F# core and translates LSP requests into calls against
+// the analyzer, producing diagnostics, hover, code actions, symbols,
+// go-to-definition, and inlay hints without a subprocess.
+
 import {
     createConnection,
     TextDocuments,

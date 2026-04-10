@@ -1,3 +1,10 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// VS Code extension entry point. Activates the LSP client, wires the
+// status bar item and output channel, and starts the in-process Fable
+// server that handles all analysis requests without a subprocess hop.
+
 import * as vscode from 'vscode';
 import * as path from 'path';
 import {
