@@ -11,16 +11,13 @@ fi
 
 failed=0
 for f in $staged; do
-    output=$("$CONFORMAL" "$f" 2>&1)
-    if echo "$output" | grep -q "^  - W_"; then
-        echo "$output" | head -1
-        echo "$output" | grep "^  - W_"
-        echo ""
+    if ! "$CONFORMAL" --fail-on-warnings "$f"; then
         failed=1
     fi
 done
 
 if [ $failed -ne 0 ]; then
+    echo ""
     echo "Conformal found warnings in staged .m files."
     echo "Commit anyway with --no-verify, or fix the issues above."
     exit 1
