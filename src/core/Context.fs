@@ -1,3 +1,10 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Central AnalysisContext: carries the call graph, cache, workspace state,
+// constraint store, and configuration flags threaded through every pass.
+// Typed cache entries replace earlier obj-boxed records for performance.
+
 module Context
 
 open Ir
@@ -8,9 +15,7 @@ open PathConstraints
 open SharedTypes
 open Diagnostics
 
-// ---------------------------------------------------------------------------
-// Analysis cache entry (typed alternative to obj boxing)
-// ---------------------------------------------------------------------------
+// --- Analysis cache entry ---
 
 type CacheEntry =
     | LambdaResult   of Shape * Diagnostic list

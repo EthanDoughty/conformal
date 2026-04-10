@@ -1,13 +1,18 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Witness (counterexample) generation for dimension conflict warnings.
+// Given a W_INNER_DIM_MISMATCH or similar, this produces concrete
+// integer assignments that prove the shape mismatch is a real bug and
+// not a hypothetical. Powers --witness filter mode, which hides any
+// warning that can't be backed by a concrete counterexample.
+
 module Witness
 
 open Shapes
 open SymDim
 open WarningCodes
 open SharedTypes
-
-// ---------------------------------------------------------------------------
-// Witness generation for dimension conflict sites.
-// ---------------------------------------------------------------------------
 
 // ConflictSite type is defined in SharedTypes.fs
 

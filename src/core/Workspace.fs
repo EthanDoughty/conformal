@@ -1,3 +1,14 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Workspace scanner for multi-file MATLAB projects: finds sibling .m
+// files, extracts their function signatures and classdef definitions,
+// and caches parsed results keyed by content hash.
+//
+// NOTE: Guarded by #if FABLE_COMPILER so the JavaScript build can
+// substitute a no-op scanner when running in the VS Code extension's
+// in-process mode, where the LSP provides workspace info instead.
+
 module Workspace
 
 open System
@@ -6,10 +17,6 @@ open System.IO
 #endif
 open System.Text.RegularExpressions
 open Context
-
-// ---------------------------------------------------------------------------
-// Workspace scanning for multi-file MATLAB projects.
-// ---------------------------------------------------------------------------
 
 // Regex to extract first function signature from MATLAB source.
 // Handles 3 forms:

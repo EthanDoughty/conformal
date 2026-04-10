@@ -1,13 +1,16 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Hand-rolled JSON serializer for IR nodes, used by --parse-json mode.
+// Manual string building with 2-space indentation matches the output
+// shape of Python's json.dumps so the older Python tooling and the
+// current F# tooling produce identical diffs.
+
 module Json
 
 open System
 open System.Text
 open Ir
-
-// ---------------------------------------------------------------------------
-// Low-level JSON helpers (manual string building, 2-space indentation).
-// Matches the output of Python's json.dumps(..., indent=2).
-// ---------------------------------------------------------------------------
 
 let private escape (s: string) : string =
     let sb = StringBuilder()

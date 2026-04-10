@@ -1,3 +1,10 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Converts IR expressions into symbolic Dim values. Handles the end
+// keyword by substituting the enclosing indexing extent, so expressions
+// like A(end-1) produce a dim that correctly tracks the offset.
+
 module DimExtract
 
 open Ir
@@ -5,10 +12,6 @@ open Shapes
 open Env
 open EndHelpers
 open SharedTypes
-
-// ---------------------------------------------------------------------------
-// Dimension extraction from IR expressions.
-// ---------------------------------------------------------------------------
 
 /// Convert an expression (possibly containing End) to a Dim.
 /// Substitutes End with endDim, enabling symbolic range extent computation.

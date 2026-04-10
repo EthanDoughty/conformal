@@ -1,7 +1,12 @@
-module Ir
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Intermediate representation for MATLAB source. Defines the full
+// expression and statement vocabulary that every other analysis module
+// consumes. Convention: camelCase for record fields, PascalCase for
+// discriminated union cases and type names.
 
-// Intermediate Representation for MATLAB.
-// camelCase for record fields, PascalCase for DU cases and type names.
+module Ir
 
 // Source location: line and column (1-based).
 // Not a struct: Fable does not support [<Struct>] on records used in DU cases.

@@ -1,10 +1,15 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Path constraint store used for if/else branch tracking. Records the
+// conditions under which a given branch is reachable so that warnings
+// can be filtered when a branch is provably dead.
+
 module PathConstraints
 
 open Ir
 
-// ---------------------------------------------------------------------------
-// Condition formatting helpers
-// ---------------------------------------------------------------------------
+// --- Condition formatting helpers ---
 
 let private formatSimple (expr: Expr) : string option =
     match expr with

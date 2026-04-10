@@ -1,11 +1,13 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Scoped variable environment backed by immutable F# maps. Supports
+// parent-pointer chains for nested function scopes: get() walks the
+// parent chain on a miss, set() writes only to the local scope.
+
 module Env
 
 open Shapes
-
-// ---------------------------------------------------------------------------
-// Env: variable name -> Shape scope chain
-// get() walks the parent chain; set() writes local scope only.
-// ---------------------------------------------------------------------------
 
 type Env = {
     mutable bindings:   Map<string, Shape>

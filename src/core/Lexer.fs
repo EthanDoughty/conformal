@@ -1,3 +1,11 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Regex-based lexer for MATLAB source, single linear scan with no
+// backtracking. LexError carries a full span (start and end line/col)
+// so diagnostics can draw underline-width error markers. Cross-compiles
+// to JavaScript via Fable for the VS Code extension.
+
 module Lexer
 
 open System

@@ -1,15 +1,16 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Shared type definitions that need to be compiled before Context.fs
+// in the F# build order. Contains IntervalBound/Interval (used by the
+// context's value range map) and ConflictSite (used by the witness
+// generator). Keeping them here breaks what would otherwise be a
+// dependency cycle.
+
 module SharedTypes
 
 open SymDim
 open WarningCodes
-
-// ---------------------------------------------------------------------------
-// Type definitions shared across modules that need to be available before
-// Context.fs in the F# compilation order.
-//
-// IntervalBound/Interval: extracted from Intervals.fs
-// ConflictSite: extracted from Witness.fs
-// ---------------------------------------------------------------------------
 
 /// Concrete int, symbolic SymDim, or unbounded (represents -inf or +inf).
 type IntervalBound =

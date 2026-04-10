@@ -1,10 +1,16 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Symbolic polynomial domain for matrix dimensions whose concrete size
+// is unknown. Uses Rational (int64/int64 normalized) coefficients so
+// that n+m and m+n canonicalize to the same polynomial, and n/2 + n/2
+// simplifies to n without floating-point drift.
+
 module SymDim
 
 open System.Collections.Generic
 
-// ---------------------------------------------------------------------------
-// Rational number (numerator/denominator as int64, always normalized)
-// ---------------------------------------------------------------------------
+// --- Rational number (numerator/denominator as int64, always normalized) ---
 
 [<Struct; CustomEquality; NoComparison>]
 type Rational private (num: int64, den: int64) =

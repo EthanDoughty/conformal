@@ -1,13 +1,15 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Parses % conformal:disable and disable-next-line directives directly
+// from MATLAB source text, then filters the diagnostic list after
+// analysis. Pure module with no I/O or mutation, so it runs identically
+// under .NET and under Fable in the VS Code extension.
+
 module Suppressions
 
 open WarningCodes
 open Diagnostics
-
-// ---------------------------------------------------------------------------
-// Suppression directives: parse % conformal:disable / disable-next-line
-// from raw MATLAB source text, then filter diagnostics post-analysis.
-// Pure module (no I/O, no mutation). Fable-compatible.
-// ---------------------------------------------------------------------------
 
 type SuppressionInfo = {
     fileCodes: Set<string>

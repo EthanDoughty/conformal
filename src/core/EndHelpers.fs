@@ -1,10 +1,13 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Resolves the end keyword inside indexing expressions. Walks BinOp
+// trees to detect end references and can evaluate end-relative
+// arithmetic like end-1 or end/2 when the extent is concrete.
+
 module EndHelpers
 
 open Ir
-
-// ---------------------------------------------------------------------------
-// Utilities for resolving the End keyword in indexing expressions.
-// ---------------------------------------------------------------------------
 
 /// Recursively check if End appears in a BinOp tree.
 let rec binopContainsEnd (expr: Expr) : bool =

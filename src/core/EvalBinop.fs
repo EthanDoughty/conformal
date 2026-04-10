@@ -1,3 +1,10 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Shape inference for binary operators (+, -, *, .*, ./, ^, \, and the
+// relational and logical operators). Emits dimension-mismatch warnings
+// and, for division, checks the divisor's interval for div-by-zero.
+
 module EvalBinop
 
 open Ir
@@ -6,10 +13,6 @@ open Env
 open Context
 open Diagnostics
 open SharedTypes
-
-// ---------------------------------------------------------------------------
-// Binary operation shape inference.
-// ---------------------------------------------------------------------------
 
 /// Evaluate a binary operation and infer result shape.
 /// getDivisorInterval is a callback to compute the interval of the divisor expression (for div-by-zero check).

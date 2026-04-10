@@ -1,9 +1,13 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Recognition registry for MATLAB's 650+ built-in functions. Grouped by
+// domain and alphabetized within each group so adding a builtin is a
+// quick diff rather than a search.
+
 module Builtins
 
-// ---------------------------------------------------------------------------
-// KNOWN_BUILTINS: set of recognized builtin function names.
-// Sorted alphabetically within groups for maintainability.
-// ---------------------------------------------------------------------------
+// --- KNOWN_BUILTINS: set of recognized builtin function names ---
 
 let KNOWN_BUILTINS : Set<string> =
     Set.ofList [

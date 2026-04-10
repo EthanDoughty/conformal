@@ -1,3 +1,11 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Shape rules for the 325 MATLAB builtins with explicit handling.
+// Organized around declarative sets (shape-preserving, reducing,
+// constructors, etc.) and a dispatch table so adding a builtin is
+// typically a one-line change rather than a code edit.
+
 module EvalBuiltins
 
 open Ir
@@ -10,13 +18,7 @@ open DimExtract
 open Intervals
 open SharedTypes
 
-// ---------------------------------------------------------------------------
-// Builtin function shape inference via dispatch table.
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Declarative builtin sets (frozenset equivalents)
-// ---------------------------------------------------------------------------
+// --- Declarative builtin sets ---
 
 let PASSTHROUGH_BUILTINS : Set<string> =
     Set.ofList [

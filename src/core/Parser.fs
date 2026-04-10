@@ -1,3 +1,12 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Recursive descent parser for MATLAB, emitting IR directly with no
+// intermediate AST. Uses a try-parse-then-retry strategy for MATLAB's
+// ambiguous syntax (function call vs. indexing vs. matrix literal) and
+// accumulates recovered errors so a single malformed line does not
+// abort analysis of the rest of the file.
+
 module Parser
 
 open System

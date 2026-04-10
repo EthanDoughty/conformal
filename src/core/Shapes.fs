@@ -1,13 +1,17 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Shape and Dim abstract domain types: the vocabulary that every pass
+// of the analyzer speaks. Shape is the top-level lattice (Scalar,
+// Matrix, StringShape, Cell, Struct, UnknownShape, Bottom), and Dim
+// represents a single row or column count, either concrete, symbolic,
+// or a range.
+
 module Shapes
 
 open SymDim
 
-// ---------------------------------------------------------------------------
-// DimBound: flat constituent of Range (no nesting)
-// BConcrete: exact integer bound
-// BSymbolic: symbolic bound
-// BUnknown: represents +infinity (hi) or 0 (lo), i.e. "don't know"
-// ---------------------------------------------------------------------------
+// --- DimBound: flat constituent of Range (no nesting) ---
 
 type DimBound =
     | BConcrete of int

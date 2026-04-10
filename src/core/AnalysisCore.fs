@@ -1,10 +1,12 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Shape compatibility primitives used across the analyzer: reassignment
+// conflict detection and the join logic for elementwise operations.
+
 module AnalysisCore
 
 open Shapes
-
-// ---------------------------------------------------------------------------
-// Shape compatibility helpers.
-// ---------------------------------------------------------------------------
 
 /// Check if two shapes are provably incompatible for variable reassignment.
 /// Only matrix vs matrix dimension conflicts matter.

@@ -1,3 +1,10 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Dimension equality constraint tracking. Records when two dims must be
+// equal for the surrounding code to be well-formed, and merges those
+// facts across branches during path-sensitive joins.
+
 module Constraints
 
 open Ir
@@ -6,10 +13,6 @@ open Env
 open SymDim
 open DimEquiv
 open Context
-
-// ---------------------------------------------------------------------------
-// Constraint tracking and path-sensitive joins for dimension equality.
-// ---------------------------------------------------------------------------
 
 /// Extract integer value from a Const expression, or None.
 let tryExtractConstValue (expr: Expr) : int option =

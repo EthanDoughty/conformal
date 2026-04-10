@@ -1,12 +1,17 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Diagnostic record definitions and the tier classification that decides
+// which warning codes appear in default mode versus --strict mode. Also
+// holds the call stack context used for cross-function error traces.
+
 module Diagnostics
 
 open Ir
 open Shapes
 open WarningCodes
 
-// ---------------------------------------------------------------------------
-// Warning tier classification
-// ---------------------------------------------------------------------------
+// --- Warning tier classification ---
 
 /// Informational/noisy codes suppressed in default mode; shown with --strict.
 let STRICT_ONLY_CODES : Set<WarningCode> =

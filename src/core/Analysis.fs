@@ -1,3 +1,10 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Top-level analysis orchestrator. Runs a two-pass sweep over the IR:
+// first to register function definitions, then to analyze the rest of
+// the program against that registry.
+
 module Analysis
 
 open Ir
@@ -6,10 +13,6 @@ open Env
 open Context
 open Diagnostics
 open StmtFuncAnalysis
-
-// ---------------------------------------------------------------------------
-// Analysis entry point.
-// ---------------------------------------------------------------------------
 
 /// Analyze a complete MATLAB program for shape consistency.
 ///

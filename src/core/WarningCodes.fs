@@ -1,10 +1,12 @@
-module WarningCodes
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Discriminated union of every W_* warning code the analyzer can emit,
+// replacing earlier stringly-typed identifiers with a compiler-checked
+// enum. Compiled early in the F# build order so any module can
+// reference a code without pulling in Diagnostics.
 
-// ---------------------------------------------------------------------------
-// WarningCode: typed discriminated union replacing stringly-typed W_* codes.
-// Compiled early (after SymDim.fs, before Diagnostics.fs) so every module
-// can reference it without circular dependencies.
-// ---------------------------------------------------------------------------
+module WarningCodes
 
 type WarningCode =
     // Shape errors

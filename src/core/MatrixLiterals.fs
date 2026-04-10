@@ -1,13 +1,16 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Shape inference for matrix and cell literals like [A B; C D]. Handles
+// row-by-row width checks and column-by-column height checks, emitting
+// W_HORZCAT_ROW_MISMATCH or W_VERTCAT_COL_MISMATCH on conflict.
+
 module MatrixLiterals
 
 open Shapes
 open Env
 open Context
 open WarningCodes
-
-// ---------------------------------------------------------------------------
-// Matrix/cell literal shape inference.
-// ---------------------------------------------------------------------------
 
 // Treat scalar and string as 1x1 matrix for concatenation.
 let asMatrixShape (s: Shape) : Shape =

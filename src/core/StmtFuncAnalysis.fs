@@ -1,3 +1,12 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Statement-level dispatcher and the call analysis for user-defined
+// functions and anonymous lambdas. Uses F#'s mutual recursion (let
+// rec ... and ...) to let statement analysis call back into function
+// analysis without forward declarations. Also implements the bounded
+// 3-phase widening scheme for loop bodies.
+
 module StmtFuncAnalysis
 
 open Ir
@@ -12,11 +21,6 @@ open SharedTypes
 open Constraints
 open EvalExpr
 open EvalBuiltins
-
-// ---------------------------------------------------------------------------
-// Statement dispatch + function/lambda call analysis.
-// Uses `let rec ... and ...` for mutual recursion.
-// ---------------------------------------------------------------------------
 
 // Command-syntax builtins whose OpaqueStmt should not emit W_UNSUPPORTED_STMT.
 let private SUPPRESSED_CMD_STMTS : Set<string> =

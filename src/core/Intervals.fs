@@ -1,11 +1,16 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Integer interval abstract domain for scalar value range analysis.
+// All operations are constant-time on [lo, hi] pairs. Widening snaps
+// to a fixed threshold set (0, 1, 2, 7, 15, 31, 255, 65535) to give
+// loops a chance to converge at common values before jumping to
+// unbounded.
+
 module Intervals
 
 open SymDim
 open SharedTypes
-
-// ---------------------------------------------------------------------------
-// Integer interval abstract domain for value range analysis.
-// ---------------------------------------------------------------------------
 
 // IntervalBound, Interval types are defined in SharedTypes.fs
 

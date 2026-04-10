@@ -1,3 +1,22 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Formal reduced product across the interval, Pentagon, and symbolic
+// dimension domains. Combines information from each domain so that a
+// fact discovered by one can refine the others. Called at well-defined
+// program points rather than scattered inline, which earlier versions
+// of the analyzer were doing with less predictable results.
+//
+// The core idea: if intervals pin x to [5,5], then DimEquiv can treat
+// x as concrete 5, which may unlock dimension constraints like "this
+// matrix has x rows". The propagation runs in three phases:
+//
+//   Phase 1: bidirectional Interval <-> DimEquiv propagation, capped
+//            at 3 iterations so termination is guaranteed.
+//   Phase 2: Pentagon -> Interval bridges run once.
+//   Phase 3: Resolve any symbolic dims in shapes using the updated
+//            dimension equivalence store.
+
 module TightenDomains
 
 open SharedTypes
@@ -5,17 +24,6 @@ open Context
 open Intervals
 open DimEquiv
 open Constraints
-
-// ---------------------------------------------------------------------------
-// Formal reduced-product bridge: tightens all abstract domains using mutual
-// information.  Called at well-defined program points (after refinements, at
-// loop body entry, after scalar assignment) rather than scattered inline.
-//
-// Phase 1: Interval <-> DimEquiv concrete propagation, iterate until stable
-//          (max 3 iterations).
-// Phase 2: Pentagon -> Interval tightening (single pass).
-// Phase 3: Resolve symbolic dims in shapes using current knowledge.
-// ---------------------------------------------------------------------------
 
 /// Phase 1: propagate exact intervals [k,k] into DimEquiv and back.
 /// Returns true if any change occurred in this iteration.

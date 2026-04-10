@@ -1,12 +1,14 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Union-find equivalence store for dimension equality classes, with
+// path compression and union-by-rank for near constant-time operations.
+// Each class can carry a concrete integer value once the analyzer
+// discovers one, which then back-propagates through TightenDomains.
+
 module DimEquiv
 
 open Shapes
-
-// ---------------------------------------------------------------------------
-// Union-find equivalence store for dimension equality classes.
-// Keys are dimStr strings (matching existing constraint key format).
-// Each equivalence class optionally tracks a concrete integer value.
-// ---------------------------------------------------------------------------
 
 /// Mutable union-find structure for dimension equivalence classes.
 type DimEquiv = {

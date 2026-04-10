@@ -1,3 +1,14 @@
+// Conformal: Static Shape Analysis for MATLAB
+// author: matrix[1 x 1] Ethan Doughty, 2026
+//
+// Core expression evaluator: walks the IR and returns a Shape for every
+// expression node. Threads the environment, diagnostics, and analysis
+// context through the recursion.
+//
+// NOTE: Takes a BuiltinDispatch callback parameter to avoid a circular
+// dependency on EvalBuiltins, which must compile later in the F# build
+// order but is needed here for builtin call handling.
+
 module EvalExpr
 
 open Ir
@@ -9,16 +20,6 @@ open Builtins
 open EndHelpers
 open DimExtract
 open SharedTypes
-
-// ---------------------------------------------------------------------------
-// Core expression evaluator.
-//
-// CIRCULAR DEPENDENCY NOTE:
-//   EvalExpr depends on EvalBuiltins for builtin dispatch, but EvalBuiltins
-//   must come AFTER EvalExpr in the F# compilation order.
-//   Solution: the main evaluator takes a BuiltinDispatch callback parameter
-//   that Phase 4 wires to EvalBuiltins.evalBuiltinCall.
-// ---------------------------------------------------------------------------
 
 /// Callback type for builtin function dispatch.
 /// Signature: fname -> line -> baseExpr -> args -> env -> warnings -> ctx -> Shape
