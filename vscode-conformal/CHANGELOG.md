@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.9.0
+
+- **Colon operator precedence fix (ANO-001)**: expressions like `0:2*h:L` are no longer parsed as `(0:2) * (h:L)`. Every stepped range with an arithmetic step expression was producing a false-positive shape mismatch and suppressing downstream checks on variables derived from the range. Affected all numerical MATLAB code with stepped ranges.
+- **Vector reduction shape fix (ANO-002)**: `sum`, `max`, `min`, `mean`, `var`, `std`, and related reductions now correctly return `scalar` when the input is a row or column vector, instead of returning the vector's shape.
+- **Logical operator precedence fix**: `&&` and `|` were swapped in the precedence table. The corrected order matches MATLAB's `||` < `&&` < `|` < `&`.
+- Bundles the Conformal 3.9.0 analyzer (compiled via Fable).
+
 ## 3.8.0
 
 - Shape coverage metric: detects analytically hollow files where Unknown shapes mask potential errors
