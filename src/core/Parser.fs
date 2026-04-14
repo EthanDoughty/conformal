@@ -112,11 +112,11 @@ let extractTargetsFromTokens (toks: Token list) : string list =
 
 let private precedenceTable : System.Collections.Generic.Dictionary<string,int> =
     let d = System.Collections.Generic.Dictionary<string,int>()
-    d.["||"] <- 0; d.["|"] <- 1; d.["&&"] <- 2; d.["&"] <- 3
+    d.["||"] <- 0; d.["&&"] <- 1; d.["|"] <- 2; d.["&"] <- 3
     d.["=="] <- 4; d.["~="] <- 4; d.["<"] <- 4; d.["<="] <- 4; d.[">"] <- 4; d.[">="] <- 4
-    d.["+"] <- 5; d.["-"] <- 5
-    d.["*"] <- 6; d.["/"] <- 6; d.[".*"] <- 6; d.["./"] <- 6; d.["\\"] <- 6
-    d.[":"] <- 7
+    d.[":"] <- 5
+    d.["+"] <- 6; d.["-"] <- 6
+    d.["*"] <- 7; d.["/"] <- 7; d.[".*"] <- 7; d.["./"] <- 7; d.["\\"] <- 7
     d.["^"] <- 8; d.[".^"] <- 8
     d
 

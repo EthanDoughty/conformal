@@ -1,11 +1,13 @@
 name: MATLAB Shape Check
 on:
+  push:
+    branches: [main]
   pull_request:
     paths: ['**/*.m']
 
 permissions:
-  pull-requests: write
   contents: read
+  security-events: write
 
 jobs:
   conformal:

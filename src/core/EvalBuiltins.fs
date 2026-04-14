@@ -416,6 +416,8 @@ let private handleReduction
         let argShape = evalArgShape args.[0] env warnings ctx evalExprFn
         match argShape with
         | IsScalar -> Some Scalar
+        | Matrix(Concrete 1, _) -> Some Scalar  // row vector
+        | Matrix(_, Concrete 1) -> Some Scalar  // col vector
         | MatrixCols c -> Some (Matrix(Concrete 1, c))
         | _ -> Some UnknownShape
     elif args.Length = 2 then

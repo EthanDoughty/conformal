@@ -59,7 +59,7 @@ sr1 = sprank(A);      % EXPECT: sr1 = scalar
 
 % === Reductions (1-arg and 2-arg) ===
 md1 = median(A);      % EXPECT: md1 = matrix[1 x 4]
-vr1 = var(v);         % EXPECT: vr1 = matrix[1 x 1]
+vr1 = var(v);         % EXPECT: vr1 = scalar
 sd1 = std(A);         % EXPECT: sd1 = matrix[1 x 4]
 md2 = median(A, 2);   % EXPECT: md2 = matrix[3 x 1]
 

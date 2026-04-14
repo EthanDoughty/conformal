@@ -254,3 +254,139 @@ let emitSarif (stream: Stream) (relativeUri: string) (diagnostics: Diagnostic li
 
     writer.WriteEndObject() // root
     writer.Flush()
+
+// --- Multi-file SARIF emitter for --batch --format sarif ---
+
+/// One analyzed file's contribution to a batch SARIF run.
+type BatchFileEntry = {
+    relUri: string
+    diagnostics: Diagnostic list
+    source: string
+    coverage: (int * int * int * int) option
+}
+
+// Emit a single SARIF 2.1.0 run covering multiple files.
+// All files go in artifacts[]; results reference their file by artifactLocation.index.
+// run.properties carries aggregate shape coverage.
+let emitBatchSarif (stream: Stream) (files: BatchFileEntry list) (version: string) : unit =
+    let opts = JsonWriterOptions(Indented = true)
+    use writer = new Utf8JsonWriter(stream, opts)
+
+    writer.WriteStartObject()
+    writer.WriteString("$schema", "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json")
+    writer.WriteString("version", "2.1.0")
+
+    writer.WriteStartArray("runs")
+    writer.WriteStartObject()
+
+    // tool.driver (same metadata as single-file)
+    writer.WriteStartObject("tool")
+    writer.WriteStartObject("driver")
+    writer.WriteString("name", "Conformal")
+    writer.WriteString("version", version)
+    writer.WriteString("informationUri", "https://conformaltools.com")
+    writer.WriteStartArray("rules")
+    for code in allCodes do
+        writer.WriteStartObject()
+        writer.WriteString("id", codeString code)
+        writer.WriteStartObject("shortDescription")
+        writer.WriteString("text", ruleDescription code)
+        writer.WriteEndObject()
+        writer.WriteStartObject("defaultConfiguration")
+        writer.WriteString("level", sarifLevel code)
+        writer.WriteEndObject()
+        writer.WriteString("helpUri", $"https://conformaltools.com/docs/warnings/{codeString code}")
+        writer.WriteEndObject()
+    writer.WriteEndArray()
+    writer.WriteEndObject() // driver
+    writer.WriteEndObject() // tool
+
+    // Build URI -> artifact index map for result references
+    let artifactIndex =
+        files |> List.mapi (fun i f -> f.relUri.Replace('\\', '/'), i) |> Map.ofList
+
+    // artifacts: one per file with SHA-256 hash
+    writer.WriteStartArray("artifacts")
+    for f in files do
+        let uri = f.relUri.Replace('\\', '/')
+        writer.WriteStartObject()
+        writer.WriteStartObject("location")
+        writer.WriteString("uri", uri)
+        writer.WriteEndObject()
+        writer.WriteStartObject("hashes")
+        writer.WriteString("sha-256", computeSha256 f.source)
+        writer.WriteEndObject()
+        writer.WriteEndObject()
+    writer.WriteEndArray()
+
+    // results: all diagnostics from all files
+    writer.WriteStartArray("results")
+    for f in files do
+        let uri = f.relUri.Replace('\\', '/')
+        let idx = Map.find uri artifactIndex
+        for d in f.diagnostics do
+            writer.WriteStartObject()
+            writer.WriteString("ruleId", codeString d.code)
+            match codeIndexMap.TryFind d.code with
+            | Some ruleIdx -> writer.WriteNumber("ruleIndex", ruleIdx)
+            | None -> ()
+            writer.WriteString("level", sarifLevel d.code)
+            writer.WriteStartObject("message")
+            writer.WriteString("text", d.message)
+            writer.WriteEndObject()
+            writer.WriteStartArray("locations")
+            writer.WriteStartObject()
+            writer.WriteStartObject("physicalLocation")
+            writer.WriteStartObject("artifactLocation")
+            writer.WriteString("uri", uri)
+            writer.WriteNumber("index", idx)
+            writer.WriteEndObject()
+            writer.WriteStartObject("region")
+            writer.WriteNumber("startLine", d.line)
+            if d.col > 0 then
+                writer.WriteNumber("startColumn", d.col)
+            writer.WriteEndObject()
+            writer.WriteEndObject()
+            writer.WriteEndObject()
+            writer.WriteEndArray()
+            if not d.callStack.IsEmpty then
+                writer.WriteStartArray("relatedLocations")
+                for i, (funcName, callLine) in d.callStack |> List.indexed do
+                    writer.WriteStartObject()
+                    writer.WriteNumber("id", i)
+                    writer.WriteStartObject("physicalLocation")
+                    writer.WriteStartObject("artifactLocation")
+                    writer.WriteString("uri", uri)
+                    writer.WriteNumber("index", idx)
+                    writer.WriteEndObject()
+                    writer.WriteStartObject("region")
+                    writer.WriteNumber("startLine", callLine)
+                    writer.WriteEndObject()
+                    writer.WriteEndObject()
+                    writer.WriteStartObject("message")
+                    writer.WriteString("text", $"in {funcName}, called from line {callLine}")
+                    writer.WriteEndObject()
+                    writer.WriteEndObject()
+                writer.WriteEndArray()
+            writer.WriteEndObject() // result
+    writer.WriteEndArray() // results
+
+    // run.properties: aggregate shape coverage across all files
+    writer.WriteStartObject("properties")
+    writer.WriteString("analysisScope", "https://conformaltools.com/docs/false-negative-policy")
+    let aggTracked   = files |> List.sumBy (fun f -> match f.coverage with Some (t,_,_,_) -> t | None -> 0)
+    let aggPartial   = files |> List.sumBy (fun f -> match f.coverage with Some (_,p,_,_) -> p | None -> 0)
+    let aggUntracked = files |> List.sumBy (fun f -> match f.coverage with Some (_,_,u,_) -> u | None -> 0)
+    let aggTotal     = files |> List.sumBy (fun f -> match f.coverage with Some (_,_,_,t) -> t | None -> 0)
+    if aggTotal > 0 then
+        writer.WriteNumber("shapeCoverage.tracked", aggTracked)
+        writer.WriteNumber("shapeCoverage.partial", aggPartial)
+        writer.WriteNumber("shapeCoverage.untracked", aggUntracked)
+        writer.WriteNumber("shapeCoverage.total", aggTotal)
+        writer.WriteNumber("shapeCoverage.rate", System.Math.Round(float aggTracked / float aggTotal, 3))
+    writer.WriteEndObject()
+
+    writer.WriteEndObject() // run
+    writer.WriteEndArray() // runs
+    writer.WriteEndObject() // root
+    writer.Flush()

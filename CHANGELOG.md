@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.9.0] - 2026-04-14
+### Added
+- **`--batch --format sarif`**: multi-file SARIF 2.1.0 output with per-file SHA-256 artifact hashes, artifact-indexed result references, and aggregate shape coverage in `run.properties`
+- **GitHub Actions composite action** at `.github/actions/conformal/action.yml`: downloads the appropriate release binary, runs `--batch --format sarif`, and uploads results to GitHub Code Scanning
+- **DO-178C Tool Operational Requirements** document at `docs/TOR.md`: 12 numbered requirements, scope exclusions, configuration data, verification evidence, anomaly record, and TQL-5 qualification basis
+
+### Fixed
+- **Colon operator precedence** (ANO-001): `:` was at precedence 7, above `*` at 6. MATLAB specifies `:` has lower precedence than all arithmetic operators. Expressions like `0:2*h:L` were parsed as `(0:2) * (h:L)`, producing false-positive `W_INNER_DIM_MISMATCH` and suppressing downstream checks on variables derived from stepped ranges. Precedence table corrected: `:` = 5, `+/-` = 6, `*/` = 7
+- **Vector reduction shape** (ANO-002): `sum`, `max`, `min`, `mean`, `var`, `std`, `norm`, `any`, `all`, and related reductions returned the input shape for row and column vectors instead of `scalar`. `handleReduction` now matches `Matrix(Concrete 1, _)` and `Matrix(_, Concrete 1)` before the general matrix case
+- **Logical operator precedence**: `&&` and `|` were swapped in the precedence table. Corrected to match MATLAB order: `||` < `&&` < `|` < `&`
+
+### Changed
+- SARIF version string updated to 3.9.0
+- `--version` output updated to 3.9.0
+- False-negative policy document references TOR.md for formal verification workflows
+
 ## [3.8.0] - 2026-04-06
 ### Added
 - **Shape coverage metric**: detects analytically hollow files where Unknown shapes mask potential errors; three-bucket classification (tracked/partial/untracked) printed on CLI when hollowness detected

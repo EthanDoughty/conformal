@@ -1,0 +1,93 @@
+name: 'Conformal MATLAB Shape Analyzer'
+description: 'Static shape analysis for MATLAB code. Catches matrix dimension mismatches before runtime.'
+
+inputs:
+  directory:
+    description: 'Directory (or space-separated list of paths) to analyze'
+    required: false
+    default: '.'
+  strict:
+    description: 'Enable strict mode (all 54 warning codes)'
+    required: false
+    default: 'false'
+  fail-on-warnings:
+    description: 'Exit with code 1 if any warnings are found'
+    required: false
+    default: 'false'
+  sarif-file:
+    description: 'Path to write SARIF output (relative to workspace)'
+    required: false
+    default: 'conformal.sarif'
+  version:
+    description: 'Conformal release tag to download (e.g. v3.8.0). Defaults to latest.'
+    required: false
+    default: 'latest'
+  upload-sarif:
+    description: 'Upload SARIF to GitHub Code Scanning (requires security-events write permission)'
+    required: false
+    default: 'true'
+
+outputs:
+  sarif-file:
+    description: 'Path to the generated SARIF file'
+    value: ${{ steps.analyze.outputs.sarif-file }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Resolve version
+      id: resolve
+      shell: bash
+      run: |
+        if [ "${{ inputs.version }}" = "latest" ]; then
+          TAG=$(curl -sSf https://api.github.com/repos/EthanDoughty/conformal/releases/latest \
+            | grep '"tag_name"' | head -1 | sed 's/.*"tag_name": "\(.*\)".*/\1/')
+        else
+          TAG="${{ inputs.version }}"
+        fi
+        echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+    - name: Download binary
+      shell: bash
+      run: |
+        TAG="${{ steps.resolve.outputs.tag }}"
+        OS="$(uname -s)"
+        ARCH="$(uname -m)"
+        case "${OS}-${ARCH}" in
+          Linux-x86_64)   RID="linux-x64";   EXT="";      ARCHIVE="tar.gz" ;;
+          Darwin-x86_64)  RID="osx-x64";     EXT="";      ARCHIVE="tar.gz" ;;
+          Darwin-arm64)   RID="osx-arm64";   EXT="";      ARCHIVE="tar.gz" ;;
+          MINGW*-x86_64|MSYS*-x86_64|CYGWIN*-x86_64) \
+                          RID="win-x64";     EXT=".exe";  ARCHIVE="zip"    ;;
+          *) echo "Unsupported platform: ${OS}-${ARCH}"; exit 1 ;;
+        esac
+        URL="https://github.com/EthanDoughty/conformal/releases/download/${TAG}/conformal-${TAG}-${RID}.${ARCHIVE}"
+        echo "Downloading ${URL}"
+        curl -sSfL "${URL}" -o conformal-archive
+        if [ "${ARCHIVE}" = "tar.gz" ]; then
+          tar xzf conformal-archive conformal${EXT}
+        else
+          unzip -q conformal-archive conformal${EXT}
+        fi
+        chmod +x conformal${EXT}
+        echo "$PWD" >> "$GITHUB_PATH"
+        echo "binary=./conformal${EXT}" >> "$GITHUB_ENV"
+
+    - name: Run analysis
+      id: analyze
+      shell: bash
+      run: |
+        SARIF="${{ inputs.sarif-file }}"
+        STRICT_FLAG=""
+        [ "${{ inputs.strict }}" = "true" ] && STRICT_FLAG="--strict"
+        FAIL_FLAG=""
+        [ "${{ inputs.fail-on-warnings }}" = "true" ] && FAIL_FLAG="--fail-on-warnings"
+        ${{ env.binary }} --batch ${{ inputs.directory }} --format sarif ${STRICT_FLAG} ${FAIL_FLAG} > "${SARIF}"
+        echo "sarif-file=${SARIF}" >> "$GITHUB_OUTPUT"
+
+    - name: Upload SARIF to Code Scanning
+      if: inputs.upload-sarif == 'true'
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ inputs.sarif-file }}
+        category: conformal

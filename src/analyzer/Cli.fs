@@ -269,6 +269,7 @@ let private parseArgv (argv: string array) : CliArgs =
                 | "--fixpoint"  -> ({ acc with fixpoint = true }, ConsumeBatch)
                 | "--coder"     -> ({ acc with coder = true }, ConsumeBatch)
                 | "--fail-on-warnings" -> ({ acc with failOnWarnings = true }, ConsumeBatch)
+                | "--format"    -> (acc, ConsumeFormat)
                 | _ -> (acc, ConsumeBatch)
             else
                 ({ acc with batchArgs = acc.batchArgs @ [arg] }, ConsumeBatch)
@@ -424,6 +425,95 @@ let runBatch (targets: string list) (strict: bool) (fixpoint: bool) (coder: bool
     elif failOnWarnings && warnedCount > 0 then 1
     else 0
 
+/// Analyze all .m files listed and emit multi-file SARIF 2.1.0 JSON to stdout.
+/// Errors go to stderr; SARIF JSON is the only stdout output.
+let runBatchSarif (targets: string list) (strict: bool) (fixpoint: bool) (coder: bool) (failOnWarnings: bool) : int =
+    let files = collectMFiles targets
+    if files.IsEmpty then
+        eprintfn "No .m files found in batch targets."
+        1
+    else
+
+    let wsCache = System.Collections.Generic.Dictionary<string, _>()
+    let getWs (dirPath: string) =
+        match wsCache.TryGetValue(dirPath) with
+        | true, v -> v
+        | false, _ ->
+            let (flatFuncs, flatClasses) = scanWorkspace dirPath "" 0
+            let (depthFuncs, depthClasses) = scanWorkspace dirPath "" 3
+            let extMap = mergeMaps [flatFuncs; depthFuncs]
+            let classdefMap = mergeMaps [flatClasses; depthClasses]
+            let privateMap = scanPrivateDir dirPath
+            let v = (extMap, classdefMap, privateMap)
+            wsCache.[dirPath] <- v
+            v
+
+    let cwd = Directory.GetCurrentDirectory()
+    let mutable hadCrash = false
+    let mutable totalWarnings = 0
+
+    let entries =
+        files
+        |> List.choose (fun filePath ->
+            let relUri =
+                let full = Path.GetFullPath(filePath)
+                if full.StartsWith(cwd + string Path.DirectorySeparatorChar) then
+                    full.Substring(cwd.Length + 1).Replace('\\', '/')
+                else full.Replace('\\', '/')
+            try
+                let src =
+                    try File.ReadAllText(filePath)
+                    with ex ->
+                        eprintfn "Error reading %s: %s" filePath ex.Message
+                        ""
+                if src = "" then None
+                else
+                let irProgOpt =
+                    try
+                        let (prog, _) = Parser.parseMATLAB src
+                        Some prog
+                    with _ ->
+                        eprintfn "Parse error: %s" filePath
+                        None
+                match irProgOpt with
+                | None -> None
+                | Some irProg ->
+                let dirPath = Path.GetDirectoryName(Path.GetFullPath(filePath))
+                let (extMap, classdefMap, privateMap) = getWs dirPath
+                let ctx = AnalysisContext()
+                ctx.call.fixpoint <- fixpoint
+                ctx.cst.coderMode <- coder
+                for kv in extMap do
+                    ctx.ws.externalFunctions.[kv.Key] <- kv.Value
+                for kv in classdefMap do
+                    ctx.ws.externalClassdefs.[kv.Key] <- kv.Value
+                for kv in privateMap do
+                    ctx.ws.privateFunctions.[kv.Key] <- kv.Value
+                ctx.ws.workspaceDir <- dirPath
+                let (env, warnings) = analyzeProgramIr irProg ctx
+                let suppressions = Suppressions.parseSuppressions src
+                let displayWarnings =
+                    warnings
+                    |> Suppressions.filterDiagnostics suppressions
+                    |> (if strict then id else List.filter (fun w -> not (Set.contains w.code STRICT_ONLY_CODES)))
+                totalWarnings <- totalWarnings + displayWarnings.Length
+                Some { SarifEmitter.relUri = relUri
+                       SarifEmitter.diagnostics = displayWarnings
+                       SarifEmitter.source = src
+                       SarifEmitter.coverage = Some (computeShapeCoverage env) }
+            with ex ->
+                eprintfn "Unexpected error on %s: %s" filePath ex.Message
+                hadCrash <- true
+                None)
+
+    use stream = Console.OpenStandardOutput()
+    SarifEmitter.emitBatchSarif stream entries "3.9.0"
+    stream.WriteByte(10uy)
+
+    if hadCrash then 1
+    elif failOnWarnings && totalWarnings > 0 then 1
+    else 0
+
 let private printUsage () =
     printfn "Usage: conformal [OPTIONS] <file.m>"
     printfn ""
@@ -521,7 +611,7 @@ let runFileSarif (filePath: string) (strict: bool) (fixpoint: bool) (coder: bool
         let relUri = relUri.Replace('\\', '/')
 
         use stream = Console.OpenStandardOutput()
-        SarifEmitter.emitSarif stream relUri displayWarnings "3.8.0" src coverage
+        SarifEmitter.emitSarif stream relUri displayWarnings "3.9.0" src coverage
         // Write trailing newline so shell prompt starts on new line
         stream.WriteByte(10uy)
         if failOnWarnings && not displayWarnings.IsEmpty then 1 else 0
@@ -540,7 +630,7 @@ let run (argv: string array) : int =
             fixpoint = args.fixpoint || cfgFixpoint }
 
     if args.version then
-        printfn "Conformal 3.8.0"
+        printfn "Conformal 3.9.0"
         0
     elif args.help then
         printUsage ()
@@ -578,6 +668,8 @@ let run (argv: string array) : int =
         if args.batchArgs.IsEmpty then
             eprintfn "Usage: conformal --batch <dir|file.m ...>"
             1
+        elif args.formatSarif then
+            runBatchSarif args.batchArgs args.strict args.fixpoint args.coder args.failOnWarnings
         else
             runBatch args.batchArgs args.strict args.fixpoint args.coder args.failOnWarnings
     elif args.formatSarif && args.file <> "" then

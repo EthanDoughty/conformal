@@ -1,4 +1,4 @@
-# Conformal v3.8.0 False-Negative Policy
+# Conformal v3.9.0 False-Negative Policy
 
 This document defines what Conformal guarantees when it reports zero warnings on a MATLAB source file, and what classes of errors it does not detect. It is intended for verification workflows where the scope of analysis must be precisely understood.
 
@@ -75,8 +75,12 @@ A clean `--coder --strict` run means: no dimension errors detected AND no Coder-
 
 ## Relationship to test evidence
 
-Conformal v3.8.0 has 552 integration tests and 28 property-based lattice validation tests (FsCheck). The integration tests use `% EXPECT_WARNING` and `% EXPECT_NO_WARNING` annotations with machine-readable pass/fail semantics. The property-based tests verify join commutativity, associativity, monotonicity, and ordering consistency across randomly generated shapes and intervals.
+Conformal v3.9.0 has 552 integration tests and 28 property-based lattice validation tests (FsCheck). The integration tests use `% EXPECT_WARNING` and `% EXPECT_NO_WARNING` annotations with machine-readable pass/fail semantics. The property-based tests verify join commutativity, associativity, monotonicity, and ordering consistency across randomly generated shapes and intervals.
 
 ## Version applicability
 
-This document applies to Conformal v3.8.0 and later. The analysis scope may expand in future versions; this document will be updated accordingly.
+This document applies to Conformal v3.9.0 and later. The analysis scope may expand in future versions; this document will be updated accordingly.
+
+## DO-178C qualification
+
+For formal verification workflows that require a DO-330 Tool Operational Requirements document, see [TOR.md](TOR.md). The TOR provides numbered requirements, an anomaly record, and the TQL-5 qualification basis.

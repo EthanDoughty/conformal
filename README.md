@@ -4,7 +4,7 @@
 
 ### Static Shape & Dimension Analysis for MATLAB
 
-[![Version](https://img.shields.io/badge/version-3.8.0-orange.svg)](#cli-options)
+[![Version](https://img.shields.io/badge/version-3.9.0-orange.svg)](#cli-options)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4.svg)](https://dotnet.microsoft.com/download)
 [![Tests](https://img.shields.io/badge/tests-552%20passing-brightgreen.svg)](#test-suite)

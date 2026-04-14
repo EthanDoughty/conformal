@@ -211,11 +211,11 @@ poly_add5 = ws_add_matrices(zeros(5, 5), ones(5, 5));
 
 % ws_reduce with 4 different shapes
 poly_red1 = ws_reduce(zeros(1, 10));
-% EXPECT: poly_red1 = matrix[1 x 10]
+% EXPECT: poly_red1 = scalar
 poly_red2 = ws_reduce(zeros(5, 5));
 % EXPECT: poly_red2 = matrix[1 x 5]
 poly_red3 = ws_reduce(zeros(10, 1));
-% EXPECT: poly_red3 = matrix[1 x 1]
+% EXPECT: poly_red3 = scalar
 poly_red4 = ws_reduce(zeros(3, 7));
 % EXPECT: poly_red4 = matrix[1 x 7]
 
