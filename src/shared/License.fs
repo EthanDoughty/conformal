@@ -27,7 +27,12 @@ type LicenseStatus =
     | Invalid     of string           // reason
 
 // --- Embedded keys (production key pair, generated 2026-03-04) ---
-// Private key is #if !FABLE_COMPILER only -- never compiled into JS output.
+// Public key is embedded (verification side, must be reproducible in every build).
+// Private key seed is loaded at key-generation time from the
+// CONFORMAL_LICENSE_SIGNING_KEY environment variable (64 hex chars = 32 bytes),
+// never from source, to avoid committing secrets and to prevent accidental leakage
+// via git history. The signing side is only invoked by the project maintainer when
+// issuing new license keys.
 
 let private PUBLIC_KEY_BYTES : byte[] =
     [| 0x22uy; 0x9duy; 0x21uy; 0x74uy; 0x07uy; 0x84uy; 0xd3uy; 0xceuy
@@ -36,11 +41,23 @@ let private PUBLIC_KEY_BYTES : byte[] =
        0x97uy; 0xdcuy; 0x89uy; 0xfauy; 0x65uy; 0x43uy; 0xd2uy; 0x57uy |]
 
 #if !FABLE_COMPILER
-let private PRIVATE_KEY_SEED : byte[] =
-    [| 0x71uy; 0x49uy; 0xacuy; 0x35uy; 0x2cuy; 0x37uy; 0xc2uy; 0x9auy
-       0xa9uy; 0xb1uy; 0x10uy; 0x5cuy; 0x21uy; 0x04uy; 0xfbuy; 0xdduy
-       0xa2uy; 0xb1uy; 0x26uy; 0xa0uy; 0x6duy; 0x1buy; 0x25uy; 0x47uy
-       0x20uy; 0x4duy; 0xa2uy; 0x15uy; 0x56uy; 0x14uy; 0x4auy; 0xd2uy |]
+// Load the Ed25519 private key seed from the environment variable.
+// Returns Ok 32-byte array on success, Error with a human-readable reason otherwise.
+let private loadPrivateKeySeed () : Result<byte[], string> =
+    match System.Environment.GetEnvironmentVariable("CONFORMAL_LICENSE_SIGNING_KEY") with
+    | null | "" ->
+        Error "CONFORMAL_LICENSE_SIGNING_KEY environment variable is not set"
+    | hex ->
+        let clean = hex.Trim()
+        if clean.Length <> 64 then
+            Error (sprintf "CONFORMAL_LICENSE_SIGNING_KEY must be 64 hex chars (32 bytes), got %d" clean.Length)
+        else
+            try
+                let bytes = Array.init 32 (fun i ->
+                    System.Convert.ToByte(clean.Substring(i * 2, 2), 16))
+                Ok bytes
+            with ex ->
+                Error ("CONFORMAL_LICENSE_SIGNING_KEY hex decode failed: " + ex.Message)
 #endif
 
 // --- Base64url helpers (no padding, - for +, _ for /) ---
@@ -183,19 +200,22 @@ let validateLicense (keyStr: string) : LicenseStatus =
                     checkExpiry payload
 
 /// Generate a signed license key. Only available in .NET (not Fable).
-/// Used by the --generate-key CLI command.
+/// Requires CONFORMAL_LICENSE_SIGNING_KEY to be set to a 64-char hex string.
+/// Returns Ok keyString on success, Error with a human-readable reason otherwise.
 #if !FABLE_COMPILER
-let generateKey (email: string) (expUnix: int64) (tier: string) : string =
-    let payload =
-        sprintf "{\"sub\":\"%s\",\"exp\":%d,\"tier\":\"%s\",\"kid\":\"k1\"}"
-            email expUnix tier
-    let payloadBytes = System.Text.Encoding.UTF8.GetBytes(payload)
+let generateKey (email: string) (expUnix: int64) (tier: string) : Result<string, string> =
+    match loadPrivateKeySeed () with
+    | Error reason -> Error reason
+    | Ok seedBytes ->
+        let payload =
+            sprintf "{\"sub\":\"%s\",\"exp\":%d,\"tier\":\"%s\",\"kid\":\"k1\"}"
+                email expUnix tier
+        let payloadBytes = System.Text.Encoding.UTF8.GetBytes(payload)
 
-    let algo = NSec.Cryptography.Ed25519.Ed25519
-    // Import the private key seed for signing only (no re-export needed)
-    let privKey = NSec.Cryptography.Key.Import(algo, System.ReadOnlySpan<byte>(PRIVATE_KEY_SEED),
-                      NSec.Cryptography.KeyBlobFormat.RawPrivateKey)
-    let sigBytes = algo.Sign(privKey, System.ReadOnlySpan<byte>(payloadBytes))
+        let algo = NSec.Cryptography.Ed25519.Ed25519
+        let privKey = NSec.Cryptography.Key.Import(algo, System.ReadOnlySpan<byte>(seedBytes),
+                          NSec.Cryptography.KeyBlobFormat.RawPrivateKey)
+        let sigBytes = algo.Sign(privKey, System.ReadOnlySpan<byte>(payloadBytes))
 
-    "CONF-" + toBase64Url payloadBytes + "." + toBase64Url sigBytes
+        Ok ("CONF-" + toBase64Url payloadBytes + "." + toBase64Url sigBytes)
 #endif
