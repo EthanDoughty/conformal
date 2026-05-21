@@ -214,13 +214,15 @@ type CliArgs = {
     bench: bool; coder: bool; file: string; parseJson: bool
     quiet: bool; help: bool; version: bool; formatSarif: bool
     batch: bool; batchArgs: string list; failOnWarnings: bool
+    coverage: bool
 }
 
 let private defaultArgs =
     { tests = false; testProps = false; strict = false; fixpoint = false
       bench = false; coder = false; file = ""; parseJson = false
       quiet = false; help = false; version = false; formatSarif = false
-      batch = false; batchArgs = []; failOnWarnings = false }
+      batch = false; batchArgs = []; failOnWarnings = false
+      coverage = false }
 
 // Fold state: Ready accepts flags, ConsumeFile means next arg is a file path,
 // ConsumeWitness means next arg is an optional witness mode or file path,
@@ -254,6 +256,7 @@ let private parseArgv (argv: string array) : CliArgs =
                 | "--witness"      -> (acc, ConsumeWitness)
                 | "--quiet"        -> ({ acc with quiet = true }, Ready)
                 | "--fail-on-warnings" -> ({ acc with failOnWarnings = true }, Ready)
+                | "--coverage"     -> ({ acc with coverage = true }, Ready)
                 | "--help" | "-h"  -> ({ acc with help = true }, Ready)
                 | "--version"      -> ({ acc with version = true }, Ready)
                 | _ -> (acc, Ready)
@@ -269,6 +272,7 @@ let private parseArgv (argv: string array) : CliArgs =
                 | "--fixpoint"  -> ({ acc with fixpoint = true }, ConsumeBatch)
                 | "--coder"     -> ({ acc with coder = true }, ConsumeBatch)
                 | "--fail-on-warnings" -> ({ acc with failOnWarnings = true }, ConsumeBatch)
+                | "--coverage"  -> ({ acc with coverage = true }, ConsumeBatch)
                 | "--format"    -> (acc, ConsumeFormat)
                 | _ -> (acc, ConsumeBatch)
             else
@@ -287,6 +291,7 @@ let private parseArgv (argv: string array) : CliArgs =
             | "--batch"        -> ({ acc with batch = true }, ConsumeBatch)
             | "--quiet"        -> ({ acc with quiet = true }, Ready)
             | "--fail-on-warnings" -> ({ acc with failOnWarnings = true }, Ready)
+            | "--coverage"     -> ({ acc with coverage = true }, Ready)
             | "--help" | "-h"  -> ({ acc with help = true }, Ready)
             | "--version"      -> ({ acc with version = true }, Ready)
             | a when not (a.StartsWith("--")) -> ({ acc with file = a }, Ready)
@@ -343,6 +348,10 @@ let runBatch (targets: string list) (strict: bool) (fixpoint: bool) (coder: bool
     let mutable warnedCount = 0
     let mutable errorCount = 0
     let mutable hadCrash = false
+    let mutable aggTracked = 0
+    let mutable aggPartial = 0
+    let mutable aggUntracked = 0
+    let mutable aggTotal = 0
 
     for filePath in files do
         let shortPath =
@@ -390,13 +399,19 @@ let runBatch (targets: string list) (strict: bool) (fixpoint: bool) (coder: bool
                 ctx.ws.workspaceDir <- dirPath
                 ctx.typeAnnotations <- Suppressions.parseTypeAnnotations src
 
-                let (_env, warnings) = analyzeProgramIr irProg ctx
+                let (env, warnings) = analyzeProgramIr irProg ctx
 
                 let suppressions = Suppressions.parseSuppressions src
                 let displayWarnings =
                     warnings
                     |> Suppressions.filterDiagnostics suppressions
                     |> (if strict then id else List.filter (fun w -> not (Set.contains w.code STRICT_ONLY_CODES)))
+
+                let (t, p, u, tot) = computeShapeCoverage env
+                aggTracked <- aggTracked + t
+                aggPartial <- aggPartial + p
+                aggUntracked <- aggUntracked + u
+                aggTotal <- aggTotal + tot
 
                 if displayWarnings.IsEmpty then
                     BatchClean
@@ -421,6 +436,10 @@ let runBatch (targets: string list) (strict: bool) (fixpoint: bool) (coder: bool
     printfn ""
     printfn "Batch: %d files, %d clean, %d warned, %d errors"
         files.Length cleanCount warnedCount errorCount
+    if aggTotal > 0 then
+        let rate = System.Math.Round(float aggTracked / float aggTotal * 100.0, 1)
+        printfn "Shape coverage: %.1f%% (%d tracked, %d partial, %d untracked)"
+            rate aggTracked aggPartial aggUntracked
 
     if hadCrash then 1
     elif failOnWarnings && warnedCount > 0 then 1
@@ -516,6 +535,190 @@ let runBatchSarif (targets: string list) (strict: bool) (fixpoint: bool) (coder:
     elif failOnWarnings && totalWarnings > 0 then 1
     else 0
 
+// --- --coverage mode ---
+
+/// Single-file coverage: per-variable breakdown grouped by bucket.
+let runFileCoverage (filePath: string) (strict: bool) (fixpoint: bool) (coder: bool) : int =
+    if not (File.Exists filePath) then
+        eprintfn "ERROR: file not found: %s" filePath
+        1
+    else
+        let src =
+            try File.ReadAllText(filePath)
+            with ex ->
+                eprintfn "Error reading %s: %s" filePath ex.Message
+                ""
+        if src = "" && not (File.Exists filePath) then 1
+        else
+
+        let irProgOpt =
+            try
+                let (prog, _) = Parser.parseMATLAB src
+                Some prog
+            with _ -> None
+
+        match irProgOpt with
+        | None ->
+            eprintfn "Parse error: %s" filePath
+            1
+        | Some irProg ->
+
+        let dirPath = Path.GetDirectoryName(Path.GetFullPath(filePath))
+        let fileName = Path.GetFileName(filePath)
+        let (flatFuncs, flatClasses) = scanWorkspace dirPath fileName 0
+        let addpathDirs = extractAddpathDirs irProg
+        let (addpathFuncs, addpathClasses) = scanAddpathDirs dirPath addpathDirs fileName
+        let (depthFuncs, depthClasses) = scanWorkspace dirPath fileName 3
+        let extMap = mergeMaps [flatFuncs; addpathFuncs; depthFuncs]
+        let classdefMap = mergeMaps [flatClasses; addpathClasses; depthClasses]
+        let privateMap = scanPrivateDir dirPath
+
+        let ctx = AnalysisContext()
+        ctx.call.fixpoint <- fixpoint
+        ctx.cst.coderMode <- coder
+        for kv in extMap do
+            ctx.ws.externalFunctions.[kv.Key] <- kv.Value
+        for kv in classdefMap do
+            ctx.ws.externalClassdefs.[kv.Key] <- kv.Value
+        for kv in privateMap do
+            ctx.ws.privateFunctions.[kv.Key] <- kv.Value
+        ctx.ws.workspaceDir <- dirPath
+        ctx.typeAnnotations <- Suppressions.parseTypeAnnotations src
+
+        let (env, _warnings) = analyzeProgramIr irProg ctx
+
+        let (trackedVars, partialVars, untrackedVars) = computeShapeCoverageDetailed env
+        let total = trackedVars.Length + partialVars.Length + untrackedVars.Length
+
+        printfn "=== Shape Coverage for %s ===" filePath
+
+        if total = 0 then
+            printfn "No user variables."
+        else
+            let rate = System.Math.Round(float trackedVars.Length / float total * 100.0, 1)
+            printfn "%.1f%% tracked (%d/%d)" rate trackedVars.Length total
+            printfn ""
+
+            if not untrackedVars.IsEmpty then
+                printfn "Untracked (%d):" untrackedVars.Length
+                for (name, _) in untrackedVars |> List.sortBy fst do
+                    printfn "  %s" name
+                printfn ""
+
+            if not partialVars.IsEmpty then
+                printfn "Partial (%d):" partialVars.Length
+                for (name, shape) in partialVars |> List.sortBy fst do
+                    printfn "  %s: %s" name (Shapes.shapeToString shape)
+                printfn ""
+
+            if not trackedVars.IsEmpty then
+                printfn "Tracked (%d):" trackedVars.Length
+                for (name, shape) in trackedVars |> List.sortBy fst do
+                    printfn "  %s: %s" name (Shapes.shapeToString shape)
+
+        0
+
+/// Batch coverage: per-file rates sorted worst-first, then aggregate summary.
+let runBatchCoverage (targets: string list) (strict: bool) (fixpoint: bool) (coder: bool) : int =
+    let files = collectMFiles targets
+    if files.IsEmpty then
+        eprintfn "No .m files found in batch targets."
+        1
+    else
+
+    let wsCache = System.Collections.Generic.Dictionary<string, _>()
+    let getWs (dirPath: string) =
+        match wsCache.TryGetValue(dirPath) with
+        | true, v -> v
+        | false, _ ->
+            let (flatFuncs, flatClasses) = scanWorkspace dirPath "" 0
+            let (depthFuncs, depthClasses) = scanWorkspace dirPath "" 3
+            let extMap = mergeMaps [flatFuncs; depthFuncs]
+            let classdefMap = mergeMaps [flatClasses; depthClasses]
+            let privateMap = scanPrivateDir dirPath
+            let v = (extMap, classdefMap, privateMap)
+            wsCache.[dirPath] <- v
+            v
+
+    let cwd = Directory.GetCurrentDirectory()
+    let mutable hadError = false
+
+    let results =
+        files
+        |> List.choose (fun filePath ->
+            let shortPath =
+                let full = Path.GetFullPath(filePath)
+                if full.StartsWith(cwd + string Path.DirectorySeparatorChar) then
+                    full.Substring(cwd.Length + 1)
+                else full
+            try
+                let src =
+                    try File.ReadAllText(filePath)
+                    with ex ->
+                        eprintfn "Error reading %s: %s" filePath ex.Message
+                        ""
+                if src = "" then None
+                else
+                let irProgOpt =
+                    try
+                        let (prog, _) = Parser.parseMATLAB src
+                        Some prog
+                    with _ ->
+                        eprintfn "Parse error: %s" filePath
+                        None
+                match irProgOpt with
+                | None -> None
+                | Some irProg ->
+                let dirPath = Path.GetDirectoryName(Path.GetFullPath(filePath))
+                let (extMap, classdefMap, privateMap) = getWs dirPath
+                let ctx = AnalysisContext()
+                ctx.call.fixpoint <- fixpoint
+                ctx.cst.coderMode <- coder
+                for kv in extMap do
+                    ctx.ws.externalFunctions.[kv.Key] <- kv.Value
+                for kv in classdefMap do
+                    ctx.ws.externalClassdefs.[kv.Key] <- kv.Value
+                for kv in privateMap do
+                    ctx.ws.privateFunctions.[kv.Key] <- kv.Value
+                ctx.ws.workspaceDir <- dirPath
+                ctx.typeAnnotations <- Suppressions.parseTypeAnnotations src
+                let (env, _warnings) = analyzeProgramIr irProg ctx
+                let (tracked, partial, untracked, total) = computeShapeCoverage env
+                Some (shortPath, tracked, partial, untracked, total)
+            with ex ->
+                eprintfn "Unexpected error on %s: %s" filePath ex.Message
+                hadError <- true
+                None)
+
+    // Sort worst-first (lowest coverage rate at top)
+    let sorted =
+        results
+        |> List.sortBy (fun (_, tracked, _, _, total) ->
+            if total = 0 then 1.0 else float tracked / float total)
+
+    for (path, tracked, partial, untracked, total) in sorted do
+        if total = 0 then
+            printfn "  --- %%  %s  (no variables)" path
+        else
+            let rate = System.Math.Round(float tracked / float total * 100.0, 1)
+            printfn "%5.1f%%  %s  (%d tracked, %d partial, %d untracked)"
+                rate path tracked partial untracked
+
+    // Aggregate summary
+    let aggTracked = results |> List.sumBy (fun (_, t, _, _, _) -> t)
+    let aggPartial = results |> List.sumBy (fun (_, _, p, _, _) -> p)
+    let aggUntracked = results |> List.sumBy (fun (_, _, _, u, _) -> u)
+    let aggTotal = results |> List.sumBy (fun (_, _, _, _, tot) -> tot)
+
+    printfn ""
+    printfn "Batch: %d files analyzed" results.Length
+    if aggTotal > 0 then
+        let rate = System.Math.Round(float aggTracked / float aggTotal * 100.0, 1)
+        printfn "Shape coverage: %.1f%% (%d tracked, %d partial, %d untracked)"
+            rate aggTracked aggPartial aggUntracked
+
+    if hadError then 1 else 0
+
 let private printUsage () =
     printfn "Usage: conformal [OPTIONS] <file.m>"
     printfn ""
@@ -529,6 +732,7 @@ let private printUsage () =
     printfn "  --parse-json    Parse file and emit JSON IR"
     printfn "  --format sarif  Output diagnostics as SARIF 2.1.0 JSON"
     printfn "  --batch <dir|files...>  Analyze multiple files in one process"
+    printfn "  --coverage             Show shape coverage (per-variable or per-file in batch)"
     printfn "  --fail-on-warnings     Exit with code 1 if any warnings are found"
     printfn "  --help, -h      Show this help message"
     printfn "  --version       Show version"
@@ -670,10 +874,14 @@ let run (argv: string array) : int =
         if args.batchArgs.IsEmpty then
             eprintfn "Usage: conformal --batch <dir|file.m ...>"
             1
+        elif args.coverage && not args.formatSarif then
+            runBatchCoverage args.batchArgs args.strict args.fixpoint args.coder
         elif args.formatSarif then
             runBatchSarif args.batchArgs args.strict args.fixpoint args.coder args.failOnWarnings
         else
             runBatch args.batchArgs args.strict args.fixpoint args.coder args.failOnWarnings
+    elif args.coverage && not args.formatSarif && args.file <> "" then
+        runFileCoverage args.file args.strict args.fixpoint args.coder
     elif args.formatSarif && args.file <> "" then
         runFileSarif args.file args.strict args.fixpoint args.coder args.failOnWarnings
     elif args.file <> "" then

@@ -156,3 +156,31 @@ let computeShapeCoverage (env: Env) : int * int * int * int =
         |> List.length
     let tracked = total - untracked - partial
     (tracked, partial, untracked, total)
+
+/// Detailed shape coverage: returns variable names and shapes grouped by bucket.
+/// Same filtering rules as computeShapeCoverage.
+let computeShapeCoverageDetailed (env: Env) :
+    (string * Shapes.Shape) list * (string * Shapes.Shape) list * (string * Shapes.Shape) list =
+    let excluded = Set.ofList ["nargin"; "nargout"; "ans"]
+    let bindings =
+        env.bindings
+        |> Map.toList
+        |> List.filter (fun (name, shape) ->
+            shape <> Shapes.Bottom &&
+            not (Set.contains name excluded) &&
+            not (name.StartsWith("_")))
+    let untrackedVars =
+        bindings |> List.filter (fun (_, s) -> s = Shapes.UnknownShape)
+    let partialVars =
+        bindings
+        |> List.filter (fun (_, s) ->
+            match s with
+            | Shapes.Matrix(r, c) -> r = Shapes.Unknown || c = Shapes.Unknown
+            | Shapes.Cell(r, c, _) -> r = Shapes.Unknown || c = Shapes.Unknown
+            | _ -> false)
+    let trackedVars =
+        bindings
+        |> List.filter (fun (name, s) ->
+            not (List.exists (fun (n, _) -> n = name) untrackedVars) &&
+            not (List.exists (fun (n, _) -> n = name) partialVars))
+    (trackedVars, partialVars, untrackedVars)
