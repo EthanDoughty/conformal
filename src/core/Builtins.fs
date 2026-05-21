@@ -56,7 +56,7 @@ let KNOWN_BUILTINS : Set<string> =
         "mvnrnd"
         "nan"; "NaN"; "nanmax"; "nanmean"; "nanmin"; "nanstd"; "nansum"; "nanvar"
         "nchoosek"; "ncinfo"; "ncread"; "ncreadatt"; "ncwrite"; "normcdf"; "norminv"
-        "odeset"; "ode45"
+        "odeset"; "ode45"; "ode23"; "ode113"; "ode15s"; "ode23s"; "ode23t"; "ode23tb"; "ode78"; "ode89"
         "ndgrid"; "ndims"; "nnz"; "norm"; "normpdf"; "not"; "null"; "num2cell"
         "num2hex"; "num2str"; "numel"
         "ones"; "optimget"; "optimoptions"; "optimset"; "orderfields"; "orth"

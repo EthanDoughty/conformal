@@ -1868,6 +1868,38 @@ let private handleMultiArrayfun
     Some (List.replicate numTargets singleShape)
 
 
+// Multi-return ODE solvers: [t, y, te, ye, ie] = ode45(odefun, tspan, y0, opts).
+// t is a column vector with unknown rows; y has unknown rows and cols matching
+// numel(y0) when extractable. Event outputs follow the same row/col convention.
+let private handleMultiOde
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (numTargets: int)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape list option =
+    for arg in args do evalArgShape arg env warnings ctx evalExprFn |> ignore
+    let yCols =
+        if args.Length >= 3 then
+            match evalArgShape args.[2] env warnings ctx evalExprFn with
+            | Matrix(r, Concrete 1) -> r
+            | Matrix(Concrete 1, c) -> c
+            | Scalar -> Concrete 1
+            | _ -> Unknown
+        else Unknown
+    let allShapes =
+        [ Matrix(Unknown, Concrete 1)   // t
+          Matrix(Unknown, yCols)        // y
+          Matrix(Unknown, Concrete 1)   // te
+          Matrix(Unknown, yCols)        // ye
+          Matrix(Unknown, Concrete 1) ] // ie
+    let result =
+        [ for i in 0..numTargets-1 ->
+            if i < allShapes.Length then allShapes.[i] else UnknownShape ]
+    Some result
+
+
 // Supported forms lookup for count mismatch messages
 let MULTI_SUPPORTED_FORMS : Map<string, string> =
     Map.ofList [
@@ -2021,6 +2053,31 @@ let evalBuiltinCall
                 | Some e -> Some (Matrix(exprToDimIrCtx e env (Some ctx), Concrete 3))
                 | None -> Some UnknownShape
             | _ -> Some UnknownShape
+        | "spdiags" ->
+            // spdiags(B, d, m, n) -> m x n; spdiags(B, d, A) -> shape of A.
+            // Other forms are diagonal extractions whose shape we can't pin.
+            for arg in args do evalArgShape arg env warnings ctx evalExprFn |> ignore
+            match args.Length with
+            | 4 ->
+                let mDim =
+                    match unwrapArg args.[2] with
+                    | Some e -> exprToDimIrCtx e env (Some ctx)
+                    | None -> Unknown
+                let nDim =
+                    match unwrapArg args.[3] with
+                    | Some e -> exprToDimIrCtx e env (Some ctx)
+                    | None -> Unknown
+                Some (Matrix(mDim, nDim))
+            | 3 ->
+                Some (evalArgShape args.[2] env warnings ctx evalExprFn)
+            | _ -> Some UnknownShape
+        | "odeset" ->
+            for arg in args do evalArgShape arg env warnings ctx evalExprFn |> ignore
+            Some (Struct([], true))
+        | "ode45" | "ode23" | "ode113" | "ode15s" | "ode23s" | "ode23t" | "ode23tb" | "ode78" | "ode89" ->
+            // Single-output form returns a solution struct (sol.x, sol.y, ...).
+            for arg in args do evalArgShape arg env warnings ctx evalExprFn |> ignore
+            Some (Struct([], true))
         | _                -> None
 
     match complexResult with
@@ -2102,4 +2159,6 @@ let rec evalMultiBuiltinCall
             // Rewrite feval('funcName', args...) -> funcName(args...) and re-dispatch
             evalMultiBuiltinCall funcName line numTargets restArgs env warnings ctx evalExprFn getIntervalFn
         | _ -> None  // Dynamic feval: fall through to UnknownShape per-target
+    | "ode45" | "ode23" | "ode113" | "ode15s" | "ode23s" | "ode23t" | "ode23tb" | "ode78" | "ode89" ->
+        handleMultiOde args env warnings ctx numTargets evalExprFn
     | _          -> None
