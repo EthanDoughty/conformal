@@ -388,6 +388,7 @@ let runBatch (targets: string list) (strict: bool) (fixpoint: bool) (coder: bool
                 for kv in privateMap do
                     ctx.ws.privateFunctions.[kv.Key] <- kv.Value
                 ctx.ws.workspaceDir <- dirPath
+                ctx.typeAnnotations <- Suppressions.parseTypeAnnotations src
 
                 let (_env, warnings) = analyzeProgramIr irProg ctx
 
@@ -490,6 +491,7 @@ let runBatchSarif (targets: string list) (strict: bool) (fixpoint: bool) (coder:
                 for kv in privateMap do
                     ctx.ws.privateFunctions.[kv.Key] <- kv.Value
                 ctx.ws.workspaceDir <- dirPath
+                ctx.typeAnnotations <- Suppressions.parseTypeAnnotations src
                 let (env, warnings) = analyzeProgramIr irProg ctx
                 let suppressions = Suppressions.parseSuppressions src
                 let displayWarnings =
