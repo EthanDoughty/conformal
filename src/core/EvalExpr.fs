@@ -266,12 +266,12 @@ let rec evalExprIr
         | Some _ -> Scalar   // End resolves to scalar index
 
     // --- Matrix literal ---
-    | MatrixLit({ line = line }, rows) ->
+    | MatrixLit({ line = line; col = col }, rows) ->
         let shapeRows =
             rows |> List.map (fun row ->
                 row |> List.map (fun e -> evalExprIr e env warnings ctx None builtinDispatch))
         let warningsRef = warnings
-        MatrixLiterals.inferMatrixLiteralShape shapeRows line warningsRef ctx env
+        MatrixLiterals.inferMatrixLiteralShape shapeRows line col warningsRef ctx env
 
     // --- Cell literal ---
     | CellLit(_, rows) ->
@@ -469,7 +469,7 @@ let rec evalExprIr
         FunctionHandle(Some (Set.singleton lambdaId))
 
     // --- Function handle: @funcName ---
-    | FuncHandle({ line = line }, name) ->
+    | FuncHandle({ line = line; col = col }, name) ->
         let handleId = ctx.call.nextLambdaId
         ctx.call.nextLambdaId <- handleId + 1
         if ctx.call.functionRegistry.ContainsKey(name) ||
@@ -479,7 +479,7 @@ let rec evalExprIr
             ctx.call.handleRegistry.[handleId] <- name
             FunctionHandle(Some (Set.singleton handleId))
         else
-            warnings.Add(warnUnknownFunction line name)
+            warnings.Add(warnUnknownFunction line col name)
             FunctionHandle None   // opaque
 
     // --- Metaclass operator: ?ClassName -> unknown ---
@@ -521,7 +521,7 @@ and private evalApply
                 // Route through callback which has real dispatch in StmtFuncAnalysis
                 builtinDispatch baseVarName line baseExpr args env warnings ctx
             else
-                warnings.Add(warnUnknownFunction line baseVarName)
+                warnings.Add(warnUnknownFunction line baseExpr.Col baseVarName)
                 UnknownShape
         else
             // Priority 6: bound non-handle variable — treat as indexing

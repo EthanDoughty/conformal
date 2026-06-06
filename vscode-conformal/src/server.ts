@@ -250,11 +250,25 @@ function readExternalFiles(filePath: string): [string, string][] {
 // Diagnostic conversion (port of LspDiagnostics.fs toLspDiagnostic)
 // ---------------------------------------------------------------------------
 
+// End the underline at the last code character on the line: drop a trailing
+// `% comment` (only when the line has no quote, to stay clear of '%' inside a
+// string) and any trailing whitespace. Purely cosmetic; never widens past the
+// line and always leaves at least one underlined character.
+function codeEndChar(lineText: string, startChar: number): number {
+    let end = lineText.length;
+    if (!lineText.includes("'")) {
+        const pct = lineText.indexOf('%');
+        if (pct >= 0) end = pct;
+    }
+    while (end > startChar + 1 && /\s/.test(lineText[end - 1])) end--;
+    return end > startChar ? end : lineText.length;
+}
+
 function toLspDiagnostic(d: SerializedDiagnostic, sourceLines: string[], uri: string): Diagnostic {
     const lineNum = d.line - 1;
-    const endChar = (lineNum >= 0 && lineNum < sourceLines.length)
-        ? sourceLines[lineNum].length : 0;
+    const lineText = (lineNum >= 0 && lineNum < sourceLines.length) ? sourceLines[lineNum] : '';
     const startChar = d.col > 0 ? d.col - 1 : 0;
+    const endChar = codeEndChar(lineText, startChar);
 
     const range: Range = {
         start: { line: lineNum, character: startChar },

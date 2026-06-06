@@ -122,10 +122,27 @@ and prettyIndexArgIr (arg: IndexArg) : string =
     | Ir.SteppedRange(_, s, t, e) -> $"{prettyExprIr s}:{prettyExprIr t}:{prettyExprIr e}"
     | IndexExpr(_, e)            -> prettyExprIr e
 
+// Leftmost source column of an expression. The parser anchors compound nodes
+// at their operator/paren (e.g. an Apply at its '('), so for underlining we walk
+// to the leftmost leaf to start the squiggle at the expression's first character.
+let rec exprStartCol (e: Expr) : int =
+    match e with
+    | BinOp(_, _, l, _)        -> exprStartCol l
+    | Apply(_, base_, _)       -> exprStartCol base_
+    | CurlyApply(_, base_, _)  -> exprStartCol base_
+    | Transpose(_, operand)    -> exprStartCol operand
+    | FieldAccess(_, base_, _) -> exprStartCol base_
+    | _                        -> e.Col
+
 // --- Warning message builders ---
 
 let makeDiag line code message =
     { line = line; code = code; message = message; relatedLine = None; col = 0; relatedCol = None; callStack = [] }
+
+// Same as makeDiag but carries a 1-based source column so editors can
+// underline the offending expression rather than the whole line.
+let makeDiagAt line col code message =
+    { line = line; code = code; message = message; relatedLine = None; col = col; relatedCol = None; callStack = [] }
 
 let makeDiagRel line code message relLine =
     { line = line; code = code; message = message; relatedLine = Some relLine; col = 0; relatedCol = None; callStack = [] }
@@ -173,7 +190,7 @@ let warnNonScalarIndexArg (line: int) (arg: IndexArg) (shape: Shape) : Diagnosti
 
 let warnElementwiseMismatch
     (line: int) (op: string) (leftExpr: Expr) (rightExpr: Expr) (left: Shape) (right: Shape) : Diagnostic =
-    makeDiag line W_ELEMENTWISE_MISMATCH
+    makeDiagAt line (exprStartCol leftExpr) W_ELEMENTWISE_MISMATCH
         $"{prettyExprIr leftExpr} {op} {prettyExprIr rightExpr}: {shapeToString left} vs {shapeToString right}"
 
 let warnMatmulMismatch
@@ -187,15 +204,15 @@ let warnMatmulMismatch
     let msg =
         if suggestElementwise then baseMsg + ". Use .* for elementwise"
         else baseMsg
-    makeDiag line W_INNER_DIM_MISMATCH msg
+    makeDiagAt line (exprStartCol leftExpr) W_INNER_DIM_MISMATCH msg
 
 let warnUnsupportedStmt (line: int) (raw: string) (targets: string list) : Diagnostic =
     let targetStr = if targets.IsEmpty then "(none)" else targets |> String.concat ", "
     let rawStr    = if raw = "" then "" else $" '{raw}'"
     makeDiag line W_UNSUPPORTED_STMT $"targets={targetStr}{rawStr}"
 
-let warnUnknownFunction (line: int) (name: string) : Diagnostic =
-    makeDiag line W_UNKNOWN_FUNCTION
+let warnUnknownFunction (line: int) (col: int) (name: string) : Diagnostic =
+    makeDiagAt line col W_UNKNOWN_FUNCTION
         $"'{name}': unrecognized function. Shape assumed unknown."
 
 let warnFunctionArgCountMismatch (line: int) (funcName: string) (expected: int) (got: int) : Diagnostic =

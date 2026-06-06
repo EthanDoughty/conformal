@@ -45,6 +45,19 @@ let ERROR_CODES : Set<WarningCode> =
 
 // --- Convert a Conformal Diagnostic to an LSP Diagnostic ---
 
+// End the underline at the last code character on the line: drop a trailing
+// "% comment" (only when the line has no quote, to stay clear of '%' inside a
+// string) and any trailing whitespace. Purely cosmetic; never widens past the
+// line and always leaves at least one underlined character.
+let private codeEndChar (lineText: string) (startChar: int) : int =
+    let mutable endCh = lineText.Length
+    if not (lineText.Contains("'")) then
+        let pct = lineText.IndexOf('%')
+        if pct >= 0 then endCh <- pct
+    while endCh > startChar + 1 && System.Char.IsWhiteSpace(lineText.[endCh - 1]) do
+        endCh <- endCh - 1
+    if endCh > startChar then endCh else lineText.Length
+
 let toLspDiagnostic
     (d: Diagnostics.Diagnostic)
     (sourceLines: string array)
@@ -55,14 +68,15 @@ let toLspDiagnostic
     // Convert 1-based Conformal line to 0-based LSP line
     let lineNum = d.line - 1
 
-    // End character: full line length if in range, else 0
-    let endChar =
-        if lineNum >= 0 && lineNum < sourceLines.Length then
-            sourceLines.[lineNum].Length
-        else 0
+    let lineText =
+        if lineNum >= 0 && lineNum < sourceLines.Length then sourceLines.[lineNum]
+        else ""
 
     // Start column: 1-based col -> 0-based LSP col
     let startChar = if d.col > 0 then d.col - 1 else 0
+
+    // End character: last code character on the line (trims trailing comment/whitespace)
+    let endChar = codeEndChar lineText startChar
 
     let range : Range = {
         Start = { Line = uint32 lineNum; Character = uint32 startChar }

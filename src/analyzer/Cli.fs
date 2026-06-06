@@ -528,7 +528,7 @@ let runBatchSarif (targets: string list) (strict: bool) (fixpoint: bool) (coder:
                 None)
 
     use stream = Console.OpenStandardOutput()
-    SarifEmitter.emitBatchSarif stream entries "3.9.0"
+    SarifEmitter.emitBatchSarif stream entries "3.9.1"
     stream.WriteByte(10uy)
 
     if hadCrash then 1
@@ -817,7 +817,7 @@ let runFileSarif (filePath: string) (strict: bool) (fixpoint: bool) (coder: bool
         let relUri = relUri.Replace('\\', '/')
 
         use stream = Console.OpenStandardOutput()
-        SarifEmitter.emitSarif stream relUri displayWarnings "3.9.0" src coverage
+        SarifEmitter.emitSarif stream relUri displayWarnings "3.9.1" src coverage
         // Write trailing newline so shell prompt starts on new line
         stream.WriteByte(10uy)
         if failOnWarnings && not displayWarnings.IsEmpty then 1 else 0
@@ -836,7 +836,7 @@ let run (argv: string array) : int =
             fixpoint = args.fixpoint || cfgFixpoint }
 
     if args.version then
-        printfn "Conformal 3.9.0"
+        printfn "Conformal 3.9.1"
         0
     elif args.help then
         printUsage ()

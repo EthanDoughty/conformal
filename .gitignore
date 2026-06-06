@@ -62,3 +62,7 @@ src/**/*.fs.js
 vscode-conformal/fable/*.fs.js
 matlab_files_for_dad/
 roundtables/
+
+# Local-only demo scaffolding (Scott / RSM meeting), not for the repo
+demo_for_scott/
+demo_for_scott.zip

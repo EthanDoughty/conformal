@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.9.1
+
+- **Precise diagnostic underlines**: shape warnings now carry a source column, so the editor underlines the offending expression instead of falling back to the start of the file. Inner-dimension, elementwise, concatenation, and unknown-function diagnostics anchor the squiggle at the expression and stop before any trailing comment.
+
 ## 3.9.0
 
 - **Colon operator precedence fix (ANO-001)**: expressions like `0:2*h:L` are no longer parsed as `(0:2) * (h:L)`. Every stepped range with an arithmetic step expression was producing a false-positive shape mismatch and suppressing downstream checks on variables derived from the range. Affected all numerical MATLAB code with stepped ranges.

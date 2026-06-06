@@ -265,7 +265,7 @@ let private refineAccumulation
                         accum.deltaExprs |> List.map (fun row ->
                             row |> List.map (fun elem -> wiredEvalExpr elem preLoopEnv deltaWarnings ctx))
                     let deltaShape =
-                        MatrixLiterals.inferMatrixLiteralShape deltaRows accum.line deltaWarnings ctx preLoopEnv
+                        MatrixLiterals.inferMatrixLiteralShape deltaRows accum.line 0 deltaWarnings ctx preLoopEnv
                     if not (isMatrix deltaShape) then ()
                     else
                         match initShape, deltaShape, currentShape with
@@ -639,7 +639,7 @@ and private wiredBuiltinDispatch
     | ExternalClassdefCall classInfo ->
         makeClassConstructorShape cc1 classInfo env warnings ctx
     | UnknownCall ->
-        warnings.Add(warnUnknownFunction line fname)
+        warnings.Add(warnUnknownFunction line baseExpr.Col fname)
         UnknownShape
 
 and private wiredGetInterval
@@ -1423,7 +1423,7 @@ and private analyzeAssignMulti
             | ExternalClassdefCall classInfo ->
                 bindClassConstructor classInfo
             | UnknownCall ->
-                warnings.Add(warnUnknownFunction line fname)
+                warnings.Add(warnUnknownFunction line expr.Col fname)
                 for target in targets do bindTarget target UnknownShape
 
     | _ ->

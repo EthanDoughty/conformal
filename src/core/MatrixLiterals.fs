@@ -25,6 +25,7 @@ let asMatrixShape (s: Shape) : Shape =
 let inferMatrixLiteralShape
     (shapeRows: Shape list list)
     (line: int)
+    (col: int)
     (warnings: ResizeArray<Diagnostics.Diagnostic>)
     (ctx: AnalysisContext)
     (env: Env)
@@ -104,7 +105,7 @@ let inferMatrixLiteralShape
 
                             if dimsDefinitelyConflict height' rr' then
                                 hadDefiniteError <- true
-                                warnings.Add(Diagnostics.makeDiag line W_HORZCAT_ROW_MISMATCH
+                                warnings.Add(Diagnostics.makeDiagAt line col W_HORZCAT_ROW_MISMATCH
                                     ("Horizontal concatenation requires equal row counts in row " + string (r + 1) +
                                      "; got " + dimStr height + " and " + dimStr rr + " in matrix literal."))
                             height <- joinDim height' rr'
@@ -127,7 +128,7 @@ let inferMatrixLiteralShape
 
                     if dimsDefinitelyConflict commonWidth' w' then
                         hadDefiniteError <- true
-                        warnings.Add(Diagnostics.makeDiag line W_VERTCAT_COL_MISMATCH
+                        warnings.Add(Diagnostics.makeDiagAt line col W_VERTCAT_COL_MISMATCH
                             ("Vertical concatenation requires equal column counts across rows; got " +
                              dimStr commonWidth + " and " + dimStr w + " in matrix literal."))
                     commonWidth <- joinDim commonWidth' w'
