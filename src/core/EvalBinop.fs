@@ -62,13 +62,21 @@ let evalBinopIr
             // Stepped range a:step:b — leftExpr is the inner BinOp(":", a, step).
             // Guard on the original IR expression, not on the shape, per R3.
             match leftExpr with
-            | BinOp(innerLoc, ":", _, _) ->
+            | BinOp(innerLoc, ":", aExpr, stepExpr) ->
                 // Reconstruct the full stepped colon as a single BinOp for extractIterationCount.
                 let fullExpr = BinOp(innerLoc, ":", leftExpr, rightExpr)
                 let dim = DimExtract.extractIterationCount fullExpr env (Some ctx)
                 match dim with
-                | Unknown -> Matrix(Concrete 1, Unknown)
-                | d       -> Matrix(Concrete 1, d)
+                | Unknown ->
+                    // Integer path returned Unknown; try float-literal colonop as fallback.
+                    match DimExtract.tryExtractConstFloat aExpr,
+                          DimExtract.tryExtractConstFloat stepExpr,
+                          DimExtract.tryExtractConstFloat rightExpr with
+                    | Some a, Some step, Some b ->
+                        let d = DimExtract.steppedRangeLengthFloat a step b
+                        Matrix(Concrete 1, d)
+                    | _ -> Matrix(Concrete 1, Unknown)
+                | d -> Matrix(Concrete 1, d)
             | _ -> Matrix(Concrete 1, Unknown)  // genuine matrix:b, not a stepped range
         | _ ->
             let a = DimExtract.exprToDimIrCtx leftExpr env (Some ctx)

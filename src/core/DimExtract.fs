@@ -90,6 +90,63 @@ let tryExtractIntLiteral (expr: Expr) : int option =
     | _ -> None
 
 
+/// Fold an expression to a float constant using literals only (Const, Neg, BinOp +/-/*/).
+/// Returns None for Var, function calls, End, or any non-literal node.
+/// Returns None if the folded result is NaN or infinite (e.g. 1/0, 0/0).
+let rec tryExtractConstFloat (expr: Expr) : float option =
+    match expr with
+    | Const(_, v) ->
+        if System.Double.IsNaN v || System.Double.IsInfinity v then None
+        else Some v
+    | Neg(_, inner) ->
+        match tryExtractConstFloat inner with
+        | Some v -> Some (-v)
+        | None   -> None
+    | BinOp(_, op, left, right) ->
+        match tryExtractConstFloat left, tryExtractConstFloat right with
+        | Some l, Some r ->
+            let result =
+                match op with
+                | "+" -> Some (l + r)
+                | "-" -> Some (l - r)
+                | "*" -> Some (l * r)
+                | "/" -> Some (l / r)
+                | _   -> None
+            match result with
+            | Some v when System.Double.IsNaN v || System.Double.IsInfinity v -> None
+            | v -> v
+        | _ -> None
+    | _ -> None   // Var, End, Apply, FuncHandle, etc.
+
+
+// Half-away-from-zero rounding: sign(x)*floor(|x|+0.5).
+// Avoids System.Math.Round (banker's) and JS Math.round (half-up toward +inf).
+// Identical for native .NET and Fable because it uses only floor/abs/sign/arithmetic.
+let private roundHalfAwayFromZero (x: float) : float =
+    let s = if x < 0.0 then -1.0 elif x > 0.0 then 1.0 else 0.0
+    s * System.Math.Floor(System.Math.Abs(x) + 0.5)
+
+
+/// Compute stepped-range length using Cleve Moler's colonop algorithm.
+/// Inputs are folded IEEE-754 doubles from literals.
+/// Returns Concrete len (>= 0) or Unknown when the length cannot be determined safely.
+let steppedRangeLengthFloat (a: float) (step: float) (b: float) : Dim =
+    // Guard: non-finite inputs or zero step.
+    if System.Double.IsNaN a || System.Double.IsInfinity a ||
+       System.Double.IsNaN step || System.Double.IsInfinity step || step = 0.0 ||
+       System.Double.IsNaN b || System.Double.IsInfinity b then
+        Unknown
+    else
+        let sgn  = if step > 0.0 then 1.0 elif step < 0.0 then -1.0 else 0.0
+        let mutable n = roundHalfAwayFromZero ((b - a) / step) |> int
+        let eps  = 2.220446049250313e-16   // 2^-52
+        let tol  = 2.0 * eps * (max (System.Math.Abs a) (System.Math.Abs b))
+        if   sgn * (a + float n * step - b) >  tol then n <- n - 1
+        elif sgn * (a + float (n + 1) * step - b) <= -tol then n <- n + 1
+        let len = if n < 0 then 0 else n + 1
+        Concrete len
+
+
 /// Extract iteration count from a for-loop iterator expression.
 ///
 /// Handles three structural forms (as emitted by MatlabParser):
