@@ -68,10 +68,12 @@ let evalBinopIr
                 let dim = DimExtract.extractIterationCount fullExpr env (Some ctx)
                 match dim with
                 | Unknown ->
-                    // Integer path returned Unknown; try float-literal colonop as fallback.
-                    match DimExtract.tryExtractConstFloat aExpr,
-                          DimExtract.tryExtractConstFloat stepExpr,
-                          DimExtract.tryExtractConstFloat rightExpr with
+                    // Integer path returned Unknown; try float colonop as fallback.
+                    // tryExtractConstFloatCtx resolves Var nodes from integer singletons
+                    // in valueRanges, so e.g. n=10; 0:n/4:n folds correctly.
+                    match DimExtract.tryExtractConstFloatCtx aExpr env (Some ctx),
+                          DimExtract.tryExtractConstFloatCtx stepExpr env (Some ctx),
+                          DimExtract.tryExtractConstFloatCtx rightExpr env (Some ctx) with
                     | Some a, Some step, Some b ->
                         let d = DimExtract.steppedRangeLengthFloat a step b
                         Matrix(Concrete 1, d)

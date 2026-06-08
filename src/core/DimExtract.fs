@@ -119,6 +119,47 @@ let rec tryExtractConstFloat (expr: Expr) : float option =
     | _ -> None   // Var, End, Apply, FuncHandle, etc.
 
 
+/// Fold an expression to a float constant, additionally resolving Var nodes
+/// from integer valueRanges singletons in ctx. Mirrors tryExtractConstFloat
+/// but also handles Var when ctx provides a singleton interval (Finite v, lo=hi).
+/// Floats stored only as integer singletons for now (slice 1); float constants
+/// (Lambda=0.2) still return None until slice 2 adds the float store.
+let rec tryExtractConstFloatCtx (expr: Expr) (env: Env) (ctx: Context.AnalysisContext option) : float option =
+    match expr with
+    | Const(_, v) ->
+        if System.Double.IsNaN v || System.Double.IsInfinity v then None
+        else Some v
+    | Var(_, name) ->
+        match ctx with
+        | Some c ->
+            match Map.tryFind name c.cst.valueRanges with
+            | Some iv ->
+                match iv.lo, iv.hi with
+                | Finite lo, Finite hi when lo = hi -> Some (float lo)
+                | _ -> None
+            | None -> None
+        | None -> None
+    | Neg(_, inner) ->
+        match tryExtractConstFloatCtx inner env ctx with
+        | Some v -> Some (-v)
+        | None   -> None
+    | BinOp(_, op, left, right) ->
+        match tryExtractConstFloatCtx left env ctx, tryExtractConstFloatCtx right env ctx with
+        | Some l, Some r ->
+            let result =
+                match op with
+                | "+" -> Some (l + r)
+                | "-" -> Some (l - r)
+                | "*" -> Some (l * r)
+                | "/" -> Some (l / r)
+                | _   -> None
+            match result with
+            | Some v when System.Double.IsNaN v || System.Double.IsInfinity v -> None
+            | v -> v
+        | _ -> None
+    | _ -> None   // End, Apply, FuncHandle, etc.
+
+
 // Half-away-from-zero rounding: sign(x)*floor(|x|+0.5).
 // Avoids System.Math.Round (banker's) and JS Math.round (half-up toward +inf).
 // Identical for native .NET and Fable because it uses only floor/abs/sign/arithmetic.
