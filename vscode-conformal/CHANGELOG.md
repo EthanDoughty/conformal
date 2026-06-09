@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.10.1
+
+- **Diagnostics render in the editor again**: a regression made every warning appear as a single `Internal error` marker at the start of the file, because the diagnostic call-stack field crossed the Fable boundary as an F# list instead of a JavaScript array and the renderer threw before placing the squiggle. Warnings now anchor on the offending expression.
+
 ## 3.10.0
 
 - **Sound folding of scalar constants into range lengths**: a range whose start, step, or stop is a compile-time scalar constant (literal or a variable bound once to one) now infers a concrete length, so dimension mismatches involving constant-derived ranges such as `0:Lambda/400:Lambda/4` are caught. The fold is flow-sensitive and stays conservative through branches, loops, `clear`, indexed and struct assignment, workspace-mutating calls, and integer overflow, so it never reports a length it cannot be certain of.

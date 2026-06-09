@@ -19,7 +19,7 @@ type SerializedDiagnostic = {
     message:     string
     relatedLine: int option
     relatedCol:  int option
-    callStack:   (string * int) list  // (funcName, callLine) pairs, innermost first
+    callStack:   (string * int)[]  // (funcName, callLine) pairs, innermost first; array so the TS side gets a real JS array, not an FSharpList
 }
 
 type FunctionSymbol = {
@@ -194,7 +194,7 @@ let analyzeSource
         displayWarnings
         |> List.map (fun w ->
             { line = w.line; col = w.col; code = codeString w.code; message = w.message
-              relatedLine = w.relatedLine; relatedCol = w.relatedCol; callStack = w.callStack })
+              relatedLine = w.relatedLine; relatedCol = w.relatedCol; callStack = List.toArray w.callStack })
         |> Array.ofList
 
     // Serialize environment
