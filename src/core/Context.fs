@@ -148,6 +148,17 @@ type ConstraintContext() =
     /// Saved/restored by SnapshotScope (function-scoped).
     member val globalDeclaredVars : System.Collections.Generic.HashSet<string>
                                     = System.Collections.Generic.HashSet<string>() with get, set
+    /// Trusted constant store: name -> float value.
+    /// trustedConsts[name]=v means "at this program point name is DEFINITELY the finite constant v."
+    /// Established only at unconditional top-level (depth 0) foldable scalar assignments.
+    /// Removed by every event that could make the value uncertain. Never branch-restored or joined.
+    /// Saved/restored by SnapshotScope (function-scoped); NOT in ConstraintSnapshot.
+    member val trustedConsts : Map<string, float> = Map.empty with get, set
+    /// Depth of the current conditional/loop nesting (0 = top-level, unconditional code).
+    /// Incremented before, decremented after, every conditional/loop body runStmts call.
+    /// Trusted constants are only established at depth 0.
+    /// Saved/restored by SnapshotScope (reset to 0 at function-body entry).
+    member val conditionalDepth : int = 0 with get, set
 
 type WorkspaceContext() =
     /// Maps function name -> ExternalSignature (workspace-scanned)
@@ -232,6 +243,12 @@ type AnalysisContext() =
         // starts with a fresh set and the caller's set is not polluted.
         let savedGlobalDeclared = System.Collections.Generic.HashSet<string>(this.cst.globalDeclaredVars)
         this.cst.globalDeclaredVars <- System.Collections.Generic.HashSet<string>()
+        // trustedConsts and conditionalDepth are function-scoped: each function body
+        // starts with an empty trusted-const store and depth 0.
+        let savedTrustedConsts    = this.cst.trustedConsts
+        let savedConditionalDepth = this.cst.conditionalDepth
+        this.cst.trustedConsts    <- Map.empty
+        this.cst.conditionalDepth <- 0
         try
             body ()
         finally
@@ -244,5 +261,8 @@ type AnalysisContext() =
             for kv in savedNested do this.call.nestedFunctionRegistry.[kv.Key] <- kv.Value
             // Restore function-scoped global declarations
             this.cst.globalDeclaredVars <- savedGlobalDeclared
+            // Restore trusted constants and conditional depth
+            this.cst.trustedConsts    <- savedTrustedConsts
+            this.cst.conditionalDepth <- savedConditionalDepth
 
 

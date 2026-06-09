@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.10.0
+
+- **Sound folding of scalar constants into range lengths**: a range whose start, step, or stop is a compile-time scalar constant (literal or a variable bound once to one) now infers a concrete length, so dimension mismatches involving constant-derived ranges such as `0:Lambda/400:Lambda/4` are caught. The fold is flow-sensitive and stays conservative through branches, loops, `clear`, indexed and struct assignment, workspace-mutating calls, and integer overflow, so it never reports a length it cannot be certain of.
+
 ## 3.9.1
 
 - **Precise diagnostic underlines**: shape warnings now carry a source column, so the editor underlines the offending expression instead of falling back to the start of the file. Inner-dimension, elementwise, concatenation, and unknown-function diagnostics anchor the squiggle at the expression and stop before any trailing comment.

@@ -19,9 +19,14 @@ let rec exprToDimWithEnd (expr: Expr) (env: Env) (endDim: Dim) : Dim =
     match expr with
     | End _ -> endDim
     | Const(_, v) ->
-        if v = System.Math.Floor(v : float) && not (System.Double.IsInfinity v) then Concrete (int v)
+        // Guard: non-finite or outside Int32 range must degrade to Unknown to prevent overflow.
+        if System.Double.IsNaN v || System.Double.IsInfinity v then Unknown
+        elif v = System.Math.Floor(v : float) && v >= float System.Int32.MinValue && v <= float System.Int32.MaxValue then
+            Concrete (int v)
         else Unknown
     | Var(_, name) ->
+        if name = "Inf" || name = "inf" || name = "NaN" || name = "nan" then Unknown
+        else
         // Check dim aliases first (propagates caller's dim name)
         match Map.tryFind name env.dimAliases with
         | Some d -> d
@@ -48,10 +53,17 @@ let rec exprToDimIr (expr: Expr) (env: Env) : Dim =
 and exprToDimIrCtx (expr: Expr) (env: Env) (ctx: Context.AnalysisContext option) : Dim =
     match expr with
     | Const(_, v) ->
-        if v = System.Math.Floor(v : float) && not (System.Double.IsInfinity v) then Concrete (int v)
+        // Guard: non-finite or outside Int32 range must degrade to Unknown to prevent overflow.
+        if System.Double.IsNaN v || System.Double.IsInfinity v then Unknown
+        elif v = System.Math.Floor(v : float) && v >= float System.Int32.MinValue && v <= float System.Int32.MaxValue then
+            Concrete (int v)
         else Unknown
     | End _ -> Unknown   // can't convert End without container context
     | Var(_, name) ->
+        // Special names that represent non-finite values: treat as Unknown to prevent
+        // symbolic dims like (Inf + 1) or (NaN + 1) from entering the shape lattice.
+        if name = "Inf" || name = "inf" || name = "NaN" || name = "nan" then Unknown
+        else
         // Check dim aliases first
         match Map.tryFind name env.dimAliases with
         | Some d -> d
@@ -83,14 +95,19 @@ and exprToDimIrCtx (expr: Expr) (env: Env) (ctx: Context.AnalysisContext option)
 
 /// Extract a concrete integer from an expression.
 /// Handles Const and Neg(Const) to support negative step literals like -3 in a:(-3):b.
+/// Returns None if the value is non-finite or outside the Int32 range to prevent overflow.
 let tryExtractIntLiteral (expr: Expr) : int option =
+    let inline isInt32Range (v: float) = v >= float System.Int32.MinValue && v <= float System.Int32.MaxValue
     match expr with
-    | Const(_, v) when v = System.Math.Floor(v) && not (System.Double.IsInfinity v) -> Some (int v)
-    | Neg(_, Const(_, v)) when v = System.Math.Floor(v) && not (System.Double.IsInfinity v) -> Some (-(int v))
+    | Const(_, v) when v = System.Math.Floor(v) && not (System.Double.IsInfinity v) && not (System.Double.IsNaN v) && isInt32Range v ->
+        Some (int v)
+    | Neg(_, Const(_, v)) when v = System.Math.Floor(v) && not (System.Double.IsInfinity v) && not (System.Double.IsNaN v) && isInt32Range v ->
+        Some (-(int v))
     | _ -> None
 
 
-/// Fold an expression to a float constant using literals only (Const, Neg, BinOp +/-/*/).
+/// Fold an expression to a float constant using literals only (Const, Neg, and
+/// BinOp with the four arithmetic operators).
 /// Returns None for Var, function calls, End, or any non-literal node.
 /// Returns None if the folded result is NaN or infinite (e.g. 1/0, 0/0).
 let rec tryExtractConstFloat (expr: Expr) : float option =
@@ -120,10 +137,9 @@ let rec tryExtractConstFloat (expr: Expr) : float option =
 
 
 /// Fold an expression to a float constant, additionally resolving Var nodes
-/// from integer valueRanges singletons in ctx. Mirrors tryExtractConstFloat
-/// but also handles Var when ctx provides a singleton interval (Finite v, lo=hi).
-/// Floats stored only as integer singletons for now (slice 1); float constants
-/// (Lambda=0.2) still return None until slice 2 adds the float store.
+/// from the trusted-constant store in ctx. Resolves only from trustedConsts
+/// (decoupled from valueRanges and joins by construction). Enables chains like
+/// b = a/2 as long as both a and b have trusted-constant entries.
 let rec tryExtractConstFloatCtx (expr: Expr) (env: Env) (ctx: Context.AnalysisContext option) : float option =
     match expr with
     | Const(_, v) ->
@@ -131,14 +147,8 @@ let rec tryExtractConstFloatCtx (expr: Expr) (env: Env) (ctx: Context.AnalysisCo
         else Some v
     | Var(_, name) ->
         match ctx with
-        | Some c ->
-            match Map.tryFind name c.cst.valueRanges with
-            | Some iv ->
-                match iv.lo, iv.hi with
-                | Finite lo, Finite hi when lo = hi -> Some (float lo)
-                | _ -> None
-            | None -> None
-        | None -> None
+        | Some c -> Map.tryFind name c.cst.trustedConsts
+        | None   -> None
     | Neg(_, inner) ->
         match tryExtractConstFloatCtx inner env ctx with
         | Some v -> Some (-v)
@@ -179,13 +189,24 @@ let steppedRangeLengthFloat (a: float) (step: float) (b: float) : Dim =
         Unknown
     else
         let sgn  = if step > 0.0 then 1.0 elif step < 0.0 then -1.0 else 0.0
-        let mutable n = roundHalfAwayFromZero ((b - a) / step) |> int
+        let rawN = roundHalfAwayFromZero ((b - a) / step)
+        // Overflow guard: reject non-finite or out-of-Int32 range before converting.
+        // Use strict < 2147483647.0 so that values at the boundary (e.g. 0:1:2147483646
+        // where rawN=2147483646) pass, but rawN=2147483647 (-> len=2147483648) is rejected.
+        if System.Double.IsNaN rawN || System.Double.IsInfinity rawN
+           || rawN >= 2147483647.0 || rawN < -2147483647.0 then
+            Unknown
+        else
+        // Use int64 for n to avoid Int32 overflow in the n+1 tol-correction path.
+        let mutable n = int64 rawN
         let eps  = 2.220446049250313e-16   // 2^-52
         let tol  = 2.0 * eps * (max (System.Math.Abs a) (System.Math.Abs b))
-        if   sgn * (a + float n * step - b) >  tol then n <- n - 1
-        elif sgn * (a + float (n + 1) * step - b) <= -tol then n <- n + 1
-        let len = if n < 0 then 0 else n + 1
-        Concrete len
+        if   sgn * (a + float n * step - b) >  tol then n <- n - 1L
+        elif sgn * (a + float (n + 1L) * step - b) <= -tol then n <- n + 1L
+        let len = if n < 0L then 0L else n + 1L
+        // Guard the final length against overflow before converting to int.
+        if len < 0L || len > 2147483647L then Unknown
+        else Concrete (int len)
 
 
 /// Extract iteration count from a for-loop iterator expression.
@@ -218,26 +239,36 @@ let extractIterationCount (itExpr: Expr) (env: Env) (ctx: Context.AnalysisContex
             | Some 1 ->
                 match a, b with
                 | Unknown, _ | _, Unknown -> Unknown
-                | Concrete a', Concrete b' -> Concrete (max 0 ((b' - a') + 1))
+                | Concrete a', Concrete b' ->
+                    let len64 = int64 b' - int64 a' + 1L
+                    if len64 < 0L || len64 > 2147483647L then Unknown
+                    else Concrete (max 0 (int len64))
                 | _ -> addDim (subDim b a) (Concrete 1)
             | Some -1 ->
                 match a, b with
                 | Unknown, _ | _, Unknown -> Unknown
-                | Concrete a', Concrete b' -> Concrete (max 0 ((a' - b') + 1))
+                | Concrete a', Concrete b' ->
+                    let len64 = int64 a' - int64 b' + 1L
+                    if len64 < 0L || len64 > 2147483647L then Unknown
+                    else Concrete (max 0 (int len64))
                 | _ -> addDim (subDim a b) (Concrete 1)
             | Some step' when step' > 0 ->
                 match a, b with
                 | Concrete a', Concrete b' ->
-                    let dividend = b' - a'
-                    if dividend < 0 then Concrete 0
-                    else Concrete (dividend / step' + 1)
+                    let dividend = int64 b' - int64 a'
+                    if dividend < 0L then Concrete 0
+                    else
+                        let len64 = dividend / int64 step' + 1L
+                        if len64 > 2147483647L then Unknown else Concrete (int len64)
                 | _ -> Unknown
             | Some step' when step' < 0 ->
                 match a, b with
                 | Concrete a', Concrete b' ->
-                    let dividend = a' - b'
-                    if dividend < 0 then Concrete 0
-                    else Concrete (dividend / (-step') + 1)
+                    let dividend = int64 a' - int64 b'
+                    if dividend < 0L then Concrete 0
+                    else
+                        let len64 = dividend / int64 (-step') + 1L
+                        if len64 > 2147483647L then Unknown else Concrete (int len64)
                 | _ -> Unknown
             | _ -> Unknown
 
@@ -253,15 +284,20 @@ let extractIterationCount (itExpr: Expr) (env: Env) (ctx: Context.AnalysisContex
                 // Effective step=-1: count = (a-b)+1
                 match a, b with
                 | Unknown, _ | _, Unknown -> Unknown
-                | Concrete a', Concrete b' -> Concrete (max 0 ((a' - b') + 1))
+                | Concrete a', Concrete b' ->
+                    let len64 = int64 a' - int64 b' + 1L
+                    if len64 < 0L || len64 > 2147483647L then Unknown
+                    else Concrete (max 0 (int len64))
                 | _ -> addDim (subDim a b) (Concrete 1)
             | Some s when s > 0 ->
                 // Effective step=-s: count = floor((a-b)/s)+1
                 match a, b with
                 | Concrete a', Concrete b' ->
-                    let dividend = a' - b'
-                    if dividend < 0 then Concrete 0
-                    else Concrete (dividend / s + 1)
+                    let dividend = int64 a' - int64 b'
+                    if dividend < 0L then Concrete 0
+                    else
+                        let len64 = dividend / int64 s + 1L
+                        if len64 > 2147483647L then Unknown else Concrete (int len64)
                 | _ -> Unknown
             | _ -> Unknown
 
@@ -271,7 +307,10 @@ let extractIterationCount (itExpr: Expr) (env: Env) (ctx: Context.AnalysisContex
             let b = exprToDimIrCtx bExpr env ctx
             match a, b with
             | Unknown, _ | _, Unknown -> Unknown
-            | Concrete a', Concrete b' -> Concrete (max 0 ((b' - a') + 1))
+            | Concrete a', Concrete b' ->
+                let len64 = int64 b' - int64 a' + 1L
+                if len64 < 0L || len64 > 2147483647L then Unknown
+                else Concrete (max 0 (int len64))
             | _ -> addDim (subDim b a) (Concrete 1)
     | _ -> Unknown
 

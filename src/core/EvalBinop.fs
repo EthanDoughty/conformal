@@ -62,32 +62,45 @@ let evalBinopIr
             // Stepped range a:step:b — leftExpr is the inner BinOp(":", a, step).
             // Guard on the original IR expression, not on the shape, per R3.
             match leftExpr with
-            | BinOp(innerLoc, ":", aExpr, stepExpr) ->
-                // Reconstruct the full stepped colon as a single BinOp for extractIterationCount.
-                let fullExpr = BinOp(innerLoc, ":", leftExpr, rightExpr)
-                let dim = DimExtract.extractIterationCount fullExpr env (Some ctx)
-                match dim with
-                | Unknown ->
-                    // Integer path returned Unknown; try float colonop as fallback.
-                    // tryExtractConstFloatCtx resolves Var nodes from integer singletons
-                    // in valueRanges, so e.g. n=10; 0:n/4:n folds correctly.
-                    match DimExtract.tryExtractConstFloatCtx aExpr env (Some ctx),
-                          DimExtract.tryExtractConstFloatCtx stepExpr env (Some ctx),
-                          DimExtract.tryExtractConstFloatCtx rightExpr env (Some ctx) with
-                    | Some a, Some step, Some b ->
-                        let d = DimExtract.steppedRangeLengthFloat a step b
-                        Matrix(Concrete 1, d)
-                    | _ -> Matrix(Concrete 1, Unknown)
-                | d -> Matrix(Concrete 1, d)
+            | BinOp(_, ":", aExpr, stepExpr) ->
+                // Expression ranges must resolve concrete endpoints from trustedConsts ONLY
+                // (never valueRanges). extractIterationCount reads valueRanges and is reserved
+                // for for-loop iteration counts. Use tryExtractConstFloatCtx + steppedRangeLengthFloat.
+                match DimExtract.tryExtractConstFloatCtx aExpr env (Some ctx),
+                      DimExtract.tryExtractConstFloatCtx stepExpr env (Some ctx),
+                      DimExtract.tryExtractConstFloatCtx rightExpr env (Some ctx) with
+                | Some a, Some step, Some b ->
+                    let d = DimExtract.steppedRangeLengthFloat a step b
+                    Matrix(Concrete 1, d)
+                | _ -> Matrix(Concrete 1, Unknown)
             | _ -> Matrix(Concrete 1, Unknown)  // genuine matrix:b, not a stepped range
         | _ ->
-            let a = DimExtract.exprToDimIrCtx leftExpr env (Some ctx)
-            let b = DimExtract.exprToDimIrCtx rightExpr env (Some ctx)
-            match a, b with
-            | Unknown, _ | _, Unknown -> Matrix(Concrete 1, Unknown)
+            // Plain range a:b.
+            // Concrete fold: resolve endpoints from trustedConsts + literals ONLY (never valueRanges).
+            // Symbolic fallback: use exprToDimIr (no ctx -> no valueRanges read) to preserve
+            // symbolic dims like 1:n -> 1 x n.
+            match DimExtract.tryExtractConstFloatCtx leftExpr env (Some ctx),
+                  DimExtract.tryExtractConstFloatCtx rightExpr env (Some ctx) with
+            | Some fa, Some fb when
+                not (System.Double.IsNaN fa || System.Double.IsInfinity fa) &&
+                not (System.Double.IsNaN fb || System.Double.IsInfinity fb) ->
+                // Both endpoints are trusted finite constants.
+                // Delegate to steppedRangeLengthFloat with step=1.0: this applies Cleve Moler's
+                // colonop algorithm (floor-based element count, not round), correctly handles
+                // fractional endpoints (1:5.9 -> 5, not 6), and guards against Int64 overflow
+                // for very large endpoints (0:1e19 -> Unknown, not a wrapped negative length).
+                let d = DimExtract.steppedRangeLengthFloat fa 1.0 fb
+                Matrix(Concrete 1, d)
             | _ ->
-                let cols = addDim (subDim b a) (Concrete 1)
-                Matrix(Concrete 1, cols)
+                // At least one endpoint is not a trusted concrete float.
+                // Fall back to symbolic dim extraction (no valueRanges read).
+                let a = DimExtract.exprToDimIr leftExpr env
+                let b = DimExtract.exprToDimIr rightExpr env
+                match a, b with
+                | Unknown, _ | _, Unknown -> Matrix(Concrete 1, Unknown)
+                | _ ->
+                    let cols = addDim (subDim b a) (Concrete 1)
+                    Matrix(Concrete 1, cols)
 
     // String + string = numeric row vector (MATLAB behavior)
     elif op = "+" && isString left && isString right then

@@ -120,6 +120,126 @@ let rec private exprMentionsFieldAccess (expr: Expr) (baseName: string) (fieldNa
             match arg with IndexExpr(_, e) -> exprMentionsFieldAccess e baseName fieldName | _ -> false)
 
 
+// Names whose presence anywhere in an expression means the workspace may be arbitrarily mutated.
+// eval/evalin/evalc execute strings in the caller's workspace; assignin writes into a named
+// workspace; load/run execute files that can rebind any variable; feval dispatches dynamically.
+let private WORKSPACE_MUTATOR_NAMES : Set<string> =
+    Set.ofList [ "eval"; "evalin"; "evalc"; "assignin"; "load"; "run"; "feval" ]
+
+// Return true if any node in the expression tree is a call to a workspace-mutating function.
+// Covers: direct ExprStmt calls, Assign-RHS captures (x = eval(...)), and nested calls such
+// as disp(eval(...)).  Also catches function handles @eval / @feval used with cellfun etc.
+// A single traversal handles all positions uniformly, including Range/SteppedRange index args.
+let rec private exprContainsWorkspaceMutator (expr: Expr) : bool =
+    let checkArg (arg: IndexArg) =
+        match arg with
+        | Ir.IndexExpr(_, e) -> exprContainsWorkspaceMutator e
+        | Ir.Range(_, s, e_) -> exprContainsWorkspaceMutator s || exprContainsWorkspaceMutator e_
+        | Ir.SteppedRange(_, s, step, e_) ->
+            exprContainsWorkspaceMutator s || exprContainsWorkspaceMutator step || exprContainsWorkspaceMutator e_
+        | Ir.Colon _ -> false
+    match expr with
+    | Apply(_, Var(_, name), args) ->
+        Set.contains name WORKSPACE_MUTATOR_NAMES ||
+        args |> List.exists checkArg
+    | CurlyApply(_, b, args) ->
+        exprContainsWorkspaceMutator b ||
+        args |> List.exists checkArg
+    | Apply(_, b, args) ->
+        exprContainsWorkspaceMutator b ||
+        args |> List.exists checkArg
+    | BinOp(_, _, l, r)   -> exprContainsWorkspaceMutator l || exprContainsWorkspaceMutator r
+    | Neg(_, op)           -> exprContainsWorkspaceMutator op
+    | Not(_, op)           -> exprContainsWorkspaceMutator op
+    | Transpose(_, op)     -> exprContainsWorkspaceMutator op
+    | FieldAccess(_, b, _) -> exprContainsWorkspaceMutator b
+    | MatrixLit(_, rows)   ->
+        rows |> List.exists (fun row -> row |> List.exists exprContainsWorkspaceMutator)
+    | CellLit(_, rows)     ->
+        rows |> List.exists (fun row -> row |> List.exists exprContainsWorkspaceMutator)
+    // Function handles @eval/@feval etc. are workspace mutators when passed to cellfun/arrayfun.
+    | FuncHandle(_, name) -> Set.contains name WORKSPACE_MUTATOR_NAMES
+    | Var _ | Const _ | StringLit _ | End _ | Lambda _ | MetaClass _ -> false
+
+
+// Return true if any expression directly contained in this statement (conditions, range
+// iterators, index args, RHS of assignments) is a workspace mutator call.  Does NOT recurse
+// into nested statement bodies — the per-statement check at dispatch time handles each
+// statement individually.
+let private stmtContainsWorkspaceMutator (stmt: Stmt) : bool =
+    let checkArgs (args: IndexArg list) =
+        args |> List.exists (fun arg ->
+            match arg with
+            | Ir.IndexExpr(_, e) -> exprContainsWorkspaceMutator e
+            | Ir.Range(_, s, e_) -> exprContainsWorkspaceMutator s || exprContainsWorkspaceMutator e_
+            | Ir.SteppedRange(_, s, step, e_) ->
+                exprContainsWorkspaceMutator s || exprContainsWorkspaceMutator step || exprContainsWorkspaceMutator e_
+            | Ir.Colon _ -> false)
+    match stmt with
+    | Assign(_, _, expr)                       -> exprContainsWorkspaceMutator expr
+    | StructAssign(_, _, _, expr)              -> exprContainsWorkspaceMutator expr
+    | CellAssign(_, _, args, expr)             -> checkArgs args || exprContainsWorkspaceMutator expr
+    | IndexAssign(_, _, args, expr)            -> checkArgs args || exprContainsWorkspaceMutator expr
+    | IndexStructAssign(_, _, iArgs, _, _, expr) -> checkArgs iArgs || exprContainsWorkspaceMutator expr
+    | FieldIndexAssign(_, _, _, iArgs, _, _, expr) -> checkArgs iArgs || exprContainsWorkspaceMutator expr
+    | LhsAssign(_, _, lhsExpr, expr)           -> exprContainsWorkspaceMutator lhsExpr || exprContainsWorkspaceMutator expr
+    | ExprStmt(_, expr)                        -> exprContainsWorkspaceMutator expr
+    | If(_, cond, _, _)                        -> exprContainsWorkspaceMutator cond
+    | IfChain(_, conditions, _, _)             -> conditions |> List.exists exprContainsWorkspaceMutator
+    | While(_, cond, _)                        -> exprContainsWorkspaceMutator cond
+    | For(_, _, it, _)                         -> exprContainsWorkspaceMutator it
+    | Switch(_, expr, cases, _)                ->
+        exprContainsWorkspaceMutator expr ||
+        cases |> List.exists (fun (caseExpr, _) -> exprContainsWorkspaceMutator caseExpr)
+    | AssignMulti(_, _, expr)                  -> exprContainsWorkspaceMutator expr
+    | Try _ | OpaqueStmt _ | FunctionDef _ | Break _ | Continue _ | Return _ -> false
+
+
+// Drop all trusted concrete value knowledge from the analysis context.
+// Called when any workspace-mutating operation is detected.  Cannot know which
+// specific variables are affected, so we conservatively wipe the entire store.
+// DimEquiv concrete entries derived from value-range singletons are also removed
+// to prevent stale dimension-conflict resolution.
+let private doEvictAllConcreteKnowledge (ctx: Context.AnalysisContext) =
+    let varNames = ctx.cst.valueRanges |> Map.toSeq |> Seq.map fst |> Seq.toList
+    ctx.cst.trustedConsts <- Map.empty
+    ctx.cst.valueRanges   <- Map.empty
+    for v in varNames do ctx.cst.dimEquiv.concrete.Remove(v) |> ignore
+
+
+// Return true if any statement in the body contains a top-level call to
+// assignin('caller',...) / assignin('base',...) / evalin('caller',...).
+// Used to decide whether to evict the caller's trustedConsts after a function call.
+// Shallow scan only (one level deep), which covers the common pattern of a thin
+// wrapper function that immediately calls assignin.  Deep recursive scanning is
+// not required because the primary concern is the immediate body of an analyzable
+// callee — if the real assignin is buried deeper we accept the rare unsoundness
+// (documented limitation: assignin inside a doubly-nested helper is not detected).
+let rec private bodyContainsCallerAssignin (stmts: Stmt list) : bool =
+    let isCallerTarget (arg: Expr) =
+        match arg with
+        | StringLit(_, s) -> s = "caller" || s = "base"
+        | _ -> false
+    let exprHasAssignin (expr: Expr) =
+        match expr with
+        | Apply(_, Var(_, name), IndexExpr(_, firstArg) :: _)
+            when (name = "assignin" || name = "evalin") && isCallerTarget firstArg -> true
+        | _ -> false
+    stmts |> List.exists (fun s ->
+        match s with
+        | ExprStmt(_, expr)    -> exprHasAssignin expr
+        | Assign(_, _, expr)   -> exprHasAssignin expr
+        | AssignMulti(_, _, expr) -> exprHasAssignin expr
+        | If(_, _, tb, eb)     -> bodyContainsCallerAssignin tb || bodyContainsCallerAssignin eb
+        | IfChain(_, _, bodies, eb) -> bodies |> List.exists bodyContainsCallerAssignin || bodyContainsCallerAssignin eb
+        | While(_, _, body)    -> bodyContainsCallerAssignin body
+        | For(_, _, _, body)   -> bodyContainsCallerAssignin body
+        | Switch(_, _, cases, ow) ->
+            cases |> List.exists (fun (_, b) -> bodyContainsCallerAssignin b) || bodyContainsCallerAssignin ow
+        | Try(_, tb, cb)       -> bodyContainsCallerAssignin tb || bodyContainsCallerAssignin cb
+        | _ -> false)
+
+
 // Detect accumulation patterns in a loop body.
 let private detectAccumulation (loopVar: string) (body: Stmt list) : AccumPattern list =
     let candidates = System.Collections.Generic.Dictionary<string, AccumPattern option>()
@@ -626,6 +746,10 @@ and private wiredBuiltinDispatch
     | UserFunctionCall sig_ ->
         if sig_.outputVars.IsEmpty then warnings.Add(warnProcedureInExpr line fname)
         let outputShapes = analyzeFunctionCall cc1 env warnings ctx
+        // Interprocedural assignin: if the callee body contains assignin/evalin('caller',...)
+        // the caller's workspace may have been mutated.  Evict all trusted constants.
+        // Known limitation: assignin inside a doubly-nested helper is not detected here.
+        if bodyContainsCallerAssignin sig_.body then doEvictAllConcreteKnowledge ctx
         if outputShapes.IsEmpty then UnknownShape else outputShapes.[0]
     | NestedFunctionCall sig_ ->
         if sig_.outputVars.IsEmpty then warnings.Add(warnProcedureInExpr line fname)
@@ -688,8 +812,20 @@ and analyzeStmtIr
     (ctx: AnalysisContext)
     : ControlFlow =
 
+    // Pre-eviction: if any expression in this statement is a workspace mutator (eval, evalin,
+    // assignin, etc.) or passes a mutator handle (@eval), all trusted concrete knowledge must
+    // be dropped before analyzing the statement.  The mutator executes first in MATLAB semantics,
+    // so subsequent sub-expressions in the same statement (index args, RHS folds) must see the
+    // post-mutation state.  Per-statement handlers may also call doEvictAllConcreteKnowledge
+    // for their specific patterns; those calls are now redundant but harmless.
+    if stmtContainsWorkspaceMutator stmt then
+        doEvictAllConcreteKnowledge ctx
+
     match stmt with
     | Assign({ line = line }, name, expr) ->
+        // Trusted-const: remove FIRST so RHS fold cannot use a stale self-value.
+        ctx.cst.trustedConsts <- Map.remove name ctx.cst.trustedConsts
+
         let oldShape = Env.get env name
         let newShape = wiredEvalExprFull expr env warnings ctx
 
@@ -795,9 +931,36 @@ and analyzeStmtIr
             ctx.cst.valueRanges <- Map.add name exact ctx.cst.valueRanges
             TightenDomains.tightenDomains ctx env
         | None -> ()
+
+        // Workspace-mutator eviction: if the RHS contains eval/evalin/evalc/assignin/load/run/feval
+        // anywhere in the expression tree, the call may rebind arbitrary workspace variables as a
+        // side effect.  Conservatively drop all concrete knowledge before the fold below, so that
+        // subsequent folds cannot use stale trusted values.
+        if exprContainsWorkspaceMutator expr then
+            doEvictAllConcreteKnowledge ctx
+
+        // Trusted-const population: establish only at depth 0, scalar result, foldable finite RHS,
+        // and only for non-global variables (a global can be mutated by any function sharing it).
+        // The remove at the top of the handler prevents stale self-value reads during the fold.
+        if ctx.cst.conditionalDepth = 0 && isScalar newShape
+           && not (ctx.cst.globalDeclaredVars.Contains(name)) then
+            match DimExtract.tryExtractConstFloatCtx expr env (Some ctx) with
+            | Some v when not (System.Double.IsNaN v || System.Double.IsInfinity v) ->
+                ctx.cst.trustedConsts <- Map.add name v ctx.cst.trustedConsts
+            | _ -> ()
+
+        // Global variables must never carry concrete interval knowledge: any function sharing
+        // the global can mutate its value without the analyzer seeing the write.  Remove the
+        // interval entry that the block above may have just installed and clear the corresponding
+        // DimEquiv concrete slot so that resolveDim cannot produce a stale concrete dim.
+        if ctx.cst.globalDeclaredVars.Contains(name) then
+            ctx.cst.valueRanges <- Map.remove name ctx.cst.valueRanges
+            ctx.cst.dimEquiv.concrete.Remove(name) |> ignore
+
         Normal
 
     | StructAssign({ line = line }, baseName, fields, expr) ->
+        ctx.cst.trustedConsts <- Map.remove baseName ctx.cst.trustedConsts
         let rhsShape = wiredEvalExprFull expr env warnings ctx
         let baseShape = Env.get env baseName
         let updated = updateStructField baseShape fields rhsShape line warnings
@@ -805,6 +968,7 @@ and analyzeStmtIr
         Normal
 
     | FieldIndexAssign({ line = line }, baseName, prefixFields, indexArgs, _, suffixFields, expr) ->
+        ctx.cst.trustedConsts <- Map.remove baseName ctx.cst.trustedConsts
         let rhsShape = wiredEvalExprFull expr env warnings ctx
         let baseShape = Env.get env baseName
         // Evaluate index args for side effects
@@ -816,6 +980,7 @@ and analyzeStmtIr
         Normal
 
     | CellAssign({ line = line }, baseName, args, expr) ->
+        ctx.cst.trustedConsts <- Map.remove baseName ctx.cst.trustedConsts
         let rhsShape = wiredEvalExprFull expr env warnings ctx
         let baseShape = Env.get env baseName
         if isBottom baseShape then
@@ -834,6 +999,7 @@ and analyzeStmtIr
         Normal
 
     | IndexAssign(_, baseName, _, expr) ->
+        ctx.cst.trustedConsts <- Map.remove baseName ctx.cst.trustedConsts
         let rhsShape = wiredEvalExprFull expr env warnings ctx
         ignore rhsShape
         let baseShape = Env.get env baseName
@@ -849,12 +1015,16 @@ and analyzeStmtIr
         Normal
 
     | IndexStructAssign(_, baseName, _, _, _, expr) ->
+        ctx.cst.trustedConsts <- Map.remove baseName ctx.cst.trustedConsts
         wiredEvalExprFull expr env warnings ctx |> ignore
         let existing = Env.get env baseName
         if isBottom existing then Env.set env baseName UnknownShape
         Normal
 
     | LhsAssign(_, baseName, lhsExpr, expr) ->
+        // Any mutation of baseName (e.g. M(2)(3)=1, L{1}(2)=9, L(1).x(2)=7) invalidates the
+        // trusted constant entry for the base variable. Mirrors IndexAssign/CellAssign/StructAssign.
+        ctx.cst.trustedConsts <- Map.remove baseName ctx.cst.trustedConsts
         // Evaluate RHS and LHS for side effects; set base to Unknown if uninitialized
         wiredEvalExprFull expr env warnings ctx |> ignore
         wiredEvalExprFull lhsExpr env warnings ctx |> ignore
@@ -863,6 +1033,27 @@ and analyzeStmtIr
         Normal
 
     | ExprStmt({ line = stmtLine }, expr) ->
+        // Bare 'clear'/'clearvars' and workspace-mutating call forms must drop all trusted
+        // constants.  Forms handled:
+        //   clear / clearvars                    -> ExprStmt(Var("clear"/"clearvars"))
+        //   clear('x') / clearvars('x')          -> ExprStmt(Apply(Var("clear"/"clearvars"), _))
+        //   clear -regexp ^L  (parsed as BinOp)  -> ExprStmt(BinOp("-", Var("clear"), ...))
+        //   eval/evalin/evalc/assignin/load/run   -> ExprStmt(Apply(Var(mutatorName), _))
+        //     or nested anywhere inside the expression tree
+        let isClearOrClearvars (name: string) = name = "clear" || name = "clearvars"
+        match expr with
+        | Var(_, n) when isClearOrClearvars n ->
+            doEvictAllConcreteKnowledge ctx
+        | Apply(_, Var(_, n), _) when isClearOrClearvars n ->
+            doEvictAllConcreteKnowledge ctx
+        // clear -regexp ^L parses as BinOp("-", Var("clear"), ...) due to the leading '-'
+        | BinOp(_, "-", Var(_, n), _) when isClearOrClearvars n ->
+            doEvictAllConcreteKnowledge ctx
+        | _ ->
+            // Use the recursive predicate to catch eval/evalin/evalc/assignin/load/run/feval
+            // in any position: direct call, nested call, captured in RHS, etc.
+            if exprContainsWorkspaceMutator expr then
+                doEvictAllConcreteKnowledge ctx
         let beforeCount = warnings.Count
         wiredEvalExprFull expr env warnings ctx |> ignore
         // Calling a procedure as a statement is valid MATLAB — suppress W_PROCEDURE_IN_EXPR
@@ -893,15 +1084,31 @@ and analyzeStmtIr
             else
                 ctx.cst.lowerBounds <- Map.add varName (boundVar, offset) ctx.cst.lowerBounds
 
+        // Collect body-modified vars before analysis so we can evict them after the restore.
+        // Any variable modified in the while body cannot be trusted as a concrete constant
+        // after the loop: the loop may have run 0..N times modifying it.  The for-loop handles
+        // this via collectModifiedVars in analyzeLoopBody; we mirror that here for valueRanges.
+        let whileModifiedVars = collectModifiedVars body
+
         analyzeLoopBody body env warnings ctx None
 
         // Restore all three maps: while condition does not hold after loop exit.
-        ctx.cst.valueRanges    <- baselineRanges
+        // Then drop body-modified vars from valueRanges so TightenDomains cannot fold a
+        // range such as `1:n` with a stale concrete entry from before the loop.
+        // trustedConsts for the modified vars is already dropped by analyzeLoopBody.
+        let cleanedBaselineRanges =
+            whileModifiedVars |> Set.fold (fun m v -> Map.remove v m) baselineRanges
+        ctx.cst.valueRanges    <- cleanedBaselineRanges
         ctx.cst.upperBounds    <- baselineUpperBounds
         ctx.cst.lowerBounds    <- baselineLowerBounds
+        // Also evict DimEquiv concrete entries for body-modified vars (mirrors doEvict logic).
+        for v in whileModifiedVars do
+            ctx.cst.dimEquiv.concrete.Remove(v) |> ignore
         Normal
 
     | For(_, var_, it, body) ->
+        // Remove for-loop variable from trusted constants at loop entry.
+        ctx.cst.trustedConsts <- Map.remove var_ ctx.cst.trustedConsts
         Env.set env var_ Scalar
         wiredEvalExprFull it env warnings ctx |> ignore
 
@@ -968,7 +1175,9 @@ and analyzeStmtIr
         applyRefinements ctx refinements false
         TightenDomains.tightenDomains ctx env
         ctx.cst.pathConstraints.Push(cond, true, line)
+        ctx.cst.conditionalDepth <- ctx.cst.conditionalDepth + 1
         let thenFlow = runStmts thenBody thenEnv warnings ctx
+        ctx.cst.conditionalDepth <- ctx.cst.conditionalDepth - 1
         let thenReturned = thenFlow <> Normal
         match thenFlow with
         | FlowBreak | FlowContinue -> deferredFlow <- Some thenFlow
@@ -983,7 +1192,9 @@ and analyzeStmtIr
         applyRefinements ctx refinements true
         TightenDomains.tightenDomains ctx env
         ctx.cst.pathConstraints.Push(cond, false, line)
+        ctx.cst.conditionalDepth <- ctx.cst.conditionalDepth + 1
         let elseFlow = runStmts elseBody elseEnv warnings ctx
+        ctx.cst.conditionalDepth <- ctx.cst.conditionalDepth - 1
         let elseReturned = elseFlow <> Normal
         match elseFlow with
         | FlowBreak | FlowContinue -> deferredFlow <- Some elseFlow
@@ -1017,7 +1228,9 @@ and analyzeStmtIr
                 ctx.cst.pathConstraints.Push(conditions.[idx], true, line)
 
             let branchEnv = Env.copy env
+            ctx.cst.conditionalDepth <- ctx.cst.conditionalDepth + 1
             let flow = runStmts allBodies.[idx] branchEnv warnings ctx
+            ctx.cst.conditionalDepth <- ctx.cst.conditionalDepth - 1
             let returned = flow <> Normal
             match flow with
             | FlowBreak | FlowContinue -> deferredFlow <- Some flow
@@ -1084,7 +1297,9 @@ and analyzeStmtIr
                 | _ -> ()
 
             let branchEnv = Env.copy env
+            ctx.cst.conditionalDepth <- ctx.cst.conditionalDepth + 1
             let flow = runStmts allBodies.[caseIdx] branchEnv warnings ctx
+            ctx.cst.conditionalDepth <- ctx.cst.conditionalDepth - 1
             let returned = flow <> Normal
             match flow with
             | FlowBreak | FlowContinue -> deferredFlow <- Some flow
@@ -1108,7 +1323,9 @@ and analyzeStmtIr
 
         let tryEnv = Env.copy env
         let mutable deferredFlow : ControlFlow option = None
+        ctx.cst.conditionalDepth <- ctx.cst.conditionalDepth + 1
         let tryFlow = runStmts tryBody tryEnv warnings ctx
+        ctx.cst.conditionalDepth <- ctx.cst.conditionalDepth - 1
         let tryReturned = tryFlow <> Normal
         match tryFlow with
         | FlowBreak | FlowContinue -> deferredFlow <- Some tryFlow
@@ -1118,8 +1335,16 @@ and analyzeStmtIr
         // Reset to baseline for catch branch
         ctx.RestoreConstraintState(baseline)
 
+        // The catch clause may bind a named exception variable (e.g. `catch n`).  The parser
+        // discards this name, so we cannot selectively evict it.  Conservatively drop all
+        // trusted constants: the catch variable rebinds an unknown name to an unknown value,
+        // which would silently invalidate any trusted const sharing that name.
+        doEvictAllConcreteKnowledge ctx
+
         let catchEnv = Env.copy preTryEnv
+        ctx.cst.conditionalDepth <- ctx.cst.conditionalDepth + 1
         let catchFlow = runStmts catchBody catchEnv warnings ctx
+        ctx.cst.conditionalDepth <- ctx.cst.conditionalDepth - 1
         let catchReturned = catchFlow <> Normal
         match catchFlow with
         | FlowBreak | FlowContinue ->
@@ -1137,11 +1362,17 @@ and analyzeStmtIr
         if firstWord = "global" then
             // Bind each declared global from the shared globalStore (or Bottom if unseen).
             // Record in globalDeclaredVars so the function exit can write shapes back.
+            // Also clear any concrete knowledge (trustedConsts / valueRanges / dimEquiv)
+            // so a later assignment to the global cannot plant a stale concrete dim that
+            // survives past a function call sharing the global.
             for varName in targets do
                 match ctx.call.globalStore.TryGetValue(varName) with
                 | true, existingShape -> Env.set env varName existingShape
                 | false, _            -> Env.set env varName Bottom
                 ctx.cst.globalDeclaredVars.Add(varName) |> ignore
+                ctx.cst.trustedConsts <- Map.remove varName ctx.cst.trustedConsts
+                ctx.cst.valueRanges   <- Map.remove varName ctx.cst.valueRanges
+                ctx.cst.dimEquiv.concrete.Remove(varName) |> ignore
             Normal
         elif firstWord = "persistent" then
             // Persistent vars are local to a function but initialised to Bottom.
@@ -1150,11 +1381,43 @@ and analyzeStmtIr
                 // Only initialise to Bottom on first encounter (don't overwrite shape).
                 if not (Env.contains env varName) then
                     Env.set env varName Bottom
+                ctx.cst.trustedConsts <- Map.remove varName ctx.cst.trustedConsts
+            Normal
+        elif firstWord = "clear" || firstWord = "clearvars" then
+            // Clear/clearvars in any form drops all trusted constants (simple, sound, conservative).
+            // Covers bare 'clear', 'clear all', 'clear x y', 'clearvars -except x', etc.
+            ctx.cst.trustedConsts <- Map.empty
+            for targetName in targets do
+                Env.set env targetName UnknownShape
+                // Also evict from valueRanges and DimEquiv concrete so that the dim-conflict
+                // checker cannot resolve the stale concrete value and fire a false warning.
+                ctx.cst.valueRanges <- Map.remove targetName ctx.cst.valueRanges
+                ctx.cst.dimEquiv.concrete.Remove(targetName) |> ignore
+            // When no specific targets are parsed (e.g. 'clear n' is recovered as targets=[] due to
+            // parser limitations), conservatively wipe valueRanges AND all DimEquiv concrete entries
+            // derived from value ranges. This covers 'clear all', 'clearvars', etc.
+            if targets.IsEmpty then
+                let vrKeys = ctx.cst.valueRanges |> Map.toSeq |> Seq.map fst |> Seq.toList
+                ctx.cst.valueRanges <- Map.empty
+                for v in vrKeys do ctx.cst.dimEquiv.concrete.Remove(v) |> ignore
+            Normal
+        elif Set.contains firstWord WORKSPACE_MUTATOR_NAMES then
+            // load / eval / evalin / evalc / assignin / run can rebind arbitrary workspace
+            // variables at runtime.  Conservatively drop all trusted constants and clear all
+            // value ranges.  Also remove valueRanges-derived DimEquiv concrete entries.
+            doEvictAllConcreteKnowledge ctx
+            if not (Set.contains firstWord SUPPRESSED_CMD_STMTS) then
+                warnings.Add(warnUnsupportedStmt line raw targets)
+            for targetName in targets do Env.set env targetName UnknownShape
             Normal
         else
         if not (Set.contains firstWord SUPPRESSED_CMD_STMTS) then
             warnings.Add(warnUnsupportedStmt line raw targets)
-        for targetName in targets do Env.set env targetName UnknownShape
+        // Evict targets from trustedConsts: an OpaqueStmt that binds a name makes that name's
+        // value unknown, so any trusted constant entry for it must be removed.
+        for targetName in targets do
+            ctx.cst.trustedConsts <- Map.remove targetName ctx.cst.trustedConsts
+            Env.set env targetName UnknownShape
         Normal
 
     | Return({ line = line }) ->
@@ -1287,6 +1550,12 @@ and private analyzeAssignMulti
     (ctx: AnalysisContext)
     : unit =
 
+    // Remove all AssignMulti targets from trustedConsts before binding.
+    for t in targets do
+        if t <> "~" then
+            let baseName = if t.Contains(".") then t.Split('.').[0] else t
+            ctx.cst.trustedConsts <- Map.remove baseName ctx.cst.trustedConsts
+
     let bindTarget (target: string) (shape: Shape) =
         if target = "~" then ()
         elif target.Contains(".") then
@@ -1412,8 +1681,9 @@ and private analyzeAssignMulti
 
             match resolveCall fname ctx with
             | BuiltinCall -> ()  // already handled above
-            | UserFunctionCall _ ->
+            | UserFunctionCall sig_ ->
                 bindOutputShapes (analyzeFunctionCall ccN env warnings ctx)
+                if bodyContainsCallerAssignin sig_.body then doEvictAllConcreteKnowledge ctx
             | NestedFunctionCall _ ->
                 bindOutputShapes (analyzeNestedFunctionCall ccN env warnings ctx)
             | ExternalFunctionCall extSig ->
@@ -1465,7 +1735,11 @@ and private collectModifiedVars (body: Stmt list) : Set<string> =
         | Try(_, tryBody, catchBody) ->
             for s2 in tryBody do scanStmt s2
             for s2 in catchBody do scanStmt s2
-        | ExprStmt _ | OpaqueStmt _ | Break _ | Continue _ | Return _ | FunctionDef _ -> ()
+        | OpaqueStmt(_, targets, _) ->
+            // OpaqueStmt recovery assigns to its targets; treat them as modified so the
+            // loop pre-scan evicts their trusted constants before the body runs.
+            for t in targets do vars <- Set.add t vars
+        | ExprStmt _ | Break _ | Continue _ | Return _ | FunctionDef _ -> ()
     for s in body do scanStmt s
     vars
 
@@ -1482,7 +1756,19 @@ and analyzeLoopBody
 
     let savedInsideLoop = ctx.call.insideLoop
     ctx.call.insideLoop <- true
+    // Increment depth: every statement inside a loop body is conditional.
+    ctx.cst.conditionalDepth <- ctx.cst.conditionalDepth + 1
     try
+
+    // Pre-scan the loop body for all variables that are assigned anywhere inside.
+    // Remove those from trustedConsts BEFORE running the body: a loop-body-assigned
+    // variable cannot be trusted as a constant across iterations (the fold would
+    // use the entry value even when the body reassigns it on the same iteration).
+    // collectModifiedVars is an over-approximation (includes nested branches/loops),
+    // which is sound: excess removals only reduce precision, not correctness.
+    let loopModifiedVars = collectModifiedVars body
+    for v in loopModifiedVars do
+        ctx.cst.trustedConsts <- Map.remove v ctx.cst.trustedConsts
 
     if not ctx.call.fixpoint then
         // Pentagon bridge: tighten loop var interval before body analysis
@@ -1495,7 +1781,7 @@ and analyzeLoopBody
         // Scope-limited widening: only widen variables actually assigned in the body.
         // Stable variables (assigned before loop, never reassigned inside) keep their
         // exact pre-loop intervals rather than being widened spuriously.
-        let modifiedVars = collectModifiedVars body
+        let modifiedVars = loopModifiedVars
 
         // Helper: restore pre-loop intervals for stable (non-modified) variables.
         // A stable variable is one that exists in preLoopRanges but was not modified
@@ -1568,6 +1854,7 @@ and analyzeLoopBody
         Env.replaceLocal env finalWidened
 
     finally
+        ctx.cst.conditionalDepth <- ctx.cst.conditionalDepth - 1
         ctx.call.insideLoop <- savedInsideLoop
 
 
@@ -1783,10 +2070,14 @@ and analyzeNestedFunctionCall
         | true, FunctionResult(cachedShapes, cachedWarn) ->
             for fw in cachedWarn do
                 warnings.Add(formatDualLocationWarning fw funcName line)
+            // Nested fns share parent workspace: even a cached call may have modified
+            // parent variables, so conservatively drop all trusted constants.
+            ctx.cst.trustedConsts <- Map.empty
             cachedShapes
         | _ ->
             ctx.call.analyzingFunctions.Add(funcName) |> ignore
-            try
+            let nestedResult =
+              try
                 ctx.SnapshotScope(fun () ->
                     let savedInsideFunction = ctx.call.insideFunction
                     ctx.call.insideFunction <- true
@@ -1876,8 +2167,14 @@ and analyzeNestedFunctionCall
                         warnings.Add(formatDualLocationWarning fw funcName line)
 
                     result)
-            finally
+              finally
                 ctx.call.analyzingFunctions.Remove(funcName) |> ignore
+            // Nested functions share the parent workspace, so any variable the nested fn
+            // assigns may now be stale in trustedConsts. Conservatively clear the entire
+            // store: SnapshotScope restores the parent's snapshot, which we override here.
+            // Subfunctions and external functions use isolated scopes, so they are unaffected.
+            ctx.cst.trustedConsts <- Map.empty
+            nestedResult
 
 
 // --- analyzeExternalFunctionCall: cross-file analysis ---

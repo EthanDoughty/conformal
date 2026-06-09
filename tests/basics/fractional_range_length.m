@@ -8,7 +8,7 @@
 % EXPECT: h = matrix[1 x 3]
 % EXPECT: fp3 = matrix[1 x 4]
 % EXPECT: mid = matrix[1 x 3]
-% EXPECT: z = matrix[1 x None]
+% EXPECT: z = matrix[1 x 101]
 
 % Motivating case: 0.025:0.0025:1
 % (1-0.025)/0.0025 = 390.0 exactly — round=390, len=391
@@ -43,8 +43,7 @@ fp3 = 0:0.1:0.3;
 % Elements: 0, 0.2, 0.4 (0.6 exceeds the endpoint).
 mid = 0:0.2:0.5;
 
-% Gap B boundary: variable-fractional step stays Unknown (no warning).
-% Lambda is a float variable; the value domain is integer-only, so the
-% analyzer cannot fold it and must leave z as 1 x None.
+% Gap B boundary: Lambda=0.2 is stored in trustedConsts at depth 0 (Slice 2).
+% 0:Lambda/400:Lambda/4 = 0:0.0005:0.05 -> 101 elements.
 Lambda = 0.2;
 z = 0:Lambda/400:Lambda/4;
