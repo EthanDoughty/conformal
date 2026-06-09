@@ -35,6 +35,15 @@ extension: fable
 	cd vscode-conformal && node esbuild.mjs
 	cd vscode-conformal && npx @vscode/vsce package --allow-missing-repository
 
+# Publishes the packaged VSIX to the Marketplace. Needs a current Azure DevOps
+# PAT (scope Marketplace:Manage, all orgs) in $VSCE_PAT or the credential store;
+# PATs expire, which is the usual reason a release fails to ship.
+.PHONY: publish
+publish: extension
+	cd vscode-conformal && \
+	  VER=$$(node -p "require('./package.json').version") && \
+	  npx @vscode/vsce publish --packagePath conformal-$$VER.vsix
+
 .PHONY: analyze
 analyze:
 	@if [ -z "$(FILE)" ]; then echo "Usage: make analyze FILE=path/to/file.m"; exit 1; fi
