@@ -4,10 +4,10 @@
 
 ### Static Shape & Dimension Analysis for MATLAB
 
-[![Version](https://img.shields.io/badge/version-3.9.0-orange.svg)](#cli-options)
+[![Version](https://img.shields.io/badge/version-3.10.1-orange.svg)](#cli-options)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4.svg)](https://dotnet.microsoft.com/download)
-[![Tests](https://img.shields.io/badge/tests-552%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-576%20passing-brightgreen.svg)](#test-suite)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
 > Conformal is an independent project and is not affiliated with, endorsed by, or connected to MathWorks, Inc. MATLAB is a registered trademark of MathWorks, Inc.
@@ -67,7 +67,7 @@ The VS Code extension is the recommended option for regular use. Install it from
 code --install-extension EthanDoughty.conformal
 ```
 
-Open any .m file and diagnostics appear as squiggly red/yellow underlines. Additionally, you can hover a variable to see its inferred shape.
+Open any .m file and diagnostics appear as squiggly red/yellow underlines. Hovering a variable shows its inferred shape.
 
 To build from source, clone the repository and use the [.NET 8.0 SDK](https://dotnet.microsoft.com/download).
 
@@ -94,6 +94,8 @@ Conformal detects dimension mismatches across arithmetic (+, -, *, .*, ./, ^, .^
 Conformal recognizes over 650 MATLAB builtins, and around 325 have explicit shape rules, including matrix constructors, reductions with dimension arguments, reshaping, type predicates, and linear algebra functions. Conformal analyzes user-defined functions at each call site with the caller's argument shapes, and that includes nested functions, anonymous functions with closure capture, nargin/nargout patterns, varargin/varargout, and cross-file workspace resolution to sibling .m files.
 
 Variables with unknown concrete size get symbolic names like n, m, k, and those names propagate through operations with a polynomial representation, so n+m and m+n are recognized as equal, and n+n simplifies to 2*n.
+
+When a range is built from values that are fixed at analysis time, like 0:step:stop with a known start, step, and stop, Conformal works out its concrete length, so a later dimension mismatch that involves the range can be caught. The length is computed the same way MATLAB builds the range, and the analyzer stays conservative whenever a value might change through a loop, a branch, or a reassignment, so it will not report a length it cannot be sure of.
 
 Conformal also tracks struct fields and cell array elements (including per-element shape tracking), handles basic classdef objects, and joins shapes conservatively across control flow branches. Loops can use single-pass analysis or widening-based fixpoint iteration via `--fixpoint`.
 
@@ -122,7 +124,7 @@ conformal file.m
 
 | Flag | What it does |
 |------|-------------|
-| `--tests` | Run the full test suite (552 tests across 24 categories) |
+| `--tests` | Run the full test suite (576 tests across 24 categories) |
 | `--batch <dir\|files>` | Analyze multiple files in one process (no per-file startup cost) |
 | `--strict` | Show all warnings including informational and low-confidence diagnostics |
 | `--fixpoint` | Use widening-based fixpoint iteration for loop analysis |
@@ -154,7 +156,7 @@ A pre-commit hook and a MATLAB wrapper called conformal_check.m are also availab
 
 ## Performance
 
-Conformal runs single-threaded in a single pass over the IR. On a Ryzen 9 5900X at 3.7 GHz (single core, WSL2), the full 552-test suite covering 8,618 lines of MATLAB finishes in about one second, which comes out to roughly 7,800 LOC/s end-to-end. Single-file analysis typically takes under 100ms for files up to a few thousand lines, though .NET startup adds roughly 600ms to each CLI invocation. The VS Code extension avoids this startup cost entirely since it runs the analyzer in-process as compiled JavaScript.
+Conformal runs single-threaded in a single pass over the IR. On a Ryzen 9 5900X at 3.7 GHz (single core, WSL2), the full 576-test suite finishes in about a second. Single-file analysis typically takes under 100ms for files up to a few thousand lines, though .NET startup adds roughly 600ms to each CLI invocation. The VS Code extension avoids this startup cost entirely since it runs the analyzer in-process as compiled JavaScript.
 
 Analysis time scales with code complexity rather than just line count. A 700-line stress test with 26 warnings takes about 190ms to analyze, while a 2,500-line file that is mostly data declarations finishes in 60ms. Each stage of the pipeline has bounded complexity:
 
@@ -190,7 +192,7 @@ Conformal also includes a MATLAB-to-Python transpiler that uses shape informatio
 
 ## Test Suite
 
-Conformal is validated by 552 self-checking MATLAB programs organized into 24 categories, plus 28 property-based lattice tests via FsCheck. Each test file embeds its expected behavior as inline assertions (`% EXPECT: A = matrix[3 x 4]`, `% EXPECT_WARNING: W_INNER_DIM_MISMATCH`), and the test runner checks that Conformal's output matches.
+Conformal is validated by 576 self-checking MATLAB programs organized into 24 categories, plus property-based lattice tests via FsCheck. Each test file embeds its expected behavior as inline assertions (`% EXPECT: A = matrix[3 x 4]`, `% EXPECT_WARNING: W_INNER_DIM_MISMATCH`), and the test runner checks that Conformal's output matches.
 
 For the full test listing, see [docs/tests.md](docs/tests.md).
 
@@ -204,7 +206,7 @@ src/migrate/            MATLAB-to-Python transpiler (~2,100 LOC)
 vscode-conformal/       VS Code extension (TypeScript client + Fable-compiled analyzer)
   fable/                Fable compilation project (F# to JavaScript, shares core .fs files)
   src/                  TypeScript extension and LSP server code
-tests/                  552 self-checking MATLAB programs in 24 categories
+tests/                  576 self-checking MATLAB programs in 24 categories
 .github/                CI workflow (build, test, compile Fable, package VSIX)
 ```
 
