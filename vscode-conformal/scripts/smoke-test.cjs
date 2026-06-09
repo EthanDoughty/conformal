@@ -80,6 +80,28 @@ async function main() {
     assert(Array.isArray(r1.symbols), 'symbols is array');
     assert(Array.isArray(r1.assignments), 'assignments is array');
 
+    // Test 6: Per-diagnostic callStack crosses the Fable boundary as a JS array.
+    // An F# list field here compiles to a truthy FSharpList (no .map), which made
+    // server.ts throw "(d.callStack || []).map is not a function" on every diagnostic.
+    console.log('\n6. Diagnostic callStack is a JS array');
+    const r6 = analyzer.analyzeSource(
+        'function r = scale(v)\n  r = v .* [1 2];\nend\nout = scale([1 2 3]);\n',
+        true, false, []
+    );
+    const allDiags = [...r1.diagnostics, ...r6.diagnostics];
+    assert(allDiags.length > 0, 'have diagnostics to inspect');
+    assert(allDiags.every(d => Array.isArray(d.callStack)), 'every callStack is a JS array');
+    assert(r6.diagnostics.some(d => d.callStack.length > 0), 'interprocedural diagnostic carries a populated call stack');
+    let renderThrew = false;
+    try {
+        for (const d of allDiags) {
+            (d.callStack || []).map(([fn, ln], i) => `${'  '.repeat(i + 1)}in ${fn}, line ${ln}`);
+        }
+    } catch {
+        renderThrew = true;
+    }
+    assert(!renderThrew, 'server.ts callStack render path does not throw');
+
     // Summary
     console.log(`\nSmoke test: ${passed} passed, ${failed} failed`);
     process.exit(failed > 0 ? 1 : 0);
