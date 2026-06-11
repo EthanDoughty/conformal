@@ -43,7 +43,14 @@ let rec emitExpr (expr: PyExpr) : string =
             sprintf "%g" v
         else
             sprintf "%g" v
-    | PyStr s -> sprintf "'%s'" (s.Replace("\\", "\\\\").Replace("'", "\\'"))
+    | PyStr s ->
+        // Escape backslashes first (so literal backslashes survive), then the quote
+        // and any real control characters, so a string holding an actual newline or
+        // tab renders as a valid Python escape rather than breaking the literal.
+        let escaped =
+            s.Replace("\\", "\\\\").Replace("'", "\\'")
+             .Replace("\n", "\\n").Replace("\t", "\\t").Replace("\r", "\\r")
+        sprintf "'%s'" escaped
     | PyBool true -> "True"
     | PyBool false -> "False"
     | PyNone -> "None"

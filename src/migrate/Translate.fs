@@ -81,6 +81,44 @@ let private isSyntheticSentinel (stmt: Stmt) =
     | ExprStmt({ line = 0; col = 0 }, Const({ line = 0; col = 0 }, 0.0)) -> true
     | _ -> false
 
+// --- printf-family format strings ---
+// MATLAB single-quoted strings store backslash sequences literally; the printf
+// family (sprintf/fprintf) reinterprets them at format time. Lower the recognized
+// escapes in a literal format string to their real control characters so the emitter
+// renders them as Python escapes instead of a literal backslash-n. Unrecognized
+// escapes keep their backslash, matching MATLAB's pass-through behavior.
+let private interpretPrintfEscapes (s: string) : string =
+    let sb = System.Text.StringBuilder(s.Length)
+    let mutable i = 0
+    while i < s.Length do
+        if s.[i] = '\\' && i + 1 < s.Length then
+            match s.[i + 1] with
+            | 'n' -> sb.Append('\n') |> ignore; i <- i + 2
+            | 't' -> sb.Append('\t') |> ignore; i <- i + 2
+            | 'r' -> sb.Append('\r') |> ignore; i <- i + 2
+            | '\\' -> sb.Append('\\') |> ignore; i <- i + 2
+            | other -> sb.Append('\\').Append(other) |> ignore; i <- i + 2
+        else
+            sb.Append(s.[i]) |> ignore
+            i <- i + 1
+    sb.ToString()
+
+// Interpret escapes only for a literal format string; pass variables and
+// expressions through unchanged (their escapes cannot be resolved statically).
+let private lowerFormatString (e: PyExpr) : PyExpr =
+    match e with
+    | PyStr s -> PyStr (interpretPrintfEscapes s)
+    | _ -> e
+
+// No-arg printf: Python applies no % operator, so the literal-percent escape %%
+// would survive uncollapsed. MATLAB's printf family always collapses %% to a
+// single %, so do it here for the no-argument literal case (the with-args case
+// is left to Python's % operator, which collapses %% itself).
+let private lowerFormatStringNoArgs (e: PyExpr) : PyExpr =
+    match e with
+    | PyStr s -> PyStr ((interpretPrintfEscapes s).Replace("%%", "%"))
+    | _ -> e
+
 // --- Expression translation ---
 
 let rec translateExpr (expr: Expr) (tctx: TranslateContext) : PyExpr =
@@ -357,14 +395,17 @@ and private translateBuiltinCall (mapping: BuiltinMapping) (fname: string) (args
     | SprintfStyle ->
         // sprintf(fmt, a, b) -> fmt % (a, b)
         match pyArgs with
-        | [fmt] -> fmt  // no format args: just the string itself
-        | fmt :: fmtArgs -> PyBinOp("%", fmt, PyTuple fmtArgs)
+        | [fmt] -> lowerFormatStringNoArgs fmt  // no format args: just the string itself
+        | fmt :: fmtArgs -> PyBinOp("%", lowerFormatString fmt, PyTuple fmtArgs)
         | _ -> PyCall(PyVar "str", pyArgs, [])
     | FprintfStyle ->
-        // fprintf(fmt, a, b) -> print(fmt % (a, b))
-        // fprintf(fid, fmt, a, b) -> print(fmt % (a, b))  (drop file handle)
+        // fprintf(fmt, a, b) -> print(fmt % (a, b), end='')
+        // fprintf(fid, fmt, a, b) -> print(fmt % (a, b), end='')  (drop file handle)
+        // MATLAB fprintf writes exactly the format string (after escapes) with no
+        // trailing newline, so suppress print's default end to stay faithful.
+        let noNewline = [("end", PyStr "")]
         match pyArgs with
-        | [fmt] -> PyCall(PyVar "print", [fmt], [])
+        | [fmt] -> PyCall(PyVar "print", [lowerFormatStringNoArgs fmt], noNewline)
         | fmt :: fmtArgs ->
             // Check if first arg looks like a file handle (numeric constant)
             let actualFmt, actualArgs =
@@ -374,10 +415,10 @@ and private translateBuiltinCall (mapping: BuiltinMapping) (fname: string) (args
                     fmtArgs.Head, fmtArgs.Tail
                 | _ -> fmt, fmtArgs
             if actualArgs.IsEmpty then
-                PyCall(PyVar "print", [actualFmt], [])
+                PyCall(PyVar "print", [lowerFormatStringNoArgs actualFmt], noNewline)
             else
-                PyCall(PyVar "print", [PyBinOp("%", actualFmt, PyTuple actualArgs)], [])
-        | _ -> PyCall(PyVar "print", pyArgs, [])
+                PyCall(PyVar "print", [PyBinOp("%", lowerFormatString actualFmt, PyTuple actualArgs)], noNewline)
+        | _ -> PyCall(PyVar "print", pyArgs, noNewline)
     | MethodStyle methodName ->
         // lower(s) -> s.lower();  upper(s) -> s.upper()
         match pyArgs with
