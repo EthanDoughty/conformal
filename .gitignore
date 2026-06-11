@@ -68,3 +68,7 @@ roundtables/
 # Local-only demo scaffolding (Scott / RSM meeting), not for the repo
 demo_for_scott/
 demo_for_scott.zip
+
+# Marketplace PAT, if kept inside the repo instead of ~/.config
+.vsce-pat
+*.vsce-pat

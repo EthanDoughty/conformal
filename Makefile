@@ -35,14 +35,27 @@ extension: fable
 	cd vscode-conformal && node esbuild.mjs
 	cd vscode-conformal && npx @vscode/vsce package --allow-missing-repository
 
-# Publishes the packaged VSIX to the Marketplace. Needs a current Azure DevOps
-# PAT (scope Marketplace:Manage, all orgs) in $VSCE_PAT or the credential store;
-# PATs expire, which is the usual reason a release fails to ship.
+# Publishes the packaged VSIX to the Marketplace. The PAT is an Azure DevOps
+# token (scope Marketplace:Manage, all orgs) read from $VSCE_PAT, else from a
+# gitignored file under ~/.config. PATs expire, which is the usual reason a
+# release fails to ship, so 'make verify-pat' checks it before a release.
+PAT_FILE ?= $(HOME)/.config/conformal/vsce-pat
+
 .PHONY: publish
 publish: extension
 	cd vscode-conformal && \
 	  VER=$$(node -p "require('./package.json').version") && \
-	  npx @vscode/vsce publish --packagePath conformal-$$VER.vsix
+	  PAT="$${VSCE_PAT:-$$(cat $(PAT_FILE) 2>/dev/null)}" && \
+	  { [ -n "$$PAT" ] || { echo "No PAT found. Put it in $(PAT_FILE) or export VSCE_PAT." >&2; exit 1; }; } && \
+	  VSCE_PAT="$$PAT" npx @vscode/vsce publish --packagePath conformal-$$VER.vsix
+
+# Checks that the stored PAT is still valid, so expiry is caught before a release.
+.PHONY: verify-pat
+verify-pat:
+	@cd vscode-conformal && \
+	  PAT="$${VSCE_PAT:-$$(cat $(PAT_FILE) 2>/dev/null)}" && \
+	  { [ -n "$$PAT" ] || { echo "No PAT found. Put it in $(PAT_FILE) or export VSCE_PAT." >&2; exit 1; }; } && \
+	  VSCE_PAT="$$PAT" npx @vscode/vsce verify-pat EthanDoughty
 
 .PHONY: analyze
 analyze:
