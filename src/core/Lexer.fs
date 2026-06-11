@@ -299,12 +299,18 @@ let lex (src: string) : Token list =
                 sawSpace <- false
                 pos <- m.Index + m.Length
             else
-                // String: scan ahead for matching closing quote (no '' escaping in Python version).
+                // String: scan ahead for the closing quote. MATLAB escapes a literal
+                // apostrophe inside a single-quoted string by doubling it (''), so a ''
+                // pair belongs to the content rather than ending it; collapse it on
+                // extraction the same way DQSTRING collapses "".
                 let mutable endPos = startPos + 1
                 let mutable found = false
                 while endPos < src.Length && not found do
                     if src.[endPos] = '\'' then
-                        found <- true
+                        if endPos + 1 < src.Length && src.[endPos + 1] = '\'' then
+                            endPos <- endPos + 2   // escaped apostrophe ('') stays in the string
+                        else
+                            found <- true           // lone quote closes the string
                     elif src.[endPos] = '\n' then
                         let col = startPos - lastNewlinePos
                         raise (LexError("Unterminated string", line, col, line, col + 1))
@@ -313,7 +319,7 @@ let lex (src: string) : Token list =
                 if not found then
                     let col = startPos - lastNewlinePos
                     raise (LexError("Unterminated string", line, col, line, col + 1))
-                let content = src.[startPos + 1 .. endPos - 1]
+                let content = src.[startPos + 1 .. endPos - 1].Replace("''", "'")
                 tokens.Add(makeToken TkString content startPos)
                 prevKind <- TkString
                 sawSpace <- false
