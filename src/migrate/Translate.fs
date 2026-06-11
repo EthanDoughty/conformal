@@ -89,6 +89,8 @@ let private isSyntheticSentinel (stmt: Stmt) =
 // escapes keep their backslash, matching MATLAB's pass-through behavior.
 let private interpretPrintfEscapes (s: string) : string =
     let sb = System.Text.StringBuilder(s.Length)
+    let isOctal c = c >= '0' && c <= '7'
+    let isHex c = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
     let mutable i = 0
     while i < s.Length do
         if s.[i] = '\\' && i + 1 < s.Length then
@@ -96,7 +98,30 @@ let private interpretPrintfEscapes (s: string) : string =
             | 'n' -> sb.Append('\n') |> ignore; i <- i + 2
             | 't' -> sb.Append('\t') |> ignore; i <- i + 2
             | 'r' -> sb.Append('\r') |> ignore; i <- i + 2
+            | 'a' -> sb.Append(char 7) |> ignore; i <- i + 2     // alert/bell
+            | 'b' -> sb.Append(char 8) |> ignore; i <- i + 2     // backspace
+            | 'f' -> sb.Append(char 12) |> ignore; i <- i + 2    // form feed
+            | 'v' -> sb.Append(char 11) |> ignore; i <- i + 2    // vertical tab
             | '\\' -> sb.Append('\\') |> ignore; i <- i + 2
+            // \% is a literal percent; normalize to the %% form so the no-arg path
+            // collapses it and the with-args path lets Python's % operator collapse it.
+            | '%' -> sb.Append("%%") |> ignore; i <- i + 2
+            | 'x' ->
+                // hex escape \xN...: MATLAB reads a maximal hex run, not a fixed 2 like C.
+                // Consume up to four hex digits, covering the full BMP without char overflow.
+                let mutable j = i + 2
+                while j < s.Length && j < i + 6 && isHex s.[j] do j <- j + 1
+                if j > i + 2 then
+                    sb.Append(char (System.Convert.ToInt32(s.[i + 2 .. j - 1], 16))) |> ignore
+                    i <- j
+                else
+                    sb.Append('\\').Append('x') |> ignore; i <- i + 2  // bare \x: keep literal
+            | c when isOctal c ->
+                // octal escape \NNN: consume up to three octal digits
+                let mutable j = i + 1
+                while j < s.Length && j < i + 4 && isOctal s.[j] do j <- j + 1
+                sb.Append(char (System.Convert.ToInt32(s.[i + 1 .. j - 1], 8))) |> ignore
+                i <- j
             | other -> sb.Append('\\').Append(other) |> ignore; i <- i + 2
         else
             sb.Append(s.[i]) |> ignore
@@ -407,12 +432,16 @@ and private translateBuiltinCall (mapping: BuiltinMapping) (fname: string) (args
         match pyArgs with
         | [fmt] -> PyCall(PyVar "print", [lowerFormatStringNoArgs fmt], noNewline)
         | fmt :: fmtArgs ->
-            // Check if first arg looks like a file handle (numeric constant)
+            // Identify which argument is the format string. A leading string literal IS the
+            // format (no file handle). Otherwise a leading non-string followed by a literal
+            // format string is a file handle (variable or numeric), as is a leading numeric
+            // literal on its own (legacy). The file handle is dropped; routing it to the
+            // actual stream/file object is a separate concern.
             let actualFmt, actualArgs =
-                match fmt with
-                | PyConst _ when fmtArgs.Length >= 1 ->
-                    // First arg is numeric (file handle), skip it
-                    fmtArgs.Head, fmtArgs.Tail
+                match fmt, fmtArgs with
+                | PyStr _, _ -> fmt, fmtArgs
+                | _, ((PyStr _) as realFmt) :: rest -> realFmt, rest
+                | PyConst _, _ -> fmtArgs.Head, fmtArgs.Tail
                 | _ -> fmt, fmtArgs
             if actualArgs.IsEmpty then
                 PyCall(PyVar "print", [lowerFormatStringNoArgs actualFmt], noNewline)

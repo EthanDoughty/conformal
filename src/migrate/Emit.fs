@@ -44,13 +44,23 @@ let rec emitExpr (expr: PyExpr) : string =
         else
             sprintf "%g" v
     | PyStr s ->
-        // Escape backslashes first (so literal backslashes survive), then the quote
-        // and any real control characters, so a string holding an actual newline or
-        // tab renders as a valid Python escape rather than breaking the literal.
-        let escaped =
-            s.Replace("\\", "\\\\").Replace("'", "\\'")
-             .Replace("\n", "\\n").Replace("\t", "\\t").Replace("\r", "\\r")
-        sprintf "'%s'" escaped
+        // Render a Python single-quoted literal: escape the backslash and quote, map the
+        // common control chars to named escapes, and send any other non-printable (C0
+        // controls and DEL, e.g. from octal/hex format escapes) to a \xNN hex escape so
+        // arbitrary bytes stay a valid literal.
+        let sb = System.Text.StringBuilder(s.Length + 2)
+        sb.Append('\'') |> ignore
+        for ch in s do
+            match ch with
+            | '\\' -> sb.Append("\\\\") |> ignore
+            | '\'' -> sb.Append("\\'") |> ignore
+            | '\n' -> sb.Append("\\n") |> ignore
+            | '\t' -> sb.Append("\\t") |> ignore
+            | '\r' -> sb.Append("\\r") |> ignore
+            | c when c < ' ' || c = char 127 -> sb.Append(sprintf "\\x%02x" (int c)) |> ignore
+            | c -> sb.Append(c) |> ignore
+        sb.Append('\'') |> ignore
+        sb.ToString()
     | PyBool true -> "True"
     | PyBool false -> "False"
     | PyNone -> "None"
