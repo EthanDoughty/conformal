@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.10.2
+
+- **Report a false positive or missing builtin from the editor**: every diagnostic now offers a lightbulb action that opens a pre-filled GitHub issue, routing an unrecognized function to the missing-builtin form and any other warning to the false-positive form, with the warning code, the offending line, and the extension version already filled in. A `Conformal: Report an Issue` command in the palette and the editor menu covers reports that have no diagnostic on screen.
+
 ## 3.10.1
 
 - **Diagnostics render in the editor again**: a regression made every warning appear as a single `Internal error` marker at the start of the file, because the diagnostic call-stack field crossed the Fable boundary as an F# list instead of a JavaScript array and the renderer threw before placing the squiggle. Warnings now anchor on the offending expression.

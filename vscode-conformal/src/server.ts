@@ -577,6 +577,36 @@ function getCodeActions(uri: string, diagnostics: Diagnostic[], sourceLines: str
                     },
                 },
             });
+
+            // Report action: open a pre-filled GitHub issue for this diagnostic.
+            // W_UNKNOWN_FUNCTION routes to the missing-builtin form, everything else to false positive.
+            const issueBase = 'https://github.com/EthanDoughty/conformal/issues/new';
+            const snippet = lineText.trim();
+            let reportTitle: string;
+            let reportUrl: string;
+            if (code === 'W_UNKNOWN_FUNCTION') {
+                const named = diag.message.match(/^'([^']+)'/);
+                const fnName = named ? named[1] : '';
+                reportTitle = fnName ? `Report missing builtin: ${fnName}` : 'Report a missing builtin';
+                reportUrl = issueBase + '?template=missing-builtin.yml'
+                    + (fnName ? '&function=' + encodeURIComponent(fnName) : '')
+                    + '&example=' + encodeURIComponent(snippet);
+            } else {
+                reportTitle = `Report ${code} as a false positive`;
+                reportUrl = issueBase + '?template=false-positive.yml'
+                    + '&code=' + encodeURIComponent(code)
+                    + '&snippet=' + encodeURIComponent(snippet);
+            }
+            actions.push({
+                title: reportTitle,
+                kind: CodeActionKind.QuickFix,
+                diagnostics: [diag],
+                command: {
+                    title: 'Report to Conformal',
+                    command: 'conformal.reportToGitHub',
+                    arguments: [reportUrl],
+                },
+            });
         }
     }
 

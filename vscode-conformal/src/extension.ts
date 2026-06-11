@@ -149,6 +149,19 @@ export async function activate(context: vscode.ExtensionContext) {
                 vscode.window.showInformationMessage('Conformal: Server restarted');
             }
         }),
+
+        // Open a pre-filled GitHub issue from a "Report ..." code action.
+        vscode.commands.registerCommand('conformal.reportToGitHub', async (url: string) => {
+            if (typeof url !== 'string' || url.length === 0) return;
+            const version: string | undefined = context.extension?.packageJSON?.version;
+            const full = version ? url + '&version=' + encodeURIComponent('extension ' + version) : url;
+            await vscode.env.openExternal(vscode.Uri.parse(full));
+        }),
+
+        // Open the issue chooser for a general report (crash, missing builtin, request).
+        vscode.commands.registerCommand('conformal.reportIssue', async () => {
+            await vscode.env.openExternal(vscode.Uri.parse('https://github.com/EthanDoughty/conformal/issues/new/choose'));
+        }),
     );
 
     // Forward config changes to server
