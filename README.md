@@ -218,6 +218,10 @@ It does not support the eval function, which is inherently undecidable to analyz
 
 For the full details on what is and isn't covered, see [docs/analysis.md](docs/analysis.md).
 
+## Feedback
+
+Conformal recognizes a large set of builtins and aims for a low false-positive rate, though real code tends to surface gaps. If it does not recognize a function, a quick [missing builtin report](https://github.com/EthanDoughty/conformal/issues/new?template=missing-builtin.yml) is the fastest way to get it added, and if it flags code you know is correct, a [false positive report](https://github.com/EthanDoughty/conformal/issues/new?template=false-positive.yml) with a minimal snippet and the shapes involved is usually enough to reproduce and fix. For anything else, the [issue tracker](https://github.com/EthanDoughty/conformal/issues/new/choose) is open. A report that comes with a reproducible snippet tends to land in the test corpus, so the same case does not regress later.
+
 <details>
 <summary><h2>References</h2></summary>
 

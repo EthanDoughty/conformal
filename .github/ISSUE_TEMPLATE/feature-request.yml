@@ -1,0 +1,19 @@
+name: Feature request
+description: Suggest a check, an option, or an improvement.
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+      description: What you would like Conformal to do.
+    validations:
+      required: true
+  - type: textarea
+    id: usecase
+    attributes:
+      label: The use case
+      description: The kind of code or workflow this would help with.
+    validations:
+      required: false

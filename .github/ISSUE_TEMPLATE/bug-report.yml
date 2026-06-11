@@ -1,0 +1,48 @@
+name: Bug, crash, or parse error
+description: Conformal crashed, failed to parse valid MATLAB, or produced clearly wrong output.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a crash or a parse error on valid MATLAB, a snippet that reproduces it is what makes it fixable.
+  - type: textarea
+    id: snippet
+    attributes:
+      label: Input that triggers it
+      description: The MATLAB that Conformal crashed on or parsed incorrectly.
+      render: matlab
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: The error text, the crash output, or the incorrect result.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: false
+  - type: dropdown
+    id: surface
+    attributes:
+      label: How were you running it
+      options:
+        - Command-line binary
+        - VS Code extension
+        - Both
+        - Not sure
+    validations:
+      required: false
+  - type: input
+    id: env
+    attributes:
+      label: Version and OS
+      description: The version shown by conformal --version, and your operating system.
+    validations:
+      required: false

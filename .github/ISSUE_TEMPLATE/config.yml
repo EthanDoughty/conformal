@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/EthanDoughty/conformal/blob/main/docs/analysis.md
+    about: How the shape analysis works, and what it does and does not cover.
+  - name: Warning code reference
+    url: https://github.com/EthanDoughty/conformal/tree/main/docs/warnings
+    about: Look up what a specific W_ warning code means before filing.

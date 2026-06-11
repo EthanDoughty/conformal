@@ -1,0 +1,43 @@
+name: Missing builtin
+description: Conformal does not recognize a MATLAB or toolbox function and reports W_UNKNOWN_FUNCTION.
+title: "[builtin] "
+labels: ["missing-builtin"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for flagging a function Conformal does not yet recognize. The shape of the output is what matters most, so a small example of how the function is called helps it get added with the right rule.
+  - type: input
+    id: function
+    attributes:
+      label: Function name
+      description: The function Conformal did not recognize.
+      placeholder: interp1
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Where it comes from
+      description: Base MATLAB, or a named toolbox or product, if you know it.
+      placeholder: Signal Processing Toolbox
+    validations:
+      required: false
+  - type: textarea
+    id: shape
+    attributes:
+      label: What shape does it return
+      description: Given the shapes of its inputs, what is the shape of each output. This is what lets Conformal track it through the rest of the program.
+      placeholder: |
+        interp1(x, v, xq) returns the same shape as xq.
+        So a 1 x 100 query returns a 1 x 100 result.
+    validations:
+      required: false
+  - type: textarea
+    id: example
+    attributes:
+      label: A small example
+      description: A few lines of MATLAB that call the function the way your code does.
+      render: matlab
+    validations:
+      required: false

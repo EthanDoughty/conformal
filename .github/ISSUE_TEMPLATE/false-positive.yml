@@ -1,0 +1,41 @@
+name: False positive
+description: Conformal reported a warning on code you believe is correct.
+title: "[false-positive] "
+labels: ["false-positive"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A minimal snippet that reproduces the warning is the single most useful thing here. If you can trim it to the few lines that still trigger the warning, it usually goes straight into the test corpus as a regression guard.
+  - type: input
+    id: code
+    attributes:
+      label: Warning code
+      description: The W_ code Conformal reported.
+      placeholder: W_ELEMENTWISE_MISMATCH
+    validations:
+      required: true
+  - type: textarea
+    id: snippet
+    attributes:
+      label: Minimal example
+      description: The smallest piece of MATLAB that still triggers the warning.
+      render: matlab
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why the code is correct
+      description: What shapes the values actually have at runtime, and why the warning should not fire.
+      placeholder: |
+        A is 3 x 3 and B is 3 x 3 here, so the multiply lines up.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The version shown by conformal --version, or the extension version.
+    validations:
+      required: false
