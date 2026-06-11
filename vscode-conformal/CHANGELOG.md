@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.10.3
+
+- **Unknown-function warnings underline the function name**: an unrecognized call on the right-hand side of an assignment now anchors the squiggle on the function name instead of spanning the whole statement. The dispatch path had been emitting a placeholder source column, so the editor underline and the SARIF column now both point at the call.
+
 ## 3.10.2
 
 - **Report a false positive or missing builtin from the editor**: every diagnostic now offers a lightbulb action that opens a pre-filled GitHub issue, routing an unrecognized function to the missing-builtin form and any other warning to the false-positive form, with the warning code, the offending line, and the extension version already filled in. A `Conformal: Report an Issue` command in the palette and the editor menu covers reports that have no diagnostic on screen.
