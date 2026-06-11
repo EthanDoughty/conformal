@@ -43,7 +43,24 @@ let rec emitExpr (expr: PyExpr) : string =
             sprintf "%g" v
         else
             sprintf "%g" v
-    | PyStr s -> sprintf "'%s'" (s.Replace("\\", "\\\\").Replace("'", "\\'"))
+    | PyStr s ->
+        // Render a Python single-quoted literal: escape the backslash and quote, map the
+        // common control chars to named escapes, and send any other non-printable (C0
+        // controls and DEL, e.g. from octal/hex format escapes) to a \xNN hex escape so
+        // arbitrary bytes stay a valid literal.
+        let sb = System.Text.StringBuilder(s.Length + 2)
+        sb.Append('\'') |> ignore
+        for ch in s do
+            match ch with
+            | '\\' -> sb.Append("\\\\") |> ignore
+            | '\'' -> sb.Append("\\'") |> ignore
+            | '\n' -> sb.Append("\\n") |> ignore
+            | '\t' -> sb.Append("\\t") |> ignore
+            | '\r' -> sb.Append("\\r") |> ignore
+            | c when c < ' ' || c = char 127 -> sb.Append(sprintf "\\x%02x" (int c)) |> ignore
+            | c -> sb.Append(c) |> ignore
+        sb.Append('\'') |> ignore
+        sb.ToString()
     | PyBool true -> "True"
     | PyBool false -> "False"
     | PyNone -> "None"
@@ -165,6 +182,13 @@ let rec emitStmt (indent: int) (stmt: PyStmt) : string list =
         let bodyLines = body |> List.collect (emitStmt (indent + 4))
         let bodyLines = if bodyLines.IsEmpty || allComments bodyLines then bodyLines @ [sprintf "%s    pass" pad] else bodyLines
         defLine @ bodyLines
+    | PyClassDef(name, bases, body) ->
+        let header =
+            if List.isEmpty bases then sprintf "%sclass %s:" pad name
+            else sprintf "%sclass %s(%s):" pad name (bases |> String.concat ", ")
+        let bodyLines = body |> List.collect (emitStmt (indent + 4))
+        let bodyLines = if bodyLines.IsEmpty || allComments bodyLines then bodyLines @ [sprintf "%s    pass" pad] else bodyLines
+        header :: bodyLines
     | PyReturn exprs ->
         match exprs with
         | [] -> [sprintf "%sreturn" pad]

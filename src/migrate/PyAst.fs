@@ -38,6 +38,7 @@ type PyStmt =
     | PyWhile       of cond: PyExpr * body: PyStmt list
     | PyFuncDef     of name: string * parms: string list * body: PyStmt list
                        * returnVars: string list
+    | PyClassDef    of name: string * bases: string list * body: PyStmt list
     | PyReturn      of PyExpr list
     | PyCommentStmt of string
     | PyImport      of module_: string * alias: string option

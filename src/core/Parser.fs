@@ -997,6 +997,19 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
                 pos <- pos + 1
                 left <- Transpose(loc tTok.line tTok.col, left)
 
+            elif tok.kind = TkOp && tok.value = "@"
+                 && pos > 0 && tok.pos = tokens.[pos - 1].pos + tokens.[pos - 1].value.Length
+                 && pos + 1 < tokens.Length && tokens.[pos + 1].kind = TkId then
+                // Superclass-qualified call obj@Super(...): encode the superclass in the field
+                // name so migrate can emit super(); a following (args) is applied by the next
+                // loop iteration, giving Apply(FieldAccess(obj, "@Super"), args). Require the @
+                // to abut the preceding token so a space-separated handle in a matrix/cell
+                // (e.g. {x @sin}) is not consumed as a super-call.
+                let atTok = tokens.[pos]
+                pos <- pos + 1
+                let superName = this.Eat(TkId).value
+                left <- FieldAccess(loc atTok.line atTok.col, left, "@" + superName)
+
             elif tok.kind = TkDot then
                 let dotTok = tokens.[pos]
                 pos <- pos + 1
