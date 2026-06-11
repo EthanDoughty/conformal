@@ -1,0 +1,15 @@
+# Conformal
+# https://conformaltools.com
+#
+# This site is open by design. The analyzer is free and the source is public,
+# so nothing here is gated. AI crawlers are welcome, since being read and cited
+# is the point, and a short machine-readable summary lives at /llms.txt.
+#
+# The rule below allows every crawler, which covers the AI agents from OpenAI
+# (GPTBot, OAI-SearchBot, ChatGPT-User), Anthropic (ClaudeBot, Claude-SearchBot,
+# Claude-User), Google (Google-Extended), Perplexity, Apple, and others.
+
+User-agent: *
+Allow: /
+
+Sitemap: https://conformaltools.com/sitemap.xml

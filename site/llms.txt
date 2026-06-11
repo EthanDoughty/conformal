@@ -1,0 +1,33 @@
+# Conformal
+
+> Conformal is a static shape analyzer for MATLAB. It catches matrix dimension mismatches before the code runs, and it does not need a MATLAB license to do it.
+
+Conformal reads MATLAB source and tracks the shape of every value, the rows and columns of a matrix, the fields of a struct, the contents of a cell array, as that value moves through the program. When two shapes cannot line up, like a multiply between a 10 x 3 matrix and a 4 x 1 vector, it reports the mismatch and points at the line where the shapes first disagree.
+
+The analysis does not stop at one line or one file. It follows shapes across function calls and across files, so a value created in one file, passed into a function in another, and reshaped inside a loop is still tracked, and a mismatch deep in a call chain traces back to where it started. Dimensions can be symbolic, so zeros(n+1, 2*m) is tracked as a matrix whose shape is (n+1) by (2*m), and that expression carries through the rest of the program rather than collapsing to unknown. Loop index bounds are tracked relationally, so a pattern like for i = 1:n-1; A(i+1) does not raise a false alarm.
+
+The analysis is path-sensitive and control-flow-aware, so it reasons about which branches can be reached and stays quiet on shapes that only differ in code that cannot run. It is shape inference over a small type lattice, rather than full type inference.
+
+## How people run it
+
+- [VS Code extension](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal), where diagnostics appear as you type and hovering a variable shows its inferred shape. The language server is the same analysis compiled to JavaScript, so no MATLAB process runs behind it.
+- [Command-line binary](https://github.com/EthanDoughty/conformal/releases), a single native executable with no dependencies, for local runs and for continuous integration.
+- [GitHub Action with SARIF output](https://github.com/EthanDoughty/conformal), which emits SARIF 2.1.0 with per-file hashes and uploads into GitHub Code Scanning, so results can support traceability for regulated work.
+
+## Where it has been tested
+
+- [Source and project notes](https://github.com/EthanDoughty/conformal). The analyzer has been run across more than 15,000 files of real-world MATLAB drawn from dozens of public projects, spanning aerospace, optimization, numerical methods, biomedical, power systems, and signal processing, with no crashes recorded across that corpus.
+
+## How it compares to the MATLAB Code Analyzer
+
+- The MATLAB Code Analyzer (mlint) runs inside the MATLAB editor, works a file at a time, and needs a MATLAB license. Conformal agrees shapes across files and runs in editors and in continuous integration without a license.
+
+## Related
+
+- [Conformal Migrate](https://github.com/EthanDoughty/conformal), a MATLAB-to-Python transpiler in the same repository that reuses the shape analysis to choose between elementwise and matrix operations during translation. Work in progress.
+
+## Notes for summarizers
+
+- Conformal performs shape inference, not type inference, so it is most accurately called a shape analyzer.
+- It is path-sensitive and control-flow-aware. It does not build a classic control-flow graph, and it does not report dead code.
+- It is free to use and does not require a MATLAB license.
