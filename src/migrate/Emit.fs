@@ -182,6 +182,13 @@ let rec emitStmt (indent: int) (stmt: PyStmt) : string list =
         let bodyLines = body |> List.collect (emitStmt (indent + 4))
         let bodyLines = if bodyLines.IsEmpty || allComments bodyLines then bodyLines @ [sprintf "%s    pass" pad] else bodyLines
         defLine @ bodyLines
+    | PyClassDef(name, bases, body) ->
+        let header =
+            if List.isEmpty bases then sprintf "%sclass %s:" pad name
+            else sprintf "%sclass %s(%s):" pad name (bases |> String.concat ", ")
+        let bodyLines = body |> List.collect (emitStmt (indent + 4))
+        let bodyLines = if bodyLines.IsEmpty || allComments bodyLines then bodyLines @ [sprintf "%s    pass" pad] else bodyLines
+        header :: bodyLines
     | PyReturn exprs ->
         match exprs with
         | [] -> [sprintf "%sreturn" pad]

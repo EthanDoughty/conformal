@@ -48,7 +48,26 @@ type TranslateContext = {
     mutable functionDepth: int
     /// Directories discovered via addpath() calls (for future cross-file import resolution)
     mutable addpathDirs: string list
+    /// Inside a classdef method, the MATLAB instance variable name (e.g. "obj") that maps
+    /// to Python "self"; None outside methods.
+    mutable selfVar: string option
+    /// The current classdef's method names, so obj.method(args) translates as a call rather
+    /// than indexing; empty outside a class.
+    mutable classMethods: Set<string>
 }
+
+// A bare base name, mapped to "self" when it is the active classdef instance variable.
+let private selfName (tctx: TranslateContext) (name: string) : string =
+    if tctx.selfVar = Some name then "self" else safeName name
+
+// If an expression is a superclass-qualified reference (obj@Super, or dotted obj@pkg.Base),
+// return the anchor the @-chain qualifies: the instance var for a constructor super-call, or
+// the method name for a super-method call. None if there is no '@' field in the chain.
+let rec private superCallAnchor (e: Expr) : Expr option =
+    match e with
+    | FieldAccess(_, inner, field) when field.StartsWith("@") -> Some inner
+    | FieldAccess(_, inner, _) -> superCallAnchor inner
+    | _ -> None
 
 let lookupShape (tctx: TranslateContext) (loc: SrcLoc) : Shape option =
     match tctx.shapeAnnotations.TryGetValue(loc) with
@@ -159,6 +178,7 @@ let rec translateExpr (expr: Expr) (tctx: TranslateContext) : PyExpr =
         | "nan" | "NaN" -> PyAttr(PyVar "np", "nan")
         | "eps" -> PyAttr(PyCall(PyAttr(PyVar "np", "finfo"), [PyAttr(PyVar "np", "float64")], []), "eps")
         | "varargin" -> PyVar "args"  // bare varargin reference -> args
+        | _ when tctx.selfVar = Some name -> PyVar "self"  // classdef instance var -> self
         | _ -> PyVar (safeName name)
     | Const(_, v) -> PyConst v
     | StringLit(_, s) -> PyStr s
@@ -265,6 +285,26 @@ and private translateBinOp (op: string) (left: Expr) (right: Expr) (tctx: Transl
 
 and private translateApply (expr: Expr) (base_: Expr) (args: IndexArg list) (tctx: TranslateContext) : PyExpr =
     match base_ with
+    | _ when (superCallAnchor base_).IsSome ->
+        // Superclass-qualified call. The anchor distinguishes the two MATLAB forms:
+        //   obj@Super(args)       (anchor is the instance var) -> super().__init__(args)
+        //   meth@Super(obj, args) (anchor is the method name)  -> super().meth(args)
+        let pyArgs = args |> List.map (fun a -> translateCallArg a tctx)
+        let superObj = PyCall(PyVar "super", [], [])
+        match superCallAnchor base_ with
+        | Some (Var(_, bn)) when tctx.selfVar = Some bn ->
+            PyCall(PyAttr(superObj, "__init__"), pyArgs, [])
+        | Some (Var(_, methodName)) ->
+            // Drop the explicit instance argument; super().method() binds it implicitly.
+            let rest = match pyArgs with _ :: t -> t | [] -> []
+            PyCall(PyAttr(superObj, safeName methodName), rest, [])
+        | _ -> PyCall(PyAttr(superObj, "__init__"), pyArgs, [])
+    | FieldAccess(_, b, field) when Set.contains field tctx.classMethods ->
+        // obj.method(args) where method belongs to the current class -> a method call,
+        // not indexing (which is migrate's default for the ambiguous obj.x(args) form).
+        let pyBase = translateExpr b tctx
+        let pyArgs = args |> List.map (fun a -> translateCallArg a tctx)
+        PyCall(PyAttr(pyBase, safeName field), pyArgs, [])
     | Var(_, fname) ->
         // Check if this is a builtin function call
         match tryMapBuiltin fname with
@@ -316,6 +356,7 @@ and private translateLhsExpr (expr: Expr) (tctx: TranslateContext) : PyExpr =
             PyCall(PyVar "getattr", [translateLhsExpr base_ tctx; PyStr "<dynamic>"], [])
         else
             PyAttr(translateLhsExpr base_ tctx, safeName field)
+    | Var(_, name) when tctx.selfVar = Some name -> PyVar "self"  // classdef instance var -> self
     | Var(_, name) -> PyVar (safeName name)
     | _ -> translateExpr expr tctx
 
@@ -858,8 +899,14 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
     | Assign(_, name, Var(srcLoc, srcName)) when Set.contains srcLoc tctx.copySites ->
         // Copy semantics: B = A -> B = A.copy()
         [PyAssign(safeName name, PyCall(PyAttr(PyVar (safeName srcName), "copy"), [], []))]
+    | Assign(_, _, (Apply(_, base_, _) as expr)) when
+        (match superCallAnchor base_ with Some (Var(_, bn)) -> tctx.selfVar = Some bn | _ -> false) ->
+        // obj = obj@Super(args): a constructor super-call. Python's super().__init__ returns
+        // None, so emit it as a bare statement and drop the assignment target. (A super-METHOD
+        // call keeps its binding and falls through to the normal Assign arm below.)
+        [PyExprStmt(translateExpr expr tctx)]
     | Assign(_, name, expr) ->
-        [PyAssign(safeName name, translateExpr expr tctx)]
+        [PyAssign(selfName tctx name, translateExpr expr tctx)]
     | AssignMulti(_, targets, expr) ->
         // Handle special multi-return builtins
         match expr with
@@ -1011,26 +1058,26 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
 
     | StructAssign(_, baseName, fields, expr) ->
         let pyExpr = translateExpr expr tctx
-        let target = fields |> List.fold (fun acc f -> sprintf "%s.%s" acc (safeName f)) (safeName baseName)
+        let target = fields |> List.fold (fun acc f -> sprintf "%s.%s" acc (safeName f)) (selfName tctx baseName)
         [PyAssign(target, pyExpr)]
 
     | CellAssign(_, baseName, args, expr) ->
         let pyIndices = args |> List.map (fun a -> translateIndexArg a tctx)
         let pyExpr = translateExpr expr tctx
-        [PyExprStmt(PyBinOp("=", PyIndex(PyVar (safeName baseName), pyIndices), pyExpr))]
+        [PyExprStmt(PyBinOp("=", PyIndex(PyVar (selfName tctx baseName), pyIndices), pyExpr))]
 
     | IndexStructAssign(_, baseName, indexArgs, _, fields, expr) ->
         // base(i, j).field1.field2 = expr -> base[i-1, j-1].field1.field2 = expr
         let pyExpr = translateExpr expr tctx
         let pyIndices = indexArgs |> List.map (fun a -> translateIndexArg a tctx)
-        let indexedBase = PyIndex(PyVar (safeName baseName), pyIndices)
+        let indexedBase = PyIndex(PyVar (selfName tctx baseName), pyIndices)
         let target = fields |> List.fold (fun acc f -> PyAttr(acc, safeName f)) indexedBase
         [PyExprStmt(PyBinOp("=", target, pyExpr))]
 
     | FieldIndexAssign(_, baseName, prefixFields, indexArgs, _, suffixFields, expr) ->
         // base.field1(i).field2.field3 = expr -> base.field1[i-1].field2.field3 = expr
         let pyExpr = translateExpr expr tctx
-        let base_ = prefixFields |> List.fold (fun acc f -> PyAttr(acc, safeName f)) (PyVar (safeName baseName))
+        let base_ = prefixFields |> List.fold (fun acc f -> PyAttr(acc, safeName f)) (PyVar (selfName tctx baseName))
         let pyIndices = indexArgs |> List.map (fun a -> translateIndexArg a tctx)
         let indexedBase = PyIndex(base_, pyIndices)
         let target = suffixFields |> List.fold (fun acc f -> PyAttr(acc, safeName f)) indexedBase
@@ -1134,6 +1181,57 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
         tctx.functionDepth <- savedDepth
         [PyFuncDef(name, pyParms, (if fullBody.IsEmpty then [PyPass] else fullBody), safeOutputVars)]
 
+// Translate one classdef method. The MATLAB instance variable (the constructor's output
+// var, or a method's first parameter) maps to Python 'self'; a method named the same as
+// the class becomes __init__.
+and private translateClassMethod (className: string) (stmt: Stmt) (tctx: TranslateContext) : PyStmt =
+    match stmt with
+    | FunctionDef(_, mname, parms, outputVars, body, _) ->
+        let isCtor = mname = className
+        let objName = if isCtor then List.tryHead outputVars else List.tryHead parms
+        // A method drops its leading obj parameter for 'self'; a constructor's obj is an
+        // output, so all of its parameters follow self.
+        let restParms = if isCtor then parms else (match parms with _ :: t -> t | [] -> [])
+        let pyParms = "self" :: List.map safeName restParms
+        // Output names with the instance var mapped to self (a method returning the instance
+        // returns self); a constructor returns None, so it has no return values.
+        let retNames = outputVars |> List.map (fun v -> if Some v = objName then "self" else safeName v)
+        let savedSelf, savedReturns, savedDepth = tctx.selfVar, tctx.currentReturnVars, tctx.functionDepth
+        tctx.selfVar <- objName
+        tctx.currentReturnVars <- (if isCtor then [] else retNames)
+        tctx.functionDepth <- tctx.functionDepth + 1
+        let pyBody = body |> List.collect (fun s -> translateStmt s tctx)
+        tctx.selfVar <- savedSelf
+        tctx.currentReturnVars <- savedReturns
+        tctx.functionDepth <- savedDepth
+        if isCtor then
+            // __init__ returns None, so drop a trailing return of the instance (a nested early
+            // 'return' stays, but with no return vars it is a bare 'return' = return None).
+            let b = pyBody |> List.filter (fun s -> match s with PyReturn _ -> false | _ -> true)
+            PyFuncDef("__init__", pyParms, (if b.IsEmpty then [PyPass] else b), [])
+        else
+            let needsReturn =
+                not retNames.IsEmpty &&
+                (pyBody.IsEmpty || (match List.last pyBody with PyReturn _ -> false | _ -> true))
+            let full = if needsReturn then pyBody @ [PyReturn (retNames |> List.map PyVar)] else pyBody
+            PyFuncDef(safeName mname, pyParms, (if full.IsEmpty then [PyPass] else full), retNames)
+    | _ -> PyCommentStmt "unsupported class member"
+
+// Assemble the metadata OpaqueStmt (classdef:Name:props[:Super]) and the flattened method
+// FunctionDefs that follow it into a single Python class.
+and private translateClassdef (raw: string) (methods: Stmt list) (tctx: TranslateContext) : PyStmt =
+    let parts = raw.Split(':')
+    let className = if parts.Length > 1 && parts.[1] <> "" then parts.[1] else "Unnamed"
+    let superName = if parts.Length > 3 && parts.[3] <> "" then Some parts.[3] else None
+    let bases = match superName with Some s -> [safeName s] | None -> []
+    let methodNames =
+        methods |> List.choose (fun m -> match m with FunctionDef(_, n, _, _, _, _) -> Some n | _ -> None) |> Set.ofList
+    let savedMethods = tctx.classMethods
+    tctx.classMethods <- methodNames
+    let members = methods |> List.map (fun m -> translateClassMethod className m tctx)
+    tctx.classMethods <- savedMethods
+    PyClassDef(safeName className, bases, (if members.IsEmpty then [PyPass] else members))
+
 and private translateForIterator (it: Expr) (tctx: TranslateContext) : PyExpr =
     match it with
     | Apply(_, Var(_, "colon"), args) ->
@@ -1150,7 +1248,20 @@ and private translateForIterator (it: Expr) (tctx: TranslateContext) : PyExpr =
 // --- Program translation ---
 
 let translateProgram (program: Ir.Program) (tctx: TranslateContext) (sourceFile: string) : PyProgram =
-    let body = program.body |> List.collect (fun s -> translateStmt s tctx)
+    // The parser flattens a classdef into a 'classdef:' metadata OpaqueStmt followed by its
+    // method FunctionDefs; reassemble that run into a single Python class.
+    let isMethodPart s = match s with | FunctionDef _ -> true | _ -> isSyntheticSentinel s
+    let rec processStmts (stmts: Stmt list) : PyStmt list =
+        match stmts with
+        | OpaqueStmt(_, _, raw) :: rest when raw.StartsWith("classdef:") ->
+            let methodStmts =
+                rest |> List.takeWhile isMethodPart
+                     |> List.filter (fun s -> match s with FunctionDef _ -> true | _ -> false)
+            let remaining = rest |> List.skipWhile isMethodPart
+            translateClassdef raw methodStmts tctx :: processStmts remaining
+        | s :: rest -> (translateStmt s tctx) @ processStmts rest
+        | [] -> []
+    let body = processStmts program.body
 
     let extraImports =
         [ if Set.contains "warnings" tctx.usedImports then yield PyImport("warnings", None)
