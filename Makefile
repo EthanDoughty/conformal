@@ -27,8 +27,9 @@ test-props:
 
 .PHONY: fable
 fable:
-	$(DOTNET) tool restore
-	$(DOTNET) fable vscode-conformal/fable/ConformalFable.fsproj --outDir vscode-conformal/src/fable-out
+	cd src && \
+	  $(DOTNET) tool restore && \
+	  $(DOTNET) fable ../vscode-conformal/fable/ConformalFable.fsproj --outDir ../vscode-conformal/src/fable-out
 
 .PHONY: extension
 extension: fable
