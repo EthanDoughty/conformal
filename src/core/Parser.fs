@@ -811,8 +811,10 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
     member private this.ParseSwitch() : Stmt =
         this.Eat(TkSwitch) |> ignore
         let expr = this.ParseExpr(0, false, true)
-        // Skip all newlines (blank lines, comment-only lines stripped by lexer)
-        while this.Current().kind = TkNewline do pos <- pos + 1
+        // Skip separators before the first case: newlines (blank/comment-only lines
+        // stripped by lexer) plus an optional trailing comma (switch x, ...), matching
+        // ParseBlock's leading-separator skip so the comma form parses like if/while.
+        while this.Current().kind = TkNewline || this.Current().kind = TkComma do pos <- pos + 1
         let cases = ResizeArray<Expr * Stmt list>()
         while this.Current().kind = TkCase do
             this.Eat(TkCase) |> ignore
