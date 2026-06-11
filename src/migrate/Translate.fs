@@ -424,30 +424,42 @@ and private translateBuiltinCall (mapping: BuiltinMapping) (fname: string) (args
         | fmt :: fmtArgs -> PyBinOp("%", lowerFormatString fmt, PyTuple fmtArgs)
         | _ -> PyCall(PyVar "str", pyArgs, [])
     | FprintfStyle ->
-        // fprintf(fmt, a, b) -> print(fmt % (a, b), end='')
-        // fprintf(fid, fmt, a, b) -> print(fmt % (a, b), end='')  (drop file handle)
-        // MATLAB fprintf writes exactly the format string (after escapes) with no
-        // trailing newline, so suppress print's default end to stay faithful.
+        // fprintf routes to a destination implied by an optional leading file handle:
+        //   no handle / fid 1 -> print(fmt % args, end='')   (stdout, no extra newline)
+        //   fid 2             -> sys.stderr.write(fmt % args)
+        //   variable handle   -> fid.write(fmt % args)        (the file object from fopen)
         let noNewline = [("end", PyStr "")]
-        match pyArgs with
-        | [fmt] -> PyCall(PyVar "print", [lowerFormatStringNoArgs fmt], noNewline)
-        | fmt :: fmtArgs ->
-            // Identify which argument is the format string. A leading string literal IS the
-            // format (no file handle). Otherwise a leading non-string followed by a literal
-            // format string is a file handle (variable or numeric), as is a leading numeric
-            // literal on its own (legacy). The file handle is dropped; routing it to the
-            // actual stream/file object is a separate concern.
-            let actualFmt, actualArgs =
-                match fmt, fmtArgs with
-                | PyStr _, _ -> fmt, fmtArgs
-                | _, ((PyStr _) as realFmt) :: rest -> realFmt, rest
-                | PyConst _, _ -> fmtArgs.Head, fmtArgs.Tail
-                | _ -> fmt, fmtArgs
-            if actualArgs.IsEmpty then
-                PyCall(PyVar "print", [lowerFormatStringNoArgs actualFmt], noNewline)
-            else
-                PyCall(PyVar "print", [PyBinOp("%", lowerFormatString actualFmt, PyTuple actualArgs)], noNewline)
-        | _ -> PyCall(PyVar "print", pyArgs, noNewline)
+        // Identify (file-handle option, format expr, remaining format args). The handle is
+        // recognized only from a literal anchor: a leading string literal IS the format
+        // (no handle); a leading non-string followed by a literal format is a handle; a
+        // leading numeric literal is a handle. A variable used as the FORMAT (non-literal)
+        // cannot be told apart from a handle without flow-sensitive shape info, so leave it
+        // as the format and do not guess.
+        let fid, actualFmt, actualArgs =
+            match pyArgs with
+            | [] -> None, PyStr "", []
+            | [only] -> None, only, []
+            | fmt :: rest ->
+                match fmt, rest with
+                | PyStr _, _ -> None, fmt, rest                                 // leading literal -> format
+                | _, ((PyStr _) as realFmt) :: more -> Some fmt, realFmt, more   // handle + literal format
+                | PyConst _, _ -> Some fmt, rest.Head, rest.Tail                 // numeric handle (legacy)
+                | _ -> None, fmt, rest                                           // ambiguous -> treat as format
+        // Escape-lowered, percent-applied payload (no-arg path collapses %%).
+        let formatted =
+            if actualArgs.IsEmpty then lowerFormatStringNoArgs actualFmt
+            else PyBinOp("%", lowerFormatString actualFmt, PyTuple actualArgs)
+        // Route by the handle. Only a clearly variable-like handle (name, field, or index)
+        // writes to a file object; numeric and other expressions go to stdout (fid 1) or
+        // stderr (fid 2), so a negative or computed numeric fid never becomes (-1).write.
+        match fid with
+        | Some (PyConst c) when c = 2.0 ->
+            tctx.usedImports <- Set.add "sys" tctx.usedImports
+            PyCall(PyAttr(PyAttr(PyVar "sys", "stderr"), "write"), [formatted], [])
+        | Some ((PyVar _ | PyAttr _ | PyIndex _) as handle) ->
+            PyCall(PyAttr(handle, "write"), [formatted], [])                     // file object -> .write
+        | Some _ -> PyCall(PyVar "print", [formatted], noNewline)               // numeric / other -> stdout
+        | None -> PyCall(PyVar "print", [formatted], noNewline)
     | MethodStyle methodName ->
         // lower(s) -> s.lower();  upper(s) -> s.upper()
         match pyArgs with

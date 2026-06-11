@@ -2,7 +2,7 @@
 # Source: printf_extended.m
 import numpy as np
 
-print('row %d\n' % (i,), end='')
+fid.write('row %d\n' % (i,))
 h = 'Hi AB'
 m = 'wide В ch'
 p = 'cost % total'
