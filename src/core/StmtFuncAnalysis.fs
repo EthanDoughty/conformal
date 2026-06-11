@@ -786,7 +786,7 @@ and private wiredEvalExprFull
     : Shape =
     let shape =
         match expr with
-        | Apply({ line = line }, Var(_, fname), args) ->
+        | Apply({ line = line }, Var(nameLoc, fname), args) ->
             let varShape = Env.get env fname
             if isFunctionHandle varShape then
                 // Function handle variable: delegate to evalExprIr handle dispatch
@@ -796,7 +796,7 @@ and private wiredEvalExprFull
                 evalExprIr expr env warnings ctx None wiredBuiltinDispatch
             else
                 // Name-based dispatch via resolveCall (builtins, functions, classes, unknown)
-                wiredBuiltinDispatch fname line (Var(loc line 0, fname)) args env warnings ctx
+                wiredBuiltinDispatch fname line (Var(nameLoc, fname)) args env warnings ctx
         | _ ->
             evalExprIr expr env warnings ctx None wiredBuiltinDispatch
     recordShape ctx expr.Loc shape
@@ -1693,7 +1693,9 @@ and private analyzeAssignMulti
             | ExternalClassdefCall classInfo ->
                 bindClassConstructor classInfo
             | UnknownCall ->
-                warnings.Add(warnUnknownFunction line expr.Col fname)
+                // Anchor on the function name; the Apply node carries the paren column.
+                let fnCol = match expr with Apply(_, b, _) -> b.Col | _ -> expr.Col
+                warnings.Add(warnUnknownFunction line fnCol fname)
                 for target in targets do bindTarget target UnknownShape
 
     | _ ->
