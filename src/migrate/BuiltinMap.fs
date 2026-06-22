@@ -4,7 +4,8 @@
 // Builtin translation table for the transpiler. Maps each recognized
 // MATLAB builtin to a Python equivalent plus an ArgTransform describing
 // how to massage the arguments (attribute-style, keyword injection,
-// multi-return handling, etc.). Currently covers 204 builtins.
+// multi-return handling, etc.). Covers the common numerical, string,
+// cell, and I/O builtins.
 
 module BuiltinMap
 

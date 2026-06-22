@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- **Neovim LSP client** at `editors/nvim/conformal.lua`: a dependency-free Lua module that attaches the `conformal --lsp` server to `matlab` and `octave` buffers, providing diagnostics, hover, document symbols, go-to-definition, quick-fix code actions, and inferred-shape inlay hints
 
 ## [3.9.0] - 2026-04-14
 ### Added

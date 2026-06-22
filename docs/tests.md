@@ -4,7 +4,7 @@ For a summary, see the [README](../README.md).
 
 ## Test Suite
 
-Conformal is validated by 552 self-checking MATLAB programs organized into 24 categories. Each test embeds its expected behavior as inline assertions:
+Conformal is validated by 585 self-checking MATLAB programs organized into 24 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -20,7 +20,7 @@ z = ~f;     % EXPECT_NO_WARNING: W_UNKNOWN_FUNCTION
 
 The `EXPECT_WARNING` and `EXPECT_NO_WARNING` directives are inline: they go on the same line as the statement they apply to, and they check that the given warning code fires (or doesn't fire) on that exact line. The `% EXPECT: warnings` check also accepts comparison operators, so `warnings >= 1` passes if at least one warning fires rather than requiring an exact count. `% MODE: strict` enables strict mode for that file, and `% MODE: coder` enables the Coder compatibility pass. There are also `EXPECT_FIXPOINT_WARNING:` and `EXPECT_FIXPOINT_NO_WARNING:` variants that only apply when the test runner is in `--fixpoint` mode. A file containing `% SKIP_TEST` anywhere in its body is silently skipped by the test runner, which is useful for tests that require external resources or are temporarily disabled.
 
-The test runner checks that Conformal's output matches these expectations. In addition to the `.m` test files, the shape domain is validated by 28 property-based tests using FsCheck, covering 6 sections of the lattice (join commutativity, associativity, monotonicity, and lattice ordering for shapes and intervals). These run as part of `dotnet run -- --tests`.
+The test runner checks that Conformal's output matches these expectations. Beyond the `.m` test files, the shape domain is validated by property-based tests using FsCheck that cover join commutativity, associativity, monotonicity, and lattice ordering for shapes and intervals. These run as part of `dotnet run -- --tests`.
 
 ---
 
@@ -552,10 +552,10 @@ Integer interval domain tracking scalar value ranges for division-by-zero, out-o
 | `if_dimequiv_bridge.m` | Bridge via if condition: `r == 5` narrows `r` to `[5, 5]`, bridge propagates to equivalent symbolic `n`, so `zeros(n, n)` gives `matrix[5 x 5]` | 0 |
 | `switch_dimequiv_bridge.m` | Bridge via switch/case arm: `case 3` narrows `r` to `[3, 3]`, bridge propagates to equivalent `n`, so `zeros(n, n)` gives `matrix[3 x 3]` | 0 |
 | `size_concrete_bridge.m` | `size()` concrete propagation: `n = size(A, 1)` where `A` is `matrix[3 x 4]` sets `valueRanges[n] = [3, 3]`, so `zeros(n, n)` resolves to `matrix[3 x 3]` | 0 |
-| `pentagon_suppresses_oob.m` | Pentagon concrete suppression: `for i = 1:5` with `A = zeros(5,5)` -- `i <= 5` via Pentagon bound matches the row dimension exactly, so `A(i,1)` produces no OOB warning | 0 |
-| `pentagon_symbolic_oob.m` | Pentagon symbolic suppression: function parameter `A`, `n = size(A,1)`, `for i = 1:n` -- `i <= n` via Pentagon, `A` has row dim `n` via DimEquiv, so `A(i,1)` is suppressed without a concrete bound | 0 |
+| `pentagon_suppresses_oob.m` | Pentagon concrete suppression: `for i = 1:5` with `A = zeros(5,5)`, `i <= 5` via Pentagon bound matches the row dimension exactly, so `A(i,1)` produces no OOB warning | 0 |
+| `pentagon_symbolic_oob.m` | Pentagon symbolic suppression: function parameter `A`, `n = size(A,1)`, `for i = 1:n`, `i <= n` via Pentagon, `A` has row dim `n` via DimEquiv, so `A(i,1)` is suppressed without a concrete bound | 0 |
 | `pentagon_bridge_fixpoint.m` | Pentagon bridge fires in each fixpoint phase, not just at loop entry; `A = zeros(5,5)`, `n = size(A,1)`, `for i = 1:n` stays warning-free under both normal and `--fixpoint` modes | 0 |
-| `pentagon_no_false_suppress.m` | Pentagon must not suppress real OOB: `for i = 1:10` with `A = zeros(5,5)` -- `i <= 10` via Pentagon but the row dim is only 5, so the OOB warning is still emitted | >=1 |
+| `pentagon_no_false_suppress.m` | Pentagon must not suppress real OOB: `for i = 1:10` with `A = zeros(5,5)`, `i <= 10` via Pentagon but the row dim is only 5, so the OOB warning is still emitted | >=1 |
 | `switch_multi_value_refine.m` | `case {1, 5}` computes hull interval `[1, 5]` and narrows the switch variable; `zeros(n, n)` inside the arm sees the bounded size | 0 |
 | `switch_cell_single.m` | Single-element cell case `case {3}` narrows to `[3, 3]`; `zeros(n, n)` inside the arm resolves to `matrix[3 x 3]` | 0 |
 | `pentagon_lower_bound.m` | For-loop with variable start (`for i = start:n`); Pentagon lower bridge suppresses "index may be < 1" when `start` has a known value | 0 |

@@ -217,7 +217,7 @@ Symbolic dimensions use a polynomial representation with rational coefficients. 
 
 ## Lattice Validation
 
-In addition to the `.m` integration tests, the shape domain itself is validated by property-based tests using FsCheck. These cover the core properties of the lattice:
+Beyond the `.m` integration tests, the shape domain itself is validated by property-based tests using FsCheck. These cover the core properties of the lattice:
 
 1. Join commutativity: `join(a, b) == join(b, a)` for all shape pairs
 2. Join associativity: `join(join(a, b), c) == join(a, join(b, c))`

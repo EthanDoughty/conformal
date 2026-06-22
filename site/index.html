@@ -4,19 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Conformal: Catch MATLAB dimension errors before they run</title>
-    <meta name="description" content="Conformal catches MATLAB dimension errors before runtime by tracking shapes across functions and files, including symbolic dimensions. No MATLAB license needed.">
+    <meta name="description" content="Conformal catches MATLAB dimension errors before runtime by tracking shapes across functions and files, including symbolic dimensions, and it needs no MATLAB license.">
     <link rel="icon" type="image/png" href="favicon.png">
     <link rel="canonical" href="https://conformaltools.com/">
 
     <!-- Social sharing -->
-    <meta property="og:title" content="Conformal: Catch MATLAB dimension errors before your code runs">
-    <meta property="og:description" content="Static shape analysis for MATLAB that tracks matrix shapes across functions and files, catching dimension mismatches before runtime. No MATLAB license required.">
+    <meta property="og:title" content="Conformal: Catch MATLAB dimension errors before the code runs">
+    <meta property="og:description" content="Static shape analysis for MATLAB that tracks matrix shapes across functions and files, catching dimension mismatches before runtime without a MATLAB license.">
     <meta property="og:image" content="https://conformaltools.com/og-image.png">
     <meta property="og:url" content="https://conformaltools.com">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Conformal: Catch MATLAB dimension errors before your code runs">
-    <meta name="twitter:description" content="Static shape analysis for MATLAB. Catches dimension errors before runtime by tracking shapes across functions and files. No MATLAB license required.">
+    <meta name="twitter:title" content="Conformal: Catch MATLAB dimension errors before the code runs">
+    <meta name="twitter:description" content="Static shape analysis for MATLAB that catches dimension errors before runtime by tracking shapes across functions and files, without a MATLAB license.">
     <meta name="twitter:image" content="https://conformaltools.com/og-image.png">
 
     <style>
@@ -431,7 +431,7 @@
         <section class="hero">
             <h1><span>Conformal</span></h1>
             <p class="tagline">
-                Static shape analysis for MATLAB. It catches matrix dimension mismatches before the code runs, and it tracks shapes across functions and files, not just the file you have open. No MATLAB license needed.
+                Catch MATLAB dimension errors before the code runs. Conformal tracks matrix shapes across functions and files, not just the file in front of you, and it needs no MATLAB license.
             </p>
             <div class="buttons">
                 <a href="https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal" class="btn btn-primary">
@@ -501,7 +501,7 @@ R = <span class="code-func">process</span>(A, w);</code></pre>
                 <span class="stat-label">crashes</span>
             </div>
             <div class="stat">
-                <span class="stat-value">552</span>
+                <span class="stat-value">585</span>
                 <span class="stat-label">test cases</span>
             </div>
             <div class="stat">
@@ -568,7 +568,7 @@ R = <span class="code-func">process</span>(A, w);</code></pre>
                     <span class="step-num">3</span>
                     <div>
                         <strong>Analyze</strong><br>
-                        <span class="step-detail"><code class="inline">&gt;&gt; conformal_check</code> to analyze whatever file you have open in the editor.<br>
+                        <span class="step-detail"><code class="inline">&gt;&gt; conformal_check</code> to analyze whatever file is open in the editor.<br>
                         <code class="inline">&gt;&gt; conformal_check('ekf_update.m')</code> to analyze a specific file.</span>
                     </div>
                 </div>
@@ -608,7 +608,7 @@ R = <span class="code-func">process</span>(A, w);</code></pre>
             <h2>Conformal Migrate</h2>
             <p>
                 The repo also includes a MATLAB-to-Python transpiler. It uses the shape analysis to pick
-                <code class="inline">*</code> vs <code class="inline">np.dot</code>, handles 204 builtins,
+                <code class="inline">*</code> vs <code class="inline">np.dot</code>, handles many builtins,
                 and converts 1-based indexing to 0-based with constant folding. Work in progress.
             </p>
         </section>

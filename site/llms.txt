@@ -6,7 +6,7 @@ Conformal reads MATLAB source and tracks the shape of every value, the rows and 
 
 The analysis does not stop at one line or one file. It follows shapes across function calls and across files, so a value created in one file, passed into a function in another, and reshaped inside a loop is still tracked, and a mismatch deep in a call chain traces back to where it started. Dimensions can be symbolic, so zeros(n+1, 2*m) is tracked as a matrix whose shape is (n+1) by (2*m), and that expression carries through the rest of the program rather than collapsing to unknown. Loop index bounds are tracked relationally, so a pattern like for i = 1:n-1; A(i+1) does not raise a false alarm.
 
-The analysis is path-sensitive and control-flow-aware, so it reasons about which branches can be reached and stays quiet on shapes that only differ in code that cannot run. It is shape inference over a small type lattice, rather than full type inference.
+Because it is path-sensitive and control-flow-aware, Conformal reasons about which branches can be reached and stays quiet on shapes that only differ in code that cannot run. This is shape inference over a small type lattice, rather than full type inference.
 
 ## How people run it
 
