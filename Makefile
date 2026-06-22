@@ -25,6 +25,13 @@ test-verbose:
 test-props:
 	$(DOTNET) run --project src/analyzer/ConformalAnalyzer.fsproj -- --test-props
 
+# Flags docs whose test counts, versions, or builtin totals have drifted from
+# the source tree. Worth running before a release. Pass --full to the script
+# directly to also validate the test count against the suite.
+.PHONY: check-docs
+check-docs:
+	scripts/check-doc-numbers.sh
+
 .PHONY: fable
 fable:
 	cd src && \

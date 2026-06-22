@@ -29,7 +29,6 @@ TASK.md
 TASK_*.md
 FINDINGS-*.md
 *_draft.md
-CODEX_MIGRATE.md
 .env
 .mcp.json
 
