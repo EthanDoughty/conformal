@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.10.4
+
+- **Refreshed the listing**: the extension description was rewritten for clarity. No change to the analyzer or its behavior.
+
 ## 3.10.3
 
 - **Unknown-function warnings underline the function name**: an unrecognized call on the right-hand side of an assignment now anchors the squiggle on the function name instead of spanning the whole statement. The dispatch path had been emitting a placeholder source column, so the editor underline and the SARIF column now both point at the call.
