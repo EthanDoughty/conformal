@@ -177,6 +177,12 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
                 elif tok.kind = TkSemicolon then
                     pos <- pos + 1
                     stop <- true
+                elif tok.kind = TkComma then
+                    // A depth-0 comma is a statement separator in MATLAB
+                    // (hold off, axis equal, box on), so stop here and let the
+                    // next segment parse — or recover — on its own.
+                    pos <- pos + 1
+                    stop <- true
                 else
                     // Only count actual delimiters, not STRING tokens with bracket values
                     if tok.kind <> TkString then
@@ -552,7 +558,9 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
             targets.Add(eatTarget ())
             while this.Current().kind = TkComma || this.Current().kind = TkId || this.Current().value = "~" do
                 if this.Current().kind = TkComma then this.Eat(TkComma) |> ignore
-                targets.Add(eatTarget ())
+                // Tolerate a trailing comma: [rm_, ] = f(...)
+                if this.Current().kind <> TkRBracket then
+                    targets.Add(eatTarget ())
             this.Eat(TkRBracket) |> ignore
             if this.Current().value = "=" then
                 let eqTok = this.EatValue("=")
@@ -669,7 +677,7 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
                 this.ClassifyAssignment(idTok, chain, eqTok, rhs)
             else
                 let mutable expr = this.ChainToExpr(idTok, chain)
-                expr <- this.ParsePostfix(expr)
+                expr <- this.ParsePostfix(expr, false)
                 expr <- this.ParseExprRest(expr, 0, false, true)
                 ExprStmt(loc expr.Line expr.Col, expr)
         else
@@ -902,7 +910,7 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
             let idTok = tokens.[pos]
             pos <- pos + 1
             let left: Expr = Var(loc idTok.line idTok.col, idTok.value)
-            this.ParsePostfix(left)
+            this.ParsePostfix(left, matrixContext)
 
         | TkEnd ->
             let endTok = tokens.[pos]
@@ -913,15 +921,15 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
             this.Eat(TkLParen) |> ignore
             let inner = this.ParseExpr(0, false, true)
             this.Eat(TkRParen) |> ignore
-            this.ParsePostfix(inner)
+            this.ParsePostfix(inner, matrixContext)
 
         | TkLBracket ->
             let ml = this.ParseMatrixLiteral()
-            this.ParsePostfix(ml)
+            this.ParsePostfix(ml, matrixContext)
 
         | TkLCurly ->
             let cl = this.ParseCellLiteral()
-            this.ParsePostfix(cl)
+            this.ParsePostfix(cl, matrixContext)
 
         | TkOp ->
             // Value-based matching for operators (safe now: STRING/NUMBER/ID/END/delimiters handled above)
@@ -978,7 +986,7 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
         | _ ->
             raise (ParseError($"Unexpected token {tokenKindName tok.kind} '{tok.value}' in expression at {tok.pos}", tok.line, tok.col, tok.line, tok.col + max 1 tok.value.Length))
 
-    member private this.ParsePostfix(initial: Expr) : Expr =
+    member private this.ParsePostfix(initial: Expr, matrixContext: bool) : Expr =
         let mutable left = initial
         let mutable stop = false
         while not stop do
@@ -989,6 +997,14 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
                 let args = this.ParseParenArgs()
                 this.Eat(TkRParen) |> ignore
                 left <- Apply(loc lparenTok.line lparenTok.col, left, args)
+
+            elif tok.kind = TkLCurly &&
+                 matrixContext && pos > 0 &&
+                 tok.pos > tokens.[pos - 1].pos + tokens.[pos - 1].value.Length then
+                // In a matrix/cell literal a space before { starts a new element
+                // ({1 [] {} 2} is four elements), so only an abutting { is
+                // postfix cell indexing here.
+                stop <- true
 
             elif tok.kind = TkLCurly then
                 let lcurlyTok = tokens.[pos]

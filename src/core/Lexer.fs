@@ -109,20 +109,25 @@ let private masterPattern =
         """(?<MISMATCH>.)"""
     ]
 
-// The leading-dot number pattern with lookbehind is awkward in this context.
-// Let's simplify: we handle the leading-dot float as part of the DOTOP/DOT disambiguation
-// in the main loop by checking after a DOT match. Actually the Python lexer relies on the
-// regex ORDER — CONTINUATION before DOTOP before NUMBER. The key insight is that
-// in Python, the NUMBER pattern r"\d+(?:\.\d*)?(?:[eE][+-]?\d+)?" does NOT match .5 —
-// the Python lexer just doesn't support leading-dot numbers (they get lexed as DOT + NUMBER).
-// NUMBER = r"\d+(?:\.\d*)?(?:[eE][+-]?\d+)?" — starts with \d+, no leading dot.
-// So we should match the Python behavior exactly: no leading-dot support.
-
 // Active pattern used for tokenization. masterPattern above is retained as a readable reference.
+//
+// NUMBER mantissa forms, in priority order:
+//   1.5      digits.digits
+//   90.      digits. — the lookahead rejects a following dot ('1...' stays a
+//            continuation) or dotop char ('2.^x' is elementwise power, so the
+//            dot binds to the operator, per MATLAB)
+//   42       digits
+//   .5       .digits — gated on the preceding char so field access and dotops
+//            never lose their dot (start-of-input, whitespace, or an operator/
+//            delimiter must precede)
+// Each form takes an optional exponent and an optional i/j imaginary suffix.
+let private numberMantissa =
+    """(?:\d+\.\d+|\d+\.(?![\d.*/\\^'])|\d+|(?<=^|[\s+\-*/\\<>=,;:\[\]({~&|^])\.\d+)"""
+
 let private masterPatternSimple =
     String.concat "|" [
         """(?<DQSTRING>"(?:[^"]|"")*")"""
-        """(?<NUMBER>\d+(?:\.\d+)?(?:[eE][+-]?\d+)?[ij](?!\w)|\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)"""
+        sprintf """(?<NUMBER>%s(?:[eE][+-]?\d+)?[ij](?!\w)|%s(?:[eE][+-]?\d+)?)""" numberMantissa numberMantissa
         """(?<ID>[A-Za-z_]\w*)"""
         """(?<CONTINUATION>\.\.\.[^\n]*\n?)"""
         """(?<DOTOP>\.\*|\./|\.\^|\.')"""
@@ -205,11 +210,10 @@ let lex (src: string) : Token list =
         { kind = kind; value = value; pos = startPos; line = line; col = startPos - lastNewlinePos }
 
     while pos < src.Length do
-#if FABLE_COMPILER
+        // Two-arg Match keeps the true string context: the NUMBER leading-dot
+        // lookbehind must see the character before pos, and ^ must mean start
+        // of input. The (src, pos, length) overload anchors both at pos.
         let m = masterRe.Match(src, pos)
-#else
-        let m = masterRe.Match(src, pos, src.Length - pos)
-#endif
         if not m.Success then
             let col = pos - lastNewlinePos
             raise (LexError("Unexpected character '" + string src.[pos] + "'", line, col, line, col + 1))
