@@ -28,6 +28,15 @@ let private safeName (name: string) : string =
     if Set.contains name pythonKeywords then name + "_"
     else name
 
+// MATLAB '~' marks an ignored parameter; Python needs a real, unique name.
+let private safeParams (parms: string list) : string list =
+    let mutable unused = 0
+    parms |> List.map (fun p ->
+        if p = "~" then
+            unused <- unused + 1
+            if unused = 1 then "_unused" else sprintf "_unused%d" unused
+        else safeName p)
+
 // Constant-folding binary op constructor: folds arithmetic on two constants at build time.
 let private mkBinOp (op: string) (left: PyExpr) (right: PyExpr) : PyExpr =
     match op, left, right with
@@ -36,6 +45,53 @@ let private mkBinOp (op: string) (left: PyExpr) (right: PyExpr) : PyExpr =
     | "*", PyConst a, PyConst b -> PyConst(a * b)
     | "/", PyConst a, PyConst b when b <> 0.0 -> PyConst(a / b)
     | _ -> PyBinOp(op, left, right)
+
+// Chain-link read: s.f, or getattr for a field the parser lost to "<dynamic>".
+let private attrRead (acc: PyExpr) (f: string) : PyExpr =
+    if f = "<dynamic>" then PyCall(PyVar "getattr", [acc; PyStr "<dynamic>"], [])
+    else PyAttr(acc, safeName f)
+
+// Assign rhs through a field chain. A dynamic FINAL field cannot be an
+// attribute target (`x.<dynamic> = v` is not Python), so it becomes setattr.
+let private assignThroughFields (chainBase: PyExpr) (fields: string list) (rhs: PyExpr) : PyStmt =
+    match List.rev fields with
+    | [] -> PyExprStmt(PyBinOp("=", chainBase, rhs))
+    | last :: revInit ->
+        let prefix = List.rev revInit |> List.fold attrRead chainBase
+        if last = "<dynamic>" then
+            PyExprStmt(PyCall(PyVar "setattr", [prefix; PyStr "<dynamic>"; rhs], []))
+        else
+            PyExprStmt(PyBinOp("=", PyAttr(prefix, safeName last), rhs))
+
+// Python requires global/nonlocal declarations before the name's first use in a
+// scope; MATLAB allows them anywhere. Pulling every declaration to the top of
+// the function body is semantically identical (the declaration is scope-wide).
+// A name that is also a parameter cannot be declared global in Python, so it
+// drops to a comment. Nested def/class keep their own scopes untouched.
+let private hoistScopeDecls (parms: string list) (body: PyStmt list) : PyStmt list =
+    let parmSet = Set.ofList parms
+    let decls = ResizeArray<string>()
+    let rec strip (stmts: PyStmt list) : PyStmt list =
+        stmts |> List.collect (fun s ->
+            match s with
+            | PyExprStmt(PyVar v) when v.StartsWith("global ") || v.StartsWith("nonlocal ") ->
+                if not (decls.Contains v) then decls.Add v
+                []
+            | PyIf(c, t, elifs, e) ->
+                [PyIf(c, strip t, elifs |> List.map (fun (ec, eb) -> (ec, strip eb)), strip e)]
+            | PyFor(v, it, b) -> [PyFor(v, it, strip b)]
+            | PyWhile(c, b) -> [PyWhile(c, strip b)]
+            | PyTry(t, e) -> [PyTry(strip t, strip e)]
+            | other -> [other])
+    let stripped = strip body
+    let keep, shadowed =
+        decls |> List.ofSeq
+        |> List.partition (fun v -> not (parmSet.Contains(v.Split(' ').[1])))
+    let head =
+        (keep |> List.map (fun v -> PyExprStmt(PyVar v))) @
+        (shadowed |> List.map (fun v ->
+            PyCommentStmt (sprintf "MATLAB '%s' dropped: the name is a parameter" v)))
+    head @ stripped
 
 type TranslateContext = {
     shapeAnnotations: System.Collections.Generic.Dictionary<SrcLoc, Shape>
@@ -316,7 +372,7 @@ and private translateApply (expr: Expr) (base_: Expr) (args: IndexArg list) (tct
             let hasIndexingArg = args |> List.exists (fun a -> match a with Colon _ | Ir.Range _ | Ir.SteppedRange _ -> true | _ -> false)
             if isMatrix varShape || isCell varShape || hasIndexingArg then
                 // Array/cell indexing
-                let pyBase = PyVar fname
+                let pyBase = PyVar (safeName fname)
                 match args with
                 | [Colon _] ->
                     // A(:) -> A.ravel()  (flatten to 1D)
@@ -327,7 +383,7 @@ and private translateApply (expr: Expr) (base_: Expr) (args: IndexArg list) (tct
             else
                 // Treat as function call
                 let pyArgs = args |> List.map (fun a -> translateCallArg a tctx)
-                PyCall(PyVar fname, pyArgs, [])
+                PyCall(PyVar (safeName fname), pyArgs, [])
     | _ ->
         // Complex base expression (e.g. obj.method(args))
         let pyBase = translateExpr base_ tctx
@@ -551,7 +607,9 @@ and private translateBuiltinCall (mapping: BuiltinMapping) (fname: string) (args
             let rec pairUp (lst: IndexArg list) acc =
                 match lst with
                 | IndexExpr(_, StringLit(_, key)) :: IndexExpr(_, valExpr) :: rest ->
-                    pairUp rest ((key, translateExpr valExpr tctx) :: acc)
+                    // Field names that are Python keywords (e.g. 'class') need
+                    // the same escape as attribute reads, or the kwarg won't parse.
+                    pairUp rest ((safeName key, translateExpr valExpr tctx) :: acc)
                 | _ -> List.rev acc
             let kwargs = pairUp args []
             if kwargs.IsEmpty then
@@ -1046,9 +1104,15 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
     | Break _ -> [PyBreak]
     | Continue _ -> [PyContinue]
     | Return _ ->
-        match tctx.currentReturnVars with
-        | [] -> [PyReturn []]
-        | vars -> [PyReturn (vars |> List.map PyVar)]
+        if tctx.functionDepth = 0 then
+            // Script-level 'return' stops the script; module-level Python has
+            // no return, so exit the process instead.
+            tctx.usedImports <- Set.add "sys" tctx.usedImports
+            [PyExprStmt(PyCall(PyAttr(PyVar "sys", "exit"), [], []))]
+        else
+            match tctx.currentReturnVars with
+            | [] -> [PyReturn []]
+            | vars -> [PyReturn (vars |> List.map PyVar)]
 
     | IndexAssign(_, baseName, args, expr) ->
         // A(i,j) = expr -> A[i-1, j-1] = expr
@@ -1058,8 +1122,11 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
 
     | StructAssign(_, baseName, fields, expr) ->
         let pyExpr = translateExpr expr tctx
-        let target = fields |> List.fold (fun acc f -> sprintf "%s.%s" acc (safeName f)) (selfName tctx baseName)
-        [PyAssign(target, pyExpr)]
+        if fields |> List.contains "<dynamic>" then
+            [assignThroughFields (PyVar (selfName tctx baseName)) fields pyExpr]
+        else
+            let target = fields |> List.fold (fun acc f -> sprintf "%s.%s" acc (safeName f)) (selfName tctx baseName)
+            [PyAssign(target, pyExpr)]
 
     | CellAssign(_, baseName, args, expr) ->
         let pyIndices = args |> List.map (fun a -> translateIndexArg a tctx)
@@ -1071,31 +1138,39 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
         let pyExpr = translateExpr expr tctx
         let pyIndices = indexArgs |> List.map (fun a -> translateIndexArg a tctx)
         let indexedBase = PyIndex(PyVar (selfName tctx baseName), pyIndices)
-        let target = fields |> List.fold (fun acc f -> PyAttr(acc, safeName f)) indexedBase
-        [PyExprStmt(PyBinOp("=", target, pyExpr))]
+        [assignThroughFields indexedBase fields pyExpr]
 
     | FieldIndexAssign(_, baseName, prefixFields, indexArgs, _, suffixFields, expr) ->
         // base.field1(i).field2.field3 = expr -> base.field1[i-1].field2.field3 = expr
         let pyExpr = translateExpr expr tctx
-        let base_ = prefixFields |> List.fold (fun acc f -> PyAttr(acc, safeName f)) (PyVar (selfName tctx baseName))
+        let base_ = prefixFields |> List.fold attrRead (PyVar (selfName tctx baseName))
         let pyIndices = indexArgs |> List.map (fun a -> translateIndexArg a tctx)
         let indexedBase = PyIndex(base_, pyIndices)
-        let target = suffixFields |> List.fold (fun acc f -> PyAttr(acc, safeName f)) indexedBase
-        [PyExprStmt(PyBinOp("=", target, pyExpr))]
+        [assignThroughFields indexedBase suffixFields pyExpr]
 
     | LhsAssign(_, _, lhsExpr, expr) ->
         // General chain assignment: net.layers{l}.a{j} = expr -> net.layers[l-1].a[j-1] = expr
         // Uses translateLhsExpr so Apply is always indexing (not function call) and A(:) = v -> A[:] = v
         let pyLhs = translateLhsExpr lhsExpr tctx
         let pyRhs = translateExpr expr tctx
-        [PyExprStmt(PyBinOp("=", pyLhs, pyRhs))]
+        match pyLhs with
+        | PyCall(PyVar "getattr", [b; n], []) ->
+            // A dynamic final field reads back as a getattr call, which is not
+            // an assignable target; write through setattr instead.
+            [PyExprStmt(PyCall(PyVar "setattr", [b; n; pyRhs], []))]
+        | _ ->
+            [PyExprStmt(PyBinOp("=", pyLhs, pyRhs))]
 
     | OpaqueStmt(_, targets, raw) ->
         let trimmed = raw.Trim()
         // Handle global/persistent declarations
         if trimmed.StartsWith("global ") || trimmed = "global" then
             let vars = targets |> List.map safeName
-            if tctx.functionDepth > 1 then
+            if tctx.functionDepth = 0 then
+                // Script level: module scope is already global, and Python
+                // rejects a global declaration after the name's first use.
+                [PyCommentStmt (sprintf "global %s (module scope is already global)" (vars |> String.concat ", "))]
+            elif tctx.functionDepth > 1 then
                 // Inside nested function: use nonlocal
                 vars |> List.map (fun v -> PyExprStmt(PyVar (sprintf "nonlocal %s" v)))
             else
@@ -1137,7 +1212,7 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
         // Check if body references 'nargin' / 'nargout' — add preamble as needed
         let usesNargin = body |> List.exists (fun s -> stmtReferencesVar "nargin" s)
         let usesNargout = body |> List.exists (fun s -> stmtReferencesVar "nargout" s)
-        let safeParms = baseParms |> List.map safeName
+        let safeParms = safeParams baseParms
         let pyParms =
             let ps =
                 if hasVarargin then
@@ -1177,9 +1252,10 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
                 pyBody @ [PyReturn (safeOutputVars |> List.map PyVar)]
             else
                 pyBody
+        let fullBody = hoistScopeDecls safeParms fullBody
         tctx.currentReturnVars <- savedReturnVars
         tctx.functionDepth <- savedDepth
-        [PyFuncDef(name, pyParms, (if fullBody.IsEmpty then [PyPass] else fullBody), safeOutputVars)]
+        [PyFuncDef(safeName name, pyParms, (if fullBody.IsEmpty then [PyPass] else fullBody), safeOutputVars)]
 
 // Translate one classdef method. The MATLAB instance variable (the constructor's output
 // var, or a method's first parameter) maps to Python 'self'; a method named the same as
@@ -1192,7 +1268,7 @@ and private translateClassMethod (className: string) (stmt: Stmt) (tctx: Transla
         // A method drops its leading obj parameter for 'self'; a constructor's obj is an
         // output, so all of its parameters follow self.
         let restParms = if isCtor then parms else (match parms with _ :: t -> t | [] -> [])
-        let pyParms = "self" :: List.map safeName restParms
+        let pyParms = "self" :: safeParams restParms
         // Output names with the instance var mapped to self (a method returning the instance
         // returns self); a constructor returns None, so it has no return values.
         let retNames = outputVars |> List.map (fun v -> if Some v = objName then "self" else safeName v)
@@ -1208,12 +1284,14 @@ and private translateClassMethod (className: string) (stmt: Stmt) (tctx: Transla
             // __init__ returns None, so drop a trailing return of the instance (a nested early
             // 'return' stays, but with no return vars it is a bare 'return' = return None).
             let b = pyBody |> List.filter (fun s -> match s with PyReturn _ -> false | _ -> true)
+            let b = hoistScopeDecls pyParms b
             PyFuncDef("__init__", pyParms, (if b.IsEmpty then [PyPass] else b), [])
         else
             let needsReturn =
                 not retNames.IsEmpty &&
                 (pyBody.IsEmpty || (match List.last pyBody with PyReturn _ -> false | _ -> true))
             let full = if needsReturn then pyBody @ [PyReturn (retNames |> List.map PyVar)] else pyBody
+            let full = hoistScopeDecls pyParms full
             PyFuncDef(safeName mname, pyParms, (if full.IsEmpty then [PyPass] else full), retNames)
     | _ -> PyCommentStmt "unsupported class member"
 
@@ -1273,7 +1351,7 @@ let translateProgram (program: Ir.Program) (tctx: TranslateContext) (sourceFile:
           if Set.contains "re" tctx.usedImports then yield PyImport("re", None) ]
 
     let baseImports = [
-        PyCommentStmt (sprintf "Generated by conformal-migrate 3.5.0")
+        PyCommentStmt "Generated by conformal-migrate"
         PyCommentStmt (sprintf "Source: %s" sourceFile)
         PyImport("numpy", Some "np")
     ]

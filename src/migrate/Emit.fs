@@ -81,6 +81,10 @@ let rec emitExpr (expr: PyExpr) : string =
         let sKwargs = kwargs |> List.map (fun (k, v) -> sprintf "%s=%s" k (emitExpr v))
         let allArgs = sArgs @ sKwargs |> String.concat ", "
         sprintf "%s(%s)" (emitExpr func) allArgs
+    | PyIndex(base_, []) ->
+        // Zero-arg indexing (MATLAB A() is identity): the base alone is the
+        // closest valid form, since `base[]` does not parse.
+        emitExpr base_
     | PyIndex(base_, indices) ->
         let sIndices = indices |> List.map emitIdx |> String.concat ", "
         let sBase = match base_ with PyBinOp _ | PyUnaryOp _ -> sprintf "(%s)" (emitExpr base_) | _ -> emitExpr base_
@@ -194,7 +198,11 @@ let rec emitStmt (indent: int) (stmt: PyStmt) : string list =
         | [] -> [sprintf "%sreturn" pad]
         | _ -> [sprintf "%sreturn %s" pad (exprs |> List.map emitExpr |> String.concat ", ")]
     | PyCommentStmt text ->
-        [sprintf "%s# %s" pad text]
+        // Comment text may span lines (e.g. an opaque MATLAB statement with a
+        // multi-line matrix literal); every line must carry the # prefix.
+        text.Split('\n')
+        |> Array.toList
+        |> List.map (fun line -> (sprintf "%s# %s" pad (line.TrimEnd())).TrimEnd())
     | PyImport(module_, Some alias) ->
         [sprintf "%simport %s as %s" pad module_ alias]
     | PyImport(module_, None) ->
