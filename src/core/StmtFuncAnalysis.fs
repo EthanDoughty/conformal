@@ -1547,30 +1547,48 @@ and private analyzeCellAssignArgs
 
 and private analyzeAssignMulti
     (line: int)
-    (targets: string list)
+    (targets: MultiTarget list)
     (expr: Expr)
     (env: Env)
     (warnings: ResizeArray<Diagnostic>)
     (ctx: AnalysisContext)
     : unit =
 
-    // Remove all AssignMulti targets from trustedConsts before binding.
-    for t in targets do
-        if t <> "~" then
-            let baseName = if t.Contains(".") then t.Split('.').[0] else t
-            ctx.cst.trustedConsts <- Map.remove baseName ctx.cst.trustedConsts
+    // Plain (undotted) name target: the only form dim aliasing may key on.
+    let plainName (t: MultiTarget) : string option =
+        match t with
+        | TName s when not (s.Contains ".") -> Some s
+        | _ -> None
 
-    let bindTarget (target: string) (shape: Shape) =
-        if target = "~" then ()
-        elif target.Contains(".") then
-            let parts = target.Split('.') |> Array.toList
+    // Remove all AssignMulti target bases from trustedConsts before binding.
+    for t in targets do
+        let baseName =
+            match t with
+            | TName s -> Some (if s.Contains "." then s.Split('.').[0] else s)
+            | TLhs e -> multiTargetBaseExpr e
+            | TIgnore -> None
+        match baseName with
+        | Some b -> ctx.cst.trustedConsts <- Map.remove b ctx.cst.trustedConsts
+        | None -> ()
+
+    let bindTarget (target: MultiTarget) (shape: Shape) =
+        match target with
+        | TIgnore -> ()
+        | TName t when t.Contains "." ->
+            let parts = t.Split('.') |> Array.toList
             let baseName = parts.[0]
             let fields = parts.[1..]
             let baseShape = Env.get env baseName
             let updated = updateStructField baseShape fields shape line warnings
             Env.set env baseName updated
-        else
-            Env.set env target shape
+        | TName t -> Env.set env t shape
+        | TLhs e ->
+            // Indexed/mixed target: an element or field write whose extent is
+            // statically unknowable (and MATLAB may auto-grow the base), so
+            // the base goes conservative rather than keeping a stale shape.
+            match multiTargetBaseExpr e with
+            | Some b -> Env.set env b UnknownShape
+            | None -> ()
 
     // Check if a workspace file shadows a builtin (MATLAB semantics: local files win)
     let isBuiltinShadowed (fname: string) =
@@ -1588,8 +1606,9 @@ and private analyzeAssignMulti
                 bindTarget targets.[0] result
                 // size() single-return aliasing (target = size(A, dim))
                 if fname = "size" then
-                    let tgt = targets.[0]
-                    if tgt <> "~" && not (tgt.Contains(".")) then
+                    match plainName targets.[0] with
+                    | None -> ()
+                    | Some tgt ->
                         match args with
                         | [IndexExpr(_, argExpr); IndexExpr(_, dimArgExpr)] ->
                             let argShape = match argExpr with Var(_, n) -> Env.get env n | _ -> UnknownShape
@@ -1608,8 +1627,9 @@ and private analyzeAssignMulti
                         | _ -> ()
                 // length() propagation: inject interval and dim alias
                 elif fname = "length" then
-                    let tgt = targets.[0]
-                    if tgt <> "~" && not (tgt.Contains(".")) then
+                    match plainName targets.[0] with
+                    | None -> ()
+                    | Some tgt ->
                         match args with
                         | [IndexExpr(_, argExpr)] ->
                             let argShape = match argExpr with Var(_, n) -> Env.get env n | _ -> UnknownShape
@@ -1626,8 +1646,9 @@ and private analyzeAssignMulti
                         | _ -> ()
                 // numel() propagation: inject concrete interval
                 elif fname = "numel" then
-                    let tgt = targets.[0]
-                    if tgt <> "~" && not (tgt.Contains(".")) then
+                    match plainName targets.[0] with
+                    | None -> ()
+                    | Some tgt ->
                         match args with
                         | [IndexExpr(_, argExpr)] ->
                             let argShape = match argExpr with Var(_, n) -> Env.get env n | _ -> UnknownShape
@@ -1651,12 +1672,12 @@ and private analyzeAssignMulti
                             let argShape = match argExpr with Var(_, n) -> Env.get env n | _ -> UnknownShape
                             match argShape with
                             | Matrix(rowDim, colDim) ->
-                                let tgt0 = targets.[0]
-                                let tgt1 = targets.[1]
-                                if rowDim <> Unknown && tgt0 <> "~" && not (tgt0.Contains(".")) then
-                                    applySizeAlias ctx env tgt0 rowDim true |> ignore
-                                if colDim <> Unknown && tgt1 <> "~" && not (tgt1.Contains(".")) then
-                                    applySizeAlias ctx env tgt1 colDim true |> ignore
+                                match plainName targets.[0] with
+                                | Some tgt0 when rowDim <> Unknown -> applySizeAlias ctx env tgt0 rowDim true |> ignore
+                                | _ -> ()
+                                match plainName targets.[1] with
+                                | Some tgt1 when colDim <> Unknown -> applySizeAlias ctx env tgt1 colDim true |> ignore
+                                | _ -> ()
                             | _ -> ()
                         | _ -> ()
                 | None ->
@@ -1680,8 +1701,9 @@ and private analyzeAssignMulti
                 let structShape = makeClassConstructorShape ccN classInfo env warnings ctx
                 for target in targets do
                     bindTarget target structShape
-                    if target <> "~" && not (target.Contains(".")) then
-                        ctx.call.classBindings.[target] <- fname
+                    match plainName target with
+                    | Some t -> ctx.call.classBindings.[t] <- fname
+                    | None -> ()
 
             match resolveCall fname ctx with
             | BuiltinCall -> ()  // already handled above
@@ -1723,7 +1745,11 @@ and private collectModifiedVars (body: Stmt list) : Set<string> =
         | FieldIndexAssign(_, baseName, _, _, _, _, _) -> vars <- Set.add baseName vars
         | LhsAssign(_, baseName, _, _) -> vars <- Set.add baseName vars
         | AssignMulti(_, targets, _) ->
-            for t in targets do if t <> "~" then vars <- Set.add t vars
+            for t in targets do
+                match t with
+                | TName n -> vars <- Set.add n vars
+                | TLhs e -> (match multiTargetBaseExpr e with Some b -> vars <- Set.add b vars | None -> ())
+                | TIgnore -> ()
         | For(_, var_, _, innerBody) ->
             vars <- Set.add var_ vars
             for s2 in innerBody do scanStmt s2

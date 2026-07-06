@@ -446,7 +446,11 @@ and private writeStmt (w: Writer) (stmt: Stmt) : unit =
             "type",    fun () -> w.WriteStr "AssignMulti"
             "line",    fun () -> w.WriteInt line
             "col",     fun () -> w.WriteInt col
-            "targets", fun () -> w.WriteStringList targets
+            "targets", fun () -> w.WriteArray(targets |> List.map (fun t () ->
+                            match t with
+                            | TName s -> w.WriteStr s
+                            | TIgnore -> w.WriteStr "~"
+                            | TLhs e -> writeExpr w e))
             "expr",    fun () -> writeExpr w expr
         ]
 

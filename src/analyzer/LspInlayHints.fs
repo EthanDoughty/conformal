@@ -55,15 +55,12 @@ let getInlayHints
             tryEmitHint loc name
 
         | AssignMulti(loc, targets, _) ->
-            for i, name in targets |> List.indexed do
-                // First target uses the AssignMulti loc; subsequent targets
-                // don't have individual locs, so we skip column positioning
-                // but still emit on the same line for shape visibility.
-                if i = 0 then
-                    tryEmitHint loc name
-                else
-                    // Emit with the same line but mark as seen (shape still useful)
-                    tryEmitHint loc name
+            // Only plain-name targets carry a bindable shape worth hinting;
+            // ~ and indexed targets would only ever read ": unknown".
+            for t in targets do
+                match t with
+                | TName name -> tryEmitHint loc name
+                | TIgnore | TLhs _ -> ()
 
         | For(loc, var_, _, body) ->
             tryEmitHint loc var_

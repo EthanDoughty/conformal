@@ -143,7 +143,7 @@ let rec emitStmt (indent: int) (stmt: PyStmt) : string list =
     | PyAssign(target, expr) ->
         [sprintf "%s%s = %s" pad target (emitExpr expr)]
     | PyMultiAssign(targets, expr) ->
-        [sprintf "%s%s = %s" pad (targets |> String.concat ", ") (emitExpr expr)]
+        [sprintf "%s%s = %s" pad (targets |> List.map emitExpr |> String.concat ", ") (emitExpr expr)]
     | PyExprStmt(PyBinOp("=", left, right)) ->
         // Index assignment: A[i] = expr
         [sprintf "%s%s = %s" pad (emitExpr left) (emitExpr right)]

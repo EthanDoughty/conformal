@@ -220,7 +220,10 @@ let analyzeSource
         match stmt with
         | Ir.Assign(loc, name, _) -> tryEmitHint loc name
         | Ir.AssignMulti(loc, targets, _) ->
-            for name in targets do tryEmitHint loc name
+            for t in targets do
+                match t with
+                | Ir.TName name -> tryEmitHint loc name
+                | Ir.TIgnore | Ir.TLhs _ -> ()
         | Ir.For(loc, var_, _, body) -> tryEmitHint loc var_; walkStmts body
         | Ir.If(_, _, tb, eb) -> walkStmts tb; walkStmts eb
         | Ir.IfChain(_, _, bodies, eb) -> for b in bodies do walkStmts b; walkStmts eb

@@ -38,6 +38,14 @@ let findCopySites
             | IndexStructAssign(_, baseName, _, _, _, _) -> mutatedNames.Add(baseName) |> ignore
             | FieldIndexAssign(_, baseName, _, _, _, _, _) -> mutatedNames.Add(baseName) |> ignore
             | LhsAssign(_, baseName, _, _) -> mutatedNames.Add(baseName) |> ignore
+            | AssignMulti(_, targets, _) ->
+                // Indexed and dotted targets are element/field writes into the
+                // base; a plain-name target is a rebind, not a mutation.
+                for t in targets do
+                    match t with
+                    | TLhs e -> (match multiTargetBaseExpr e with Some b -> mutatedNames.Add b |> ignore | None -> ())
+                    | TName s when s.Contains "." -> mutatedNames.Add(s.Split('.').[0]) |> ignore
+                    | _ -> ()
             | If(_, _, thenBody, elseBody) ->
                 scanForMutations thenBody
                 scanForMutations elseBody

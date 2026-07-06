@@ -52,6 +52,20 @@ and IndexArg =
     | SteppedRange of loc: SrcLoc * start: Expr * step: Expr * end_: Expr
     | IndexExpr   of loc: SrcLoc * expr: Expr
 
+// Multi-assignment target: [a, b(i), ~, s.f] = f(...)
+type MultiTarget =
+    | TName   of string      // plain name or dotted path a.b.c
+    | TIgnore                // ~ placeholder
+    | TLhs    of Expr        // indexed/celled/mixed target: A(i,j), c{k}, s.f(i).g
+
+// Leftmost base variable of a target expression (A(i,j).f -> A).
+let rec multiTargetBaseExpr (e: Expr) : string option =
+    match e with
+    | Var(_, n) -> Some n
+    | FieldAccess(_, b, _) | DynFieldAccess(_, b, _)
+    | Apply(_, b, _) | CurlyApply(_, b, _) | Transpose(_, b) -> multiTargetBaseExpr b
+    | _ -> None
+
 type Stmt =
     | Assign           of loc: SrcLoc * name: string * expr: Expr
     | StructAssign     of loc: SrcLoc * baseName: string * fields: string list * expr: Expr
@@ -76,7 +90,7 @@ type Stmt =
     | FunctionDef      of loc: SrcLoc * name: string * parms: string list
                           * outputVars: string list * body: Stmt list
                           * argAnnotations: (string * int option * int option) list
-    | AssignMulti      of loc: SrcLoc * targets: string list * expr: Expr
+    | AssignMulti      of loc: SrcLoc * targets: MultiTarget list * expr: Expr
 
     member this.Loc =
         match this with

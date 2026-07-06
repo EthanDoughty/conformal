@@ -532,17 +532,23 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
         let savedPos = pos
         try
             this.Eat(TkLBracket) |> ignore
-            let eatTarget () =
+            let eatTarget () : MultiTarget =
                 if this.Current().value = "~" then
-                    this.EatValue("~") |> ignore; "~"
+                    this.EatValue("~") |> ignore
+                    TIgnore
                 else
-                    let mutable tname = this.Eat(TkId).value
-                    while this.Current().kind = TkDot do
-                        this.Eat(TkDot) |> ignore
-                        let nextId = this.Eat(TkId).value
-                        tname <- $"{tname}.{nextId}"
-                    tname
-            let targets = ResizeArray<string>()
+                    let idTok = this.Eat(TkId)
+                    let chain = this.ParseLhsChain()
+                    if chain.IsEmpty then
+                        TName idTok.value
+                    elif chain |> List.forall (fun s -> match s with Field _ -> true | _ -> false) then
+                        // Dotted path stays a joined string: the analyzer's struct-field
+                        // binding and dim aliasing key on this exact form.
+                        let dotted = chain |> List.map (fun s -> match s with Field n -> n | _ -> "") |> String.concat "."
+                        TName $"{idTok.value}.{dotted}"
+                    else
+                        TLhs(this.ChainToExpr(idTok, chain))
+            let targets = ResizeArray<MultiTarget>()
             targets.Add(eatTarget ())
             while this.Current().kind = TkComma || this.Current().kind = TkId || this.Current().value = "~" do
                 if this.Current().kind = TkComma then this.Eat(TkComma) |> ignore

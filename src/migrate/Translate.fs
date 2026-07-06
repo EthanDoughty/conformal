@@ -862,7 +862,11 @@ and private indexArgReferencesVar (name: string) (arg: IndexArg) : bool =
 and private stmtReferencesVar (name: string) (stmt: Stmt) : bool =
     match stmt with
     | Assign(_, _, e) | ExprStmt(_, e) -> exprReferencesVar name e
-    | AssignMulti(_, _, e) -> exprReferencesVar name e
+    | AssignMulti(_, targets, e) ->
+        // Target indices count as references too: [varargout{1:nargout}] = f()
+        // is the only mention of nargout in some functions.
+        exprReferencesVar name e ||
+        targets |> List.exists (fun t -> match t with TLhs te -> exprReferencesVar name te | _ -> false)
     | If(_, c, t, el) -> exprReferencesVar name c || t |> List.exists (stmtReferencesVar name) || el |> List.exists (stmtReferencesVar name)
     | IfChain(_, cs, bs, el) -> cs |> List.exists (exprReferencesVar name) || bs |> List.exists (List.exists (stmtReferencesVar name)) || el |> List.exists (stmtReferencesVar name)
     | While(_, c, b) -> exprReferencesVar name c || b |> List.exists (stmtReferencesVar name)
@@ -976,16 +980,81 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
     | Assign(_, name, expr) ->
         [PyAssign(selfName tctx name, translateExpr expr tctx)]
     | AssignMulti(_, targets, expr) ->
+        // Two target forms cannot sit in a tuple assignment: a curly slice
+        // ([varargout{1:nargout}], [par{:}]) expands to a dynamic number of
+        // outputs, and a paren slice below a field access ([s(:).f]) broadcasts
+        // over a struct array. A plain paren slice (err(j, :)) is fine — it is
+        // one target and Python slice-assigns it. Surface the unsupported forms
+        // as a fidelity comment instead of wrong Python.
+        let sliceArgs args =
+            args |> List.exists (fun a -> match a with Ir.Range _ | Ir.SteppedRange _ | Colon _ -> true | _ -> false)
+        let rec baseHasParenSlice (e: Expr) =
+            match e with
+            | Apply(_, b, args) -> sliceArgs args || baseHasParenSlice b
+            | CurlyApply(_, b, _) | FieldAccess(_, b, _) | DynFieldAccess(_, b, _) | Transpose(_, b) -> baseHasParenSlice b
+            | _ -> false
+        let rec targetHasSlice (e: Expr) =
+            match e with
+            | CurlyApply(_, b, args) -> sliceArgs args || targetHasSlice b
+            | Apply(_, b, _) -> targetHasSlice b
+            | FieldAccess(_, b, _) | DynFieldAccess(_, b, _) | Transpose(_, b) ->
+                baseHasParenSlice b || targetHasSlice b
+            | _ -> false
+        let isSliceTarget (t: MultiTarget) =
+            match t with TLhs e -> targetHasSlice e | _ -> false
+        if targets |> List.exists isSliceTarget then
+            let tStr =
+                targets |> List.map (fun t ->
+                    match t with
+                    | TName s -> s
+                    | TIgnore -> "~"
+                    | TLhs e -> Diagnostics.prettyExprIr e)
+                |> String.concat ", "
+            [PyCommentStmt (sprintf "MATLAB: [%s] = %s (slice target: no tuple-assignment equivalent)" tStr (Diagnostics.prettyExprIr expr))]
+        else
+
+        // Render a target as a Python assignable expression; ~ -> _ convention.
+        let pyTargetOf (t: MultiTarget) : PyExpr =
+            match t with
+            | TIgnore -> PyVar "_"
+            | TName s -> PyVar (safeName s)   // dotted paths pass through whole-string
+            | TLhs e -> translateLhsExpr e tctx
+        // Assign one rhs to one target as a standalone statement; a dynamic-field
+        // target reads back as getattr and writes through setattr.
+        let emitTargetAssign (t: MultiTarget) (rhs: PyExpr) : PyStmt =
+            match pyTargetOf t with
+            | PyCall(PyVar "getattr", [b; n], []) -> PyExprStmt(PyCall(PyVar "setattr", [b; n; rhs], []))
+            | PyVar v -> PyAssign(v, rhs)
+            | pyLhs -> PyExprStmt(PyBinOp("=", pyLhs, rhs))
+
         // Handle special multi-return builtins
         match expr with
+        | Apply(_, Var(_, "deal"), args) when args |> List.forall (fun a -> match a with IndexExpr _ -> true | _ -> false) ->
+            // [a, b] = deal(x, y) -> a, b = x, y; [a, b] = deal(x) broadcasts x.
+            let argExprs = args |> List.map (fun a -> match a with IndexExpr(_, e) -> translateExpr e tctx | _ -> PyNone)
+            let rhs =
+                if argExprs.Length = targets.Length then Some argExprs
+                elif argExprs.Length = 1 && not targets.IsEmpty then Some (List.replicate targets.Length argExprs.[0])
+                else None
+            match rhs with
+            | Some rhs ->
+                let pyTargets = targets |> List.map pyTargetOf
+                if pyTargets |> List.exists (fun p -> match p with PyCall _ -> true | _ -> false) then
+                    // RHS elements are independent, so no temp is needed even
+                    // for setattr targets; assign pairwise, left to right.
+                    List.zip targets rhs |> List.map (fun (t, r) -> emitTargetAssign t r)
+                else
+                    match targets, rhs with
+                    | [t], [r] -> [emitTargetAssign t r]
+                    | _ -> [PyMultiAssign(pyTargets, PyTuple rhs)]
+            | None ->
+                [PyMultiAssign(targets |> List.map pyTargetOf, translateExpr expr tctx)]
         | Apply(_, Var(_, "sort"), args) when targets.Length = 2 ->
             // [sorted, idx] = sort(A) -> sorted = np.sort(A); idx = np.argsort(A) + 1
             let pyArgs = args |> List.map (fun a -> translateCallArg a tctx)
-            let t0 = if targets.[0] = "~" then "_" else safeName targets.[0]
-            let t1 = if targets.[1] = "~" then "_" else safeName targets.[1]
             let sortCall = PyCall(PyVar "np.sort", pyArgs, [])
             let argsortCall = PyBinOp("+", PyCall(PyVar "np.argsort", pyArgs, []), PyConst 1.0)
-            [PyAssign(t0, sortCall); PyAssign(t1, argsortCall)]
+            [emitTargetAssign targets.[0] sortCall; emitTargetAssign targets.[1] argsortCall]
         | _ ->
         // Handle return-order swaps for builtins with different conventions
         let swappedTargets =
@@ -997,9 +1066,17 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
                 // MATLAB: [U, S, V] = svd(A)  -> NumPy returns (U, S, Vh) — same order
                 targets
             | _ -> targets
-        // MATLAB ~ (ignore output) -> Python _ convention
-        let pyTargets = swappedTargets |> List.map (fun t -> if t = "~" then "_" else safeName t)
-        [PyMultiAssign(pyTargets, translateExpr expr tctx)]
+        let pyTargets = swappedTargets |> List.map pyTargetOf
+        // A getattr (dynamic-field) target cannot sit inside a tuple target;
+        // spill the RHS to a temp and assign per position, left to right.
+        // MATLAB identifiers cannot start with '_', so _mret cannot collide.
+        if pyTargets |> List.exists (fun p -> match p with PyCall _ -> true | _ -> false) then
+            let assigns =
+                swappedTargets |> List.mapi (fun i t ->
+                    emitTargetAssign t (PyIndex(PyVar "_mret", [PyScalarIdx(PyConst (float i))])))
+            PyAssign("_mret", translateExpr expr tctx) :: assigns
+        else
+            [PyMultiAssign(pyTargets, translateExpr expr tctx)]
     | ExprStmt(_, Var(_, "clear")) ->
         // Bare 'clear' parses as Var, not OpaqueStmt; translate to comment
         [PyCommentStmt "clear all variables"]

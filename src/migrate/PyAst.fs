@@ -30,7 +30,7 @@ and PyIdx =
 
 type PyStmt =
     | PyAssign      of target: string * expr: PyExpr
-    | PyMultiAssign of targets: string list * expr: PyExpr
+    | PyMultiAssign of targets: PyExpr list * expr: PyExpr
     | PyExprStmt    of PyExpr
     | PyIf          of cond: PyExpr * thenBody: PyStmt list
                        * elifs: (PyExpr * PyStmt list) list * elseBody: PyStmt list
