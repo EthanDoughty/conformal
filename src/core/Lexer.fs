@@ -163,11 +163,34 @@ let private commandSyntaxNames =
 // forces STRING (MATLAB matrix literal row semantics).
 // After known command-syntax names with space -> ' starts a STRING.
 
+// MATLAB block comments: a line containing only %{ opens one, a line containing
+// only %} closes it, and they nest. Delimiters with any other text on the line
+// do not count (they stay ordinary comments). An unterminated block comments out
+// the rest of the file. Blanking the lines with spaces preserves string length,
+// so every token pos/line/col downstream stays exact.
+let private blankBlockComments (src: string) : string =
+    if not (src.Contains "%{") then src
+    else
+        let lines = src.Split('\n')
+        let mutable depth = 0
+        for i in 0 .. lines.Length - 1 do
+            let trimmed = lines.[i].Trim()
+            if depth > 0 then
+                if trimmed = "%{" then depth <- depth + 1
+                elif trimmed = "%}" then depth <- depth - 1
+                lines.[i] <- String.replicate lines.[i].Length " "
+            elif trimmed = "%{" then
+                depth <- 1
+                lines.[i] <- String.replicate lines.[i].Length " "
+        String.concat "\n" lines
+
 let lex (src: string) : Token list =
     // Normalize line endings.
     let src = src.Replace("\r\n", "\n").Replace("\r", "\n")
     // Strip UTF-8 BOM if present.
     let src = if src.Length > 0 && src.[0] = '\uFEFF' then src.[1..] else src
+    // Erase block comments before scanning; the scanner has no line-spanning tokens.
+    let src = blankBlockComments src
 
     let tokens = System.Collections.Generic.List<Token>()
     let mutable pos = 0
