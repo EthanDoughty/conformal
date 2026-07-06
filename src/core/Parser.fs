@@ -38,6 +38,7 @@ type ParseDiagnostic = {
 // LHS accessor chain segment — replaces (string * obj) boxing in ParseLhsChain.
 type LhsSegment =
     | Field of name: string
+    | DynField of fieldExpr: Expr
     | Paren of args: IndexArg list
     | Curly of args: IndexArg list
 
@@ -573,9 +574,9 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
                     chain.Add(Field(this.Eat(TkId).value))
                 elif this.Current().kind = TkLParen then
                     this.Eat(TkLParen) |> ignore
-                    this.ParseExpr(0, false, true) |> ignore
+                    let fieldExpr = this.ParseExpr(0, false, true)
                     this.Eat(TkRParen) |> ignore
-                    chain.Add(Field("<dynamic>"))
+                    chain.Add(DynField fieldExpr)
                 else
                     stop <- true
             elif cur.kind = TkLParen then
@@ -597,6 +598,7 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
         for seg in chain do
             match seg with
             | Field name -> expr <- FieldAccess(loc idTok.line idTok.col, expr, name)
+            | DynField e -> expr <- DynFieldAccess(loc idTok.line idTok.col, expr, e)
             | Paren args -> expr <- Apply(loc idTok.line idTok.col, expr, args)
             | Curly args -> expr <- CurlyApply(loc idTok.line idTok.col, expr, args)
         expr
@@ -619,6 +621,8 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
             | Paren args -> IndexAssign(loc eqTok.line eqTok.col, baseName, args, rhs)
             | Curly args -> CellAssign(loc eqTok.line eqTok.col, baseName, args, rhs)
             | Field _ -> StructAssign(loc eqTok.line eqTok.col, baseName, [fieldName chain.[0]], rhs)
+            | DynField _ ->
+                LhsAssign(loc eqTok.line eqTok.col, baseName, this.ChainToExpr(idTok, chain), rhs)
 
         elif (match chain.[0] with Paren _ | Curly _ -> true | _ -> false) && chain.Length > 1 &&
              chain.[1..] |> List.forall isField then
@@ -1018,9 +1022,9 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
                     left <- FieldAccess(loc dotTok.line dotTok.col, left, fieldName)
                 elif this.Current().kind = TkLParen then
                     this.Eat(TkLParen) |> ignore
-                    this.ParseExpr(0, false, true) |> ignore
+                    let fieldExpr = this.ParseExpr(0, false, true)
                     this.Eat(TkRParen) |> ignore
-                    left <- FieldAccess(loc dotTok.line dotTok.col, left, "<dynamic>")
+                    left <- DynFieldAccess(loc dotTok.line dotTok.col, left, fieldExpr)
                 else
                     raise (ParseError("Expected field name after '.' at " + string tok.pos, tok.line, tok.col, tok.line, tok.col + max 1 tok.value.Length))
 

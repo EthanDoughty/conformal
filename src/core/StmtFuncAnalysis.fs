@@ -78,6 +78,7 @@ let rec private exprMentionsVar (expr: Expr) (varName: string) : bool =
     | Transpose(_, op) -> exprMentionsVar op varName
     | BinOp(_, _, l, r) -> exprMentionsVar l varName || exprMentionsVar r varName
     | FieldAccess(_, b, _) -> exprMentionsVar b varName
+    | DynFieldAccess(_, b, fe) -> exprMentionsVar b varName || exprMentionsVar fe varName
     | Lambda _ | FuncHandle _ | MetaClass _ -> false
     | MatrixLit(_, rows) ->
         rows |> List.exists (fun row -> row |> List.exists (fun e -> exprMentionsVar e varName))
@@ -105,6 +106,8 @@ let rec private exprMentionsFieldAccess (expr: Expr) (baseName: string) (fieldNa
         exprMentionsFieldAccess l baseName fieldName ||
         exprMentionsFieldAccess r baseName fieldName
     | FieldAccess(_, b, _) -> exprMentionsFieldAccess b baseName fieldName
+    | DynFieldAccess(_, b, fe) ->
+        exprMentionsFieldAccess b baseName fieldName || exprMentionsFieldAccess fe baseName fieldName
     | Lambda _ | FuncHandle _ | MetaClass _ -> false
     | MatrixLit(_, rows) ->
         rows |> List.exists (fun row -> row |> List.exists (fun e -> exprMentionsFieldAccess e baseName fieldName))
@@ -153,6 +156,7 @@ let rec private exprContainsWorkspaceMutator (expr: Expr) : bool =
     | Not(_, op)           -> exprContainsWorkspaceMutator op
     | Transpose(_, op)     -> exprContainsWorkspaceMutator op
     | FieldAccess(_, b, _) -> exprContainsWorkspaceMutator b
+    | DynFieldAccess(_, b, fe) -> exprContainsWorkspaceMutator b || exprContainsWorkspaceMutator fe
     | MatrixLit(_, rows)   ->
         rows |> List.exists (fun row -> row |> List.exists exprContainsWorkspaceMutator)
     | CellLit(_, rows)     ->

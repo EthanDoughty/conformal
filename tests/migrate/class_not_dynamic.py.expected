@@ -10,6 +10,6 @@ def check(x):
         y = np.logical_not(x > 0)
     s.lambda_ = 1
     s.import_ = 2
-    z = getattr(x, '<dynamic>')
+    z = getattr(x, fieldname)
     w = obj.method()
     return y

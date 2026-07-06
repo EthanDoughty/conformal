@@ -112,6 +112,8 @@ let rec prettyExprIr (expr: Expr) : string =
             $"({prettyExprIr left} {op} {prettyExprIr right})"
     | FieldAccess(_, base_, field) ->
         $"{prettyExprIr base_}.{field}"
+    | DynFieldAccess(_, base_, fieldExpr) ->
+        $"{prettyExprIr base_}.({prettyExprIr fieldExpr})"
     | End _ -> "end"
     | MetaClass(_, name) -> $"?{name}"
 
@@ -132,6 +134,7 @@ let rec exprStartCol (e: Expr) : int =
     | CurlyApply(_, base_, _)  -> exprStartCol base_
     | Transpose(_, operand)    -> exprStartCol operand
     | FieldAccess(_, base_, _) -> exprStartCol base_
+    | DynFieldAccess(_, base_, _) -> exprStartCol base_
     | _                        -> e.Col
 
 // --- Warning message builders ---

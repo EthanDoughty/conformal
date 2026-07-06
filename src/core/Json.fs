@@ -157,6 +157,14 @@ let rec private writeExpr (w: Writer) (expr: Expr) : unit =
             "base",  fun () -> writeExpr w base_
             "field", fun () -> w.WriteStr field
         ]
+    | DynFieldAccess({ line = line; col = col }, base_, fieldExpr) ->
+        w.WriteObject [
+            "type",  fun () -> w.WriteStr "DynFieldAccess"
+            "line",  fun () -> w.WriteInt line
+            "col",   fun () -> w.WriteInt col
+            "base",  fun () -> writeExpr w base_
+            "field", fun () -> writeExpr w fieldExpr
+        ]
     | Lambda({ line = line; col = col }, parms, body) ->
         w.WriteObject [
             "type",   fun () -> w.WriteStr "Lambda"

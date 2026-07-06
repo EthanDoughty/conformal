@@ -250,6 +250,10 @@ let rec translateExpr (expr: Expr) (tctx: TranslateContext) : PyExpr =
             PyCall(PyVar "getattr", [translateExpr base_ tctx; PyStr "<dynamic>"], [])
         else
             PyAttr(translateExpr base_ tctx, safeName field)
+    | DynFieldAccess(_, base_, fieldExpr) ->
+        // s.(expr) -> getattr(s, expr); translateExpr applies index offsets
+        // inside the field expression (e.g. names{i} -> names[i-1]).
+        PyCall(PyVar "getattr", [translateExpr base_ tctx; translateExpr fieldExpr tctx], [])
     | Lambda(_, parms, body) ->
         PyLambda(parms, translateExpr body tctx)
     | FuncHandle(_, name) ->
@@ -412,6 +416,10 @@ and private translateLhsExpr (expr: Expr) (tctx: TranslateContext) : PyExpr =
             PyCall(PyVar "getattr", [translateLhsExpr base_ tctx; PyStr "<dynamic>"], [])
         else
             PyAttr(translateLhsExpr base_ tctx, safeName field)
+    | DynFieldAccess(_, base_, fieldExpr) ->
+        // The base must stay on the LHS path (a(i) is indexing, not a call);
+        // a getattr at the top of an assignment target becomes setattr upstream.
+        PyCall(PyVar "getattr", [translateLhsExpr base_ tctx; translateExpr fieldExpr tctx], [])
     | Var(_, name) when tctx.selfVar = Some name -> PyVar "self"  // classdef instance var -> self
     | Var(_, name) -> PyVar (safeName name)
     | _ -> translateExpr expr tctx
@@ -779,6 +787,7 @@ and private containsEndExpr (expr: Expr) : bool =
     | Transpose(_, operand) -> containsEndExpr operand
     | BinOp(_, _, left, right) -> containsEndExpr left || containsEndExpr right
     | FieldAccess(_, base_, _) -> containsEndExpr base_
+    | DynFieldAccess(_, base_, fieldExpr) -> containsEndExpr base_ || containsEndExpr fieldExpr
     | Lambda(_, _, body) -> containsEndExpr body
     | Apply(_, base_, args)
     | CurlyApply(_, base_, args) ->
@@ -835,6 +844,7 @@ let rec private exprReferencesVar (name: string) (expr: Expr) : bool =
     | Neg(_, e) | Not(_, e) | Transpose(_, e) -> exprReferencesVar name e
     | BinOp(_, _, l, r) -> exprReferencesVar name l || exprReferencesVar name r
     | FieldAccess(_, b, _) -> exprReferencesVar name b
+    | DynFieldAccess(_, b, fe) -> exprReferencesVar name b || exprReferencesVar name fe
     | Lambda(_, _, body) -> exprReferencesVar name body
     | Apply(_, b, args) | CurlyApply(_, b, args) ->
         exprReferencesVar name b || args |> List.exists (indexArgReferencesVar name)

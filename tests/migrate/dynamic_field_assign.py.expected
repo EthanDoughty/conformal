@@ -3,7 +3,7 @@
 import numpy as np
 
 name = 'width'
-setattr(s, '<dynamic>', 5)
-x = getattr(s, '<dynamic>')
-setattr(s.data, '<dynamic>', 1)
-setattr(q[1], '<dynamic>', 3)
+setattr(s, name, 5)
+x = getattr(s, name)
+setattr(s.data, name, 1)
+setattr(q[1], name, 3)

@@ -460,6 +460,15 @@ let rec evalExprIr
                     warnings.Add(warnFieldAccessNonStruct line baseShape)
                 UnknownShape
 
+    // --- Dynamic field access: s.(expr) ---
+    // The field name is unknowable statically; evaluate the base for its own
+    // diagnostics and stay conservative. The field expression is walked by the
+    // traversal passes but not shape-evaluated here.
+    | DynFieldAccess({ line = line }, baseExpr, _fieldExpr) ->
+        evalExprIr baseExpr env warnings ctx None builtinDispatch |> ignore
+        if ctx.cst.coderMode then warnings.Add(warnCoderDynamicField line)
+        UnknownShape
+
     // --- Lambda: @(params) body ---
     | Lambda(_, parms, body) ->
         let lambdaId = ctx.call.nextLambdaId

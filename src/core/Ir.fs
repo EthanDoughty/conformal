@@ -24,6 +24,7 @@ type Expr =
     | BinOp       of loc: SrcLoc * op: string * left: Expr * right: Expr
     | Transpose   of loc: SrcLoc * operand: Expr
     | FieldAccess of loc: SrcLoc * base_: Expr * field: string
+    | DynFieldAccess of loc: SrcLoc * base_: Expr * fieldExpr: Expr
     | Lambda      of loc: SrcLoc * parms: string list * body: Expr
     | FuncHandle  of loc: SrcLoc * name: string
     | End         of loc: SrcLoc
@@ -37,7 +38,7 @@ type Expr =
         match this with
         | Var(l,_) | Const(l,_) | StringLit(l,_)
         | Neg(l,_) | Not(l,_) | BinOp(l,_,_,_)
-        | Transpose(l,_) | FieldAccess(l,_,_)
+        | Transpose(l,_) | FieldAccess(l,_,_) | DynFieldAccess(l,_,_)
         | Lambda(l,_,_) | FuncHandle(l,_) | End l
         | Apply(l,_,_) | CurlyApply(l,_,_)
         | MatrixLit(l,_) | CellLit(l,_) | MetaClass(l,_) -> l
