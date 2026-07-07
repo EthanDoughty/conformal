@@ -196,7 +196,14 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
                     elif tok.kind = TkRParen || tok.kind = TkRBracket || tok.kind = TkRCurly then depth <- max 0 (depth - 1)
                 consumed.Add(tok)
                 pos <- pos + 1
-        let rawText = consumed |> Seq.map (fun t -> t.value) |> String.concat " "
+        // Join by source abutment so the fidelity text matches the original
+        // (use bravo94.rcm, not "use bravo94 . rcm"); any gap becomes one space.
+        let sb = System.Text.StringBuilder()
+        for i in 0 .. consumed.Count - 1 do
+            if i > 0 && consumed.[i].pos > consumed.[i - 1].pos + consumed.[i - 1].value.Length then
+                sb.Append(' ') |> ignore
+            sb.Append(consumed.[i].value) |> ignore
+        let rawText = sb.ToString()
         let targets = extractTargetsFromTokens (consumed |> Seq.toList)
         OpaqueStmt(loc startLine startCol, targets, rawText)
 

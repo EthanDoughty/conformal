@@ -880,9 +880,49 @@ and private stmtReferencesVar (name: string) (stmt: Stmt) : bool =
 
 // --- Command-style call translation (for OpaqueStmt raw text) ---
 
+// Environment commands act on the MATLAB workspace, path, or desktop and have
+// no Python meaning; they keep their fidelity comment instead of becoming a
+// dead call.
+let private environmentCommands =
+    Set.ofList [
+        "help"; "doc"; "type"; "which"; "what"; "whos"; "who"; "format"; "echo"
+        "orient"; "save"; "mex"; "more"; "diary"; "profile"; "edit"; "open"
+        "web"; "pack"; "dbstop"; "dbclear"; "dbcont"; "dbtype"; "dbstep"; "dbquit"
+        "cd"; "mkdir"; "rmdir"; "delete"; "copyfile"; "movefile"; "rmpath"
+        "path"; "pathtool"; "box"; "material"; "view"; "set"; "get" ]
+
+// DSL keywords (Symbolic Toolbox, CVX, YALMIP) rewrite the language itself;
+// their statements are declarations, not calls, so they stay opaque.
+let private dslCommands =
+    Set.ofList [
+        "syms"; "sdpvar"; "binvar"; "intvar"; "variable"; "variables"; "subject"
+        "minimize"; "maximize"; "cvx_begin"; "cvx_end"; "cvx_solver"
+        "cvx_precision"; "cvx_quiet"; "assume"; "assumeAlso" ]
+
+// A malformed control statement can land in recovery with its keyword intact;
+// a keyword is never a command-syntax function.
+let private stmtKeywords =
+    Set.ofList [
+        "if"; "elseif"; "else"; "end"; "for"; "parfor"; "while"; "switch"
+        "case"; "otherwise"; "try"; "catch"; "function"; "return"; "break"
+        "continue"; "global"; "persistent"; "classdef" ]
+
+let private isPlainIdent (s: string) =
+    s.Length > 0 && (System.Char.IsLetter s.[0] || s.[0] = '_')
+    && s |> Seq.forall (fun c -> System.Char.IsLetterOrDigit c || c = '_')
+
+// A command argument may be a filename, flag, or line-spec (bravo94.rcm, -h,
+// k--, 1:4) but never quotes, brackets, or an equals sign; requiring one
+// alphanumeric keeps stray operators from a failed expression parse out.
+let private isCommandWord (w: string) =
+    w |> Seq.forall (fun c ->
+        System.Char.IsLetterOrDigit c || c = '_' || c = '.' || c = '+'
+        || c = '-' || c = ':' || c = '/' || c = '\\')
+    && w |> Seq.exists System.Char.IsLetterOrDigit
+
 // Try to translate common MATLAB command-style calls (hold on, axis equal, etc.)
 // Returns Some [stmts] on success, None if unrecognized.
-let private translateCommandStyle (raw: string) (tctx: TranslateContext) : PyStmt list option =
+let private translateCommandStyle (oloc: SrcLoc) (raw: string) (tctx: TranslateContext) : PyStmt list option =
     let words = raw.Split([|' '; '\t'|], System.StringSplitOptions.RemoveEmptyEntries) |> Array.toList
     match words with
     // hold on/off → noop (matplotlib holds by default)
@@ -960,6 +1000,21 @@ let private translateCommandStyle (raw: string) (tctx: TranslateContext) : PyStm
     // clear var1 var2 ... → comment listing the variables
     | "clear" :: vars when vars.Length >= 1 ->
         Some [PyCommentStmt (sprintf "clear %s" (vars |> String.concat " "))]
+    // Anything else shaped like `cmd word word...` is a user function invoked
+    // in command syntax, which passes each word as a literal string:
+    // `use bravo94.rcm` IS use('bravo94.rcm'). Routing through translateExpr
+    // keeps builtin mappings; a cmd bound to an array stays opaque rather
+    // than turning into string indexing.
+    | cmd :: args when
+        not args.IsEmpty
+        && isPlainIdent cmd
+        && not (stmtKeywords.Contains cmd)
+        && not (environmentCommands.Contains cmd)
+        && not (dslCommands.Contains cmd)
+        && List.forall isCommandWord args
+        && not (isMatrix (Env.Env.get tctx.env cmd) || isCell (Env.Env.get tctx.env cmd)) ->
+        let sargs = args |> List.map (fun a -> IndexExpr(oloc, StringLit(oloc, a)))
+        Some [PyExprStmt(translateExpr (Apply(oloc, Var(oloc, cmd), sargs)) tctx)]
     | _ -> None
 
 // --- Statement translation ---
@@ -1248,7 +1303,7 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
         | _ ->
             [PyExprStmt(PyBinOp("=", pyLhs, pyRhs))]
 
-    | OpaqueStmt(_, targets, raw) ->
+    | OpaqueStmt(oloc, targets, raw) ->
         let trimmed = raw.Trim()
         // Handle global/persistent declarations
         if trimmed.StartsWith("global ") || trimmed = "global" then
@@ -1277,7 +1332,7 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
                 PyExprStmt(PyCall(PyAttr(PyAttr(PyVar "sys", "path"), "insert"), [PyConst 0.0; PyStr p], [])))
         else
         // Try to translate common command-style calls before falling back
-        match translateCommandStyle trimmed tctx with
+        match translateCommandStyle oloc trimmed tctx with
         | Some stmts -> stmts
         | None ->
             let comment = [PyCommentStmt (sprintf "MATLAB: %s" (raw.Trim()))]
