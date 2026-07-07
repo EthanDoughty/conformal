@@ -22,6 +22,8 @@ type PyExpr =
     | PyTuple     of PyExpr list
     | PyArray     of PyExpr list list
     | PyLambda    of parms: string list * body: PyExpr
+    // MATLAB printf cycling: fmt applied per element across all args, column-major
+    | PyFormatCycle of fmt: PyExpr * args: PyExpr list
     | PyComment   of string
 
 and PyIdx =

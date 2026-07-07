@@ -108,6 +108,16 @@ let rec emitExpr (expr: PyExpr) : string =
         sprintf "np.array([%s])" (sRows |> String.concat ", ")
     | PyLambda(parms, body) ->
         sprintf "lambda %s: %s" (parms |> String.concat ", ") (emitExpr body)
+    | PyFormatCycle(fmt, args) ->
+        // np.ravel of a scalar is a one-element array, so this form is exact
+        // for scalars as well as matrices.
+        let f = emitExpr fmt
+        match args with
+        | [a] ->
+            sprintf "''.join(%s %% _v for _v in np.ravel(%s, order='F'))" f (emitExpr a)
+        | _ ->
+            let tup = args |> List.map emitExpr |> String.concat ", "
+            sprintf "''.join(%s %% _v for _a in (%s) for _v in np.ravel(_a, order='F'))" f tup
     | PyComment text ->
         // Inline comment attached to an expression: emit as-is
         // (the surrounding expression handles placement)

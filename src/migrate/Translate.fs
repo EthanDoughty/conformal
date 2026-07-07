@@ -219,6 +219,47 @@ let private lowerFormatStringNoArgs (e: PyExpr) : PyExpr =
     | PyStr s -> PyStr ((interpretPrintfEscapes s).Replace("%%", "%"))
     | _ -> e
 
+// --- printf format cycling ---
+
+// MATLAB's printf family cycles its format over every element of every
+// argument (column-major) until the values run out; Python's % raises on a
+// count mismatch instead. Cycling is emitted only where the mismatch is
+// visible: surplus args, or one numeric conversion fed by a non-scalar.
+// np.ravel of a scalar is a one-element array, so a cycled emission prints
+// the same bytes for scalars — a stale flow-insensitive shape can change
+// style, never meaning.
+type private PrintfCycle =
+    | CycleDrop      // zero conversions: MATLAB ignores the args entirely
+    | CycleJoin      // one numeric conversion: join over raveled elements
+    | CycleNone
+
+let private printfConversionRe =
+    System.Text.RegularExpressions.Regex(@"%[-+ 0#]*(?:\d+|\*)?(?:\.(?:\d+|\*))?([diuoxXeEfgGsc])")
+
+let private printfCycleDecision (fmtLit: string) (irArgs: IndexArg list) (tctx: TranslateContext) : PrintfCycle =
+    let ms = printfConversionRe.Matches(fmtLit.Replace("%%", ""))
+    let convs = [ for m in ms -> m.Groups.[1].Value ]
+    let hasStar = ms |> Seq.exists (fun m -> m.Value.Contains "*")
+    let rec exprNonScalar (e: Expr) =
+        match e with
+        | MatrixLit(_, rows) -> (rows |> List.sumBy List.length) > 1
+        | Transpose(_, inner) -> exprNonScalar inner
+        | _ ->
+            match inferExprShape tctx e with
+            | Some (Matrix(r, c)) -> not (r = Concrete 1 && c = Concrete 1)
+            | _ -> false
+    let argNonScalar (a: IndexArg) =
+        match a with
+        | Ir.Range _ | Ir.SteppedRange _ -> true
+        | Ir.Colon _ -> false
+        | IndexExpr(_, e) -> exprNonScalar e
+    if irArgs.IsEmpty then CycleNone
+    elif convs.IsEmpty then CycleDrop
+    elif hasStar then CycleNone
+    elif convs.Length = 1 && convs.[0] <> "s" && convs.[0] <> "c"
+         && (irArgs.Length > 1 || argNonScalar irArgs.[0]) then CycleJoin
+    else CycleNone
+
 // --- Expression translation ---
 
 let rec translateExpr (expr: Expr) (tctx: TranslateContext) : PyExpr =
@@ -523,10 +564,17 @@ and private translateBuiltinCall (mapping: BuiltinMapping) (fname: string) (args
         // We handle it by emitting a raise expression wrapper.
         PyCall(PyVar ("raise " + mapping.pythonFunc), pyArgs, [])
     | SprintfStyle ->
-        // sprintf(fmt, a, b) -> fmt % (a, b)
+        // sprintf(fmt, a, b) -> fmt % (a, b), cycling the format where MATLAB would
         match pyArgs with
         | [fmt] -> lowerFormatStringNoArgs fmt  // no format args: just the string itself
-        | fmt :: fmtArgs -> PyBinOp("%", lowerFormatString fmt, PyTuple fmtArgs)
+        | fmt :: fmtArgs ->
+            match fmt with
+            | PyStr f ->
+                match printfCycleDecision f (List.tail args) tctx with
+                | CycleDrop -> lowerFormatStringNoArgs fmt
+                | CycleJoin -> PyFormatCycle(lowerFormatString fmt, fmtArgs)
+                | CycleNone -> PyBinOp("%", lowerFormatString fmt, PyTuple fmtArgs)
+            | _ -> PyBinOp("%", lowerFormatString fmt, PyTuple fmtArgs)
         | _ -> PyCall(PyVar "str", pyArgs, [])
     | FprintfStyle ->
         // fprintf routes to a destination implied by an optional leading file handle:
@@ -550,10 +598,19 @@ and private translateBuiltinCall (mapping: BuiltinMapping) (fname: string) (args
                 | _, ((PyStr _) as realFmt) :: more -> Some fmt, realFmt, more   // handle + literal format
                 | PyConst _, _ -> Some fmt, rest.Head, rest.Tail                 // numeric handle (legacy)
                 | _ -> None, fmt, rest                                           // ambiguous -> treat as format
-        // Escape-lowered, percent-applied payload (no-arg path collapses %%).
+        // Escape-lowered, percent-applied payload (no-arg path collapses %%),
+        // cycling the format where MATLAB would.
         let formatted =
             if actualArgs.IsEmpty then lowerFormatStringNoArgs actualFmt
-            else PyBinOp("%", lowerFormatString actualFmt, PyTuple actualArgs)
+            else
+                let irActual = args |> List.skip (args.Length - actualArgs.Length)
+                match actualFmt with
+                | PyStr f ->
+                    match printfCycleDecision f irActual tctx with
+                    | CycleDrop -> lowerFormatStringNoArgs actualFmt
+                    | CycleJoin -> PyFormatCycle(lowerFormatString actualFmt, actualArgs)
+                    | CycleNone -> PyBinOp("%", lowerFormatString actualFmt, PyTuple actualArgs)
+                | _ -> PyBinOp("%", lowerFormatString actualFmt, PyTuple actualArgs)
         // Route by the handle. Only a clearly variable-like handle (name, field, or index)
         // writes to a file object; numeric and other expressions go to stdout (fid 1) or
         // stderr (fid 2), so a negative or computed numeric fid never becomes (-1).write.
