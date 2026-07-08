@@ -20,8 +20,9 @@ let private migrateFile (inputFile: string) (outputFile: string option) (toStdou
             let src = File.ReadAllText(inputFile)
             let (program, _) = Parser.parseMATLAB src
 
-            // Run shape analysis
+            // Run shape analysis (with per-function exit-env capture for the translator)
             let ctx = Context.AnalysisContext()
+            ctx.captureFunctionEnvs <- true
             let (env, _diags) = Analysis.analyzeProgramIr program ctx
 
             // Run copy semantics analysis
@@ -32,6 +33,7 @@ let private migrateFile (inputFile: string) (outputFile: string option) (toStdou
                 shapeAnnotations = ctx.shapeAnnotations
                 copySites = copySites
                 env = env
+                functionEnvs = ctx.functionEnvs
                 usedImports = Set.empty
                 currentReturnVars = []
                 functionDepth = 0
@@ -93,6 +95,7 @@ let private runMigrateTests () : int =
                     let (program, _) = Parser.parseMATLAB src
 
                     let ctx = Context.AnalysisContext()
+                    ctx.captureFunctionEnvs <- true
                     let (env, _diags) = Analysis.analyzeProgramIr program ctx
 
                     let copySites = CopySemantics.findCopySites program.body ctx.shapeAnnotations
@@ -100,6 +103,7 @@ let private runMigrateTests () : int =
                         shapeAnnotations = ctx.shapeAnnotations
                         copySites = copySites
                         env = env
+                        functionEnvs = ctx.functionEnvs
                         usedImports = Set.empty
                         currentReturnVars = []
                         functionDepth = 0

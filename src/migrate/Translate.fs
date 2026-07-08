@@ -96,7 +96,12 @@ let private hoistScopeDecls (parms: string list) (body: PyStmt list) : PyStmt li
 type TranslateContext = {
     shapeAnnotations: System.Collections.Generic.Dictionary<SrcLoc, Shape>
     copySites: Set<SrcLoc>
-    env: Env.Env
+    /// The active env for shape lookups: the script env at top level, the
+    /// function's captured exit env inside a FunctionDef body (swapped by the
+    /// FunctionDef/classMethod arms and restored on exit).
+    mutable env: Env.Env
+    /// Per-function exit envs from the analyzer, keyed by FunctionDef SrcLoc.
+    functionEnvs: System.Collections.Generic.Dictionary<SrcLoc, Env.Env>
     mutable usedImports: Set<string>
     /// Current function's output variable names (for return translation)
     mutable currentReturnVars: string list
@@ -1399,9 +1404,17 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
                 (targets |> List.map (fun t -> PyAssign(safeName t, PyNone)))
                 @ comment
 
-    | FunctionDef(_, name, parms, outputVars, body, _) ->
+    | FunctionDef(floc, name, parms, outputVars, body, _) ->
         let savedReturnVars = tctx.currentReturnVars
         let savedDepth = tctx.functionDepth
+        let savedEnv = tctx.env
+        // Shape lookups inside the body use the function's captured exit env;
+        // absent one, an empty env — never the enclosing env, whose same-named
+        // variables would leak wrong shapes into the body.
+        tctx.env <-
+            match tctx.functionEnvs.TryGetValue floc with
+            | true, e -> e
+            | _ -> Env.Env.create ()
         tctx.functionDepth <- tctx.functionDepth + 1
         let safeOutputVars = outputVars |> List.map safeName
         tctx.currentReturnVars <- safeOutputVars
@@ -1454,6 +1467,7 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
         let fullBody = hoistScopeDecls safeParms fullBody
         tctx.currentReturnVars <- savedReturnVars
         tctx.functionDepth <- savedDepth
+        tctx.env <- savedEnv
         [PyFuncDef(safeName name, pyParms, (if fullBody.IsEmpty then [PyPass] else fullBody), safeOutputVars)]
 
 // Translate one classdef method. The MATLAB instance variable (the constructor's output
@@ -1461,7 +1475,7 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
 // the class becomes __init__.
 and private translateClassMethod (className: string) (stmt: Stmt) (tctx: TranslateContext) : PyStmt =
     match stmt with
-    | FunctionDef(_, mname, parms, outputVars, body, _) ->
+    | FunctionDef(mloc, mname, parms, outputVars, body, _) ->
         let isCtor = mname = className
         let objName = if isCtor then List.tryHead outputVars else List.tryHead parms
         // A method drops its leading obj parameter for 'self'; a constructor's obj is an
@@ -1472,6 +1486,11 @@ and private translateClassMethod (className: string) (stmt: Stmt) (tctx: Transla
         // returns self); a constructor returns None, so it has no return values.
         let retNames = outputVars |> List.map (fun v -> if Some v = objName then "self" else safeName v)
         let savedSelf, savedReturns, savedDepth = tctx.selfVar, tctx.currentReturnVars, tctx.functionDepth
+        let savedEnv = tctx.env
+        tctx.env <-
+            match tctx.functionEnvs.TryGetValue mloc with
+            | true, e -> e
+            | _ -> Env.Env.create ()
         tctx.selfVar <- objName
         tctx.currentReturnVars <- (if isCtor then [] else retNames)
         tctx.functionDepth <- tctx.functionDepth + 1
@@ -1479,6 +1498,7 @@ and private translateClassMethod (className: string) (stmt: Stmt) (tctx: Transla
         tctx.selfVar <- savedSelf
         tctx.currentReturnVars <- savedReturns
         tctx.functionDepth <- savedDepth
+        tctx.env <- savedEnv
         if isCtor then
             // __init__ returns None, so drop a trailing return of the instance (a nested early
             // 'return' stays, but with no return vars it is a bare 'return' = return None).
