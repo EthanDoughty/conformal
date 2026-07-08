@@ -644,6 +644,17 @@ type CallConfig = {
 let inline private recordShape (ctx: AnalysisContext) (loc: SrcLoc) (shape: Shape) =
     ctx.shapeAnnotations.[loc] <- shape
 
+// Capture a function's exit environment for migrate (ctx.captureFunctionEnvs).
+// Contexts join rather than overwrite: over-classifying a runtime scalar as
+// Matrix is what would turn the /,\,^ translation gates into emitted crashes.
+let private captureFunctionEnv (ctx: AnalysisContext) (defLine: int) (defCol: int) (funcEnv: Env) =
+    if ctx.captureFunctionEnvs then
+        let defLoc = { line = defLine; col = defCol }
+        ctx.functionEnvs.[defLoc] <-
+            match ctx.functionEnvs.TryGetValue defLoc with
+            | true, prev -> joinEnv prev funcEnv
+            | _ -> funcEnv
+
 /// evalExprIr wired with real builtin dispatch.
 let rec wiredEvalExpr
     (expr: Expr)
@@ -2008,6 +2019,7 @@ and analyzeFunctionCall
 
                     // Analyze function body
                     runStmts sig_.body funcEnv funcWarnings ctx |> ignore
+                    captureFunctionEnv ctx sig_.defLine sig_.defCol funcEnv
 
                     // Write-back: flush global variable shapes to globalStore
                     for varName in ctx.cst.globalDeclaredVars do
@@ -2160,6 +2172,7 @@ and analyzeNestedFunctionCall
                         | _ -> ()
 
                     runStmts sig_.body funcEnv funcWarnings ctx |> ignore
+                    captureFunctionEnv ctx sig_.defLine sig_.defCol funcEnv
 
                     // Write-back: flush modified parent-visible variables
                     let paramSet = Set.ofList sig_.parms
@@ -2350,3 +2363,39 @@ and analyzeExternalFunctionCall
             ctx.call.functionRegistry <- savedRegistry
             ctx.ws.analyzingExternal.Remove(fname) |> ignore
             ctx.call.analyzingFunctions.Remove(fname) |> ignore
+
+
+// --- captureUncalledFunctionEnv: exit-env capture for functions with no call site ---
+
+// Analyze a function body once with Unknown parameters (arguments-block shapes
+// seed where declared) purely to record its exit env for migrate. Diagnostics
+// go to a throwaway sink and the analysis cache is never written, so a later
+// real call still produces its own warnings. Runs only on the migrate path
+// (ctx.captureFunctionEnvs); never enable it for the analyzer.
+let captureUncalledFunctionEnv (sig_: FunctionSignature) (ctx: AnalysisContext) : unit =
+    if not (ctx.call.analyzingFunctions.Contains sig_.name) then
+        ctx.call.analyzingFunctions.Add(sig_.name) |> ignore
+        try
+            ctx.SnapshotScope(fun () ->
+                let savedInsideFunction = ctx.call.insideFunction
+                ctx.call.insideFunction <- true
+                let funcEnv = Env.create ()
+                let throwawayWarnings = ResizeArray<Diagnostic>()
+                for param in sig_.parms do
+                    match Map.tryFind param sig_.argShapes with
+                    | Some argBlockShape -> Env.set funcEnv param argBlockShape
+                    | None -> Env.set funcEnv param UnknownShape
+                Env.set funcEnv "nargin" Scalar
+                Env.set funcEnv "nargout" Scalar
+                for s in sig_.body do
+                    match s with
+                    | FunctionDef({ line = nLine; col = nCol }, nestedName, nestedParms, nestedOuts, nestedBody, nestedArgAnns) ->
+                        ctx.call.nestedFunctionRegistry.[nestedName] <-
+                            { name = nestedName; parms = nestedParms; outputVars = nestedOuts; body = nestedBody
+                              defLine = nLine; defCol = nCol; argShapes = argAnnotationsToShapes nestedArgAnns }
+                    | _ -> ()
+                runStmts sig_.body funcEnv throwawayWarnings ctx |> ignore
+                captureFunctionEnv ctx sig_.defLine sig_.defCol funcEnv
+                ctx.call.insideFunction <- savedInsideFunction)
+        finally
+            ctx.call.analyzingFunctions.Remove(sig_.name) |> ignore

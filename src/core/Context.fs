@@ -204,6 +204,16 @@ type AnalysisContext() =
     member val shapeAnnotations : System.Collections.Generic.Dictionary<SrcLoc, Shape>
         = System.Collections.Generic.Dictionary<SrcLoc, Shape>() with get
 
+    /// Per-function exit environments, keyed by the FunctionDef's SrcLoc.
+    /// Populated only when captureFunctionEnvs is set (the migrate pipeline);
+    /// the analyzer never sets it, so analyzer diagnostics cannot change.
+    /// Multi-call-context entries are joined: a shape stays concrete only when
+    /// every observed calling context agrees, which is what keeps the /,\,^
+    /// translation gates from emitting inv/solve on a runtime scalar.
+    member val captureFunctionEnvs : bool = false with get, set
+    member val functionEnvs : System.Collections.Generic.Dictionary<SrcLoc, Env>
+        = System.Collections.Generic.Dictionary<SrcLoc, Env>() with get
+
     /// Snapshot the 5 branch-sensitive fields (constraints, dimEquiv, valueRanges,
     /// upperBounds, lowerBounds). DimEquiv is deep-copied; the rest are persistent/O(1).
     member this.SnapshotConstraintState() : ConstraintSnapshot = {

@@ -77,6 +77,14 @@ let analyzeProgramIr
         | FunctionDef _ -> ()
         | _ -> analyzeStmtIr item env warnings ctx |> ignore
 
+    // Capture pass (migrate only): analyze functions no call site reached, with
+    // Unknown/arguments-block params, purely to record their exit envs.
+    if ctx.captureFunctionEnvs then
+        for sig_ in ctx.call.functionRegistry.Values |> Seq.toList do
+            let defLoc = { line = sig_.defLine; col = sig_.defCol }
+            if not (ctx.functionEnvs.ContainsKey defLoc) then
+                captureUncalledFunctionEnv sig_ ctx
+
     // Post-analysis backward propagation pass: resolve symbolic dims via equivalence store.
     // This catches shapes assigned before the constraining operation ran (backward propagation).
     // Only resolves dims whose symbolic names are NOT bound as variables in the environment.
