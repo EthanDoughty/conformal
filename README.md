@@ -69,6 +69,8 @@ code --install-extension EthanDoughty.conformal
 
 Open any .m file and diagnostics appear as squiggly red/yellow underlines. Hovering a variable shows its inferred shape.
 
+To try it without installing anything, there's a [browser playground](https://conformaltools.com/playground.html) that runs the same analyzer client-side, no code leaves the browser.
+
 To build from source, clone the repository and use the [.NET 8.0 SDK](https://dotnet.microsoft.com/download).
 
 ```bash

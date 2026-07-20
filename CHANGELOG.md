@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- **Browser playground** at `site/playground.html`: paste or type MATLAB source and see diagnostics and inferred shapes live, entirely client-side, through the same Fable-compiled analyzer the VS Code extension runs in-process. CodeMirror 6 renders the squiggles and inline shape hints, a strict-mode toggle changes the emitted warning set, and an example picker offers a few starting snippets. No code ever leaves the browser, and the page makes no network requests at runtime
+- New `make playground` target: builds `site/playground.js` with a standalone esbuild invocation of `vscode-conformal/src/playground.ts`, kept separate from the extension's `esbuild.mjs` so the two bundles stay independent
+- index.html links to the playground from the hero and the footer
 
 ## [3.11.0] - 2026-07-20
 ### Added

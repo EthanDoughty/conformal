@@ -11,6 +11,7 @@ Because it is path-sensitive and control-flow-aware, Conformal reasons about whi
 ## How people run it
 
 - [VS Code extension](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal), where diagnostics appear as you type and hovering a variable shows its inferred shape. The language server is the same analysis compiled to JavaScript, so no MATLAB process runs behind it.
+- [Browser playground](https://conformaltools.com/playground.html), which runs the same analyzer client-side, so pasted code never leaves the browser and nothing needs to be installed to try it.
 - [Command-line binary](https://github.com/EthanDoughty/conformal/releases), a single native executable with no dependencies, for local runs and for continuous integration.
 - [GitHub Action with SARIF output](https://github.com/EthanDoughty/conformal), which emits SARIF 2.1.0 with per-file hashes and uploads into GitHub Code Scanning, so results can support traceability for regulated work.
 

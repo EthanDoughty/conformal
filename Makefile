@@ -43,6 +43,15 @@ extension: fable
 	cd vscode-conformal && node esbuild.mjs
 	cd vscode-conformal && npx @vscode/vsce package --allow-missing-repository
 
+# Standalone esbuild invocation for the browser playground. Deliberately not
+# folded into esbuild.mjs so the two extension bundles (client.js/server.js)
+# stay byte-for-byte independent of this target.
+.PHONY: playground
+playground: fable
+	cd vscode-conformal && node_modules/.bin/esbuild src/playground.ts \
+	  --bundle --platform=browser --format=iife --minify \
+	  --outfile=../site/playground.js
+
 # Publishes the packaged VSIX to the Marketplace. The PAT is an Azure DevOps
 # token (scope Marketplace:Manage, all orgs) read from $VSCE_PAT, else from a
 # gitignored file under ~/.config. PATs expire, which is the usual reason a

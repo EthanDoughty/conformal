@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conformal playground: try the MATLAB checker in your browser</title>
+    <meta name="description" content="Paste MATLAB code and see dimension and shape errors right away. Runs entirely in your browser, no install, no upload.">
+    <link rel="icon" type="image/png" href="favicon.png">
+
+    <style>
+        :root {
+            --bg: #141210;
+            --surface: #1e1c18;
+            --border: #302d26;
+            --text: #e8e4dc;
+            --muted: #9a9488;
+            --accent: #d4a021;
+            --accent-hover: #b8891a;
+            --green: #5a9e4b;
+            --red: #c44b3f;
+            --orange: #cc8833;
+            --code-bg: #18160f;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 860px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        header {
+            padding: 32px 0 24px;
+        }
+
+        header a.home {
+            color: var(--text);
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 1.1rem;
+        }
+
+        header a.home span { color: var(--accent); }
+
+        .intro {
+            padding-bottom: 24px;
+        }
+
+        .intro h1 {
+            font-size: 1.7rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            margin-bottom: 12px;
+        }
+
+        .intro p {
+            color: var(--muted);
+            font-size: 1rem;
+            max-width: 620px;
+            margin-bottom: 8px;
+        }
+
+        .privacy-note {
+            font-size: 0.85rem;
+            color: var(--muted);
+            border-left: 2px solid var(--accent);
+            padding-left: 12px;
+        }
+
+        .toolbar {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
+            padding: 20px 0 12px;
+        }
+
+        .toolbar label {
+            font-size: 0.875rem;
+            color: var(--muted);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        select#pg-examples {
+            background: var(--surface);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 6px 10px;
+            font-size: 0.875rem;
+        }
+
+        #pg-editor {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+            font-size: 0.9rem;
+        }
+
+        .cm-editor { background: var(--code-bg); height: 100%; }
+
+        #pg-panel-wrap {
+            margin-top: 20px;
+            padding-bottom: 48px;
+        }
+
+        #pg-panel-wrap h2 {
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: var(--text);
+        }
+
+        #pg-panel {
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .pg-panel-empty {
+            padding: 14px 16px;
+            color: var(--muted);
+            font-size: 0.875rem;
+        }
+
+        .pg-panel-row {
+            display: flex;
+            gap: 14px;
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border);
+            cursor: pointer;
+            font-size: 0.85rem;
+            align-items: baseline;
+        }
+
+        .pg-panel-row:last-child { border-bottom: none; }
+        .pg-panel-row:hover { background: var(--surface); }
+
+        .pg-panel-loc {
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            color: var(--muted);
+            flex-shrink: 0;
+            width: 56px;
+        }
+
+        .pg-panel-code {
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            color: var(--orange);
+            flex-shrink: 0;
+        }
+
+        .pg-panel-msg {
+            color: var(--text);
+        }
+
+        .pg-shape-hint {
+            color: var(--muted);
+            opacity: 0.75;
+            font-style: italic;
+            font-size: 0.85em;
+            margin-left: 4px;
+        }
+
+        footer {
+            padding: 32px 0 40px;
+            border-top: 1px solid var(--border);
+            color: var(--muted);
+            font-size: 0.82rem;
+        }
+
+        footer a { color: var(--muted); text-decoration: none; }
+        footer a:hover { color: var(--text); }
+
+        .footer-links { display: flex; gap: 20px; flex-wrap: wrap; }
+
+        @media (max-width: 640px) {
+            .intro h1 { font-size: 1.4rem; }
+            #pg-editor { font-size: 0.82rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <a class="home" href="index.html"><span>Conformal</span> playground</a>
+        </header>
+
+        <section class="intro">
+            <h1>Paste MATLAB code, see dimension errors</h1>
+            <p>
+                Conformal reads your code without running it and flags matrix sizes that do not
+                line up. Type or paste code below, or pick an example.
+            </p>
+            <p class="privacy-note">
+                Analysis runs entirely in your browser. Your code never leaves this page.
+            </p>
+        </section>
+
+        <div class="toolbar">
+            <label for="pg-examples">Example
+                <select id="pg-examples"></select>
+            </label>
+            <label for="pg-strict">
+                <input type="checkbox" id="pg-strict">
+                Strict mode (show low-confidence warnings too)
+            </label>
+        </div>
+
+        <div id="pg-editor"></div>
+
+        <div id="pg-panel-wrap">
+            <h2>Diagnostics</h2>
+            <div id="pg-panel"></div>
+        </div>
+    </div>
+
+    <footer>
+        <div class="container">
+            <div class="footer-links">
+                <a href="index.html">Home</a>
+                <a href="https://github.com/EthanDoughty/conformal">GitHub</a>
+                <a href="https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal">VS Code Marketplace</a>
+            </div>
+        </div>
+    </footer>
+
+    <script src="./playground.js"></script>
+</body>
+</html>

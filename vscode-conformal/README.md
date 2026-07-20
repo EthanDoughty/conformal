@@ -65,4 +65,4 @@ There should be nothing to configure. The extension bundles the analyzer directl
 
 Shapes are followed through assignments, function calls, control flow, and sibling `.m` files in the same directory. Dimensions can stay symbolic, so `n`, `m`, and `n+m` are carried the whole way rather than collapsing to unknown once a size stops being a literal number. The tracking reaches through user-defined functions, including the older end-less definitions and no-argument procedures, and through anonymous functions with closure capture.
 
-[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal) · [GitHub](https://github.com/EthanDoughty/conformal)
+[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal) · [Browser playground](https://conformaltools.com/playground.html) · [GitHub](https://github.com/EthanDoughty/conformal)
