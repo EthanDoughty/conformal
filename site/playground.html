@@ -100,6 +100,19 @@
             font-size: 0.875rem;
         }
 
+        .pg-btn {
+            background: var(--accent);
+            color: #141210;
+            border: none;
+            border-radius: 6px;
+            padding: 6px 14px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .pg-btn:hover { background: var(--accent-hover); }
+
         #pg-editor {
             border: 1px solid var(--border);
             border-radius: 8px;
@@ -213,6 +226,19 @@
                 <input type="checkbox" id="pg-strict">
                 Strict mode (show low-confidence warnings too)
             </label>
+            <label for="pg-fixpoint">
+                <input type="checkbox" id="pg-fixpoint" checked>
+                Fixpoint (rerun loops until shapes settle)
+            </label>
+            <label for="pg-annotations">
+                <input type="checkbox" id="pg-annotations" checked>
+                Shape annotations (show inferred shapes inline)
+            </label>
+            <label for="pg-live">
+                <input type="checkbox" id="pg-live" checked>
+                Analyze as you type
+            </label>
+            <button id="pg-analyze" class="pg-btn" hidden>Analyze</button>
         </div>
 
         <div id="pg-editor"></div>
@@ -233,6 +259,6 @@
         </div>
     </footer>
 
-    <script src="./playground.js?v=2"></script>
+    <script src="./playground.js?v=3"></script>
 </body>
 </html>

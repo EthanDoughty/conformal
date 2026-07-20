@@ -175,7 +175,12 @@ function buildHintDecorations(state: EditorState): DecorationSet {
     for (const a of assignments) {
         if (a.line < 1 || a.line > doc.lines) continue;
         const line = doc.line(a.line);
-        const pos = Math.min(line.to, line.from + (a.col - 1) + a.name.length);
+        // Anchor after the variable name as it appears in the line text; the
+        // IR column is not the variable position for for-loop statements.
+        // MATLAB identifiers contain no regex metacharacters.
+        const match = new RegExp(`\\b${a.name}\\b`).exec(line.text);
+        const anchor = match ? match.index + a.name.length : (a.col - 1) + a.name.length;
+        const pos = Math.min(line.to, line.from + anchor);
         decos.push(Decoration.widget({ widget: new ShapeHintWidget(`: ${a.shape}`), side: 1 }).range(pos));
     }
     return Decoration.set(decos, true);
@@ -257,7 +262,23 @@ const EXAMPLES: { label: string; code: string }[] = [
         label: 'Strict-only warning',
         code: "A = zeros(3, 3);\nr = A + 'error';\n",
     },
+    {
+        // The fixpoint toggle changes the inferred shape of x here:
+        // iterated analysis widens the growing dimension, single-pass does not.
+        label: 'Loop growth',
+        code: 'x = zeros(1, 3);\nfor i = 1:5\n    x = [x, i];\nend\ny = x * ones(4, 1);\n',
+    },
 ];
+
+// ---------------------------------------------------------------------------
+// Analysis options, read from the toolbar on every run.
+// ---------------------------------------------------------------------------
+
+interface PlaygroundOptions {
+    strict: boolean;
+    fixpoint: boolean;
+    annotations: boolean;
+}
 
 // ---------------------------------------------------------------------------
 // Diagnostics panel (below the editor)
@@ -339,11 +360,11 @@ function renderPanel(panel: HTMLElement, view: EditorView, result: AnalysisResul
 // Analysis pipeline
 // ---------------------------------------------------------------------------
 
-function runAnalysis(view: EditorView, panel: HTMLElement, strict: boolean): void {
+function runAnalysis(view: EditorView, panel: HTMLElement, opts: PlaygroundOptions): void {
     const source = view.state.doc.toString();
     let result: AnalysisResult;
     try {
-        result = analyzeSource(source, true, strict, []);
+        result = analyzeSource(source, opts.fixpoint, opts.strict, []);
     } catch (e) {
         // analyzeSource is expected to report parse errors rather than throw,
         // but the page must never crash regardless of input, so guard anyway.
@@ -379,7 +400,7 @@ function runAnalysis(view: EditorView, panel: HTMLElement, strict: boolean): voi
     // (lint's own setDiagnosticsEffect) both come from this one result.
     view.dispatch({
         effects: [
-            setAnalysisEffect.of(result.assignments || []),
+            setAnalysisEffect.of(opts.annotations ? (result.assignments || []) : []),
             setDiagnosticsEffect.of(lintDiags),
         ],
     });
@@ -395,9 +416,20 @@ function main(): void {
     const editorHost = document.getElementById('pg-editor');
     const panel = document.getElementById('pg-panel');
     const strictBox = document.getElementById('pg-strict') as HTMLInputElement | null;
+    const fixpointBox = document.getElementById('pg-fixpoint') as HTMLInputElement | null;
+    const annotationsBox = document.getElementById('pg-annotations') as HTMLInputElement | null;
+    const liveBox = document.getElementById('pg-live') as HTMLInputElement | null;
+    const analyzeBtn = document.getElementById('pg-analyze') as HTMLButtonElement | null;
     const exampleSelect = document.getElementById('pg-examples') as HTMLSelectElement | null;
 
-    if (!editorHost || !panel || !strictBox || !exampleSelect) return;
+    if (!editorHost || !panel || !strictBox || !fixpointBox || !annotationsBox
+        || !liveBox || !analyzeBtn || !exampleSelect) return;
+
+    const options = (): PlaygroundOptions => ({
+        strict: strictBox.checked,
+        fixpoint: fixpointBox.checked,
+        annotations: annotationsBox.checked,
+    });
 
     exampleSelect.textContent = '';
     for (let i = 0; i < EXAMPLES.length; i++) {
@@ -412,7 +444,7 @@ function main(): void {
         if (debounceTimer !== undefined) window.clearTimeout(debounceTimer);
         debounceTimer = window.setTimeout(() => {
             debounceTimer = undefined;
-            runAnalysis(view, panel, strictBox.checked);
+            runAnalysis(view, panel, options());
         }, 300);
     };
 
@@ -428,25 +460,36 @@ function main(): void {
             conformalTheme,
             syntaxHighlighting(conformalHighlight),
             EditorView.updateListener.of((update) => {
-                if (update.docChanged) scheduleAnalysis(update.view);
+                if (update.docChanged && liveBox.checked) scheduleAnalysis(update.view);
             }),
         ],
     });
 
     const view = new EditorView({ state, parent: editorHost });
 
-    strictBox.addEventListener('change', () => runAnalysis(view, panel, strictBox.checked));
+    for (const box of [strictBox, fixpointBox, annotationsBox]) {
+        box.addEventListener('change', () => runAnalysis(view, panel, options()));
+    }
+
+    // The Analyze button is only visible while analyze-as-you-type is off;
+    // re-enabling live analysis catches up on edits made while it was off.
+    analyzeBtn.hidden = liveBox.checked;
+    liveBox.addEventListener('change', () => {
+        analyzeBtn.hidden = liveBox.checked;
+        if (liveBox.checked) runAnalysis(view, panel, options());
+    });
+    analyzeBtn.addEventListener('click', () => runAnalysis(view, panel, options()));
 
     exampleSelect.addEventListener('change', () => {
         const idx = Number(exampleSelect.value);
         const example = EXAMPLES[idx];
         if (!example) return;
         view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: example.code } });
-        runAnalysis(view, panel, strictBox.checked);
+        runAnalysis(view, panel, options());
     });
 
     // Analyze once on load.
-    runAnalysis(view, panel, strictBox.checked);
+    runAnalysis(view, panel, options());
 }
 
 main();
