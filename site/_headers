@@ -1,2 +1,8 @@
 /playground.js
   Cache-Control: public, max-age=0, must-revalidate
+
+/playground.html
+  Cache-Control: public, max-age=0, must-revalidate
+
+/playground
+  Cache-Control: public, max-age=0, must-revalidate
