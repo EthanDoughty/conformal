@@ -323,7 +323,8 @@ let buildIrFromSource (source: string) : (FunctionSignature * Map<string, Functi
             program.body
             |> List.choose (fun stmt ->
                 match stmt with
-                | Ir.FunctionDef({ line = line; col = col }, name, parms, outputVars, body, argAnns) ->
+                | Ir.FunctionDef({ line = line; col = col }, name, parms, outputVars, body, argAnns)
+                        when not (Ir.isSyntheticName name) ->
                     Some { name = name; parms = parms; outputVars = outputVars; body = body
                            defLine = line; defCol = col; argShapes = Shapes.argAnnotationsToShapes argAnns }
                 | _ -> None)
@@ -365,7 +366,8 @@ let loadExternalClassdef (sourcePath: string)
             program.body
             |> List.choose (fun stmt ->
                 match stmt with
-                | Ir.FunctionDef({ line = line; col = col }, name, parms, outputVars, body, argAnns) ->
+                | Ir.FunctionDef({ line = line; col = col }, name, parms, outputVars, body, argAnns)
+                        when not (Ir.isSyntheticName name) ->
                     Some (name, { name = name; parms = parms; outputVars = outputVars
                                   body = body; defLine = line; defCol = col
                                   argShapes = Shapes.argAnnotationsToShapes argAnns })

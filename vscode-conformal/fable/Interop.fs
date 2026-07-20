@@ -70,7 +70,8 @@ let private tryParseExternalBody (source: string) : (FunctionSignature * Map<str
             program.body
             |> List.choose (fun stmt ->
                 match stmt with
-                | FunctionDef({ line = line; col = col }, name, parms, outputVars, body, argAnns) ->
+                | FunctionDef({ line = line; col = col }, name, parms, outputVars, body, argAnns)
+                        when not (Ir.isSyntheticName name) ->
                     Some { name = name; parms = parms; outputVars = outputVars; body = body
                            defLine = line; defCol = col; argShapes = Shapes.argAnnotationsToShapes argAnns }
                 | _ -> None)
@@ -161,7 +162,8 @@ let analyzeSource
         irProg.body
         |> List.choose (fun stmt ->
             match stmt with
-            | FunctionDef({ line = line; col = col }, name, parms, outputVars, _, _) ->
+            | FunctionDef({ line = line; col = col }, name, parms, outputVars, _, _)
+                    when not (Ir.isSyntheticName name) ->
                 Some { name = name; line = line; col = col; parms = Array.ofList parms; outputs = Array.ofList outputVars }
             | _ -> None)
         |> Array.ofList

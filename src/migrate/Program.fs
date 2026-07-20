@@ -40,6 +40,7 @@ let private migrateFile (inputFile: string) (outputFile: string option) (toStdou
                 addpathDirs = []
                 selfVar = None
                 classMethods = Set.empty
+                staticMethods = Map.empty
             }
 
             // Translate
@@ -110,6 +111,7 @@ let private runMigrateTests () : int =
                         addpathDirs = []
                         selfVar = None
                         classMethods = Set.empty
+                        staticMethods = Map.empty
                     }
 
                     let sourceFileName = Path.GetFileName(mFile)

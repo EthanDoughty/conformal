@@ -115,6 +115,9 @@ type TranslateContext = {
     /// The current classdef's method names, so obj.method(args) translates as a call rather
     /// than indexing; empty outside a class.
     mutable classMethods: Set<string>
+    /// Static method names per class name, collected from the file's classdef metadata before
+    /// translation, so a qualified ClassName.method(args) call is not read as indexing.
+    mutable staticMethods: Map<string, Set<string>>
 }
 
 // A bare base name, mapped to "self" when it is the active classdef instance variable.
@@ -160,6 +163,20 @@ let private isSyntheticSentinel (stmt: Stmt) =
     match stmt with
     | ExprStmt({ line = 0; col = 0 }, Const({ line = 0; col = 0 }, 0.0)) -> true
     | _ -> false
+
+// The parser parks property defaults in a function whose name no MATLAB source can
+// produce, so it never collides with a real method.
+let private defaultsCarrierName (className: string) = $"classdef$defaults${className}"
+
+// Static method names from a split 'classdef:' metadata string. Located by prefix rather
+// than by index so later metadata segments cannot shift it out from under us.
+let private staticsOfClassdefRaw (parts: string array) : Set<string> =
+    match parts |> Array.tryFind (fun p -> p.StartsWith("statics=")) with
+    | None -> Set.empty
+    | Some seg ->
+        seg.Substring("statics=".Length).Split(',')
+        |> Array.filter (fun s -> s <> "")
+        |> Set.ofArray
 
 // --- printf-family format strings ---
 // MATLAB single-quoted strings store backslash sequences literally; the printf
@@ -405,6 +422,14 @@ and private translateApply (expr: Expr) (base_: Expr) (args: IndexArg list) (tct
             let rest = match pyArgs with _ :: t -> t | [] -> []
             PyCall(PyAttr(superObj, safeName methodName), rest, [])
         | _ -> PyCall(PyAttr(superObj, "__init__"), pyArgs, [])
+    | FieldAccess(_, Var(_, clsName), mname) when
+        (match Map.tryFind clsName tctx.staticMethods with
+         | Some ms -> Set.contains mname ms
+         | None -> false) ->
+        // ClassName.static(args) is a call on the class itself, not an index into one of
+        // its attributes (migrate's default reading of the ambiguous a.b(c) form).
+        let pyArgs = args |> List.map (fun a -> translateCallArg a tctx)
+        PyCall(PyAttr(PyVar (safeName clsName), safeName mname), pyArgs, [])
     | FieldAccess(_, b, field) when Set.contains field tctx.classMethods ->
         // obj.method(args) where method belongs to the current class -> a method call,
         // not indexing (which is migrate's default for the ambiguous obj.x(args) form).
@@ -1468,20 +1493,29 @@ let rec translateStmt (stmt: Stmt) (tctx: TranslateContext) : PyStmt list =
         tctx.currentReturnVars <- savedReturnVars
         tctx.functionDepth <- savedDepth
         tctx.env <- savedEnv
-        [PyFuncDef(safeName name, pyParms, (if fullBody.IsEmpty then [PyPass] else fullBody), safeOutputVars)]
+        [PyFuncDef(safeName name, pyParms, (if fullBody.IsEmpty then [PyPass] else fullBody), safeOutputVars, [])]
 
 // Translate one classdef method. The MATLAB instance variable (the constructor's output
 // var, or a method's first parameter) maps to Python 'self'; a method named the same as
 // the class becomes __init__.
-and private translateClassMethod (className: string) (stmt: Stmt) (tctx: TranslateContext) : PyStmt =
+and private translateClassMethod (className: string) (statics: Set<string>) (stmt: Stmt) (tctx: TranslateContext) : PyStmt =
     match stmt with
     | FunctionDef(mloc, mname, parms, outputVars, body, _) ->
-        let isCtor = mname = className
-        let objName = if isCtor then List.tryHead outputVars else List.tryHead parms
+        let isStatic = Set.contains mname statics
+        let isCtor = mname = className && not isStatic
+        // A static method has no instance at all: every parameter is its own and nothing
+        // maps to self.
+        let objName =
+            if isStatic then None
+            elif isCtor then List.tryHead outputVars
+            else List.tryHead parms
         // A method drops its leading obj parameter for 'self'; a constructor's obj is an
         // output, so all of its parameters follow self.
-        let restParms = if isCtor then parms else (match parms with _ :: t -> t | [] -> [])
-        let pyParms = "self" :: safeParams restParms
+        let restParms =
+            if isStatic then parms
+            elif isCtor then parms
+            else (match parms with _ :: t -> t | [] -> [])
+        let pyParms = if isStatic then safeParams restParms else "self" :: safeParams restParms
         // Output names with the instance var mapped to self (a method returning the instance
         // returns self); a constructor returns None, so it has no return values.
         let retNames = outputVars |> List.map (fun v -> if Some v = objName then "self" else safeName v)
@@ -1504,14 +1538,15 @@ and private translateClassMethod (className: string) (stmt: Stmt) (tctx: Transla
             // 'return' stays, but with no return vars it is a bare 'return' = return None).
             let b = pyBody |> List.filter (fun s -> match s with PyReturn _ -> false | _ -> true)
             let b = hoistScopeDecls pyParms b
-            PyFuncDef("__init__", pyParms, (if b.IsEmpty then [PyPass] else b), [])
+            PyFuncDef("__init__", pyParms, (if b.IsEmpty then [PyPass] else b), [], [])
         else
             let needsReturn =
                 not retNames.IsEmpty &&
                 (pyBody.IsEmpty || (match List.last pyBody with PyReturn _ -> false | _ -> true))
             let full = if needsReturn then pyBody @ [PyReturn (retNames |> List.map PyVar)] else pyBody
             let full = hoistScopeDecls pyParms full
-            PyFuncDef(safeName mname, pyParms, (if full.IsEmpty then [PyPass] else full), retNames)
+            let decorators = if isStatic then ["staticmethod"] else []
+            PyFuncDef(safeName mname, pyParms, (if full.IsEmpty then [PyPass] else full), retNames, decorators)
     | _ -> PyCommentStmt "unsupported class member"
 
 // Assemble the metadata OpaqueStmt (classdef:Name:props[:Super]) and the flattened method
@@ -1521,12 +1556,52 @@ and private translateClassdef (raw: string) (methods: Stmt list) (tctx: Translat
     let className = if parts.Length > 1 && parts.[1] <> "" then parts.[1] else "Unnamed"
     let superName = if parts.Length > 3 && parts.[3] <> "" then Some parts.[3] else None
     let bases = match superName with Some s -> [safeName s] | None -> []
+    let statics = staticsOfClassdefRaw parts
+    // Property defaults ride in a synthetic carrier function rather than a real method.
+    let defaultsName = defaultsCarrierName className
+    let isDefaultsCarrier s =
+        match s with FunctionDef(_, n, _, _, _, _) -> n = defaultsName | _ -> false
+    let defaultAssigns =
+        methods |> List.collect (fun m ->
+            match m with
+            | FunctionDef(_, _, _, _, body, _) when isDefaultsCarrier m -> body
+            | _ -> [])
+    let realMethods = methods |> List.filter (isDefaultsCarrier >> not)
     let methodNames =
-        methods |> List.choose (fun m -> match m with FunctionDef(_, n, _, _, _, _) -> Some n | _ -> None) |> Set.ofList
+        realMethods |> List.choose (fun m -> match m with FunctionDef(_, n, _, _, _, _) -> Some n | _ -> None) |> Set.ofList
     let savedMethods = tctx.classMethods
     tctx.classMethods <- methodNames
-    let members = methods |> List.map (fun m -> translateClassMethod className m tctx)
+    let members = realMethods |> List.map (fun m -> translateClassMethod className statics m tctx)
+    // MATLAB evaluates a property default once at class load; Python class attributes would
+    // share one object across every instance, so the defaults become per-instance __init__
+    // assignments and a constructor that sets the same property still wins by running after.
+    let pyDefaults =
+        if defaultAssigns.IsEmpty then []
+        else
+            let savedSelf, savedEnv = tctx.selfVar, tctx.env
+            tctx.selfVar <- None
+            tctx.env <- Env.Env.create ()
+            let out =
+                defaultAssigns |> List.choose (fun s ->
+                    match s with
+                    | Assign(_, pname, rhs) ->
+                        Some (PyExprStmt(PyBinOp("=", PyAttr(PyVar "self", safeName pname), translateExpr rhs tctx)))
+                    | _ -> None)
+            tctx.selfVar <- savedSelf
+            tctx.env <- savedEnv
+            out
     tctx.classMethods <- savedMethods
+    let members =
+        if pyDefaults.IsEmpty then members
+        elif members |> List.exists (fun m -> match m with PyFuncDef("__init__", _, _, _, _) -> true | _ -> false) then
+            members |> List.map (fun m ->
+                match m with
+                | PyFuncDef("__init__", ps, b, rv, dec) ->
+                    let b = b |> List.filter (fun s -> match s with PyPass -> false | _ -> true)
+                    PyFuncDef("__init__", ps, pyDefaults @ b, rv, dec)
+                | _ -> m)
+        else
+            PyFuncDef("__init__", ["self"], pyDefaults, [], []) :: members
     PyClassDef(safeName className, bases, (if members.IsEmpty then [PyPass] else members))
 
 and private translateForIterator (it: Expr) (tctx: TranslateContext) : PyExpr =
@@ -1547,6 +1622,19 @@ and private translateForIterator (it: Expr) (tctx: TranslateContext) : PyExpr =
 let translateProgram (program: Ir.Program) (tctx: TranslateContext) (sourceFile: string) : PyProgram =
     // The parser flattens a classdef into a 'classdef:' metadata OpaqueStmt followed by its
     // method FunctionDefs; reassemble that run into a single Python class.
+    // Learn the file's static methods up front so a qualified call reaching translateApply
+    // before its class has been translated is still read as a call.
+    tctx.staticMethods <-
+        program.body
+        |> List.choose (fun s ->
+            match s with
+            | OpaqueStmt(_, _, raw) when raw.StartsWith("classdef:") ->
+                let parts = raw.Split(':')
+                let statics = staticsOfClassdefRaw parts
+                if parts.Length > 1 && parts.[1] <> "" && not statics.IsEmpty
+                then Some (parts.[1], statics) else None
+            | _ -> None)
+        |> Map.ofList
     let isMethodPart s = match s with | FunctionDef _ -> true | _ -> isSyntheticSentinel s
     let rec processStmts (stmts: Stmt list) : PyStmt list =
         match stmts with

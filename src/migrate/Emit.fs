@@ -191,8 +191,9 @@ let rec emitStmt (indent: int) (stmt: PyStmt) : string list =
         let bodyLines = body |> List.collect (emitStmt (indent + 4))
         let bodyLines = if bodyLines.IsEmpty || allComments bodyLines then bodyLines @ [sprintf "%s    pass" pad] else bodyLines
         whileLine @ bodyLines
-    | PyFuncDef(name, parms, body, _returnVars) ->
-        let defLine = [sprintf "%sdef %s(%s):" pad name (parms |> String.concat ", ")]
+    | PyFuncDef(name, parms, body, _returnVars, decorators) ->
+        let decLines = decorators |> List.map (fun d -> sprintf "%s@%s" pad d)
+        let defLine = decLines @ [sprintf "%sdef %s(%s):" pad name (parms |> String.concat ", ")]
         let bodyLines = body |> List.collect (emitStmt (indent + 4))
         let bodyLines = if bodyLines.IsEmpty || allComments bodyLines then bodyLines @ [sprintf "%s    pass" pad] else bodyLines
         defLine @ bodyLines

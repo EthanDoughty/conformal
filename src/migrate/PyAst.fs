@@ -39,7 +39,7 @@ type PyStmt =
     | PyFor         of var_: string * iterable: PyExpr * body: PyStmt list
     | PyWhile       of cond: PyExpr * body: PyStmt list
     | PyFuncDef     of name: string * parms: string list * body: PyStmt list
-                       * returnVars: string list
+                       * returnVars: string list * decorators: string list
     | PyClassDef    of name: string * bases: string list * body: PyStmt list
     | PyReturn      of PyExpr list
     | PyCommentStmt of string

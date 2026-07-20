@@ -223,18 +223,41 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
            (this.Current().kind = TkNewline || this.Current().kind = TkSemicolon) then
             pos <- pos + 1
 
-    // Skip optional (Attr = val, ...) attribute block after properties/methods keyword
-    member private this.SkipParenAttributes() =
+    // Consume the optional (Attr = val, ...) attribute block after a
+    // classdef/properties/methods keyword, returning the tokens inside the parens.
+    member private this.ReadParenAttributes() : Token list =
+        let inner = System.Collections.Generic.List<Token>()
         if not (this.AtEnd()) && this.Current().kind = TkLParen then
             let mutable depth = 0
             let mutable finished = false
             while not (this.AtEnd()) && not finished do
                 let tok = this.Current()
                 pos <- pos + 1
-                if tok.kind = TkLParen then depth <- depth + 1
+                if tok.kind = TkLParen then
+                    if depth > 0 then inner.Add(tok)
+                    depth <- depth + 1
                 elif tok.kind = TkRParen then
                     depth <- depth - 1
-                    if depth = 0 then finished <- true
+                    if depth = 0 then finished <- true else inner.Add(tok)
+                else inner.Add(tok)
+        inner |> Seq.toList
+
+    // Skip optional (Attr = val, ...) attribute block after properties/methods keyword
+    member private this.SkipParenAttributes() =
+        this.ReadParenAttributes() |> ignore
+
+    // Does an attribute list declare the block Static? 'Static', 'Static = true' and
+    // 'Static' beside other attributes all count; only 'Static = false' does not.
+    member private this.AttributesDeclareStatic(attrs: Token list) =
+        let arr = List.toArray attrs
+        let mutable isStatic = false
+        for i in 0 .. arr.Length - 1 do
+            if arr.[i].kind = TkId && arr.[i].value.ToLowerInvariant() = "static" then
+                let deniedByValue =
+                    i + 2 < arr.Length && arr.[i + 1].value = "=" &&
+                    arr.[i + 2].value.ToLowerInvariant() = "false"
+                if not deniedByValue then isStatic <- true
+        isStatic
 
     // Depth-count consume of a block that starts AFTER current position (we are on the keyword)
     // Consumes tokens until the matching END, then consumes the END.
@@ -259,15 +282,48 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
                 elif tok.kind = TkId && Set.contains tok.value idBlockOpeners then
                     depth <- depth + 1
 
-    member private this.ParsePropertiesBlock() : string list =
+    // Index of a depth-0 '=' in the remainder of the current line, so a property
+    // default is found past any (1,1) size block or {mustBeReal} validator block.
+    // -1 when the line declares no default.
+    member private this.FindPropertyDefault() : int =
+        let mutable i = pos
+        let mutable depth = 0
+        let mutable found = -1
+        let mutable stop = false
+        while not stop && i < tokens.Length do
+            let t = tokens.[i]
+            if t.kind = TkEof || t.kind = TkNewline || t.kind = TkSemicolon then stop <- true
+            elif t.kind = TkLParen || t.kind = TkLBracket || t.kind = TkLCurly then depth <- depth + 1
+            elif t.kind = TkRParen || t.kind = TkRBracket || t.kind = TkRCurly then depth <- max 0 (depth - 1)
+            elif depth = 0 && t.value = "=" then
+                found <- i
+                stop <- true
+            i <- i + 1
+        found
+
+    // Returns each property name with its default-value expression when the declaration
+    // supplies one. A default that fails to parse degrades to name-only.
+    member private this.ParsePropertiesBlock() : (string * Expr option) list =
         pos <- pos + 1  // skip 'properties' keyword
         this.SkipParenAttributes()
         this.SkipNewlines()
-        let props = System.Collections.Generic.List<string>()
+        let props = System.Collections.Generic.List<string * Expr option>()
         while not (this.AtEnd()) && this.Current().kind <> TkEnd do
             if this.Current().kind = TkId then
-                props.Add(this.Current().value)
+                let name = this.Current().value
                 pos <- pos + 1
+                let eqIdx = this.FindPropertyDefault()
+                let dflt =
+                    if eqIdx < 0 then None
+                    else
+                        let saved = pos
+                        try
+                            pos <- eqIdx + 1  // step past '='
+                            Some (this.ParseExpr(0, false, true))
+                        with _ ->
+                            pos <- saved
+                            None
+                props.Add((name, dflt))
                 this.SkipToEndOfLine()
             else
                 pos <- pos + 1
@@ -275,9 +331,11 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
         if not (this.AtEnd()) && this.Current().kind = TkEnd then pos <- pos + 1
         props |> Seq.toList
 
-    member private this.ParseMethodsBlock() : Stmt list =
+    // Returns the block's methods plus whether the block was declared Static, so the
+    // classdef metadata can carry the static method names through to migrate.
+    member private this.ParseMethodsBlock() : Stmt list * bool =
         pos <- pos + 1  // skip 'methods' keyword
-        this.SkipParenAttributes()
+        let isStatic = this.AttributesDeclareStatic(this.ReadParenAttributes())
         this.SkipNewlines()
         let meths = System.Collections.Generic.List<Stmt>()
         while not (this.AtEnd()) && this.Current().kind <> TkEnd do
@@ -287,7 +345,7 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
                 pos <- pos + 1
             this.SkipNewlines()
         if not (this.AtEnd()) && this.Current().kind = TkEnd then pos <- pos + 1
-        meths |> Seq.toList
+        (meths |> Seq.toList), isStatic
 
     member private this.ParseClassdef() : Stmt list =
         let startTok = this.Current()
@@ -317,14 +375,21 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
                             superName <- $"{superName}.{this.Current().value}"
                             pos <- pos + 1
             this.SkipNewlines()
-            let mutable properties : string list = []
+            let mutable properties : (string * Expr option) list = []
             let mutable methodDefs : Stmt list = []
+            let mutable staticNames : string list = []
             while not (this.AtEnd()) && this.Current().kind <> TkEnd do
                 let cur = this.Current()
                 if cur.kind = TkId && cur.value = "properties" then
                     properties <- properties @ this.ParsePropertiesBlock()
                 elif cur.kind = TkId && cur.value = "methods" then
-                    methodDefs <- methodDefs @ this.ParseMethodsBlock()
+                    let meths, isStatic = this.ParseMethodsBlock()
+                    methodDefs <- methodDefs @ meths
+                    if isStatic then
+                        staticNames <-
+                            staticNames @
+                            (meths |> List.choose (fun m ->
+                                match m with FunctionDef(_, n, _, _, _, _) -> Some n | _ -> None))
                 elif cur.kind = TkId && (cur.value = "events" || cur.value = "enumeration") then
                     this.ConsumeBlock()
                 else
@@ -332,12 +397,26 @@ type MatlabParser(tokenList: Token list, endlessFunctions: bool) =
                 this.SkipNewlines()
             if not (this.AtEnd()) && this.Current().kind = TkEnd then pos <- pos + 1
             this.SkipNewlines()
-            // Encode metadata in OpaqueStmt raw string
-            let propPart = properties |> String.concat ","
+            // Encode metadata in OpaqueStmt raw string. When there are static methods the
+            // superclass slot is held open (empty when there is no superclass) so the
+            // statics segment always trails it and index-based readers are unaffected.
+            let propPart = properties |> List.map fst |> String.concat ","
             let superPart = if superName <> "" then $":{superName}" else ""
-            let raw = $"classdef:{className}:{propPart}{superPart}"
+            let raw =
+                if staticNames.IsEmpty then $"classdef:{className}:{propPart}{superPart}"
+                else
+                    let staticPart = staticNames |> String.concat ","
+                    $"classdef:{className}:{propPart}:{superName}:statics={staticPart}"
             let opaque = OpaqueStmt(loc line col, [], raw)
-            opaque :: methodDefs
+            // Property defaults ride along in a synthetic function whose name cannot be
+            // lexed from MATLAB source. Its body is never called, so analysis never
+            // reaches it; migrate unpacks it into the constructor.
+            let defaultAssigns =
+                properties |> List.choose (fun (n, d) -> d |> Option.map (fun e -> Assign(e.Loc, n, e)))
+            let defaultsCarrier =
+                if defaultAssigns.IsEmpty then []
+                else [FunctionDef(loc line col, $"classdef$defaults${className}", [], [], defaultAssigns, [])]
+            opaque :: (defaultsCarrier @ methodDefs)
         with
         | ex ->
             // Accumulate the error if it's a ParseError

@@ -110,4 +110,10 @@ let (|ExprLoc|) (expr: Expr) : SrcLoc = expr.Loc
 /// Extract SrcLoc from any Stmt case (total active pattern).
 let (|StmtLoc|) (stmt: Stmt) : SrcLoc = stmt.Loc
 
+/// Names the parser synthesizes to carry metadata it has nowhere else to put, currently
+/// the classdef property-default carrier. '$' cannot be lexed from MATLAB source, so such
+/// a name never collides with a real function. These are not user-visible functions and
+/// must not be offered as document symbols or resolved as a file's primary function.
+let isSyntheticName (name: string) = name.Contains "$"
+
 type Program = { body: Stmt list }

@@ -23,7 +23,8 @@ let getDocumentSymbols
 
     for stmt in program.body do
         match stmt with
-        | FunctionDef({ line = line }, name, parms, outputVars, body, _) ->
+        | FunctionDef({ line = line }, name, parms, outputVars, body, _)
+                when not (Ir.isSyntheticName name) ->
 
             // Detail string: (params) -> [outputs]
             let paramsStr  = parms      |> String.concat ", "
