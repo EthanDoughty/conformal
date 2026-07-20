@@ -11,10 +11,12 @@
 import { EditorView, basicSetup } from 'codemirror';
 import { EditorState, StateEffect, StateField, Text } from '@codemirror/state';
 import { Decoration, DecorationSet, WidgetType } from '@codemirror/view';
-import { StreamLanguage } from '@codemirror/language';
+import { StreamLanguage, HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { octave } from '@codemirror/legacy-modes/mode/octave';
 import { linter, lintGutter, setDiagnosticsEffect, Diagnostic as LintDiagnostic } from '@codemirror/lint';
+import { tags } from '@lezer/highlight';
 
+// @ts-expect-error -- Fable emits no declarations; the interfaces below mirror Interop.fs
 import { analyzeSource } from './fable-out/Interop.js';
 
 // ---------------------------------------------------------------------------
@@ -184,6 +186,63 @@ const hintDecorations = EditorView.decorations.compute([analysisField], buildHin
 // ---------------------------------------------------------------------------
 // Example snippets
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Dark theme matched to the site palette. Without this, basicSetup's default
+// highlight style (designed for light backgrounds) is illegible on the dark
+// page, and the lint tooltip stays light while inheriting the page's light
+// text. Severity is encoded in lightness and marker shape, not red-vs-green
+// hue, so it survives color vision deficiency. rgb() in the inline SVGs
+// avoids '#', which would terminate a data: URI.
+// ---------------------------------------------------------------------------
+
+const ERROR_COLOR = 'rgb(255,110,95)';
+const WARN_COLOR = 'rgb(227,179,65)';
+
+function squiggle(rgb: string): string {
+    return `url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="6" height="3"><path d="m0 3 l2 -2 l1 0 l2 2 l1 0" stroke="${rgb}" fill="none" stroke-width=".7"/></svg>')`;
+}
+
+// Error marker is a circle, warning a triangle: shape carries the severity
+// alongside color.
+const ERROR_MARKER = `url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="40" height="40"><circle cx="20" cy="20" r="14" fill="${ERROR_COLOR}"/></svg>')`;
+const WARN_MARKER = `url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="40" height="40"><path d="M20 6 L37 34 L3 34 Z" fill="${WARN_COLOR}"/></svg>')`;
+
+const conformalTheme = EditorView.theme({
+    '&': { height: '420px', fontSize: '14px', backgroundColor: '#18160f', color: '#e8e4dc' },
+    '.cm-scroller': { overflow: 'auto', fontFamily: "'JetBrains Mono', 'Fira Code', monospace" },
+    '.cm-content': { caretColor: '#d4a021' },
+    '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#d4a021' },
+    '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, ::selection':
+        { backgroundColor: '#3a3426' },
+    '.cm-activeLine': { backgroundColor: 'rgba(232,228,220,0.05)' },
+    '.cm-gutters': { backgroundColor: '#18160f', color: '#8a8478', border: 'none', borderRight: '1px solid #302d26' },
+    '.cm-activeLineGutter': { backgroundColor: '#1e1c18', color: '#e8e4dc' },
+    '.cm-tooltip': { backgroundColor: '#262218', color: '#e8e4dc', border: '1px solid #3a362c' },
+    '.cm-tooltip .cm-tooltip-arrow:before': { borderTopColor: '#3a362c', borderBottomColor: '#3a362c' },
+    '.cm-tooltip .cm-tooltip-arrow:after': { borderTopColor: '#262218', borderBottomColor: '#262218' },
+    '.cm-diagnostic-error': { borderLeft: `5px solid ${ERROR_COLOR}` },
+    '.cm-diagnostic-warning': { borderLeft: `5px solid ${WARN_COLOR}` },
+    '.cm-lintRange-error': { backgroundImage: squiggle(ERROR_COLOR) },
+    '.cm-lintRange-warning': { backgroundImage: squiggle(WARN_COLOR) },
+    '.cm-lintPoint-error:after': { borderBottomColor: ERROR_COLOR },
+    '.cm-lintPoint-warning:after': { borderBottomColor: WARN_COLOR },
+    '.cm-lint-marker-error': { content: ERROR_MARKER },
+    '.cm-lint-marker-warning': { content: WARN_MARKER },
+}, { dark: true });
+
+// All foregrounds hold WCAG AA (4.5:1) or better on #18160f.
+const conformalHighlight = HighlightStyle.define([
+    { tag: tags.keyword, color: '#e3b341' },
+    { tag: [tags.atom, tags.bool], color: '#d4a021' },
+    { tag: tags.comment, color: '#9a9488', fontStyle: 'italic' },
+    { tag: tags.string, color: '#d69a6a' },
+    { tag: tags.number, color: '#8fb7dd' },
+    { tag: [tags.operator, tags.punctuation, tags.bracket], color: '#c9c3b6' },
+    { tag: tags.variableName, color: '#e8e4dc' },
+    { tag: tags.special(tags.variableName), color: '#8fb7dd' },
+    { tag: tags.meta, color: '#9a9488' },
+]);
 
 const EXAMPLES: { label: string; code: string }[] = [
     {
@@ -366,10 +425,8 @@ function main(): void {
             hintDecorations,
             linter(null, { delay: 300 }),
             lintGutter(),
-            EditorView.theme({
-                '&': { height: '420px', fontSize: '14px' },
-                '.cm-scroller': { overflow: 'auto', fontFamily: "'JetBrains Mono', 'Fira Code', monospace" },
-            }),
+            conformalTheme,
+            syntaxHighlighting(conformalHighlight),
             EditorView.updateListener.of((update) => {
                 if (update.docChanged) scheduleAnalysis(update.view);
             }),
