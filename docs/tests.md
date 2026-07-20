@@ -4,7 +4,7 @@ For a summary, see the [README](../README.md).
 
 ## Test Suite
 
-Conformal is validated by 585 self-checking MATLAB programs organized into 24 categories. Each test embeds its expected behavior as inline assertions:
+Conformal is validated by 615 self-checking MATLAB programs organized into 25 categories. Each test embeds its expected behavior as inline assertions:
 
 ```matlab
 % EXPECT: warnings = 1
@@ -682,6 +682,31 @@ MATLAB Coder compatibility checks, enabled with `--coder --strict`. These tests 
 | `coder_recursion.m` | `W_CODER_RECURSION` fires on a recursive function call; uses `EXPECT_WARNING` to pin the warning to the recursive call line | >=1 |
 
 >All six `W_CODER_*` codes are strict-only and all six are emitted by a post-analysis pass that runs only when `--coder` is given. This means the Coder pass is completely invisible in normal analysis and CI runs, and adding `--coder` doesn't change how shape inference works, it only adds the compatibility scan on top.
+
+</details>
+
+<details>
+<summary><h3>Migrate (81 golden pairs)</h3></summary>
+
+Golden-file tests for Conformal Migrate, the MATLAB-to-Python translator, checking that its output matches a checked-in expected translation exactly.
+
+Each test is a pair of files, a `.m` source and a `.py.expected` file holding the Python it should produce. `conformal-migrate --test-migrate` translates every `.m` file in this directory and compares the result against its expected sibling byte-for-byte, so a change in emitted formatting or generated logic surfaces as a failing test rather than as a surprise on a real project. These files also sit under `tests/`, so the analyzer suite parses and shape-analyzes them alongside its own cases, which catches translator work that rests on MATLAB the analyzer cannot yet handle.
+
+The pairs are grouped below by theme, with a few representative files for each rather than a full listing.
+
+| Theme | Representative files |
+|-------|----------------------|
+| Control flow and loop translation | `control_flow.m`, `stepped_for.m`, `switch_cell.m`, `try_catch.m` |
+| Indexing and copy semantics | `indexing.m`, `end_arithmetic_indexing.m`, `column_major.m`, `copy_semantics.m`, `chain_assign.m` |
+| Classdef translation | `classdef_methods.m`, `classdef_inherit.m`, `classdef_super.m`, `classdef_static.m`, `classdef_prop_defaults.m` |
+| Function definitions and scope | `function_def.m`, `function_local_index.m`, `global_hoist.m`, `varargin_func.m`, `script_return.m` |
+| Builtin and operator dispatch | `builtins.m`, `minmax_dispatch.m`, `multiply_dispatch.m`, `bsxfun_broadcast.m`, `eig_return.m` |
+| Cell and struct handling | `comma_chain_and_cells.m`, `index_struct_assign.m`, `dynamic_field_assign.m` |
+| Printf and fprintf formatting | `printf_extended.m`, `printf_recycling.m`, `fprintf_routing.m` |
+| Command syntax | `command_syntax.m`, `command_syntax_generic.m`, `addpath_migrate.m`, `keyword_safe.m` |
+| Opaque fidelity passthrough | `opaque_passthrough.m`, `opaque_multiline.m`, `block_comment.m` |
+
+>The opaque fidelity passthrough row is a fallback rather than a feature. When Migrate meets a construct it has no translation rule for, a `syms` block or an unrecognized toolbox call, it neither guesses at a Python equivalent nor drops the line. It keeps the original MATLAB text verbatim in the generated output so nothing is silently lost, and the golden file pins that fallback text as precisely as it pins every other translation choice.
 
 </details>
 

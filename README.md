@@ -4,10 +4,10 @@
 
 ### Static Shape & Dimension Analysis for MATLAB
 
-[![Version](https://img.shields.io/badge/version-3.10.4-orange.svg)](#cli-options)
+[![Version](https://img.shields.io/badge/version-3.11.0-orange.svg)](#cli-options)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4.svg)](https://dotnet.microsoft.com/download)
-[![Tests](https://img.shields.io/badge/tests-585%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-615%20passing-brightgreen.svg)](#test-suite)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
 > Conformal is an independent project and is not affiliated with, endorsed by, or connected to MathWorks, Inc. MATLAB is a registered trademark of MathWorks, Inc.
@@ -134,7 +134,7 @@ conformal file.m
 
 | Flag | What it does |
 |------|-------------|
-| `--tests` | Run the full test suite (585 tests across 24 categories) |
+| `--tests` | Run the full test suite (615 tests across 25 categories) |
 | `--batch <dir\|files>` | Analyze multiple files in one process (no per-file startup cost) |
 | `--strict` | Show all warnings including informational and low-confidence diagnostics |
 | `--fixpoint` | Use widening-based fixpoint iteration for loop analysis |
@@ -198,11 +198,11 @@ The `--strict` flag adds lower-confidence codes like `W_SUSPICIOUS_COMPARISON` a
 
 ## Conformal Migrate (Preview)
 
-Conformal also includes a MATLAB-to-Python transpiler that uses shape information to pick the right numpy operator, rather than relying on syntactic patterns alone. It handles many MATLAB builtins, 1-to-0 index conversion, varargin to *args, copy semantics, and shape-aware operator dispatch, choosing np.dot for a matrix multiply and * for an element-wise one.
+Conformal also includes a MATLAB-to-Python transpiler that uses shape information to pick the right numpy operator, rather than relying on syntactic patterns alone. It handles many MATLAB builtins, 1-to-0 index conversion, varargin to *args, copy semantics, and shape-aware operator dispatch, choosing np.dot for a matrix multiply and * for an element-wise one. Shape information reaches inside function bodies, not just top-level scripts, which is where the operator choice usually matters. MATLAB classes carry over as well, with static methods becoming `@staticmethod` and property defaults becoming per-instance assignments in the generated constructor.
 
 ## Test Suite
 
-Conformal is validated by 585 self-checking MATLAB programs organized into 24 categories, plus property-based lattice tests via FsCheck. Each test file embeds its expected behavior as inline assertions (`% EXPECT: A = matrix[3 x 4]`, `% EXPECT_WARNING: W_INNER_DIM_MISMATCH`), and the test runner checks that Conformal's output matches.
+Conformal is validated by 615 self-checking MATLAB programs organized into 25 categories, plus property-based lattice tests via FsCheck. Each test file embeds its expected behavior as inline assertions (`% EXPECT: A = matrix[3 x 4]`, `% EXPECT_WARNING: W_INNER_DIM_MISMATCH`), and the test runner checks that Conformal's output matches.
 
 For the full test listing, see [docs/tests.md](docs/tests.md).
 
@@ -212,12 +212,12 @@ For the full test listing, see [docs/tests.md](docs/tests.md).
 src/core/               F# core library (lexer, parser, shape inference, builtins, diagnostics)
 src/shared/             Shared utilities
 src/analyzer/           CLI, LSP server, test runner
-src/migrate/            MATLAB-to-Python transpiler (~2,100 LOC)
+src/migrate/            MATLAB-to-Python transpiler (~2,500 LOC)
 vscode-conformal/       VS Code extension (TypeScript client + Fable-compiled analyzer)
   fable/                Fable compilation project (F# to JavaScript, shares core .fs files)
   src/                  TypeScript extension and LSP server code
 editors/nvim/           Neovim LSP client (single Lua file, no plugins)
-tests/                  self-checking MATLAB programs across 24 categories
+tests/                  self-checking MATLAB programs across 25 categories
 .github/                CI workflow (build, test, compile Fable, package VSIX)
 ```
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.11.0
+
+- **Commented-out code stays commented out**: a `%{ ... %}` block is now blanked before parsing, so the prose or disabled code inside it no longer reaches the parser and no longer produces diagnostics. Nested blocks are handled, and `%{` must sit alone on its line just as MATLAB requires.
+- **Fewer spurious parse errors**: leading-dot and trailing-dot number literals such as `.5` and `90.` now lex as numbers. Comma-separated statements on one line, spaced cell elements like `{1 [] {} 2}`, and a trailing comma in a multi-assignment target list all parse instead of triggering recovery.
+- **Richer multi-assignment support**: targets that index or reach into a field, as in `[s.a, c(2)] = f()`, are understood rather than skipped, so the variables they assign keep their inferred shapes.
+- **Dynamic field access is tracked properly**: `s.(name)` keeps the real field expression. Writing through a dynamic field used to invent a literal `<dynamic>` field on the struct, which is fixed, and Coder mode now flags dynamic writes alongside dynamic reads.
+
 ## 3.10.4
 
 - **Refreshed the listing**: the extension description was rewritten for clarity. No change to the analyzer or its behavior.

@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.11.0] - 2026-07-20
+### Added
+- **MATLAB block comments** in the lexer: `%{ ... %}` regions are blanked before parsing while preserving source length, so prose inside them no longer reaches the parser as code. Nesting is depth-counted and `%{` must sit alone on its line, matching MATLAB
+- **`DynFieldAccess` IR node**: dynamic field access `s.(expr)` carries its field expression instead of collapsing to a placeholder. Coder mode now flags dynamic field writes as well as reads
+- **Indexed and field multi-assignment targets**: `[s.a, c(2)] = f()` parses into a `MultiTarget` list rather than falling back to opaque recovery
+- **Dot-float literals**: `.5` and `90.` lex as numbers, while `5.*y` still lexes as `5` followed by the `.*` operator
+- **`classdef` static methods and property defaults reach the IR**: the `Static` methods-block attribute and property default expressions survive parsing instead of being discarded. Analyzer output is unchanged, verified byte-for-byte across every classdef file in the dogfood corpus
+- Conformal Migrate: every file in the 1,509-file dogfood sample translates to Python that parses, up from 95 files with syntax errors
+- Conformal Migrate: shape analysis reaches inside function bodies. Per-function exit environments are captured and joined across call contexts, and uncalled functions are analyzed with unknown parameters seeded from `arguments` blocks. Operator, indexing, and format decisions that depend on shape no longer degrade to the conservative arm in the place most MATLAB code lives
+- Conformal Migrate: `classdef` static methods translate to `@staticmethod` with their parameters intact, and property defaults become per-instance assignments in `__init__` rather than shared class attributes
+- Conformal Migrate: `sprintf` and `fprintf` cycle a literal format string over surplus and array arguments in column-major order, the way MATLAB does
+- Conformal Migrate: user-function command syntax such as `disp hello` routes through the builtin map as a real call instead of an opaque comment
+- 615 analyzer tests (up from 585), 81 migrate test pairs (up from 58)
+
+### Fixed
+- Dynamic field writes bound a literal `<dynamic>` field on the target struct, inventing a field the program never assigns
+- The lexer called the three-argument `Regex.Match` overload on .NET, which anchors `^` and lookbehind at the start of the search window rather than the string. Gates relying on lookbehind silently did nothing on the native path while working under Fable
+- Conformal Migrate: a static method had its first parameter renamed to `self` and dropped, so every reference to that parameter in the body read an attribute that does not exist. The emitted Python ran and produced wrong results rather than failing
+- Conformal Migrate: `classdef` property defaults were dropped, leaving translated classes with unset attributes
+
+### Changed
+- SARIF version string updated to 3.11.0
+- `--version` output updated to 3.11.0
+
 ## [3.10.4] - 2026-06-22
 ### Added
 - **Neovim LSP client** at `editors/nvim/conformal.lua`: a dependency-free Lua module that attaches the `conformal --lsp` server to `matlab` and `octave` buffers, providing diagnostics, hover, document symbols, go-to-definition, quick-fix code actions, and inferred-shape inlay hints
