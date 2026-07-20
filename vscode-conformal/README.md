@@ -1,8 +1,8 @@
 # Conformal: MATLAB Shape Analyzer
 
-Static shape and dimension analysis for MATLAB.
+Conformal is a free code checker for MATLAB. It reads your code without running it and tells you where something will break, usually a matrix that is the wrong size for what comes next. You do not need a MATLAB license to use it.
 
-Conformal finds matrix dimension errors before the code runs. If A is 3 x 4 and B is 5 x 2, it can tell you that A * B has an inner dimension mismatch, and that [A; B] has mismatched column counts. It follows shapes through assignments, function calls, control flow, and across sibling .m files in the same directory, and it carries symbolic dimensions like n, m, and n+m the whole way.
+If A is 3 x 4 and B is 5 x 2, it will tell you that `A * B` has an inner dimension mismatch and that `[A; B]` has mismatched column counts. Both show up as you type, before anything runs.
 
 ## Screenshots
 
@@ -17,7 +17,11 @@ Conformal finds matrix dimension errors before the code runs. If A is 3 x 4 and 
 
 ## What it catches
 
-The bulk of what it catches is dimension mismatches, whether in multiplication, concatenation, element-wise operations, or backslash solves. It can also flag type errors, a struct or a cell used where a number is expected, and it checks for out-of-bounds indexing, division by zero, and negative dimensions when it can prove them from the code. That tracking reaches through user-defined functions, including the older end-less definitions and no-argument procedures, through anonymous functions with closure capture, and through cross-file calls to sibling .m files.
+- Matrix sizes that do not line up in a multiply, a concatenation, an element-wise operation, or a backslash solve
+- Indexing past the end of an array
+- A struct or a cell used where a number belongs
+- Division by zero and negative dimensions, where they can be proven from the code
+- Mistakes that only show up when one function hands data to another, including across files
 
 By default, only high-confidence warnings show. The strict setting adds low-confidence codes like `W_SUSPICIOUS_COMPARISON`, mostly the kind of thing that could turn out to be a false positive.
 
@@ -56,5 +60,9 @@ There should be nothing to configure. The extension bundles the analyzer directl
 | `conformal.strict` | `false` | Show all warnings including informational and low-confidence diagnostics |
 | `conformal.analyzeOnChange` | `true` | Analyze as code is typed, behind a short debounce |
 | `conformal.inlayHints` | `true` | Show inferred shapes as inlay hints on first assignment. If hints feel noisy, set to `false` |
+
+## How the analysis works
+
+Shapes are followed through assignments, function calls, control flow, and sibling `.m` files in the same directory. Dimensions can stay symbolic, so `n`, `m`, and `n+m` are carried the whole way rather than collapsing to unknown once a size stops being a literal number. The tracking reaches through user-defined functions, including the older end-less definitions and no-argument procedures, and through anonymous functions with closure capture.
 
 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal) · [GitHub](https://github.com/EthanDoughty/conformal)

@@ -1,6 +1,6 @@
 # Conformal
 
-> Conformal is a static shape analyzer for MATLAB. It catches matrix dimension mismatches before the code runs, and it does not need a MATLAB license to do it.
+> Conformal is a free code checker for MATLAB. It reads code without running it and reports the size and shape errors that would otherwise surface mid-run, and it does not need a MATLAB license to do it. Technically it is a static shape analyzer.
 
 Conformal reads MATLAB source and tracks the shape of every value, the rows and columns of a matrix, the fields of a struct, the contents of a cell array, as that value moves through the program. When two shapes cannot line up, like a multiply between a 10 x 3 matrix and a 4 x 1 vector, it reports the mismatch and points at the line where the shapes first disagree.
 

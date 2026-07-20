@@ -3,20 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Conformal: Catch MATLAB dimension errors before they run</title>
-    <meta name="description" content="Conformal catches MATLAB dimension errors before runtime by tracking shapes across functions and files, including symbolic dimensions, and it needs no MATLAB license.">
+    <title>Conformal: a code checker for MATLAB</title>
+    <meta name="description" content="Conformal is a free code checker for MATLAB. It reads your code without running it and finds the size and shape errors you would otherwise hit mid-run, and it needs no MATLAB license.">
     <link rel="icon" type="image/png" href="favicon.png">
     <link rel="canonical" href="https://conformaltools.com/">
 
     <!-- Social sharing -->
-    <meta property="og:title" content="Conformal: Catch MATLAB dimension errors before the code runs">
-    <meta property="og:description" content="Static shape analysis for MATLAB that tracks matrix shapes across functions and files, catching dimension mismatches before runtime without a MATLAB license.">
+    <meta property="og:title" content="Conformal: a code checker for MATLAB">
+    <meta property="og:description" content="A free code checker for MATLAB. It reads your code without running it and finds size and shape errors before you hit them, with no MATLAB license required.">
     <meta property="og:image" content="https://conformaltools.com/og-image.png">
     <meta property="og:url" content="https://conformaltools.com">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Conformal: Catch MATLAB dimension errors before the code runs">
-    <meta name="twitter:description" content="Static shape analysis for MATLAB that catches dimension errors before runtime by tracking shapes across functions and files, without a MATLAB license.">
+    <meta name="twitter:title" content="Conformal: a code checker for MATLAB">
+    <meta name="twitter:description" content="A free code checker for MATLAB. It reads your code without running it and finds size and shape errors before you hit them, with no MATLAB license required.">
     <meta name="twitter:image" content="https://conformaltools.com/og-image.png">
 
     <style>
@@ -282,6 +282,65 @@
             line-height: 1.65;
         }
 
+        /* Plain-language checklist */
+        .checks {
+            list-style: none;
+            max-width: 660px;
+            margin-top: 4px;
+        }
+
+        .checks li {
+            color: var(--muted);
+            font-size: 0.95rem;
+            line-height: 1.6;
+            padding: 7px 0 7px 20px;
+            position: relative;
+        }
+
+        .checks li::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 15px;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--accent);
+        }
+
+        /* Where-you-run-it table */
+        .runtable {
+            width: 100%;
+            max-width: 720px;
+            border-collapse: collapse;
+            font-size: 0.925rem;
+            margin-top: 4px;
+        }
+
+        .runtable th {
+            text-align: left;
+            color: var(--text);
+            font-weight: 600;
+            font-size: 0.875rem;
+            padding: 0 20px 10px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .runtable td {
+            color: var(--muted);
+            line-height: 1.55;
+            padding: 12px 20px 12px 0;
+            border-bottom: 1px solid var(--border);
+            vertical-align: top;
+        }
+
+        .runtable td:first-child { color: var(--text); white-space: nowrap; }
+        .runtable tr:last-child td { border-bottom: none; }
+
+        @media (max-width: 640px) {
+            .runtable td:first-child { white-space: normal; }
+        }
+
         /* Inline code */
         code.inline {
             font-family: 'JetBrains Mono', monospace;
@@ -411,7 +470,7 @@
         "downloadUrl": "https://github.com/EthanDoughty/conformal/releases",
         "softwareHelp": "https://github.com/EthanDoughty/conformal/blob/main/docs/analysis.md",
         "license": "https://github.com/EthanDoughty/conformal/blob/main/LICENSE",
-        "description": "Conformal is a static shape analyzer for MATLAB. It catches matrix dimension mismatches before the code runs, tracking shapes across functions and files and resolving symbolic dimensions, and it needs no MATLAB license.",
+        "description": "Conformal is a free code checker for MATLAB. It reads code without running it and reports size and shape errors, tracking shapes across functions and files and resolving symbolic dimensions, and it needs no MATLAB license.",
         "offers": {
             "@type": "Offer",
             "price": "0",
@@ -431,7 +490,9 @@
         <section class="hero">
             <h1><span>Conformal</span></h1>
             <p class="tagline">
-                Catch MATLAB dimension errors before the code runs. Conformal tracks matrix shapes across functions and files, not just the file in front of you, and it needs no MATLAB license.
+                Conformal is a free code checker for MATLAB. It reads your code without running it and tells you
+                where something will break, usually a matrix that is the wrong size for what comes next.
+                You do not need a MATLAB license to use it.
             </p>
             <div class="buttons">
                 <a href="https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal" class="btn btn-primary">
@@ -501,7 +562,7 @@ R = <span class="code-func">process</span>(A, w);</code></pre>
                 <span class="stat-label">crashes</span>
             </div>
             <div class="stat">
-                <span class="stat-value">585</span>
+                <span class="stat-value">615</span>
                 <span class="stat-label">test cases</span>
             </div>
             <div class="stat">
@@ -514,30 +575,44 @@ R = <span class="code-func">process</span>(A, w);</code></pre>
             </div>
         </div>
 
-        <!-- What it covers -->
-        <div class="two-col">
-            <div>
-                <h2>What it covers</h2>
-                <p>
-                    Arithmetic, concatenation, indexing, struct fields, cell arrays, classdef objects, cross-file
-                    function calls, nested functions, closures, <code class="inline">nargin</code>/<code class="inline">nargout</code>,
-                    <code class="inline">varargin</code>. Dimensions can be symbolic:
-                    <code class="inline">zeros(n+1, 2*m)</code> tracks as <code class="inline">matrix[(n+1) x (2*m)]</code>,
-                    and those expressions carry through the whole program. Loop index bounds are tracked relationally,
-                    so <code class="inline">for i=1:n-1; A(i+1)</code> won't false-positive.
-                </p>
-            </div>
-            <div>
-                <h2>For CI pipelines</h2>
-                <p>
-                    <code class="inline">--format sarif</code> produces SARIF 2.1.0 with SHA-256 file hashes for traceability.
-                    <code class="inline">--batch dir/</code> sweeps a directory in one process.
-                    <code class="inline">.conformal.json</code> locks per-repo settings so the whole team runs the same checks.
-                    <code class="inline">--coder</code> flags constructs that MATLAB Coder can't compile.
-                    Output is deterministic.
-                </p>
-            </div>
-        </div>
+        <!-- What it catches -->
+        <section class="section">
+            <h2>What it catches</h2>
+            <ul class="checks">
+                <li>Matrix sizes that do not line up in a multiply or an element-wise operation</li>
+                <li>Indexing past the end of an array</li>
+                <li>Mistakes that only show up when one function hands data to another, including across files</li>
+                <li>Size errors hiding inside structs, cell arrays, and class objects</li>
+                <li>Code that MATLAB Coder will refuse to compile, once that check is switched on</li>
+            </ul>
+        </section>
+
+        <!-- Where you run it -->
+        <section class="section">
+            <h2>Where you run it</h2>
+            <table class="runtable">
+                <tr>
+                    <th>Where</th>
+                    <th>What you get</th>
+                </tr>
+                <tr>
+                    <td>VS Code</td>
+                    <td>Squiggles as you type, and variable sizes on hover</td>
+                </tr>
+                <tr>
+                    <td>MATLAB command window</td>
+                    <td>Checks the file open in the editor, without leaving the IDE</td>
+                </tr>
+                <tr>
+                    <td>Terminal</td>
+                    <td>One file, or a whole folder in a single pass</td>
+                </tr>
+                <tr>
+                    <td>Your build system</td>
+                    <td>A machine-readable report, so a bad merge fails the build instead of reaching someone else</td>
+                </tr>
+            </table>
+        </section>
 
         <!-- MATLAB IDE -->
         <section class="section">
@@ -602,6 +677,37 @@ R = <span class="code-func">process</span>(A, w);</code></pre>
                 <span class="domain-tag">rocketry</span>
             </div>
         </section>
+
+        <!-- Technical detail -->
+        <div class="two-col">
+            <div>
+                <h2>How the analysis works</h2>
+                <p>
+                    Shapes are inferred over a small lattice and carried across function calls, files, nested
+                    functions, and closures, so a mismatch deep in a call chain still traces back to where it
+                    started. Struct fields, cell contents, classdef properties, and the
+                    <code class="inline">nargin</code>/<code class="inline">nargout</code>/<code class="inline">varargin</code>
+                    forms are all tracked. Dimensions can stay symbolic, so
+                    <code class="inline">zeros(n+1, 2*m)</code> is held as <code class="inline">matrix[(n+1) x (2*m)]</code>
+                    and that expression survives the rest of the program instead of collapsing to unknown. Loop
+                    index bounds are tracked relationally, which is why
+                    <code class="inline">for i=1:n-1; A(i+1)</code> raises no false alarm. Analysis is
+                    path-sensitive, so shapes that only differ on a branch that cannot run stay quiet.
+                </p>
+            </div>
+            <div>
+                <h2>CI and toolchain flags</h2>
+                <p>
+                    <code class="inline">--format sarif</code> produces SARIF 2.1.0 with SHA-256 file hashes for
+                    traceability. <code class="inline">--batch dir/</code> sweeps a directory in one process.
+                    <code class="inline">.conformal.json</code> locks per-repo settings so the whole team runs the
+                    same checks. <code class="inline">--coder</code> flags constructs that MATLAB Coder cannot
+                    compile. <code class="inline">--fixpoint</code> switches loops to widening-based iteration
+                    when single-pass is not enough. Output is deterministic, which matters when the result gates
+                    a build.
+                </p>
+            </div>
+        </div>
 
         <!-- Migrate teaser -->
         <section class="migrate-section">
