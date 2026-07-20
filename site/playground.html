@@ -113,6 +113,13 @@
 
         .pg-btn:hover { background: var(--accent-hover); }
 
+        .pg-example-note {
+            color: var(--muted);
+            font-size: 0.82rem;
+            font-style: italic;
+            padding-bottom: 10px;
+        }
+
         #pg-editor {
             border: 1px solid var(--border);
             border-radius: 8px;
@@ -241,6 +248,8 @@
             <button id="pg-analyze" class="pg-btn" hidden>Analyze</button>
         </div>
 
+        <p class="pg-example-note" id="pg-example-note" hidden></p>
+
         <div id="pg-editor"></div>
 
         <div id="pg-panel-wrap">
@@ -259,6 +268,6 @@
         </div>
     </footer>
 
-    <script src="./playground.js?v=3"></script>
+    <script src="./playground.js?v=4"></script>
 </body>
 </html>

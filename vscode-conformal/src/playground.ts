@@ -249,26 +249,76 @@ const conformalHighlight = HighlightStyle.define([
     { tag: tags.meta, color: '#9a9488' },
 ]);
 
-const EXAMPLES: { label: string; code: string }[] = [
+interface Example {
+    label: string;
+    code: string;
+    note?: string;   // shown as a muted caption while the example is selected
+}
+
+// Every example is verified against the analyzer before shipping: the error
+// ones emit exactly the named warning, the clean ones emit nothing.
+const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
     {
-        label: 'Dimension mismatch',
-        code: 'A = zeros(3,4);\nB = ones(5,6);\nC = A * B;\n',
+        group: 'Dimension errors',
+        items: [
+            {
+                label: 'Matrix multiply',
+                code: 'A = zeros(3,4);\nB = ones(5,6);\nC = A * B;\n',
+            },
+            {
+                label: 'Elementwise op',
+                code: 'A = zeros(2, 3);\nB = ones(3, 2);\nC = A .* B;\n',
+            },
+            {
+                label: 'Concatenation',
+                code: 'top = zeros(2, 3);\nbottom = ones(2, 4);\nM = [top; bottom];\n',
+            },
+            {
+                label: 'Indexing',
+                code: 'A = zeros(2, 2);\nb = A(3, 1);\n',
+            },
+        ],
     },
     {
-        label: 'Clean shapes',
-        code: 'A = zeros(3, 4);\nB = ones(4, 5);\nC = A * B;\nD = C\';\n',
+        group: 'Clean code',
+        items: [
+            {
+                label: 'Simple shapes',
+                code: "A = zeros(3, 4);\nB = ones(4, 5);\nC = A * B;\nD = C';\n",
+            },
+            {
+                label: 'Kalman filter update',
+                code: "x = zeros(4, 1);\nP = eye(4);\nH = zeros(2, 4);\nR = eye(2);\nz = zeros(2, 1);\nS = H * P * H' + R;\nK = P * H' * inv(S);\nx = x + K * (z - H * x);\nP = (eye(4) - K * H) * P;\n",
+                note: 'A real filter update, tracked shape by shape with nothing flagged.',
+            },
+        ],
     },
     {
-        label: 'Strict-only warning',
-        code: "A = zeros(3, 3);\nr = A + 'error';\n",
-    },
-    {
-        // The fixpoint toggle changes the inferred shape of x here:
-        // iterated analysis widens the growing dimension, single-pass does not.
-        label: 'Loop growth',
-        code: 'x = zeros(1, 3);\nfor i = 1:5\n    x = [x, i];\nend\ny = x * ones(4, 1);\n',
+        group: 'Option demos',
+        items: [
+            {
+                label: 'Strict mode',
+                code: "A = zeros(3, 3);\nr = A + 'error';\n",
+                note: 'Turn on Strict mode to see this warning.',
+            },
+            {
+                // The fixpoint toggle changes the inferred shape of x here:
+                // iterated analysis widens the growing dimension, single-pass
+                // does not.
+                label: 'Fixpoint loops',
+                code: 'x = zeros(1, 3);\nfor i = 1:5\n    x = [x, i];\nend\ny = x * ones(4, 1);\n',
+                note: 'Toggle Fixpoint to watch the shape of x change.',
+            },
+            {
+                label: 'Shape annotations',
+                code: "t = 0:0.1:6.2;\ns = sin(t);\nM = [s; cos(t)];\np = M * M';\n",
+                note: 'Every inferred shape appears inline. Toggle Shape annotations to hide them.',
+            },
+        ],
     },
 ];
+
+const EXAMPLES: Example[] = EXAMPLE_GROUPS.flatMap(g => g.items);
 
 // ---------------------------------------------------------------------------
 // Analysis options, read from the toolbar on every run.
@@ -431,13 +481,29 @@ function main(): void {
         annotations: annotationsBox.checked,
     });
 
+    const noteEl = document.getElementById('pg-example-note');
+
     exampleSelect.textContent = '';
-    for (let i = 0; i < EXAMPLES.length; i++) {
-        const opt = document.createElement('option');
-        opt.value = String(i);
-        opt.textContent = EXAMPLES[i].label;
-        exampleSelect.appendChild(opt);
+    let flatIndex = 0;
+    for (const g of EXAMPLE_GROUPS) {
+        const og = document.createElement('optgroup');
+        og.label = g.group;
+        for (const item of g.items) {
+            const opt = document.createElement('option');
+            opt.value = String(flatIndex++);
+            opt.textContent = item.label;
+            og.appendChild(opt);
+        }
+        exampleSelect.appendChild(og);
     }
+
+    const showNote = (example: Example | undefined) => {
+        if (!noteEl) return;
+        const note = example && example.note ? example.note : '';
+        noteEl.textContent = note;
+        noteEl.hidden = note === '';
+    };
+    showNote(EXAMPLES[0]);
 
     let debounceTimer: number | undefined;
     const scheduleAnalysis = (view: EditorView) => {
@@ -484,6 +550,7 @@ function main(): void {
         const idx = Number(exampleSelect.value);
         const example = EXAMPLES[idx];
         if (!example) return;
+        showNote(example);
         view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: example.code } });
         runAnalysis(view, panel, options());
     });
