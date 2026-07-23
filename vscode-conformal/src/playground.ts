@@ -325,12 +325,42 @@ const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
         ],
     },
     {
+        group: 'Civil & structural',
+        items: [
+            {
+                label: 'Beam deflection',
+                code: 'K = [2, -1, 0, 0, 0; -1, 2, -1, 0, 0; 0, -1, 2, -1, 0; 0, 0, -1, 2, -1; 0, 0, 0, -1, 2];\nq = 12;\nh = 0.5;\nEI = 4000;\nw = inv(K) * (q * h^4 / EI * ones(5, 1));\n',
+                note: 'A five-node stiffness system solved for deflections under load.',
+            },
+            {
+                label: 'Truss element forces',
+                code: 'c = cos(0.6);\ns = sin(0.6);\nk = 2000 * [c * c, c * s, -c * c, -c * s; c * s, s * s, -c * s, -s * s; -c * c, -c * s, c * c, c * s; -c * s, -s * s, c * s, s * s];\nu = [0; 0; 0.002; -0.001];\nf = k * u;\n',
+                note: 'A bar element stiffness matrix built from its orientation.',
+            },
+        ],
+    },
+    {
         group: 'Controls & estimation',
         items: [
+            {
+                label: 'Alpha-beta tracker',
+                code: 'dt = 1.0;\nalpha = 0.85;\nbeta = 0.005;\nx = [0; 0];\nz = 1000;\nfor k = 1:10\n    xp = [x(1) + dt * x(2); x(2)];\n    rres = z - xp(1);\n    x = [xp(1) + alpha * rres; xp(2) + (beta / dt) * rres];\nend\n',
+                note: 'The classic two-gain tracker smoothing noisy range measurements.',
+            },
+            {
+                label: 'Constant-velocity tracker',
+                code: "dt = 0.1;\nF = [1, 0, dt, 0; 0, 1, 0, dt; 0, 0, 1, 0; 0, 0, 0, 1];\nH = [1, 0, 0, 0; 0, 1, 0, 0];\nQ = 0.01 * eye(4);\nRm = 0.5 * eye(2);\nx = zeros(4, 1);\nP = eye(4);\nz = [10; 5];\nfor k = 1:20\n    x = F * x;\n    P = F * P * F' + Q;\n    S = H * P * H' + Rm;\n    K = P * H' * inv(S);\n    x = x + K * (z - H * x);\n    P = (eye(4) - K * H) * P;\nend\n",
+                note: 'Predict and correct cycles of a constant-velocity Kalman tracker.',
+            },
             {
                 label: 'Kalman filter update',
                 code: "x = zeros(4, 1);\nP = eye(4);\nH = zeros(2, 4);\nR = eye(2);\nz = zeros(2, 1);\nS = H * P * H' + R;\nK = P * H' * inv(S);\nx = x + K * (z - H * x);\nP = (eye(4) - K * H) * P;\n",
                 note: 'A real filter update, tracked shape by shape with nothing flagged.',
+            },
+            {
+                label: 'PID controller',
+                code: 'kp = 2.0;\nki = 0.5;\nkd = 0.1;\nsp = 1.0;\ny = 0;\ninteg = 0;\nprev = 0;\ndt = 0.05;\nfor k = 1:200\n    e = sp - y;\n    integ = integ + e * dt;\n    der = (e - prev) / dt;\n    u = kp * e + ki * integ + kd * der;\n    y = y + dt * (u - y);\n    prev = e;\nend\n',
+                note: 'A full PID loop driving a first-order plant to setpoint.',
             },
             {
                 label: 'State-space simulation',
@@ -353,6 +383,11 @@ const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 note: 'Normal equations for a linear fit, from data matrix to residual.',
             },
             {
+                label: 'Logistic regression',
+                code: "X = zeros(100, 3);\nyl = zeros(100, 1);\nw = zeros(3, 1);\neta = 0.1;\nfor k = 1:50\n    z = X * w;\n    prob = 1 ./ (1 + exp(-z));\n    grad = X' * (prob - yl) / 100;\n    w = w - eta * grad;\nend\n",
+                note: 'Fifty gradient steps with the sigmoid applied elementwise.',
+            },
+            {
                 label: 'Neural net forward pass',
                 code: 'x = zeros(8, 1);\nW1 = zeros(16, 8);\nb1 = zeros(16, 1);\nh = tanh(W1 * x + b1);\nW2 = zeros(4, 16);\nb2 = zeros(4, 1);\nyhat = W2 * h + b2;\n',
                 note: 'Two dense layers, weights and activations tracked end to end.',
@@ -360,27 +395,62 @@ const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
         ],
     },
     {
-        group: 'Defense',
+        group: 'Energy & power',
         items: [
             {
-                label: 'Alpha-beta tracker',
-                code: 'dt = 1.0;\nalpha = 0.85;\nbeta = 0.005;\nx = [0; 0];\nz = 1000;\nfor k = 1:10\n    xp = [x(1) + dt * x(2); x(2)];\n    rres = z - xp(1);\n    x = [xp(1) + alpha * rres; xp(2) + (beta / dt) * rres];\nend\n',
-                note: 'The classic two-gain radar tracker on scalar measurements.',
+                label: 'DC power flow',
+                code: 'B = [20, -10, -10; -10, 30, -20; -10, -20, 30];\nP = [1.5; -0.5; -1.0];\ntheta = inv(B) * P;\nflow12 = 10 * (theta(1) - theta(2));\n',
+                note: 'Bus angles from the susceptance matrix, then a line flow.',
             },
             {
-                label: 'Ballistic trajectory',
-                code: 'p = [0; 0];\nv = [120; 180];\ng = [0; -9.81];\nc = 0.002;\ndt = 0.05;\nfor k = 1:100\n    a = g - c * norm(v) * v;\n    v = v + dt * a;\n    p = p + dt * v;\nend\n',
-                note: 'Drag-limited projectile flight integrated step by step.',
+                label: 'Wind turbine power',
+                code: 'v = linspace(3, 25, 45);\nP = 0.5 * 1.225 * 5027 * 0.45 * v.^3 / 1000;\ntotal = sum(P);\n',
+                note: 'The cubic power curve evaluated across a wind speed sweep.',
+            },
+        ],
+    },
+    {
+        group: 'Finance',
+        items: [
+            {
+                label: 'Bond pricing',
+                code: "cf = [50, 50, 50, 1050];\nt = [1, 2, 3, 4];\nr = 0.04;\nd = exp(-r * t);\nprice = cf * d';\n",
+                note: 'Discounted cash flows collapsed to a price by a dot product.',
             },
             {
-                label: 'Beamforming',
-                code: "X = zeros(8, 64);\nw = ones(8, 1) / 8;\ny = w' * X;\np = (y * y') / 64;\n",
-                note: 'Delay-and-sum weights applied across an array snapshot.',
+                label: 'Portfolio risk',
+                code: "w = [0.4; 0.35; 0.25];\nSigma = [0.04, 0.01, 0; 0.01, 0.09, 0.02; 0, 0.02, 0.16];\nmu_r = [0.08; 0.11; 0.14];\nret = w' * mu_r;\nvar_p = w' * Sigma * w;\n",
+                note: 'Expected return and variance from the covariance matrix.',
+            },
+        ],
+    },
+    {
+        group: 'Image processing',
+        items: [
+            {
+                label: 'Box blur',
+                code: 'A = zeros(50, 50);\nB = (A(1:48, 1:48) + A(1:48, 2:49) + A(1:48, 3:50) + A(2:49, 1:48) + A(2:49, 2:49) + A(2:49, 3:50) + A(3:50, 1:48) + A(3:50, 2:49) + A(3:50, 3:50)) / 9;\n',
+                note: 'A 3 by 3 mean filter built from nine shifted submatrices.',
+            },
+        ],
+    },
+    {
+        group: 'Life sciences',
+        items: [
+            {
+                label: 'Lotka-Volterra',
+                code: 'y = [10; 5];\na = 1.1;\nb = 0.4;\nc = 0.1;\ndelta = 0.4;\ndt = 0.01;\nfor k = 1:1000\n    y = y + dt * [a * y(1) - b * y(1) * y(2); c * y(1) * y(2) - delta * y(2)];\nend\n',
+                note: 'Predator and prey populations stepped through a thousand updates.',
             },
             {
-                label: 'CV target tracker',
-                code: "dt = 0.1;\nF = [1, 0, dt, 0; 0, 1, 0, dt; 0, 0, 1, 0; 0, 0, 0, 1];\nH = [1, 0, 0, 0; 0, 1, 0, 0];\nQ = 0.01 * eye(4);\nRm = 0.5 * eye(2);\nx = zeros(4, 1);\nP = eye(4);\nz = [10; 5];\nfor k = 1:20\n    x = F * x;\n    P = F * P * F' + Q;\n    S = H * P * H' + Rm;\n    K = P * H' * inv(S);\n    x = x + K * (z - H * x);\n    P = (eye(4) - K * H) * P;\nend\n",
-                note: 'Predict and correct cycles of a constant-velocity tracker.',
+                label: 'Pharmacokinetics',
+                code: 'k10 = 0.1;\nk12 = 0.05;\nk21 = 0.03;\nA = [-(k10 + k12), k21; k12, -k21];\nx = [500; 0];\ndt = 0.1;\nfor k = 1:600\n    x = x + dt * A * x;\nend\n',
+                note: 'A two-compartment drug model decaying between compartments.',
+            },
+            {
+                label: 'SIR epidemic',
+                code: 'y = [990; 10; 0];\nbeta = 0.3;\ngamma = 0.1;\nN = 1000;\ndt = 0.5;\nfor k = 1:200\n    inf = beta * y(1) * y(2) / N;\n    rec = gamma * y(2);\n    y = y + dt * [-inf; inf - rec; rec];\nend\n',
+                note: 'Susceptible, infected, and recovered counts stepped through an outbreak.',
             },
         ],
     },
@@ -441,6 +511,71 @@ const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 label: 'Trapezoid rule',
                 code: "h = pi / 100;\nt = linspace(0, pi, 101);\nf = sin(t);\nw = [0.5, ones(1, 99), 0.5];\nI = h * (w * f');\n",
                 note: 'Composite trapezoid rule applied as a dot product.',
+            },
+        ],
+    },
+    {
+        group: 'Physics',
+        items: [
+            {
+                label: 'Orbital motion',
+                code: 'mu = 398600;\nr = [7000; 0];\nv = [0; 7.5];\ndt = 1;\nfor k = 1:120\n    a = -mu / norm(r)^3 * r;\n    v = v + dt * a;\n    r = r + dt * v;\nend\n',
+                note: 'A two-body orbit integrated from gravity alone.',
+            },
+            {
+                label: 'Projectile with drag',
+                code: 'p = [0; 0];\nv = [120; 180];\ng = [0; -9.81];\nc = 0.002;\ndt = 0.05;\nfor k = 1:100\n    a = g - c * norm(v) * v;\n    v = v + dt * a;\n    p = p + dt * v;\nend\n',
+                note: 'Drag-limited projectile flight integrated step by step.',
+            },
+            {
+                label: 'Spring-mass-damper',
+                code: 'm = 1;\nc = 0.4;\nk = 2;\nA = [0, 1; -k / m, -c / m];\nx = [1; 0];\ndt = 0.01;\nfor i = 1:500\n    x = x + dt * A * x;\nend\n',
+                note: 'The canonical second-order system in state-space form.',
+            },
+            {
+                label: 'Wave equation',
+                code: 'u = zeros(1, 60);\nu(30) = 1;\nup = u;\nc2 = 0.25;\nfor k = 1:80\n    un = u;\n    un(2:59) = 2 * u(2:59) - up(2:59) + c2 * (u(1:58) - 2 * u(2:59) + u(3:60));\n    up = u;\n    u = un;\nend\n',
+                note: 'A plucked string stepped by the leapfrog stencil.',
+            },
+        ],
+    },
+    {
+        group: 'Robotics',
+        items: [
+            {
+                label: 'Differential-drive odometry',
+                code: 'pose = [0; 0; 0];\nv = 0.5;\nomega = 0.2;\ndt = 0.1;\nfor k = 1:100\n    pose = pose + dt * [v * cos(pose(3)); v * sin(pose(3)); omega];\nend\n',
+                note: 'A robot pose integrated from wheel speed and turn rate.',
+            },
+            {
+                label: 'Two-link arm kinematics',
+                code: 'q1 = 0.5;\nq2 = 0.8;\nL1 = 0.5;\nL2 = 0.35;\np1 = L1 * [cos(q1); sin(q1)];\np2 = p1 + L2 * [cos(q1 + q2); sin(q1 + q2)];\nJ = [-L1 * sin(q1) - L2 * sin(q1 + q2), -L2 * sin(q1 + q2); L1 * cos(q1) + L2 * cos(q1 + q2), L2 * cos(q1 + q2)];\nvel = J * [0.1; 0.2];\n',
+                note: 'End effector position and velocity through the Jacobian.',
+            },
+        ],
+    },
+    {
+        group: 'Signal processing',
+        items: [
+            {
+                label: 'Autocorrelation',
+                code: "t = linspace(0, 6.2, 100);\ns = sin(3 * t);\nr0 = s * s' / 100;\nr5 = s(1:95) * s(6:100)' / 95;\nr10 = s(1:90) * s(11:100)' / 90;\nlags = [r0, r5, r10];\n",
+                note: 'Three lags computed from shifted slices and stitched together.',
+            },
+            {
+                label: 'Beamforming',
+                code: "X = zeros(8, 64);\nw = ones(8, 1) / 8;\ny = w' * X;\np = (y * y') / 64;\n",
+                note: 'Delay-and-sum weights applied across a sensor array snapshot.',
+            },
+            {
+                label: 'Decimation',
+                code: 't = linspace(0, 1, 200);\ns = sin(12 * t);\nd = s(1:4:200);\n',
+                note: 'Every fourth sample kept, the stepped range folded to its length.',
+            },
+            {
+                label: 'FIR filter',
+                code: 't = linspace(0, 6.2, 100);\ns = sin(20 * t) + 0.3 * sin(45 * t);\ny = 0.25 * s(1:98) + 0.5 * s(2:99) + 0.25 * s(3:100);\n',
+                note: 'A three-tap smoother written as shifted slice arithmetic.',
             },
         ],
     },
