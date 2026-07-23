@@ -293,6 +293,16 @@ const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 note: 'An equivalent-circuit battery state stepped over a discharge.',
             },
             {
+                label: 'Braking distance sweep',
+                code: 'v0 = linspace(10, 40, 30);\nmu_f = 0.8;\ntreact = 1.2;\nd = v0.^2 / (2 * mu_f * 9.81) + treact * v0;\nlongest = max(d);\n',
+                note: 'Stopping distances over a speed sweep with reaction time.',
+            },
+            {
+                label: 'Quarter-car suspension',
+                code: 'ms = 300;\nmu = 40;\nks = 18000;\nku = 180000;\ncs = 1200;\nA = [0, 1, 0, 0; -ks / ms, -cs / ms, ks / ms, cs / ms; 0, 0, 0, 1; ks / mu, cs / mu, -(ks + ku) / mu, -cs / mu];\nx = [0.02; 0; 0; 0];\ndt = 0.001;\nfor k = 1:2000\n    x = x + dt * A * x;\nend\n',
+                note: 'Body and wheel states through a bump in the quarter-car model.',
+            },
+            {
                 label: 'Wheel slip ratios',
                 code: 'wheel = [21.8, 22.1, 20.4, 21.9];\nrw = 0.32;\nvx = 7.1;\nslip = (vx - rw * wheel) / vx;\nworst = max(slip);\n',
                 note: 'Elementwise slip computation across all four wheels.',
@@ -331,6 +341,21 @@ const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 label: 'Beam deflection',
                 code: 'K = [2, -1, 0, 0, 0; -1, 2, -1, 0, 0; 0, -1, 2, -1, 0; 0, 0, -1, 2, -1; 0, 0, 0, -1, 2];\nq = 12;\nh = 0.5;\nEI = 4000;\nw = inv(K) * (q * h^4 / EI * ones(5, 1));\n',
                 note: 'A five-node stiffness system solved for deflections under load.',
+            },
+            {
+                label: 'Column buckling',
+                code: 'E = 200e9;\nI = 8.1e-6;\nLv = [3, 3.5, 4, 4.5, 5];\nP = pi^2 * E * I ./ (1.0 * Lv).^2 / 1000;\n',
+                note: 'Euler buckling loads swept across column lengths.',
+            },
+            {
+                label: 'Pipe head loss',
+                code: 'L = [120, 80, 200, 150];\nD = [0.3, 0.25, 0.3, 0.2];\nv = [1.8, 2.1, 1.5, 2.4];\nf = 0.02;\nhf = f * (L ./ D) .* v.^2 / (2 * 9.81);\nworst = max(hf);\n',
+                note: 'Darcy-Weisbach losses across four segments at once.',
+            },
+            {
+                label: 'Shear building sway',
+                code: 'M = [200000, 0; 0, 150000];\nK = [45000000, -18000000; -18000000, 18000000];\nx = [0.05; 0.08];\nxd = [0; 0];\ndt = 0.005;\nfor k = 1:400\n    xdd = -inv(M) * (K * x);\n    xd = xd + dt * xdd;\n    x = x + dt * xd;\nend\n',
+                note: 'Two stories of a building swaying through mass and stiffness.',
             },
             {
                 label: 'Truss element forces',
@@ -403,6 +428,21 @@ const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 note: 'Bus angles from the susceptance matrix, then a line flow.',
             },
             {
+                label: 'Economic dispatch',
+                code: 'A = [0.008, 0, -1; 0, 0.012, -1; 1, 1, 0];\nb = [-8; -6.4; 800];\nsol = inv(A) * b;\nlambda = sol(3);\n',
+                note: 'Two generators and a shared marginal price from one solve.',
+            },
+            {
+                label: 'Solar array output',
+                code: 'G = linspace(200, 1000, 50);\nT = 25 + 0.03 * G;\nP = 0.18 * 1.6 * G .* (1 - 0.004 * (T - 25));\ntotal = sum(P);\n',
+                note: 'Irradiance sweep with temperature derating, all elementwise.',
+            },
+            {
+                label: 'Swing equation',
+                code: 'Pm = 0.8;\nPmax = 1.8;\nD = 0.05;\nM = 6.5;\nx = [0.4; 0];\ndt = 0.01;\nfor k = 1:500\n    x = x + dt * [x(2); (Pm - Pmax * sin(x(1)) - D * x(2)) / M];\nend\n',
+                note: 'A generator rotor angle swinging against the grid.',
+            },
+            {
                 label: 'Wind turbine power',
                 code: 'v = linspace(3, 25, 45);\nP = 0.5 * 1.225 * 5027 * 0.45 * v.^3 / 1000;\ntotal = sum(P);\n',
                 note: 'The cubic power curve evaluated across a wind speed sweep.',
@@ -416,6 +456,21 @@ const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 label: 'Bond pricing',
                 code: "cf = [50, 50, 50, 1050];\nt = [1, 2, 3, 4];\nr = 0.04;\nd = exp(-r * t);\nprice = cf * d';\n",
                 note: 'Discounted cash flows collapsed to a price by a dot product.',
+            },
+            {
+                label: 'CAPM beta',
+                code: "rm = [0.02, -0.01, 0.03, 0.015, -0.02, 0.025, 0.01, -0.005];\nra = [0.03, -0.015, 0.04, 0.02, -0.03, 0.035, 0.012, -0.008];\ncm = rm - mean(rm);\nca = ra - mean(ra);\nbeta = (cm * ca') / (cm * cm');\n",
+                note: 'Market beta from centered return series dot products.',
+            },
+            {
+                label: 'Loan amortization',
+                code: 'bal = 250000;\nr = 0.045 / 12;\npmt = 1266.71;\npaid = 0;\nfor k = 1:360\n    interest = bal * r;\n    bal = bal + interest - pmt;\n    paid = paid + pmt;\nend\n',
+                note: 'A mortgage balance stepped through 360 monthly payments.',
+            },
+            {
+                label: 'Moving-average crossover',
+                code: 't = linspace(0, 3, 120);\np = 100 + 5 * sin(2 * t) + t;\nfast = (p(3:120) + p(2:119) + p(1:118)) / 3;\nslow = (p(5:120) + p(4:119) + p(3:118) + p(2:117) + p(1:116)) / 5;\nsignal = fast(3:118) - slow;\n',
+                note: 'Fast and slow averages aligned by slicing, then differenced.',
             },
             {
                 label: 'Portfolio risk',
@@ -432,15 +487,45 @@ const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: 'A = zeros(50, 50);\nB = (A(1:48, 1:48) + A(1:48, 2:49) + A(1:48, 3:50) + A(2:49, 1:48) + A(2:49, 2:49) + A(2:49, 3:50) + A(3:50, 1:48) + A(3:50, 2:49) + A(3:50, 3:50)) / 9;\n',
                 note: 'A 3 by 3 mean filter built from nine shifted submatrices.',
             },
+            {
+                label: 'Contrast stretch',
+                code: 'A = zeros(40, 60);\nlo = min(min(A));\nhi = max(max(A));\nB = (A - lo) / (hi - lo + 1);\n',
+                note: 'The intensity range rescaled between its own extremes.',
+            },
+            {
+                label: 'Image downsampling',
+                code: 'A = zeros(64, 64);\nsmall = A(1:2:64, 1:2:64);\ntiny = small(1:2:32, 1:2:32);\n',
+                note: 'Two stepped-slice reductions, 64 to 32 to 16 pixels.',
+            },
+            {
+                label: 'Sharpening filter',
+                code: 'A = zeros(50, 50);\nS = 5 * A(2:49, 2:49) - A(1:48, 2:49) - A(3:50, 2:49) - A(2:49, 1:48) - A(2:49, 3:50);\n',
+                note: 'A Laplacian kernel written as shifted submatrices.',
+            },
+            {
+                label: 'Sobel edges',
+                code: 'A = zeros(50, 50);\nGx = (A(1:48, 3:50) + 2 * A(2:49, 3:50) + A(3:50, 3:50)) - (A(1:48, 1:48) + 2 * A(2:49, 1:48) + A(3:50, 1:48));\nGy = (A(3:50, 1:48) + 2 * A(3:50, 2:49) + A(3:50, 3:50)) - (A(1:48, 1:48) + 2 * A(1:48, 2:49) + A(1:48, 3:50));\nmag = sqrt(Gx.^2 + Gy.^2);\n',
+                note: 'Horizontal and vertical gradients combined into edge magnitude.',
+            },
         ],
     },
     {
         group: 'Life sciences',
         items: [
             {
+                label: 'Leslie matrix growth',
+                code: 'L = [0, 1.2, 0.8; 0.6, 0, 0; 0, 0.75, 0];\nn = [100; 60; 20];\nfor k = 1:25\n    n = L * n;\nend\ntotal = sum(n);\n',
+                note: 'Age-structured population projected through a Leslie matrix.',
+            },
+            {
                 label: 'Lotka-Volterra',
                 code: 'y = [10; 5];\na = 1.1;\nb = 0.4;\nc = 0.1;\ndelta = 0.4;\ndt = 0.01;\nfor k = 1:1000\n    y = y + dt * [a * y(1) - b * y(1) * y(2); c * y(1) * y(2) - delta * y(2)];\nend\n',
                 note: 'Predator and prey populations stepped through a thousand updates.',
+            },
+            {
+                label: 'Michaelis-Menten',
+                code: 'S = linspace(0, 10, 100);\nVmax = 12;\nKm = 1.5;\nv = Vmax * S ./ (Km + S);\npeak = max(v);\n',
+                note: 'The saturation rate curve across substrate concentrations.',
             },
             {
                 label: 'Pharmacokinetics',
@@ -543,9 +628,24 @@ const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
         group: 'Robotics',
         items: [
             {
+                label: 'Cubic joint trajectory',
+                code: 'T = 2;\nA = [1, 0, 0, 0; 0, 1, 0, 0; 1, T, T^2, T^3; 0, 1, 2 * T, 3 * T^2];\nbc = [0.2; 0; 1.5; 0];\nc = inv(A) * bc;\n',
+                note: 'Boundary conditions solved for smooth joint motion coefficients.',
+            },
+            {
                 label: 'Differential-drive odometry',
                 code: 'pose = [0; 0; 0];\nv = 0.5;\nomega = 0.2;\ndt = 0.1;\nfor k = 1:100\n    pose = pose + dt * [v * cos(pose(3)); v * sin(pose(3)); omega];\nend\n',
                 note: 'A robot pose integrated from wheel speed and turn rate.',
+            },
+            {
+                label: 'Jacobian-transpose IK',
+                code: "L1 = 0.5;\nL2 = 0.35;\nq = [0.3; 0.4];\ntarget = [0.6; 0.3];\nfor k = 1:100\n    p = L1 * [cos(q(1)); sin(q(1))] + L2 * [cos(q(1) + q(2)); sin(q(1) + q(2))];\n    J = [-L1 * sin(q(1)) - L2 * sin(q(1) + q(2)), -L2 * sin(q(1) + q(2)); L1 * cos(q(1)) + L2 * cos(q(1) + q(2)), L2 * cos(q(1) + q(2))];\n    e = target - p;\n    q = q + 0.5 * J' * e;\nend\n",
+                note: 'The end effector pulled to a target through the transposed Jacobian.',
+            },
+            {
+                label: 'PD joint control',
+                code: 'M = [0.9, 0.1; 0.1, 0.4];\nKp = [25, 0; 0, 16];\nKd = [8, 0; 0, 5];\nqref = [1.0; 0.5];\nq = [0; 0];\nqd = [0; 0];\ndt = 0.002;\nfor k = 1:1000\n    tau = Kp * (qref - q) - Kd * qd;\n    qdd = inv(M) * tau;\n    qd = qd + dt * qdd;\n    q = q + dt * qd;\nend\n',
+                note: 'Two joints driven to reference by proportional and derivative gains.',
             },
             {
                 label: 'Two-link arm kinematics',
