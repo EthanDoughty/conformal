@@ -6,7 +6,7 @@
 % EXPECT: C = matrix[None x None]
 % EXPECT: D = matrix[3 x 5]
 % EXPECT: E = matrix[10 x 3]
-% EXPECT: F = scalar
+% EXPECT: F = matrix[1 x 3]
 % EXPECT: G = matrix[1 x 4]
 % EXPECT: warnings = 0
 

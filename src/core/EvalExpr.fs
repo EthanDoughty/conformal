@@ -223,6 +223,7 @@ let indexArgToExtentIr
     | IndexExpr(_, expr) ->
         let s = evalFn expr env warnings ctx containerShape
         match s with
+        | Matrix(Concrete 1, Concrete 1) -> Concrete 1   // 1x1 acts as a scalar index
         | Matrix _ ->
             match expr with
             | MatrixLit _ -> Unknown   // matrix literal as subscript: valid MATLAB
@@ -722,7 +723,23 @@ and private evalIndexing
                     // subscript. MATLAB returns a matrix with the same shape as the index.
                     indexShape
                 | _ -> Scalar
-            | _ -> Scalar
+            | Ir.Range _ | Ir.SteppedRange _ ->
+                // Linear indexing with a range selects numel(range) elements.
+                // End inside the range resolves against numel(base). A vector
+                // base keeps its orientation; a definitely-2D base takes the
+                // index's row orientation; otherwise orientation is unknown.
+                let evalFn (e: Expr) (en: Env) (w: ResizeArray<Diagnostic>) (c: AnalysisContext) (cs: Shape option) =
+                    evalExprIr e en w c cs builtinDispatch
+                let len = indexArgToExtentIr arg env warnings line ctx (Some baseShape) (mulDim m n) evalFn
+                if m = Concrete 1 then Matrix(Concrete 1, len)
+                elif n = Concrete 1 then Matrix(len, Concrete 1)
+                else
+                    match m, n with
+                    | Concrete rr, Concrete cc when rr > 1 && cc > 1 -> Matrix(Concrete 1, len)
+                    | _ -> UnknownShape
+            | Colon _ ->
+                // A(:) flattens column-major into a column vector.
+                Matrix(mulDim m n, Concrete 1)
 
         | 2 ->
             let a1 = args.[0]
