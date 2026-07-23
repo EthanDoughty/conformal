@@ -161,6 +161,34 @@
         .code-func { color: #7ea8c9; }
         .code-num { color: #c9a84c; }
 
+        /* Playground callout */
+        .playground-callout {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 24px;
+            flex-wrap: wrap;
+            border: 1px solid rgba(212, 160, 33, 0.25);
+            background: var(--accent-dim);
+            border-radius: 8px;
+            padding: 24px 28px;
+            margin-bottom: 16px;
+        }
+
+        .playground-callout h2 {
+            font-size: 1.15rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .playground-callout p {
+            color: var(--muted);
+            font-size: 0.925rem;
+            max-width: 560px;
+        }
+
+        .playground-callout .btn { flex-shrink: 0; }
+
         /* Screenshot */
         .screenshot {
             padding: 32px 0 48px;
@@ -495,11 +523,11 @@
                 You do not need a MATLAB license to use it.
             </p>
             <div class="buttons">
-                <a href="https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal" class="btn btn-primary">
-                    Install for VS Code
-                </a>
-                <a href="playground.html" class="btn btn-secondary">
+                <a href="playground.html" class="btn btn-primary">
                     Try it in your browser
+                </a>
+                <a href="https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal" class="btn btn-secondary">
+                    Install for VS Code
                 </a>
                 <a href="https://github.com/EthanDoughty/conformal/releases" class="btn btn-secondary">
                     Download CLI
@@ -536,6 +564,21 @@ R = <span class="code-func">process</span>(A, w);</code></pre>
 <span class="code-comment">Line 2 is where it breaks.</span></code></pre>
                 </div>
             </div>
+        </section>
+
+        <!-- Playground callout -->
+        <section class="playground-callout">
+            <div>
+                <h2>Try it on real problems, right now</h2>
+                <p>
+                    The playground runs the full checker in your browser with nothing to install,
+                    and your code never leaves the page. It comes loaded with worked examples from
+                    across engineering, from Kalman filters to beam deflection. Pick one, change
+                    its values in place, and watch the shapes and warnings react. A toggle adds
+                    comments explaining every variable.
+                </p>
+            </div>
+            <a href="playground.html" class="btn btn-primary">Open the playground</a>
         </section>
 
         <!-- Screenshot -->

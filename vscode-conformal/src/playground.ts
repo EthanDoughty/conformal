@@ -552,6 +552,8 @@ function main(): void {
         }, 350);
     };
 
+    // Each entry shows the short name, the input, and the variable's docs
+    // description underneath, so the knob explains itself without hovering.
     const buildParamsPanel = () => {
         if (!paramsHost) return;
         paramsHost.textContent = '';
@@ -560,9 +562,17 @@ function main(): void {
             paramsHost.hidden = true;
             return;
         }
+        const boxLabel = document.createElement('span');
+        boxLabel.className = 'pg-box-label';
+        boxLabel.textContent = 'Template values';
+        paramsHost.appendChild(boxLabel);
         for (const p of params) {
-            const label = document.createElement('label');
-            label.appendChild(document.createTextNode(p.label));
+            const block = document.createElement('label');
+            block.className = 'pg-param';
+            const name = document.createElement('span');
+            name.className = 'pg-param-name';
+            name.textContent = p.label;
+            block.appendChild(name);
             const input = document.createElement('input');
             input.type = 'text';
             input.spellcheck = false;
@@ -572,8 +582,16 @@ function main(): void {
                 paramValues[p.key] = input.value;
                 scheduleRegenerate();
             });
-            label.appendChild(input);
-            paramsHost.appendChild(label);
+            block.appendChild(input);
+            const desc = (current.docs || {})[p.key] || '';
+            if (desc !== '') {
+                input.title = desc;
+                const d = document.createElement('span');
+                d.className = 'pg-param-desc';
+                d.textContent = desc;
+                block.appendChild(d);
+            }
+            paramsHost.appendChild(block);
         }
         const reset = document.createElement('button');
         reset.type = 'button';
