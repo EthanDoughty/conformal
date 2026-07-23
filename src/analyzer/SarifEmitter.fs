@@ -26,6 +26,7 @@ let private ruleDescription (code: WarningCode) : string =
     | W_VERTCAT_COL_MISMATCH        -> "Vertical concatenation column count mismatch"
     | W_RESHAPE_MISMATCH            -> "Reshape element count mismatch"
     | W_MLDIVIDE_DIM_MISMATCH       -> "Left division row count mismatch"
+    | W_MRDIVIDE_DIM_MISMATCH       -> "Right division column count mismatch"
     | W_MATRIX_POWER_NON_SQUARE     -> "Matrix power on non-square matrix"
     | W_CONCAT_TYPE_MISMATCH        -> "Concatenation of non-numeric types"
     | W_ARITHMETIC_TYPE_MISMATCH    -> "Arithmetic on non-numeric operands"
@@ -79,6 +80,7 @@ let private ruleDescription (code: WarningCode) : string =
 let private allCodes : WarningCode list =
     [ W_INNER_DIM_MISMATCH; W_ELEMENTWISE_MISMATCH; W_HORZCAT_ROW_MISMATCH
       W_VERTCAT_COL_MISMATCH; W_RESHAPE_MISMATCH; W_MLDIVIDE_DIM_MISMATCH
+      W_MRDIVIDE_DIM_MISMATCH
       W_MATRIX_POWER_NON_SQUARE; W_CONCAT_TYPE_MISMATCH
       W_ARITHMETIC_TYPE_MISMATCH; W_TRANSPOSE_TYPE_MISMATCH
       W_NEGATE_TYPE_MISMATCH; W_NOT_TYPE_MISMATCH; W_STRING_ARITHMETIC
@@ -115,7 +117,8 @@ let private errorCodes : Set<WarningCode> =
         W_FUNCTION_ARG_COUNT_MISMATCH; W_LAMBDA_ARG_COUNT_MISMATCH
         W_MULTI_ASSIGN_COUNT_MISMATCH; W_MULTI_ASSIGN_NON_CALL
         W_PROCEDURE_IN_EXPR; W_BREAK_OUTSIDE_LOOP; W_CONTINUE_OUTSIDE_LOOP
-        W_STRICT_MODE; W_MLDIVIDE_DIM_MISMATCH; W_MATRIX_POWER_NON_SQUARE
+        W_STRICT_MODE; W_MLDIVIDE_DIM_MISMATCH; W_MRDIVIDE_DIM_MISMATCH
+        W_MATRIX_POWER_NON_SQUARE
     ]
 
 let private sarifLevel (code: WarningCode) : string =

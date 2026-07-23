@@ -117,6 +117,7 @@ const ERROR_CODES = new Set([
     'W_CONTINUE_OUTSIDE_LOOP',
     'W_STRICT_MODE',
     'W_MLDIVIDE_DIM_MISMATCH',
+    'W_MRDIVIDE_DIM_MISMATCH',
     'W_MATRIX_POWER_NON_SQUARE',
 ]);
 
@@ -131,6 +132,7 @@ const CODE_DESCRIPTIONS: Record<string, string> = {
     'W_VERTCAT_COL_MISMATCH': 'Column counts must match for vertical concatenation.',
     'W_RESHAPE_MISMATCH': 'Total element count must be preserved by reshape.',
     'W_MLDIVIDE_DIM_MISMATCH': 'Row counts must match for left division (A\\b).',
+    'W_MRDIVIDE_DIM_MISMATCH': 'Column counts must match for right division (A/B).',
     'W_MATRIX_POWER_NON_SQUARE': 'Matrix power requires a square matrix.',
     'W_CONCAT_TYPE_MISMATCH': 'Cannot concatenate non-numeric types in a matrix literal.',
     'W_ARITHMETIC_TYPE_MISMATCH': 'Cannot perform arithmetic on non-numeric types.',

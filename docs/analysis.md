@@ -86,9 +86,9 @@ Passing `--coder --strict` together surfaces all six codes, or combine with `--f
 
 ## Warning Code Catalog
 
-Conformal has 53 warning codes organized into three tiers. Each code has its own documentation page in the [warnings/](warnings/) directory. The tier determines when the warning is shown:
+Conformal has 55 warning codes organized into three tiers. Each code has its own documentation page in the [warnings/](warnings/) directory. The tier determines when the warning is shown:
 
-### Default tier (36 codes, always shown)
+### Default tier (37 codes, always shown)
 
 These fire in default mode with no configuration required.
 
@@ -100,6 +100,7 @@ These fire in default mode with no configuration required.
 | `W_VERTCAT_COL_MISMATCH` | Shape | Column counts differ in vertical concatenation |
 | `W_RESHAPE_MISMATCH` | Shape | Element count changes in reshape |
 | `W_MLDIVIDE_DIM_MISMATCH` | Shape | Dimensions incompatible for backslash solve |
+| `W_MRDIVIDE_DIM_MISMATCH` | Shape | Column counts incompatible for right division |
 | `W_MATRIX_POWER_NON_SQUARE` | Shape | Matrix power on a non-square matrix |
 | `W_CONCAT_TYPE_MISMATCH` | Type | Incompatible types in a matrix literal |
 | `W_ARITHMETIC_TYPE_MISMATCH` | Type | Arithmetic on a non-numeric type (struct, cell, handle) |

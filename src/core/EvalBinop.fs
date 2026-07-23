@@ -155,13 +155,13 @@ let evalBinopIr
     elif isScalar left && not (isScalar right) then right
     elif isScalar right && not (isScalar left) then left
 
-    // Elementwise operations: +, -, .*, ./, /, .^
-    elif Set.contains op (Set.ofList ["+"; "-"; ".*"; "./"; "/"; ".^"]) then
+    // Elementwise operations: +, -, .*, ./, .^
+    elif Set.contains op (Set.ofList ["+"; "-"; ".*"; "./"; ".^"]) then
         match left, right with
         | UnknownShape, _ | _, UnknownShape -> UnknownShape
         | Scalar, Scalar ->
             // Division-by-zero check
-            if op = "/" || op = "./" then
+            if op = "./" then
                 let divisorIv = getDivisorInterval rightExpr
                 if Intervals.intervalIsExactlyZero divisorIv then
                     warnings.Add(warnDivisionByZero line leftExpr rightExpr)
@@ -181,12 +181,34 @@ let evalBinopIr
             else Matrix(joinDim r1' r2', joinDim c1' c2')
         | _ -> UnknownShape  // all other Shape cases: StringShape/Struct/Cell/FunctionHandle/Bottom
 
+    // Right division: A/B == (B'\A')' shape-wise, i.e. m x k / n x k -> m x n
+    elif op = "/" then
+        match left, right with
+        | Scalar, Scalar ->
+            // Division-by-zero check
+            let divisorIv = getDivisorInterval rightExpr
+            if Intervals.intervalIsExactlyZero divisorIv then
+                warnings.Add(warnDivisionByZero line leftExpr rightExpr)
+            Scalar
+        | UnknownShape, _ | _, UnknownShape -> UnknownShape
+        | Matrix(lr, lc), Matrix(rr, rc) ->
+            Constraints.recordConstraint ctx env lc rc line
+            let lc' = Constraints.resolveDim ctx lc
+            let rc' = Constraints.resolveDim ctx rc
+            if dimsDefinitelyConflict lc' rc' then
+                warnings.Add(warnMrdivideDimMismatch line leftExpr rightExpr left right)
+                UnknownShape
+            else Matrix(lr, rr)
+        | _ -> UnknownShape  // all other Shape cases: StringShape/Struct/Cell/FunctionHandle/Bottom
+
     // Matrix multiplication: *
     elif op = "*" then
         match left, right with
         | Scalar, Scalar -> Scalar
         | Scalar, Matrix _ -> right
         | Matrix _, Scalar -> left
+        | Matrix(Concrete 1, Concrete 1), _ -> right
+        | _, Matrix(Concrete 1, Concrete 1) -> left
         | Matrix(r1, c1), Matrix(r2, c2) ->
             Constraints.recordConstraint ctx env c1 r2 line
             let c1' = Constraints.resolveDim ctx c1

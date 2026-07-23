@@ -351,6 +351,13 @@ let warnMldivideDimMismatch
     makeDiag line W_MLDIVIDE_DIM_MISMATCH
         $"{prettyExprIr leftExpr} \\ {prettyExprIr rightExpr}: {leftRows} rows vs {rightRows} rows"
 
+let warnMrdivideDimMismatch
+    (line: int) (leftExpr: Expr) (rightExpr: Expr) (left: Shape) (right: Shape) : Diagnostic =
+    let leftCols  = match left  with MatrixCols c -> dimStr c | _ -> "?"
+    let rightCols = match right with MatrixCols c -> dimStr c | _ -> "?"
+    makeDiag line W_MRDIVIDE_DIM_MISMATCH
+        $"{prettyExprIr leftExpr} / {prettyExprIr rightExpr}: {leftCols} cols vs {rightCols} cols"
+
 let warnMatrixPowerNonSquare (line: int) (expr: Expr) (shape: Shape) : Diagnostic =
     let rows = match shape with MatrixRows r -> dimStr r | _ -> "?"
     let cols = match shape with MatrixCols c -> dimStr c | _ -> "?"
