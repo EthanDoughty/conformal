@@ -280,21 +280,7 @@ const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
         ],
     },
     {
-        group: 'Clean code',
-        items: [
-            {
-                label: 'Simple shapes',
-                code: "A = zeros(3, 4);\nB = ones(4, 5);\nC = A * B;\nD = C';\n",
-            },
-            {
-                label: 'Submatrix slicing',
-                code: 'A = zeros(6, 6);\nB = A(1:3, 1:3);\nrow = A(2, :);\ncol = A(:, 5);\np = row * col;\n',
-                note: 'Submatrix shapes fold straight from the index ranges.',
-            },
-        ],
-    },
-    {
-        group: 'Matrix templates',
+        group: 'Templates',
         items: [
             {
                 label: 'Kalman filter update',
@@ -326,11 +312,6 @@ const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: "X = zeros(200, 3);\nmu = mean(X);\nXc = X - ones(200, 1) * mu;\nC = (Xc' * Xc) / (200 - 1);\n",
                 note: 'Center the data, then form the covariance matrix.',
             },
-        ],
-    },
-    {
-        group: 'Scientific computing',
-        items: [
             {
                 label: "Newton's method",
                 code: 'x = [1; 1];\nfor k = 1:8\n    f = [x(1)^2 + x(2)^2 - 4; x(1) * x(2) - 1];\n    J = [2 * x(1), 2 * x(2); x(2), x(1)];\n    x = x - inv(J) * f;\nend\n',
