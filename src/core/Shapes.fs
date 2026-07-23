@@ -321,6 +321,21 @@ let subDim (a: Dim) (b: Dim) : Dim =
     | Unknown -> Unknown
     | _ -> addDim a (mulDim (Concrete -1) b)
 
+// min_dim / max_dim: exact when both dims are concrete or structurally
+// identical, conservative Unknown otherwise. Deliberately NOT Range-creating:
+// widenDim remains the only source of new Ranges.
+let minDim (a: Dim) (b: Dim) : Dim =
+    if a = b then a
+    else match a, b with
+         | Concrete x, Concrete y -> Concrete (min x y)
+         | _ -> Unknown
+
+let maxDim (a: Dim) (b: Dim) : Dim =
+    if a = b then a
+    else match a, b with
+         | Concrete x, Concrete y -> Concrete (max x y)
+         | _ -> Unknown
+
 // sum_dims: fold addDim over a list
 let sumDims (dims: Dim list) : Dim =
     match dims with

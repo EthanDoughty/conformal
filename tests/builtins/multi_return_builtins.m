@@ -25,8 +25,8 @@ sv = svd(B);
 % EXPECT: L2 = matrix[3 x 3]
 % EXPECT: U2 = matrix[3 x 5]
 [L3, U3, P3] = lu(B);
-% EXPECT: L3 = matrix[3 x 5]
-% EXPECT: U3 = matrix[5 x 5]
+% EXPECT: L3 = matrix[3 x 3]
+% EXPECT: U3 = matrix[3 x 5]
 % EXPECT: P3 = matrix[3 x 3]
 
 % === qr ===

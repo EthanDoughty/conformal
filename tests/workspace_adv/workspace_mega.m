@@ -82,9 +82,10 @@ sf = ws_with_subfunc(zeros(3, 4));
 lp = ws_with_loop(5);
 % EXPECT: lp = matrix[1 x 5]
 
-% Builtin chain: sum(4x3)→1x3, diag(1x3)→3x3, repmat(_,1,2)→3x6
+% Builtin chain: local sum.m shadow (99x99) → diag(99x99) is min(m,n)-by-1
+% = 99x1 → repmat(_,1,2) → 99x2
 bc = ws_builtin_chain(zeros(4, 3));
-% EXPECT: bc = matrix[None x 2]
+% EXPECT: bc = matrix[99 x 2]
 
 % Accumulation in external body
 ac = ws_accumulate(5);

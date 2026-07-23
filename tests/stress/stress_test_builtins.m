@@ -77,9 +77,9 @@ d_row = diag(v_row);
 d_col = diag(v_col);
 % EXPECT: d_col = matrix[4 x 4]
 
-% diag of square matrix → column vector (can't compute min(m,n) → None x 1)
+% diag of square matrix → column vector, min(m,n)-by-1
 d_sq = diag(sq);
-% EXPECT: d_sq = matrix[None x 1]
+% EXPECT: d_sq = matrix[3 x 1]
 
 % diag with 0 args → unknown (unsupported)
 d0 = diag();

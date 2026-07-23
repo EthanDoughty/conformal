@@ -19,10 +19,10 @@ v3 = zeros(1, k);
 diag_row_vec = diag(v3);
 % EXPECT: diag_row_vec = matrix[k x k]
 
-% --- diag (matrix → column vector) ---
+% --- diag (matrix → column vector, min(m,n)-by-1) ---
 M1 = zeros(3, 4);
 diag_mat = diag(M1);
-% EXPECT: diag_mat = matrix[None x 1]
+% EXPECT: diag_mat = matrix[3 x 1]
 
 % --- inv ---
 inv_concrete = inv(eye(3));

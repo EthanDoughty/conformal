@@ -359,7 +359,7 @@ let private handleDiag
         | Matrix(r, c) ->
             if r = Concrete 1 then Some (Matrix(c, c))
             elif c = Concrete 1 then Some (Matrix(r, r))
-            else Some (Matrix(Unknown, Concrete 1))
+            else Some (Matrix(minDim r c, Concrete 1))
         | _ -> Some UnknownShape
     else None
 
@@ -789,10 +789,27 @@ let private handleConv
                 | _ -> false, (if isScalar s1 then Some (Concrete 1) else None)
             match len0, len1 with
             | Some m, Some n ->
-                let outLen = addDim (addDim m n) (Concrete -1)
                 // Return row vector only if both inputs are row vectors
-                if isRowVec0 && isRowVec1 then Some (Matrix(Concrete 1, outLen))
-                else Some (Matrix(outLen, Concrete 1))
+                let mkVec (d: Dim) =
+                    if isRowVec0 && isRowVec1 then Matrix(Concrete 1, d)
+                    else Matrix(d, Concrete 1)
+                let flag =
+                    if args.Length < 3 then Some "full"
+                    else
+                        match unwrapArg args.[2] with
+                        | Some (StringLit(_, s)) -> Some (s.ToLowerInvariant())
+                        | _ -> None
+                match flag with
+                | Some "full"  -> Some (mkVec (addDim (addDim m n) (Concrete -1)))
+                // MATLAB: 'same' returns the central part, the same size as u.
+                | Some "same"  -> Some s0
+                | Some "valid" ->
+                    // MATLAB: length is max(m-n+1, 0), except length(v)=0 gives m.
+                    match m, n with
+                    | _, Concrete 0          -> Some (mkVec m)
+                    | Concrete a, Concrete b -> Some (mkVec (Concrete (max (a - b + 1) 0)))
+                    | _                      -> Some UnknownShape
+                | _ -> Some UnknownShape   // unrecognized or non-literal flag
             | _ -> Some (Matrix(Unknown, Concrete 1))
         | _ -> Some (Matrix(Unknown, Concrete 1))
 
@@ -940,6 +957,31 @@ let private handlePolyval
         | Some a -> Some (evalExprFn a env warnings ctx)
         | None -> None
     else None
+
+
+// interp1/spline/pchip/makima: the result follows the QUERY points, not the
+// table values. Trailing option strings ('linear', 'extrap', ...) shift the
+// positional grid, so strip them before dispatching on the remaining count.
+let private handleInterp1
+    (fname: string)
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape option =
+    // Evaluate every argument exactly once so nested errors are still reported.
+    let shapes = args |> List.map (fun a -> evalArgShape a env warnings ctx evalExprFn)
+    let rec dropTrailingStrings (xs: Shape list) =
+        match List.rev xs with
+        | StringShape :: rest -> dropTrailingStrings (List.rev rest)
+        | _ -> xs
+    let numeric = dropTrailingStrings shapes
+    if numeric.Length >= 3 then Some numeric.[2]
+    elif numeric.Length = 2 && fname = "interp1" then Some numeric.[1]
+    // spline(x,y) / pchip(x,y) return a piecewise-polynomial struct, not an
+    // array, so the 2-arg form must NOT adopt args[1]'s shape.
+    else Some UnknownShape
 
 
 let private handleMeshgrid (_args: IndexArg list) (_env: Env) (_w: _) (_ctx: _) (_eval: _) : Shape option =
@@ -1351,9 +1393,27 @@ let private handleMultiLu
         elif numTargets = 3 then Some [ UnknownShape; UnknownShape; UnknownShape ]
         else None
     | Some (m, n) ->
-        if numTargets = 2 then Some [ Matrix(m, m); Matrix(m, n) ]
-        elif numTargets = 3 then Some [ Matrix(m, n); Matrix(n, n); Matrix(m, m) ]
+        // LAPACK dgetrf: L is m-by-k, U is k-by-n, P is m-by-m, k = min(m,n).
+        // The 2- and 3-output forms differ only by the presence of P.
+        let k = minDim m n
+        if numTargets = 2 then Some [ Matrix(m, k); Matrix(k, n) ]
+        elif numTargets = 3 then Some [ Matrix(m, k); Matrix(k, n); Matrix(m, m) ]
         else None
+
+
+// Classify the qr second argument. Some true = economy, Some false = full,
+// None = present but not statically decidable.
+let private qrEconomyFlag (args: IndexArg list) : bool option =
+    if args.Length < 2 then Some false
+    else
+        match unwrapArg args.[1] with
+        | Some (Const(_, v)) when v = 0.0 -> Some true
+        | Some (StringLit(_, s)) ->
+            match s.ToLowerInvariant() with
+            | "econ" | "0"        -> Some true
+            | "matrix" | "vector" -> Some false   // 3-output permutation forms
+            | _                   -> None
+        | _ -> None
 
 
 let private handleMultiQr
@@ -1368,7 +1428,15 @@ let private handleMultiQr
     else
         match evalFirstArgShape args env warnings ctx evalExprFn with
         | None -> Some [ UnknownShape; UnknownShape ]
-        | Some (m, n) -> Some [ Matrix(m, m); Matrix(m, n) ]
+        | Some (m, n) ->
+            let k = minDim m n
+            let full = [ Matrix(m, m); Matrix(m, n) ]
+            match qrEconomyFlag args with
+            | Some false -> Some full
+            | Some true  -> Some [ Matrix(m, k); Matrix(k, n) ]
+            // Undecidable flag: full and economy coincide exactly when m <= n,
+            // which is provable precisely when minDim returned m.
+            | None -> if k = m then Some full else Some [ UnknownShape; UnknownShape ]
 
 
 let private handleMultiChol
@@ -1960,7 +2028,8 @@ let evalBuiltinCall
         | "conv"           -> handleConv args env warnings ctx evalExprFn
         | "deconv"         -> Some (Matrix(Unknown, Concrete 1))
         | "polyfit"        -> handlePolyfit args env ctx evalExprFn
-        | "polyval" | "interp1" -> handlePolyval args env warnings ctx evalExprFn
+        | "polyval"        -> handlePolyval args env warnings ctx evalExprFn
+        | "interp1"        -> handleInterp1 fname args env warnings ctx evalExprFn
         | "meshgrid"       -> handleMeshgrid args env warnings ctx evalExprFn
         | "struct"         -> handleStruct args env warnings ctx evalExprFn
         | "fieldnames"     -> handleFieldnames args
