@@ -283,6 +283,41 @@ const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
         group: 'Templates',
         items: [
             {
+                label: '3D rigid transform',
+                code: 'theta = pi / 4;\nR = [cos(theta), -sin(theta), 0; sin(theta), cos(theta), 0; 0, 0, 1];\nt = [1; 2; 0];\nP = zeros(3, 25);\nmoved = R * P + t * ones(1, 25);\n',
+                note: 'Rotate and translate a point cloud in one expression.',
+            },
+            {
+                label: 'Covariance matrix',
+                code: "X = zeros(200, 3);\nmu = mean(X);\nXc = X - ones(200, 1) * mu;\nC = (Xc' * Xc) / (200 - 1);\n",
+                note: 'Center the data, then form the covariance matrix.',
+            },
+            {
+                label: 'FFT spectrum',
+                code: 't = linspace(0, 1, 128);\ns = sin(2 * pi * 8 * t) + 0.5 * sin(2 * pi * 20 * t);\nS = fft(s);\nm = abs(S);\n',
+                note: 'A two-tone signal and its spectrum, lengths preserved end to end.',
+            },
+            {
+                label: 'Finite differences',
+                code: 't = linspace(0, 1, 101);\nf = sin(t);\ndf = (f(2:101) - f(1:100)) / 0.01;\n',
+                note: 'A forward difference from two shifted slices.',
+            },
+            {
+                label: 'Forward Euler',
+                code: 'A = [0, 1; -4, 0];\ny = [1; 0];\nh = 0.01;\nfor k = 1:200\n    y = y + h * (A * y);\nend\n',
+                note: 'Forward Euler marching a two-state oscillator.',
+            },
+            {
+                label: 'Gradient descent',
+                code: 'Q = [3, 1; 1, 2];\nb = [1; 1];\nx = zeros(2, 1);\nalpha = 0.1;\nfor k = 1:50\n    g = Q * x - b;\n    x = x - alpha * g;\nend\nr = Q * x - b;\n',
+                note: 'Steepest descent on a quadratic, fifty steps with steady shapes.',
+            },
+            {
+                label: 'Heat equation',
+                code: 'u = zeros(50, 1);\nu(25) = 1;\nr = 0.4;\nfor k = 1:100\n    u(2:49) = u(2:49) + r * (u(1:48) - 2 * u(2:49) + u(3:50));\nend\n',
+                note: 'An explicit stencil sweep over the interior, slice lengths folded from the ranges.',
+            },
+            {
                 label: 'Kalman filter update',
                 code: "x = zeros(4, 1);\nP = eye(4);\nH = zeros(2, 4);\nR = eye(2);\nz = zeros(2, 1);\nS = H * P * H' + R;\nK = P * H' * inv(S);\nx = x + K * (z - H * x);\nP = (eye(4) - K * H) * P;\n",
                 note: 'A real filter update, tracked shape by shape with nothing flagged.',
@@ -293,14 +328,9 @@ const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 note: 'Normal equations for a linear fit, from data matrix to residual.',
             },
             {
-                label: 'State-space simulation',
-                code: 'A = eye(4);\nB = zeros(4, 2);\nC = zeros(2, 4);\nx = zeros(4, 1);\nu = ones(2, 1);\nfor k = 1:10\n    x = A * x + B * u;\nend\ny = C * x;\n',
-                note: 'Ten simulation steps in a loop, every shape stable throughout.',
-            },
-            {
-                label: '3D rigid transform',
-                code: 'theta = pi / 4;\nR = [cos(theta), -sin(theta), 0; sin(theta), cos(theta), 0; 0, 0, 1];\nt = [1; 2; 0];\nP = zeros(3, 25);\nmoved = R * P + t * ones(1, 25);\n',
-                note: 'Rotate and translate a point cloud in one expression.',
+                label: 'Markov chain',
+                code: "P = [0.9, 0.1, 0; 0.2, 0.7, 0.1; 0.1, 0.2, 0.7];\np = [1; 0; 0];\nfor k = 1:100\n    p = P' * p;\nend\n",
+                note: 'A transition matrix driven to its steady state.',
             },
             {
                 label: 'Neural net forward pass',
@@ -308,19 +338,9 @@ const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 note: 'Two dense layers, weights and activations tracked end to end.',
             },
             {
-                label: 'Covariance matrix',
-                code: "X = zeros(200, 3);\nmu = mean(X);\nXc = X - ones(200, 1) * mu;\nC = (Xc' * Xc) / (200 - 1);\n",
-                note: 'Center the data, then form the covariance matrix.',
-            },
-            {
                 label: "Newton's method",
                 code: 'x = [1; 1];\nfor k = 1:8\n    f = [x(1)^2 + x(2)^2 - 4; x(1) * x(2) - 1];\n    J = [2 * x(1), 2 * x(2); x(2), x(1)];\n    x = x - inv(J) * f;\nend\n',
                 note: 'Newton iterations on a two-variable system, Jacobian rebuilt each pass.',
-            },
-            {
-                label: 'Gradient descent',
-                code: 'Q = [3, 1; 1, 2];\nb = [1; 1];\nx = zeros(2, 1);\nalpha = 0.1;\nfor k = 1:50\n    g = Q * x - b;\n    x = x - alpha * g;\nend\nr = Q * x - b;\n',
-                note: 'Steepest descent on a quadratic, fifty steps with steady shapes.',
             },
             {
                 label: 'Polynomial interpolation',
@@ -328,24 +348,19 @@ const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 note: 'A cubic through four points by solving the Vandermonde system.',
             },
             {
+                label: 'Power iteration',
+                code: "A = [2, 1; 1, 3];\nv = [1; 0];\nfor k = 1:20\n    w = A * v;\n    v = w / norm(w);\nend\nlambda = v' * A * v;\n",
+                note: 'Twenty power steps converging on the dominant eigenvector.',
+            },
+            {
+                label: 'State-space simulation',
+                code: 'A = eye(4);\nB = zeros(4, 2);\nC = zeros(2, 4);\nx = zeros(4, 1);\nu = ones(2, 1);\nfor k = 1:10\n    x = A * x + B * u;\nend\ny = C * x;\n',
+                note: 'Ten simulation steps in a loop, every shape stable throughout.',
+            },
+            {
                 label: 'Trapezoid rule',
                 code: "h = pi / 100;\nt = linspace(0, pi, 101);\nf = sin(t);\nw = [0.5, ones(1, 99), 0.5];\nI = h * (w * f');\n",
                 note: 'Composite trapezoid rule applied as a dot product.',
-            },
-            {
-                label: 'Finite differences',
-                code: 't = linspace(0, 1, 101);\nf = sin(t);\ndf = (f(1, 2:101) - f(1, 1:100)) / 0.01;\n',
-                note: 'A forward difference from two shifted slices.',
-            },
-            {
-                label: 'Forward Euler',
-                code: 'A = [0, 1; -4, 0];\ny = [1; 0];\nh = 0.01;\nfor k = 1:200\n    y = y + h * (A * y);\nend\n',
-                note: 'Forward Euler marching a two-state oscillator.',
-            },
-            {
-                label: 'FFT spectrum',
-                code: 't = linspace(0, 1, 128);\ns = sin(2 * pi * 8 * t) + 0.5 * sin(2 * pi * 20 * t);\nS = fft(s);\nm = abs(S);\n',
-                note: 'A two-tone signal and its spectrum, lengths preserved end to end.',
             },
         ],
     },
