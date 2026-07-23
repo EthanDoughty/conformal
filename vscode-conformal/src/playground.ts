@@ -287,9 +287,44 @@ const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: "A = zeros(3, 4);\nB = ones(4, 5);\nC = A * B;\nD = C';\n",
             },
             {
+                label: 'Submatrix slicing',
+                code: 'A = zeros(6, 6);\nB = A(1:3, 1:3);\nrow = A(2, :);\ncol = A(:, 5);\np = row * col;\n',
+                note: 'Submatrix shapes fold straight from the index ranges.',
+            },
+        ],
+    },
+    {
+        group: 'Matrix templates',
+        items: [
+            {
                 label: 'Kalman filter update',
                 code: "x = zeros(4, 1);\nP = eye(4);\nH = zeros(2, 4);\nR = eye(2);\nz = zeros(2, 1);\nS = H * P * H' + R;\nK = P * H' * inv(S);\nx = x + K * (z - H * x);\nP = (eye(4) - K * H) * P;\n",
                 note: 'A real filter update, tracked shape by shape with nothing flagged.',
+            },
+            {
+                label: 'Least squares fit',
+                code: "X = zeros(100, 3);\ny = zeros(100, 1);\nXtX = X' * X;\nbeta = inv(XtX) * X' * y;\nr = y - X * beta;\nsse = r' * r;\n",
+                note: 'Normal equations for a linear fit, from data matrix to residual.',
+            },
+            {
+                label: 'State-space simulation',
+                code: 'A = eye(4);\nB = zeros(4, 2);\nC = zeros(2, 4);\nx = zeros(4, 1);\nu = ones(2, 1);\nfor k = 1:10\n    x = A * x + B * u;\nend\ny = C * x;\n',
+                note: 'Ten simulation steps in a loop, every shape stable throughout.',
+            },
+            {
+                label: '3D rigid transform',
+                code: 'theta = pi / 4;\nR = [cos(theta), -sin(theta), 0; sin(theta), cos(theta), 0; 0, 0, 1];\nt = [1; 2; 0];\nP = zeros(3, 25);\nmoved = R * P + t * ones(1, 25);\n',
+                note: 'Rotate and translate a point cloud in one expression.',
+            },
+            {
+                label: 'Neural net forward pass',
+                code: 'x = zeros(8, 1);\nW1 = zeros(16, 8);\nb1 = zeros(16, 1);\nh = tanh(W1 * x + b1);\nW2 = zeros(4, 16);\nb2 = zeros(4, 1);\nyhat = W2 * h + b2;\n',
+                note: 'Two dense layers, weights and activations tracked end to end.',
+            },
+            {
+                label: 'Covariance matrix',
+                code: "X = zeros(200, 3);\nmu = mean(X);\nXc = X - ones(200, 1) * mu;\nC = (Xc' * Xc) / (200 - 1);\n",
+                note: 'Center the data, then form the covariance matrix.',
             },
         ],
     },
@@ -307,7 +342,7 @@ const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 // does not.
                 label: 'Fixpoint loops',
                 code: 'x = zeros(1, 3);\nfor i = 1:5\n    x = [x, i];\nend\ny = x * ones(4, 1);\n',
-                note: 'Toggle Fixpoint to watch the shape of x change.',
+                note: 'Toggle Fixpoint to watch the shape of x change. Turn on Strict mode to see the warning.',
             },
             {
                 label: 'Shape annotations',
