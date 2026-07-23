@@ -1694,7 +1694,22 @@ and private analyzeAssignMulti
                 | None ->
                     let supported = defaultArg (Map.tryFind fname MULTI_SUPPORTED_FORMS) "unknown"
                     warnings.Add(warnMultiReturnCount line fname supported numTargets)
-                    for target in targets do bindTarget target UnknownShape
+                    // No multi-output rule matched.  Do not erase every target:
+                    // give the first one the shape the 1-output form produces.
+                    // MATLAB builtins keep the meaning of output 1 as nargout
+                    // grows.  The exceptions where the 1-output form PACKS what
+                    // the N-output form SPLITS (size, eig, svd, qr, lu) all have
+                    // multi handlers, so they never reach this branch.
+                    // CONTRACT: a handler in evalMultiBuiltinCall that returns
+                    // None must not have evaluated its arguments, or the argument
+                    // diagnostics below would be emitted twice.
+                    let firstShape =
+                        evalBuiltinCall fname line args env warnings ctx wiredEvalExprFull wiredGetInterval
+                    match targets with
+                    | first :: rest ->
+                        bindTarget first firstShape
+                        for target in rest do bindTarget target UnknownShape
+                    | [] -> ()
 
         else
             // Non-builtin dispatch via resolveCall

@@ -1421,18 +1421,16 @@ let private handleMultiLu
     (numTargets: int)
     (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape list option =
-    match evalFirstArgShape args env warnings ctx evalExprFn with
-    | None ->
-        if numTargets = 2 then Some [ UnknownShape; UnknownShape ]
-        elif numTargets = 3 then Some [ UnknownShape; UnknownShape; UnknownShape ]
-        else None
-    | Some (m, n) ->
-        // LAPACK dgetrf: L is m-by-k, U is k-by-n, P is m-by-m, k = min(m,n).
-        // The 2- and 3-output forms differ only by the presence of P.
-        let k = minDim m n
-        if numTargets = 2 then Some [ Matrix(m, k); Matrix(k, n) ]
-        elif numTargets = 3 then Some [ Matrix(m, k); Matrix(k, n); Matrix(m, m) ]
-        else None
+    if numTargets <> 2 && numTargets <> 3 then None
+    else
+        match evalFirstArgShape args env warnings ctx evalExprFn with
+        | None -> Some (List.replicate numTargets UnknownShape)
+        | Some (m, n) ->
+            // LAPACK dgetrf: L is m-by-k, U is k-by-n, P is m-by-m, k = min(m,n).
+            // The 2- and 3-output forms differ only by the presence of P.
+            let k = minDim m n
+            if numTargets = 2 then Some [ Matrix(m, k); Matrix(k, n) ]
+            else Some [ Matrix(m, k); Matrix(k, n); Matrix(m, m) ]
 
 
 // Classify the qr second argument. Some true = economy, Some false = full,
@@ -1531,10 +1529,11 @@ let private handleMultiFind
     (numTargets: int)
     (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape list option =
-    evalFirstArgShape args env warnings ctx evalExprFn |> ignore
-    if numTargets = 2 then Some [ Matrix(Concrete 1, Unknown); Matrix(Concrete 1, Unknown) ]
-    elif numTargets = 3 then Some [ Matrix(Concrete 1, Unknown); Matrix(Concrete 1, Unknown); Matrix(Concrete 1, Unknown) ]
-    else None
+    if numTargets <> 2 && numTargets <> 3 then None
+    else
+        evalFirstArgShape args env warnings ctx evalExprFn |> ignore
+        if numTargets = 2 then Some [ Matrix(Concrete 1, Unknown); Matrix(Concrete 1, Unknown) ]
+        else Some [ Matrix(Concrete 1, Unknown); Matrix(Concrete 1, Unknown); Matrix(Concrete 1, Unknown) ]
 
 
 let private handleMultiUnique
@@ -1545,10 +1544,11 @@ let private handleMultiUnique
     (numTargets: int)
     (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape list option =
-    evalFirstArgShape args env warnings ctx evalExprFn |> ignore
-    if numTargets = 2 then Some [ Matrix(Concrete 1, Unknown); Matrix(Unknown, Concrete 1) ]
-    elif numTargets = 3 then Some [ Matrix(Concrete 1, Unknown); Matrix(Unknown, Concrete 1); Matrix(Unknown, Concrete 1) ]
-    else None
+    if numTargets <> 2 && numTargets <> 3 then None
+    else
+        evalFirstArgShape args env warnings ctx evalExprFn |> ignore
+        if numTargets = 2 then Some [ Matrix(Concrete 1, Unknown); Matrix(Unknown, Concrete 1) ]
+        else Some [ Matrix(Concrete 1, Unknown); Matrix(Unknown, Concrete 1); Matrix(Unknown, Concrete 1) ]
 
 
 let private handleMultiMinmax
