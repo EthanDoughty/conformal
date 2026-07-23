@@ -91,7 +91,9 @@
             gap: 6px;
         }
 
-        select#pg-examples {
+        select#pg-examples,
+        select#pg-category,
+        input#pg-search {
             background: var(--surface);
             color: var(--text);
             border: 1px solid var(--border);
@@ -99,6 +101,8 @@
             padding: 6px 10px;
             font-size: 0.875rem;
         }
+
+        input#pg-search { width: 150px; }
 
         .pg-btn {
             background: var(--accent);
@@ -226,6 +230,12 @@
         </section>
 
         <div class="toolbar">
+            <label for="pg-search">Search
+                <input type="search" id="pg-search" placeholder="Filter examples">
+            </label>
+            <label for="pg-category">Category
+                <select id="pg-category"></select>
+            </label>
             <label for="pg-examples">Example
                 <select id="pg-examples"></select>
             </label>
@@ -268,6 +278,6 @@
         </div>
     </footer>
 
-    <script src="./playground.js?v=8"></script>
+    <script src="./playground.js?v=9"></script>
 </body>
 </html>

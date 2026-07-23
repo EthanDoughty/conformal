@@ -280,7 +280,27 @@ const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
         ],
     },
     {
-        group: 'Templates',
+        group: 'Automotive',
+        items: [
+            {
+                label: 'ADAS sensor fusion',
+                code: 'x_cam = [12.1; 3.4];\nP_cam = [0.6, 0; 0, 0.9];\nx_rad = [12.4; 3.1];\nP_rad = [0.2, 0; 0, 1.5];\nW1 = inv(P_cam);\nW2 = inv(P_rad);\nP_f = inv(W1 + W2);\nx_f = P_f * (W1 * x_cam + W2 * x_rad);\n',
+                note: 'Camera and radar estimates merged by their covariances.',
+            },
+            {
+                label: 'Battery RC model',
+                code: 'dt = 1;\nCq = 8000;\nRrc = 0.015;\nCrc = 2400;\nA = [1, 0; 0, 1 - dt / (Rrc * Crc)];\nB = [-dt / Cq; dt / Crc];\nx = [0.9; 0];\nfor k = 1:60\n    x = A * x + B * 12;\nend\nv = 3.6 + 0.7 * x(1) - x(2);\n',
+                note: 'An equivalent-circuit battery state stepped over a discharge.',
+            },
+            {
+                label: 'Wheel slip ratios',
+                code: 'wheel = [21.8, 22.1, 20.4, 21.9];\nrw = 0.32;\nvx = 7.1;\nslip = (vx - rw * wheel) / vx;\nworst = max(slip);\n',
+                note: 'Elementwise slip computation across all four wheels.',
+            },
+        ],
+    },
+    {
+        group: 'Aviation & navigation',
         items: [
             {
                 label: '3D rigid transform',
@@ -288,10 +308,85 @@ const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 note: 'Rotate and translate a point cloud in one expression.',
             },
             {
+                label: 'ECEF to NED transform',
+                code: 'lat = 0.68;\nlon = -1.66;\nR = [-sin(lat) * cos(lon), -sin(lat) * sin(lon), cos(lat); -sin(lon), cos(lon), 0; -cos(lat) * cos(lon), -cos(lat) * sin(lon), -sin(lat)];\ndp = [1200; -340; 560];\nned = R * dp;\n',
+                note: 'The local navigation frame built from latitude and longitude.',
+            },
+            {
+                label: 'Euler DCM chain',
+                code: "phi = 0.1;\ntheta = 0.05;\npsi = 1.2;\nRx = [1, 0, 0; 0, cos(phi), sin(phi); 0, -sin(phi), cos(phi)];\nRy = [cos(theta), 0, -sin(theta); 0, 1, 0; sin(theta), 0, cos(theta)];\nRz = [cos(psi), sin(psi), 0; -sin(psi), cos(psi), 0; 0, 0, 1];\nC = Rx * Ry * Rz;\nv_ned = C' * [25; 2; -1];\n",
+                note: 'A 3-2-1 rotation sequence assembled and applied to a body vector.',
+            },
+            {
+                label: 'GPS trilateration',
+                code: "sats = [15600, 7540, 20140; 18760, 2750, 18610; 17610, 14630, 13480; 19170, 610, 18390];\nrho = [21000; 21500; 22000; 21500];\nx = [0; 0; 0];\nfor it = 1:5\n    d = sats - ones(4, 1) * x';\n    r = sqrt(d(:, 1).^2 + d(:, 2).^2 + d(:, 3).^2);\n    G = -d ./ (r * ones(1, 3));\n    dx = inv(G' * G) * G' * (rho - r);\n    x = x + dx;\nend\n",
+                note: 'Five Gauss-Newton steps from pseudoranges to a position fix.',
+            },
+        ],
+    },
+    {
+        group: 'Controls & estimation',
+        items: [
+            {
+                label: 'Kalman filter update',
+                code: "x = zeros(4, 1);\nP = eye(4);\nH = zeros(2, 4);\nR = eye(2);\nz = zeros(2, 1);\nS = H * P * H' + R;\nK = P * H' * inv(S);\nx = x + K * (z - H * x);\nP = (eye(4) - K * H) * P;\n",
+                note: 'A real filter update, tracked shape by shape with nothing flagged.',
+            },
+            {
+                label: 'State-space simulation',
+                code: 'A = eye(4);\nB = zeros(4, 2);\nC = zeros(2, 4);\nx = zeros(4, 1);\nu = ones(2, 1);\nfor k = 1:10\n    x = A * x + B * u;\nend\ny = C * x;\n',
+                note: 'Ten simulation steps in a loop, every shape stable throughout.',
+            },
+        ],
+    },
+    {
+        group: 'Data & machine learning',
+        items: [
+            {
                 label: 'Covariance matrix',
                 code: "X = zeros(200, 3);\nmu = mean(X);\nXc = X - ones(200, 1) * mu;\nC = (Xc' * Xc) / (200 - 1);\n",
                 note: 'Center the data, then form the covariance matrix.',
             },
+            {
+                label: 'Least squares fit',
+                code: "X = zeros(100, 3);\ny = zeros(100, 1);\nXtX = X' * X;\nbeta = inv(XtX) * X' * y;\nr = y - X * beta;\nsse = r' * r;\n",
+                note: 'Normal equations for a linear fit, from data matrix to residual.',
+            },
+            {
+                label: 'Neural net forward pass',
+                code: 'x = zeros(8, 1);\nW1 = zeros(16, 8);\nb1 = zeros(16, 1);\nh = tanh(W1 * x + b1);\nW2 = zeros(4, 16);\nb2 = zeros(4, 1);\nyhat = W2 * h + b2;\n',
+                note: 'Two dense layers, weights and activations tracked end to end.',
+            },
+        ],
+    },
+    {
+        group: 'Defense',
+        items: [
+            {
+                label: 'Alpha-beta tracker',
+                code: 'dt = 1.0;\nalpha = 0.85;\nbeta = 0.005;\nx = [0; 0];\nz = 1000;\nfor k = 1:10\n    xp = [x(1) + dt * x(2); x(2)];\n    rres = z - xp(1);\n    x = [xp(1) + alpha * rres; xp(2) + (beta / dt) * rres];\nend\n',
+                note: 'The classic two-gain radar tracker on scalar measurements.',
+            },
+            {
+                label: 'Ballistic trajectory',
+                code: 'p = [0; 0];\nv = [120; 180];\ng = [0; -9.81];\nc = 0.002;\ndt = 0.05;\nfor k = 1:100\n    a = g - c * norm(v) * v;\n    v = v + dt * a;\n    p = p + dt * v;\nend\n',
+                note: 'Drag-limited projectile flight integrated step by step.',
+            },
+            {
+                label: 'Beamforming',
+                code: "X = zeros(8, 64);\nw = ones(8, 1) / 8;\ny = w' * X;\np = (y * y') / 64;\n",
+                note: 'Delay-and-sum weights applied across an array snapshot.',
+            },
+            {
+                label: 'CV target tracker',
+                code: "dt = 0.1;\nF = [1, 0, dt, 0; 0, 1, 0, dt; 0, 0, 1, 0; 0, 0, 0, 1];\nH = [1, 0, 0, 0; 0, 1, 0, 0];\nQ = 0.01 * eye(4);\nRm = 0.5 * eye(2);\nx = zeros(4, 1);\nP = eye(4);\nz = [10; 5];\nfor k = 1:20\n    x = F * x;\n    P = F * P * F' + Q;\n    S = H * P * H' + Rm;\n    K = P * H' * inv(S);\n    x = x + K * (z - H * x);\n    P = (eye(4) - K * H) * P;\nend\n",
+                note: 'Predict and correct cycles of a constant-velocity tracker.',
+            },
+        ],
+    },
+    {
+        group: 'Numerical methods',
+        items: [
             {
                 label: 'FFT spectrum',
                 code: 't = linspace(0, 1, 128);\ns = sin(2 * pi * 8 * t) + 0.5 * sin(2 * pi * 20 * t);\nS = fft(s);\nm = abs(S);\n',
@@ -318,24 +413,14 @@ const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 note: 'An explicit stencil sweep over the interior, slice lengths folded from the ranges.',
             },
             {
-                label: 'Kalman filter update',
-                code: "x = zeros(4, 1);\nP = eye(4);\nH = zeros(2, 4);\nR = eye(2);\nz = zeros(2, 1);\nS = H * P * H' + R;\nK = P * H' * inv(S);\nx = x + K * (z - H * x);\nP = (eye(4) - K * H) * P;\n",
-                note: 'A real filter update, tracked shape by shape with nothing flagged.',
-            },
-            {
-                label: 'Least squares fit',
-                code: "X = zeros(100, 3);\ny = zeros(100, 1);\nXtX = X' * X;\nbeta = inv(XtX) * X' * y;\nr = y - X * beta;\nsse = r' * r;\n",
-                note: 'Normal equations for a linear fit, from data matrix to residual.',
+                label: 'KKT block assembly',
+                code: "Q = [2, 0, 0; 0, 2, 0; 0, 0, 2];\nA = [1, 1, 0; 0, 1, 1];\nK = [Q, A'; A, zeros(2, 2)];\nrhs = [zeros(3, 1); ones(2, 1)];\nsol = inv(K) * rhs;\n",
+                note: 'Four blocks concatenated into one saddle-point system.',
             },
             {
                 label: 'Markov chain',
                 code: "P = [0.9, 0.1, 0; 0.2, 0.7, 0.1; 0.1, 0.2, 0.7];\np = [1; 0; 0];\nfor k = 1:100\n    p = P' * p;\nend\n",
                 note: 'A transition matrix driven to its steady state.',
-            },
-            {
-                label: 'Neural net forward pass',
-                code: 'x = zeros(8, 1);\nW1 = zeros(16, 8);\nb1 = zeros(16, 1);\nh = tanh(W1 * x + b1);\nW2 = zeros(4, 16);\nb2 = zeros(4, 1);\nyhat = W2 * h + b2;\n',
-                note: 'Two dense layers, weights and activations tracked end to end.',
             },
             {
                 label: "Newton's method",
@@ -351,11 +436,6 @@ const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 label: 'Power iteration',
                 code: "A = [2, 1; 1, 3];\nv = [1; 0];\nfor k = 1:20\n    w = A * v;\n    v = w / norm(w);\nend\nlambda = v' * A * v;\n",
                 note: 'Twenty power steps converging on the dominant eigenvector.',
-            },
-            {
-                label: 'State-space simulation',
-                code: 'A = eye(4);\nB = zeros(4, 2);\nC = zeros(2, 4);\nx = zeros(4, 1);\nu = ones(2, 1);\nfor k = 1:10\n    x = A * x + B * u;\nend\ny = C * x;\n',
-                note: 'Ten simulation steps in a loop, every shape stable throughout.',
             },
             {
                 label: 'Trapezoid rule',
@@ -384,6 +464,11 @@ const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 label: 'Shape annotations',
                 code: "t = 0:0.1:6.2;\ns = sin(t);\nM = [s; cos(t)];\np = M * M';\n",
                 note: 'Every inferred shape appears inline. Toggle Shape annotations to hide them.',
+            },
+            {
+                label: 'Range-length shapes',
+                code: 'buf = zeros(1, 8);\nfor k = 1:4\n    if k > 2\n        buf = [buf, k];\n    end\nend\ntotal = sum(buf);\n',
+                note: 'With Fixpoint on, the conditionally grown buffer gets an interval shape. Strict mode adds the reassignment warning.',
             },
         ],
     },
@@ -553,20 +638,67 @@ function main(): void {
     });
 
     const noteEl = document.getElementById('pg-example-note');
+    const searchInput = document.getElementById('pg-search') as HTMLInputElement | null;
+    const categorySelect = document.getElementById('pg-category') as HTMLSelectElement | null;
 
-    exampleSelect.textContent = '';
-    let flatIndex = 0;
-    for (const g of EXAMPLE_GROUPS) {
-        const og = document.createElement('optgroup');
-        og.label = g.group;
-        for (const item of g.items) {
+    if (categorySelect) {
+        const all = document.createElement('option');
+        all.value = '';
+        all.textContent = 'All categories';
+        categorySelect.appendChild(all);
+        for (const g of EXAMPLE_GROUPS) {
             const opt = document.createElement('option');
-            opt.value = String(flatIndex++);
-            opt.textContent = item.label;
-            og.appendChild(opt);
+            opt.value = g.group;
+            opt.textContent = g.group;
+            categorySelect.appendChild(opt);
         }
-        exampleSelect.appendChild(og);
     }
+
+    // Rebuild the example list from the search box and category filter.
+    // Option values stay flat indices into EXAMPLES, so filtering never
+    // changes which example a value refers to. Rebuilding does not load an
+    // example into the editor; only a user change on the select does.
+    const rebuildExampleList = () => {
+        const q = searchInput ? searchInput.value.trim().toLowerCase() : '';
+        const cat = categorySelect ? categorySelect.value : '';
+        const prev = exampleSelect.value;
+        exampleSelect.textContent = '';
+        let flatIndex = 0;
+        let shown = 0;
+        for (const g of EXAMPLE_GROUPS) {
+            const inCategory = cat === '' || g.group === cat;
+            const og = document.createElement('optgroup');
+            og.label = g.group;
+            for (const item of g.items) {
+                const idx = flatIndex++;
+                if (!inCategory) continue;
+                if (q !== ''
+                    && !item.label.toLowerCase().includes(q)
+                    && !(item.note || '').toLowerCase().includes(q)) continue;
+                const opt = document.createElement('option');
+                opt.value = String(idx);
+                opt.textContent = item.label;
+                og.appendChild(opt);
+            }
+            if (og.childElementCount > 0) {
+                exampleSelect.appendChild(og);
+                shown += og.childElementCount;
+            }
+        }
+        if (shown === 0) {
+            const none = document.createElement('option');
+            none.value = '';
+            none.disabled = true;
+            none.textContent = 'No matching examples';
+            exampleSelect.appendChild(none);
+        } else if (prev !== '' && exampleSelect.querySelector(`option[value="${prev}"]`)) {
+            exampleSelect.value = prev;
+        }
+    };
+    rebuildExampleList();
+
+    if (searchInput) searchInput.addEventListener('input', rebuildExampleList);
+    if (categorySelect) categorySelect.addEventListener('change', rebuildExampleList);
 
     const showNote = (example: Example | undefined) => {
         if (!noteEl) return;
