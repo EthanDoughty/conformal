@@ -134,6 +134,40 @@ let private checkNegativeDimArg
         warnings.Add(warnPossiblyNegativeDim line ivStr)
 
 
+// MATLAB reads a single argument to an array constructor two ways: as a scalar
+// extent (n-by-n) when it is scalar, and as a [rows cols] size vector when it is
+// a row vector.  The two readings must be separated before a shape is produced,
+// otherwise a size vector yields a bogus square symbolic shape with no warning.
+// Returns (Unknown, Unknown) when the argument is a size vector whose contents
+// are not statically known.
+let private constructorSizeArgDims (arg: Expr) (env: Env) (ctx: AnalysisContext) : Dim * Dim =
+    match arg with
+    // size(X) as the sole argument: adopt X's extents directly.
+    | Apply(_, Var(_, "size"), [IndexExpr(_, Var(_, srcName))]) ->
+        match Env.get env srcName with
+        | Scalar        -> (Concrete 1, Concrete 1)
+        | Matrix(r, c)  -> (r, c)
+        | Cell(r, c, _) -> (r, c)
+        | _             -> (Unknown, Unknown)
+    | _ ->
+        // A named variable already known to be non-scalar is a size vector, not
+        // an extent.  Bottom (never assigned) keeps today's symbolic reading so
+        // that zeros(n) with a free n still yields matrix[n x n].
+        let isKnownSizeVector =
+            match arg with
+            | Var(_, name) ->
+                match Env.get env name with
+                | Matrix(Concrete 1, Concrete 1) -> false
+                | Matrix _ | Cell _ | StringShape -> true
+                | _ -> false
+            | MatrixLit _ -> true
+            | _ -> false
+        if isKnownSizeVector then (Unknown, Unknown)
+        else
+            let d = exprToDimIrCtx arg env (Some ctx)
+            (d, d)
+
+
 // --- Individual handler functions ---
 
 let private handleZerosOnes
@@ -151,8 +185,8 @@ let private handleZerosOnes
         | None -> None
         | Some arg ->
             checkNegativeDimArg arg env warnings ctx line getIntervalFn
-            let d = exprToDimIrCtx arg env (Some ctx)
-            Some (Matrix(d, d))
+            let (r, c) = constructorSizeArgDims arg env ctx
+            Some (Matrix(r, c))
     elif args.Length = 2 then
         match unwrapArg args.[0], unwrapArg args.[1] with
         | Some arg0, Some arg1 ->
@@ -181,8 +215,8 @@ let private handleMatrixConstructor
         | None -> None
         | Some arg ->
             checkNegativeDimArg arg env warnings ctx line getIntervalFn
-            let d = exprToDimIrCtx arg env (Some ctx)
-            Some (Matrix(d, d))
+            let (r, c) = constructorSizeArgDims arg env ctx
+            Some (Matrix(r, c))
     elif args.Length = 2 then
         match unwrapArg args.[0], unwrapArg args.[1] with
         | Some arg0, Some arg1 ->
@@ -231,8 +265,8 @@ let private handleCellConstructor
         | None -> None
         | Some arg ->
             checkNegativeDimArg arg env warnings ctx line getIntervalFn
-            let d = exprToDimIrCtx arg env (Some ctx)
-            Some (Cell(d, d, None))
+            let (r, c) = constructorSizeArgDims arg env ctx
+            Some (Cell(r, c, None))
     elif args.Length = 2 then
         match unwrapArg args.[0], unwrapArg args.[1] with
         | Some arg0, Some arg1 ->
@@ -694,8 +728,8 @@ let private handleRandi
                 | None -> None
                 | Some arg ->
                     checkNegativeDimArg arg env warnings ctx line getIntervalFn
-                    let d = exprToDimIrCtx arg env (Some ctx)
-                    Some (Matrix(d, d))
+                    let (r, c) = constructorSizeArgDims arg env ctx
+                    Some (Matrix(r, c))
             elif args.Length = 3 then
                 match unwrapArg args.[1], unwrapArg args.[2] with
                 | Some arg0, Some arg1 ->
@@ -1120,8 +1154,8 @@ let private handleRandomGenerator
             match unwrapArg sizeArgs.[0] with
             | Some a ->
                 checkNegativeDimArg a env warnings ctx line getIntervalFn
-                let d = exprToDimIrCtx a env (Some ctx)
-                Some (Matrix(d, d))
+                let (r, c) = constructorSizeArgDims a env ctx
+                Some (Matrix(r, c))
             | None -> None
         elif sizeArgs.Length >= 2 then
             match unwrapArg sizeArgs.[0], unwrapArg sizeArgs.[1] with
