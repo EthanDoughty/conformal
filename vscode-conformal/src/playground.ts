@@ -329,6 +329,46 @@ const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
         ],
     },
     {
+        group: 'Scientific computing',
+        items: [
+            {
+                label: "Newton's method",
+                code: 'x = [1; 1];\nfor k = 1:8\n    f = [x(1)^2 + x(2)^2 - 4; x(1) * x(2) - 1];\n    J = [2 * x(1), 2 * x(2); x(2), x(1)];\n    x = x - inv(J) * f;\nend\n',
+                note: 'Newton iterations on a two-variable system, Jacobian rebuilt each pass.',
+            },
+            {
+                label: 'Gradient descent',
+                code: 'Q = [3, 1; 1, 2];\nb = [1; 1];\nx = zeros(2, 1);\nalpha = 0.1;\nfor k = 1:50\n    g = Q * x - b;\n    x = x - alpha * g;\nend\nr = Q * x - b;\n',
+                note: 'Steepest descent on a quadratic, fifty steps with steady shapes.',
+            },
+            {
+                label: 'Polynomial interpolation',
+                code: 't = [0; 1; 2; 3];\ny = [1; 2; 0; 5];\nV = [ones(4, 1), t, t.^2, t.^3];\nc = inv(V) * y;\n',
+                note: 'A cubic through four points by solving the Vandermonde system.',
+            },
+            {
+                label: 'Trapezoid rule',
+                code: "h = pi / 100;\nt = linspace(0, pi, 101);\nf = sin(t);\nw = [0.5, ones(1, 99), 0.5];\nI = h * (w * f');\n",
+                note: 'Composite trapezoid rule applied as a dot product.',
+            },
+            {
+                label: 'Finite differences',
+                code: 't = linspace(0, 1, 101);\nf = sin(t);\ndf = (f(1, 2:101) - f(1, 1:100)) / 0.01;\n',
+                note: 'A forward difference from two shifted slices.',
+            },
+            {
+                label: 'Forward Euler',
+                code: 'A = [0, 1; -4, 0];\ny = [1; 0];\nh = 0.01;\nfor k = 1:200\n    y = y + h * (A * y);\nend\n',
+                note: 'Forward Euler marching a two-state oscillator.',
+            },
+            {
+                label: 'FFT spectrum',
+                code: 't = linspace(0, 1, 128);\ns = sin(2 * pi * 8 * t) + 0.5 * sin(2 * pi * 20 * t);\nS = fft(s);\nm = abs(S);\n',
+                note: 'A two-tone signal and its spectrum, lengths preserved end to end.',
+            },
+        ],
+    },
+    {
         group: 'Option demos',
         items: [
             {
