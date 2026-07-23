@@ -124,6 +124,44 @@
             padding-bottom: 10px;
         }
 
+        .pg-params {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            flex-wrap: wrap;
+            padding: 0 0 10px;
+        }
+
+        .pg-params label {
+            font-size: 0.82rem;
+            color: var(--muted);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .pg-params input {
+            background: var(--surface);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 4px 8px;
+            font-size: 0.8rem;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+        }
+
+        .pg-reset {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--muted);
+            border-radius: 6px;
+            padding: 4px 10px;
+            font-size: 0.78rem;
+            cursor: pointer;
+        }
+
+        .pg-reset:hover { color: var(--text); border-color: var(--muted); }
+
         #pg-editor {
             border: 1px solid var(--border);
             border-radius: 8px;
@@ -251,6 +289,10 @@
                 <input type="checkbox" id="pg-annotations" checked>
                 Shape annotations (show inferred shapes inline)
             </label>
+            <label for="pg-comments">
+                <input type="checkbox" id="pg-comments" checked>
+                Variable comments (explain each variable)
+            </label>
             <label for="pg-live">
                 <input type="checkbox" id="pg-live" checked>
                 Analyze as you type
@@ -259,6 +301,8 @@
         </div>
 
         <p class="pg-example-note" id="pg-example-note" hidden></p>
+
+        <div class="pg-params" id="pg-params" hidden></div>
 
         <div id="pg-editor"></div>
 
@@ -278,6 +322,6 @@
         </div>
     </footer>
 
-    <script src="./playground.js?v=11"></script>
+    <script src="./playground.js?v=12"></script>
 </body>
 </html>
