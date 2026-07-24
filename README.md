@@ -7,7 +7,7 @@
 [![Version](https://img.shields.io/badge/version-3.11.0-orange.svg)](#cli-options)
 [![VS Code](https://img.shields.io/badge/VS%20Code-Marketplace-007ACC.svg)](https://marketplace.visualstudio.com/items?itemName=EthanDoughty.conformal)
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4.svg)](https://dotnet.microsoft.com/download)
-[![Tests](https://img.shields.io/badge/tests-621%20passing-brightgreen.svg)](#test-suite)
+[![Tests](https://img.shields.io/badge/tests-647%20passing-brightgreen.svg)](#test-suite)
 [![License](https://img.shields.io/badge/license-BSL--1.1-purple.svg)](LICENSE)
 
 > Conformal is an independent project and is not affiliated with, endorsed by, or connected to MathWorks, Inc. MATLAB is a registered trademark of MathWorks, Inc.
@@ -136,7 +136,7 @@ conformal file.m
 
 | Flag | What it does |
 |------|-------------|
-| `--tests` | Run the full test suite (621 tests across 25 categories) |
+| `--tests` | Run the full test suite (647 tests across 25 categories) |
 | `--batch <dir\|files>` | Analyze multiple files in one process (no per-file startup cost) |
 | `--strict` | Show all warnings including informational and low-confidence diagnostics |
 | `--fixpoint` | Use widening-based fixpoint iteration for loop analysis |
@@ -204,7 +204,7 @@ Conformal also includes a MATLAB-to-Python transpiler that uses shape informatio
 
 ## Test Suite
 
-Conformal is validated by 621 self-checking MATLAB programs organized into 25 categories, plus property-based lattice tests via FsCheck. Each test file embeds its expected behavior as inline assertions (`% EXPECT: A = matrix[3 x 4]`, `% EXPECT_WARNING: W_INNER_DIM_MISMATCH`), and the test runner checks that Conformal's output matches.
+Conformal is validated by 647 self-checking MATLAB programs organized into 25 categories, plus property-based lattice tests via FsCheck. Each test file embeds its expected behavior as inline assertions (`% EXPECT: A = matrix[3 x 4]`, `% EXPECT_WARNING: W_INNER_DIM_MISMATCH`), and the test runner checks that Conformal's output matches.
 
 For the full test listing, see [docs/tests.md](docs/tests.md).
 
