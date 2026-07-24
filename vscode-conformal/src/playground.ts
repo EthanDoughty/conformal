@@ -391,6 +391,46 @@ function runAnalysis(view: EditorView, panel: HTMLElement, opts: PlaygroundOptio
 }
 
 // ---------------------------------------------------------------------------
+// Literal-matrix params: a value like "[4, 1, 0; 1, 3, 1; 0, 1, 2]" is shown
+// as a small grid of number squares instead of one text box. Only clean,
+// short, small literal matrices qualify; constructors (zeros(100,3)), symbolic
+// expressions, scalars, and long values stay as a plain text input.
+// ---------------------------------------------------------------------------
+
+interface LiteralMatrix { rows: number; cols: number; cells: string[][]; }
+
+const MATRIX_ENTRY = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
+
+function parseLiteralMatrix(value: string): LiteralMatrix | null {
+    const v = (value || '').trim();
+    if (v.length < 3 || v[0] !== '[' || v[v.length - 1] !== ']') return null;
+    const inner = v.slice(1, -1).trim();
+    if (inner === '') return null;
+    const cells: string[][] = [];
+    let cols = -1;
+    for (const rowText of inner.split(';')) {
+        const parts = rowText.trim().split(',').map(s => s.trim());
+        if (cols === -1) cols = parts.length;
+        else if (parts.length !== cols) return null;   // ragged: not a clean grid
+        for (const p of parts) if (!MATRIX_ENTRY.test(p)) return null; // any non-numeric entry
+        cells.push(parts);
+    }
+    return { rows: cells.length, cols, cells };
+}
+
+function matrixEligible(m: LiteralMatrix | null): m is LiteralMatrix {
+    if (!m) return false;
+    if (m.rows === 1 && m.cols === 1) return false;   // a 1x1 is a scalar, keep text
+    if (m.rows > 4 || m.cols > 4 || m.rows * m.cols > 16) return false;
+    for (const r of m.cells) for (const c of r) if (c.length > 6) return false; // long values read poorly
+    return true;
+}
+
+function matrixToString(cells: string[][]): string {
+    return '[' + cells.map(r => r.join(', ')).join('; ') + ']';
+}
+
+// ---------------------------------------------------------------------------
 // Bootstrap
 // ---------------------------------------------------------------------------
 
@@ -422,12 +462,12 @@ function main(): void {
     if (categorySelect) {
         const all = document.createElement('option');
         all.value = '';
-        all.textContent = 'All categories';
+        all.textContent = `All categories (${EXAMPLES.length})`;
         categorySelect.appendChild(all);
         for (const g of EXAMPLE_GROUPS) {
             const opt = document.createElement('option');
             opt.value = g.group;
-            opt.textContent = g.group;
+            opt.textContent = `${g.group} (${g.items.length})`;
             categorySelect.appendChild(opt);
         }
     }
@@ -446,7 +486,6 @@ function main(): void {
         for (const g of EXAMPLE_GROUPS) {
             const inCategory = cat === '' || g.group === cat;
             const og = document.createElement('optgroup');
-            og.label = g.group;
             for (const item of g.items) {
                 const idx = flatIndex++;
                 if (!inCategory) continue;
@@ -459,6 +498,9 @@ function main(): void {
                 og.appendChild(opt);
             }
             if (og.childElementCount > 0) {
+                // Count reflects what is actually in the group, so it equals the
+                // category total when unfiltered and the match count while searching.
+                og.label = `${g.group} (${og.childElementCount})`;
                 exampleSelect.appendChild(og);
                 shown += og.childElementCount;
             }
@@ -563,10 +605,30 @@ function main(): void {
             paramsHost.hidden = true;
             return;
         }
-        const boxLabel = document.createElement('span');
-        boxLabel.className = 'pg-box-label';
-        boxLabel.textContent = 'Template values';
-        paramsHost.appendChild(boxLabel);
+        // Header row: the panel title on the left, a reset control on the right.
+        const head = document.createElement('div');
+        head.className = 'pg-params-head';
+        const title = document.createElement('span');
+        title.className = 'pg-params-title';
+        title.textContent = 'Template values';
+        head.appendChild(title);
+        const reset = document.createElement('button');
+        reset.type = 'button';
+        reset.className = 'pg-reset';
+        reset.textContent = 'Reset';
+        reset.title = 'Restore every value to the template default';
+        reset.addEventListener('click', () => {
+            paramValues = defaultParamValues(current);
+            buildParamsPanel();
+            regenerate();
+        });
+        head.appendChild(reset);
+        paramsHost.appendChild(head);
+
+        // Each knob is a grid cell: name on top, input, then its description.
+        // The grid aligns the cells regardless of description length.
+        const grid = document.createElement('div');
+        grid.className = 'pg-params-grid';
         for (const p of params) {
             const block = document.createElement('label');
             block.className = 'pg-param';
@@ -574,36 +636,58 @@ function main(): void {
             name.className = 'pg-param-name';
             name.textContent = p.label;
             block.appendChild(name);
-            const input = document.createElement('input');
-            input.type = 'text';
-            input.spellcheck = false;
-            input.value = paramValues[p.key] ?? '';
-            input.size = Math.min(Math.max(input.value.length + 1, 4), 26);
-            input.addEventListener('input', () => {
-                paramValues[p.key] = input.value;
-                scheduleRegenerate();
-            });
-            block.appendChild(input);
+
             const desc = (current.docs || {})[p.key] || '';
+            const mat = parseLiteralMatrix(paramValues[p.key] ?? '');
+            if (matrixEligible(mat)) {
+                // A grid of number squares; editing any cell reassembles the
+                // whole "[a, b; c, d]" string in the same house style.
+                const key = p.key;
+                const mgrid = document.createElement('div');
+                mgrid.className = 'pg-matrix';
+                mgrid.style.gridTemplateColumns = `repeat(${mat.cols}, minmax(34px, 1fr))`;
+                const cellInputs: HTMLInputElement[][] = [];
+                for (let i = 0; i < mat.rows; i++) {
+                    cellInputs[i] = [];
+                    for (let j = 0; j < mat.cols; j++) {
+                        const ci = document.createElement('input');
+                        ci.type = 'text';
+                        ci.spellcheck = false;
+                        ci.className = 'pg-matrix-cell';
+                        ci.value = mat.cells[i][j];
+                        ci.addEventListener('input', () => {
+                            const cells = cellInputs.map(row => row.map(x => x.value.trim() || '0'));
+                            paramValues[key] = matrixToString(cells);
+                            scheduleRegenerate();
+                        });
+                        cellInputs[i].push(ci);
+                        mgrid.appendChild(ci);
+                    }
+                }
+                if (desc !== '') mgrid.title = desc;
+                block.appendChild(mgrid);
+            } else {
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.spellcheck = false;
+                input.value = paramValues[p.key] ?? '';
+                input.addEventListener('input', () => {
+                    paramValues[p.key] = input.value;
+                    scheduleRegenerate();
+                });
+                if (desc !== '') input.title = desc;
+                block.appendChild(input);
+            }
+
             if (desc !== '') {
-                input.title = desc;
                 const d = document.createElement('span');
                 d.className = 'pg-param-desc';
                 d.textContent = desc;
                 block.appendChild(d);
             }
-            paramsHost.appendChild(block);
+            grid.appendChild(block);
         }
-        const reset = document.createElement('button');
-        reset.type = 'button';
-        reset.className = 'pg-reset';
-        reset.textContent = 'Reset values';
-        reset.addEventListener('click', () => {
-            paramValues = defaultParamValues(current);
-            buildParamsPanel();
-            regenerate();
-        });
-        paramsHost.appendChild(reset);
+        paramsHost.appendChild(grid);
         paramsHost.hidden = false;
     };
 

@@ -161,34 +161,58 @@
             padding-bottom: 10px;
         }
 
+        /* Template-values panel: a header row above a responsive grid of knobs. */
         .pg-params {
-            align-items: flex-start;
-            gap: 12px 24px;
+            display: block;               /* override the .pg-box flex layout */
+        }
+
+        .pg-params-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .pg-params-title {
+            font-size: 0.68rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--muted);
+        }
+
+        .pg-params-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 16px 20px;
+            align-items: start;
         }
 
         .pg-param {
             display: flex;
             flex-direction: column;
-            gap: 3px;
+            gap: 6px;
         }
 
         .pg-param-name {
             font-size: 0.8rem;
+            font-weight: 500;
             color: var(--text);
         }
 
         .pg-param-desc {
             font-size: 0.72rem;
+            line-height: 1.45;
             color: var(--muted);
-            max-width: 200px;
         }
 
-        .pg-params input {
+        .pg-params input:not(.pg-matrix-cell) {
+            width: 100%;
+            box-sizing: border-box;
             background: var(--code-bg);
             color: var(--text);
             border: 1px solid var(--border);
             border-radius: 6px;
-            padding: 4px 8px;
+            padding: 5px 9px;
             font-size: 0.8rem;
             font-family: 'JetBrains Mono', 'Fira Code', monospace;
         }
@@ -196,18 +220,37 @@
         .pg-params input:focus {
             outline: none;
             border-color: var(--accent);
+            box-shadow: 0 0 0 2px rgba(212, 160, 33, 0.16);
         }
 
-        .pg-params .pg-reset { align-self: center; margin-left: auto; }
+        /* Matrix knob: a grid of number squares matching the matrix shape. */
+        .pg-matrix {
+            display: grid;
+            gap: 4px;
+        }
+
+        .pg-matrix-cell {
+            width: 100%;
+            box-sizing: border-box;
+            background: var(--code-bg);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            padding: 5px 4px;
+            font-size: 0.78rem;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            text-align: center;
+        }
 
         .pg-reset {
             background: none;
             border: 1px solid var(--border);
             color: var(--muted);
             border-radius: 6px;
-            padding: 4px 10px;
-            font-size: 0.78rem;
+            padding: 3px 12px;
+            font-size: 0.76rem;
             cursor: pointer;
+            flex-shrink: 0;
         }
 
         .pg-reset:hover { color: var(--text); border-color: var(--muted); }
@@ -378,6 +421,6 @@
         </div>
     </footer>
 
-    <script src="./playground.js?v=19"></script>
+    <script src="./playground.js?v=20"></script>
 </body>
 </html>
