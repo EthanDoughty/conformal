@@ -158,6 +158,48 @@ let evalIndexArgToShape
     | Colon _ -> UnknownShape
 
 
+// --- Value-class classifier: numeric index vector vs logical mask ---
+//
+// Used only to disambiguate a vector subscript's extent: a provably numeric
+// subscript selects numel(subscript) rows/cols, while a logical mask selects
+// nnz(subscript) <= numel(subscript), which is statically unknown. Keep the
+// name sets local to this function (not in Builtins.KNOWN_BUILTINS): a name
+// belongs in the numeric set only if MATLAB documents it as returning indices,
+// and anything ambiguous (any, all, ismember's first output, a user function's
+// return) must stay unclassified rather than guessed.
+
+/// Comparison and logical operators whose result is always a logical value/mask.
+let private logicalOps : Set<string> =
+    Set.ofList [ "=="; "~="; "<"; "<="; ">"; ">="; "&"; "|"; "&&"; "||" ]
+
+/// Builtins MATLAB documents as returning a logical value or array.
+let private logicalReturningNames : Set<string> =
+    Set.ofList [
+        "true"; "false"; "logical"; "islogical"; "isnan"; "isinf"; "isfinite"
+        "isempty"; "isequal"; "ismember"; "strcmp"; "strcmpi"; "strncmp"; "strncmpi"
+        "xor"; "any"; "all"; "isspace"; "isletter"; "isnumeric"; "ischar"; "isreal"
+        "isa"; "isfield"
+    ]
+
+/// Builtins MATLAB documents as returning numeric indices.
+let private numericIndexReturningNames : Set<string> =
+    Set.ofList [ "find"; "randperm"; "sub2ind"; "colon" ]
+
+/// Classify an expression as a numeric index vector or a logical mask, when provable.
+let rec classifyExpr (expr: Expr) (env: Env) : VClass option =
+    match expr with
+    | BinOp(_, op, _, _) when Set.contains op logicalOps -> Some VLogical
+    | Not _ -> Some VLogical
+    | Apply(_, Var(_, f), _) when Set.contains f logicalReturningNames -> Some VLogical
+    | Apply(_, Var(_, f), _) when Set.contains f numericIndexReturningNames -> Some VNumeric
+    | MatrixLit(_, rows) when rows |> List.forall (List.forall (fun e ->
+        match e with Const _ -> true | _ -> false)) -> Some VNumeric
+    | Transpose(_, e) -> classifyExpr e env   // order' must still classify like order
+    | Apply(_, Var(_, b), _) when Env.contains env b -> Env.getClass env b   // idx(1:5) stays numeric
+    | Var(_, n) -> Env.getClass env n
+    | _ -> None
+
+
 /// Return how many rows/cols an IndexArg selects.
 let indexArgToExtentIr
     (arg: IndexArg)
@@ -222,18 +264,14 @@ let indexArgToExtentIr
 
     | IndexExpr(_, expr) ->
         let s = evalFn expr env warnings ctx containerShape
-        // A numeric-literal subscript is provably a double array, so its extent is
-        // numel. A variable subscript may be a logical mask (extent = nnz <= numel),
-        // and the shape domain cannot tell the two apart, so its extent stays Unknown.
-        let isNumericLiteral =
-            match expr with
-            | MatrixLit(_, rows) ->
-                rows |> List.forall (List.forall (fun e ->
-                    match e with Const _ -> true | _ -> false))
-            | _ -> false
+        // A subscript provably classified numeric (a numeric-literal matrix, or a
+        // variable/expression classifyExpr can prove is a numeric index vector) is
+        // provably a double array, so its extent is numel. A subscript that may be
+        // a logical mask (extent = nnz <= numel) stays Unknown, since the shape
+        // domain alone cannot tell the two apart.
         match s with
         | Matrix(Concrete 1, Concrete 1) -> Concrete 1   // 1x1 acts as a scalar index
-        | Matrix(r, c) when isNumericLiteral -> mulDim r c
+        | Matrix(r, c) when classifyExpr expr env = Some VNumeric -> mulDim r c
         | Matrix(r, c) ->
             // Warn only when the subscript is provably neither scalar nor a vector,
             // i.e. both dimensions are concrete and > 1. Any dimension that is

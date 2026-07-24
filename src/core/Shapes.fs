@@ -26,6 +26,13 @@ type Dim =
     | Range    of lo: DimBound * hi: DimBound   // lo <= hi semantically
     | Unknown
 
+/// Value class of a variable, used only to disambiguate index subscripts.
+/// VNumeric: an index vector, subscript extent = numel.
+/// VLogical: a mask, subscript extent = nnz <= numel (statically unknown).
+type VClass =
+    | VNumeric
+    | VLogical
+
 // --- Shape: abstract shape domain (discriminated union) ---
 
 type Shape =

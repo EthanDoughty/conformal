@@ -849,6 +849,13 @@ and analyzeStmtIr
 
         Env.set env name newShape
 
+        // Value-class: opt back in to a classification for this reassignment.
+        // Env.set has already cleared any stale entry, so this is failsafe by
+        // construction -- an unclassifiable RHS just leaves the class absent.
+        match EvalExpr.classifyExpr expr env with
+        | Some c -> Env.setClass env name c
+        | None -> ()
+
         // Pentagon kill: invalidate stale relational bounds after reassignment.
         ctx.cst.upperBounds <- Intervals.killUpperBoundsFor name ctx.cst.upperBounds
         ctx.cst.lowerBounds <- Intervals.killLowerBoundsFor name ctx.cst.lowerBounds
@@ -1019,6 +1026,10 @@ and analyzeStmtIr
 
     | IndexAssign(_, baseName, _, expr) ->
         ctx.cst.trustedConsts <- Map.remove baseName ctx.cst.trustedConsts
+        // Failsafe direction: an element write drops any value-class the base
+        // variable carried (not strictly required -- an element write cannot
+        // turn a numeric index vector logical -- but it costs one line).
+        env.valueClasses <- Map.remove baseName env.valueClasses
         let rhsShape = wiredEvalExprFull expr env warnings ctx
         ignore rhsShape
         let baseShape = Env.get env baseName
@@ -1575,6 +1586,26 @@ and private analyzeAssignMulti
         | TName s when not (s.Contains ".") -> Some s
         | _ -> None
 
+    // Mark the value class of documented index/mask outputs of a multi-output
+    // builtin call. Runs after bindTarget, whose Env.set already cleared any
+    // stale class, so this only opts specific outputs back in.
+    let markIndexOutputClasses (fname: string) (targets: MultiTarget list) : unit =
+        let classifyAt (i: int) (c: VClass) =
+            if i < targets.Length then
+                match plainName targets.[i] with
+                | Some t -> Env.setClass env t c
+                | None -> ()
+        match fname with
+        | "sort" -> classifyAt 1 VNumeric               // [~, order] = sort(...)
+        | "max" | "min" -> classifyAt 1 VNumeric        // [m, i] = max/min(...)
+        | "ismember" -> classifyAt 0 VLogical; classifyAt 1 VNumeric
+        // [r, c] = find(X): both are indices. The 3-output form [r, c, v] = find(X)
+        // has a THIRD output that is the nonzero VALUES, not an index -- leave it
+        // unclassified rather than guess.
+        | "find" -> classifyAt 0 VNumeric; classifyAt 1 VNumeric
+        | "unique" -> classifyAt 1 VNumeric; classifyAt 2 VNumeric
+        | _ -> ()
+
     // Remove all AssignMulti target bases from trustedConsts before binding.
     for t in targets do
         let baseName =
@@ -1690,6 +1721,7 @@ and private analyzeAssignMulti
                 match evalMultiBuiltinCall fname line numTargets args env warnings ctx wiredEvalExprFull wiredGetInterval with
                 | Some shapes ->
                     for (target, shape) in List.zip targets shapes do bindTarget target shape
+                    markIndexOutputClasses fname targets
                     // [r, c] = size(A) aliasing
                     if fname = "size" && targets.Length = 2 then
                         match args with
