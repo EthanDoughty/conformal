@@ -116,6 +116,10 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     'P_f': 'covariance of the fused estimate',
                     'x_f': 'covariance weighted fused position',
                 },
+                matrixMeta: {
+                    'x_cam': { rows: ['x', 'y'], rowDesc: ['x position', 'y position'] },
+                    'x_rad': { rows: ['x', 'y'], rowDesc: ['x position', 'y position'] },
+                },
             },
             {
                 label: 'Battery RC model',
@@ -257,6 +261,9 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     'dp': 'position offset in ECEF meters',
                     'ned': 'the same offset in local axes',
                 },
+                matrixMeta: {
+                    'dp': { rows: ['X', 'Y', 'Z'], rowDesc: ['toward prime meridian', 'toward 90 deg east', 'toward north pole'] },
+                },
             },
             {
                 label: 'Euler DCM chain',
@@ -294,6 +301,10 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     'r': 'predicted range to each satellite',
                     'G': 'linearized geometry matrix',
                     'dx': 'least squares position correction',
+                },
+                matrixMeta: {
+                    'rho': { rows: ['sat 1', 'sat 2', 'sat 3', 'sat 4'], rowDesc: ['range to satellite 1', 'range to satellite 2', 'range to satellite 3', 'range to satellite 4'] },
+                    'x': { rows: ['X', 'Y', 'Z'], rowDesc: ['receiver X position', 'receiver Y position', 'receiver Z position'] },
                 },
             },
             {
@@ -531,6 +542,11 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     'hf': 'head loss per segment in meters',
                     'worst': 'largest loss of the four',
                 },
+                matrixMeta: {
+                    'L': { cols: ['seg 1', 'seg 2', 'seg 3', 'seg 4'] },
+                    'D': { cols: ['seg 1', 'seg 2', 'seg 3', 'seg 4'] },
+                    'v': { cols: ['seg 1', 'seg 2', 'seg 3', 'seg 4'] },
+                },
             },
             {
                 label: 'Shear building sway',
@@ -549,6 +565,11 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     'dt': 'integration step in seconds',
                     'xdd': 'acceleration from the equation of motion',
                 },
+                matrixMeta: {
+                    'M': { rows: ['story 1', 'story 2'], cols: ['story 1', 'story 2'], rowDesc: ['story 1 mass', 'story 2 mass'] },
+                    'K': { rows: ['story 1', 'story 2'], cols: ['story 1', 'story 2'], rowDesc: ['force on story 1', 'force on story 2'] },
+                    'x': { rows: ['story 1', 'story 2'], rowDesc: ['story 1 displacement', 'story 2 displacement'] },
+                },
             },
             {
                 label: 'Truss element forces',
@@ -563,6 +584,9 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     'k': 'element stiffness in global axes',
                     'u': 'displacements at both end nodes',
                     'f': 'forces the element puts on its nodes',
+                },
+                matrixMeta: {
+                    'u': { rows: ['n1 x', 'n1 y', 'n2 x', 'n2 y'], rowDesc: ['node 1 x-disp', 'node 1 y-disp', 'node 2 x-disp', 'node 2 y-disp'] },
                 },
             },
         ],
@@ -1365,6 +1389,10 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     'theta': 'bus voltage angles',
                     'flow12': 'flow on the line from bus 1 to bus 2',
                 },
+                matrixMeta: {
+                    'B': { rows: ['Bus 1', 'Bus 2', 'Bus 3'], cols: ['Bus 1', 'Bus 2', 'Bus 3'] },
+                    'P': { rows: ['Bus 1', 'Bus 2', 'Bus 3'], rowDesc: ['net generation', 'net load', 'net load'] },
+                },
             },
             {
                 label: 'Economic dispatch',
@@ -1378,6 +1406,9 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     'b': 'cost intercepts and total demand',
                     'sol': 'generator outputs and the price',
                     'lambda': 'system marginal price',
+                },
+                matrixMeta: {
+                    'b': { rows: ['gen 1', 'gen 2', 'load'], rowDesc: ['neg gen-1 intercept', 'neg gen-2 intercept', 'total demand'] },
                 },
             },
             {
@@ -1789,6 +1820,10 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     'n': 'count in each age class',
                     'total': 'population after the projection',
                 },
+                matrixMeta: {
+                    'L': { rows: ['age 1', 'age 2', 'age 3'], cols: ['age 1', 'age 2', 'age 3'], rowDesc: ['fecundity per class', 'survive age 1 to 2', 'survive age 2 to 3'] },
+                    'n': { rows: ['age 1', 'age 2', 'age 3'], cols: ['count'], rowDesc: ['youngest class', 'middle class', 'oldest class'] },
+                },
             },
             {
                 label: 'Lotka-Volterra',
@@ -1844,6 +1879,9 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     'x': 'drug amount in each compartment',
                     'dt': 'time step',
                 },
+                matrixMeta: {
+                    'x': { rows: ['central', 'periph'], cols: ['amount'], rowDesc: ['central compartment', 'peripheral compartment'] },
+                },
             },
             {
                 label: 'SIR epidemic',
@@ -1863,6 +1901,9 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     'dt': 'time step in days',
                     'inf': 'new infections this step',
                     'rec': 'new recoveries this step',
+                },
+                matrixMeta: {
+                    'y': { rows: ['S', 'I', 'R'], cols: ['count'], rowDesc: ['susceptible', 'infected', 'recovered'] },
                 },
             },
         ],
@@ -2697,6 +2738,10 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     'dt': 'step in seconds',
                     'a': 'gravitational acceleration',
                 },
+                matrixMeta: {
+                    'r': { rows: ['x', 'y'], rowDesc: ['x position (km)', 'y position (km)'] },
+                    'v': { rows: ['vx', 'vy'], rowDesc: ['x velocity (km/s)', 'y velocity (km/s)'] },
+                },
             },
             {
                 label: 'Planck blackbody curve',
@@ -2740,6 +2785,9 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     'dt': 'step in seconds',
                     'a': 'gravity plus drag',
                 },
+                matrixMeta: {
+                    'v': { rows: ['vx', 'vy'], rowDesc: ['horizontal (m/s)', 'vertical (m/s)'] },
+                },
             },
             {
                 label: 'Spring-mass-damper',
@@ -2758,6 +2806,9 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     'A': 'position and velocity dynamics',
                     'x': 'displacement and velocity',
                     'dt': 'integration step',
+                },
+                matrixMeta: {
+                    'x': { rows: ['x', 'v'], rowDesc: ['displacement', 'velocity'] },
                 },
             },
             {
@@ -2795,6 +2846,9 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     'bc': 'start and end angle and speed',
                     'c': 'cubic polynomial coefficients',
                 },
+                matrixMeta: {
+                    'bc': { rows: ['q(0)', "q'(0)", 'q(T)', "q'(T)"], rowDesc: ['Start joint angle', 'Start joint speed', 'End joint angle', 'End joint speed'] },
+                },
             },
             {
                 label: 'Differential-drive odometry',
@@ -2830,6 +2884,10 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     'J': 'manipulator Jacobian',
                     'e': 'position error toward the goal',
                 },
+                matrixMeta: {
+                    'q': { rows: ['q1', 'q2'], rowDesc: ['Joint 1 angle', 'Joint 2 angle'] },
+                    'target': { rows: ['x', 'y'], rowDesc: ['Target x position', 'Target y position'] },
+                },
             },
             {
                 label: 'PD joint control',
@@ -2850,6 +2908,11 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     'dt': 'control period in seconds',
                     'tau': 'commanded torques',
                     'qdd': 'joint accelerations',
+                },
+                matrixMeta: {
+                    'Kp': { rows: ['Joint 1', 'Joint 2'], cols: ['Joint 1', 'Joint 2'], rowDesc: ['Gain on joint 1', 'Gain on joint 2'] },
+                    'Kd': { rows: ['Joint 1', 'Joint 2'], cols: ['Joint 1', 'Joint 2'], rowDesc: ['Gain on joint 1', 'Gain on joint 2'] },
+                    'qref': { rows: ['q1', 'q2'], rowDesc: ['Commanded joint 1', 'Commanded joint 2'] },
                 },
             },
             {
