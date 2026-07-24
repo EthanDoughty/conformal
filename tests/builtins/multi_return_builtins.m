@@ -79,8 +79,8 @@ v = zeros(5, 1);
 % EXPECT: Mx = matrix[1 x 5]
 % EXPECT: Mx_i = matrix[1 x 5]
 [ms, msi] = min(v);
-% EXPECT: ms = matrix[1 x 1]
-% EXPECT: msi = matrix[1 x 1]
+% EXPECT: ms = scalar
+% EXPECT: msi = scalar
 
 % === Concrete dimensions (n = size(B,2) = 5, resolves inline via valueRanges) ===
 C = zeros(n, n);

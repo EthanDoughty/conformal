@@ -119,6 +119,34 @@ let private evalArgShape
     | _ -> UnknownShape
 
 
+// numel of a shape as a Dim (Unknown when not derivable).
+let private shapeNumel (s: Shape) : Dim =
+    match s with
+    | Scalar -> Concrete 1
+    | Matrix(r, c) -> mulDim r c
+    | Cell(r, c, _) -> mulDim r c
+    | _ -> Unknown
+
+
+// Evaluate an IndexArg to a Shape, including inline ranges.  The parser emits
+// `a:b` and `a:s:b` in an argument list as Range/SteppedRange, which unwrapArg
+// rejects, so handlers silently lose them.  Reconstructing the equivalent
+// BinOp(":") routes through exactly the colonop folding used for `t = 0:0.1:10`.
+let private argToShapeWithRanges
+    (arg: IndexArg)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape =
+    match arg with
+    | IndexExpr(_, e) -> evalExprFn e env warnings ctx
+    | Ir.Range(loc, a, b) -> evalExprFn (BinOp(loc, ":", a, b)) env warnings ctx
+    | Ir.SteppedRange(loc, a, s, b) ->
+        evalExprFn (BinOp(loc, ":", BinOp(loc, ":", a, s), b)) env warnings ctx
+    | Colon _ -> UnknownShape
+
+
 // Check a dimension argument for negative value, emit warning if so.
 let private checkNegativeDimArg
     (arg: Expr)
@@ -933,14 +961,85 @@ let private handleFilterDesign
     Some (Matrix(Concrete 1, Unknown))
 
 
+// max of two dims, only where provable.
+let private maxKnownDim (a: Dim) (b: Dim) : Dim =
+    match a, b with
+    | Concrete x, Concrete y -> Concrete (max x y)
+    | x, y when x = y -> x
+    | _ -> Unknown
+
+
+// Returns (correlation shape, lags shape).
+// Forms: xcorr(x), xcorr(x,y), xcorr(x,maxlag), xcorr(x,y,maxlag), each with an
+// optional trailing scaleopt string.  args.[1] is maxlag exactly when it is a
+// scalar, which is MATLAB's own disambiguation rule.
+// Matrix (non-vector) input is left conservative (Unknown outLen): MATLAB's
+// column-pairwise (2m-1)-by-(n*n) form is not covered by this rule.
+let private xcorrShapes
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : (Shape * Shape) =
+    if args.IsEmpty then (Matrix(Unknown, Concrete 1), Matrix(Concrete 1, Unknown))
+    else
+    let s0 = argToShapeWithRanges args.[0] env warnings ctx evalExprFn
+    let shapes1 = [ for i in 1 .. args.Length - 1 -> argToShapeWithRanges args.[i] env warnings ctx evalExprFn ]
+    // A trailing scaleopt string carries no shape information.
+    let numeric1 =
+        match List.rev shapes1 with
+        | StringShape :: rest -> List.rev rest
+        | _ -> shapes1
+    let n0 = shapeNumel s0
+    let outLenFromK (k: Dim) = addDim (mulDim (Concrete 2) k) (Concrete 1)
+    let outLenFromN (n: Dim) = subDim (mulDim (Concrete 2) n) (Concrete 1)
+    let outLen =
+        match numeric1 with
+        | [] -> outLenFromN n0
+        | [ single ] ->
+            if isScalar single then
+                // xcorr(x, maxlag): the raw expression carries the maxlag value.
+                match unwrapArg args.[1] with
+                | Some e -> outLenFromK (exprToDimIrCtx e env (Some ctx))
+                | None -> outLenFromN n0
+            else
+                // xcorr(x, y): second signal, not maxlag.
+                outLenFromN (maxKnownDim n0 (shapeNumel single))
+        | [ _y; _maxlag ] ->
+            // xcorr(x, y, maxlag)
+            match unwrapArg args.[2] with
+            | Some e -> outLenFromK (exprToDimIrCtx e env (Some ctx))
+            | None -> outLenFromN n0
+        | _ -> Unknown
+    let r =
+        match s0 with
+        | Matrix(Concrete 1, _) -> Matrix(Concrete 1, outLen)
+        | _ -> Matrix(outLen, Concrete 1)
+    let lags = Matrix(Concrete 1, outLen)
+    (r, lags)
+
+
 let private handleXcorr
-    (_args: IndexArg list)
-    (_env: Env)
-    (_warnings: ResizeArray<Diagnostic>)
-    (_ctx: AnalysisContext)
-    (_evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
     : Shape option =
-    Some (Matrix(Unknown, Concrete 1))
+    Some (fst (xcorrShapes args env warnings ctx evalExprFn))
+
+
+let private handleMultiXcorr
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (numTargets: int)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape list option =
+    if numTargets <> 2 then None
+    else let (r, lags) = xcorrShapes args env warnings ctx evalExprFn in Some [ r; lags ]
 
 
 let private handleDcm
@@ -1018,8 +1117,38 @@ let private handleInterp1
     else Some UnknownShape
 
 
-let private handleMeshgrid (_args: IndexArg list) (_env: Env) (_w: _) (_ctx: _) (_eval: _) : Shape option =
-    Some (Matrix(Unknown, Unknown))
+// meshgrid(x, y) -> numel(y)-by-numel(x).  meshgrid(x) == meshgrid(x, x).
+// Three or more arguments build a 3-D grid the 2-D shape domain cannot
+// represent, so decline rather than report a plausible-looking 2-D shape.
+let private meshgridDims
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : (Dim * Dim) option =
+    match args with
+    | [ ax ] ->
+        let n = shapeNumel (argToShapeWithRanges ax env warnings ctx evalExprFn)
+        Some (n, n)
+    | [ ax; ay ] ->
+        let nx = shapeNumel (argToShapeWithRanges ax env warnings ctx evalExprFn)
+        let ny = shapeNumel (argToShapeWithRanges ay env warnings ctx evalExprFn)
+        Some (ny, nx)
+    | _ ->
+        for a in args do argToShapeWithRanges a env warnings ctx evalExprFn |> ignore
+        None
+
+let private handleMeshgrid
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape option =
+    match meshgridDims args env warnings ctx evalExprFn with
+    | Some (r, c) -> Some (Matrix(r, c))
+    | None -> Some (Matrix(Unknown, Unknown))
 
 
 let private handleStruct
@@ -1561,17 +1690,57 @@ let private handleMultiMinmax
     : Shape list option =
     if numTargets <> 2 then None
     else
-        if args.IsEmpty then Some [ UnknownShape; UnknownShape ]
-        else
-            let argShape = evalArgShape args.[0] env warnings ctx evalExprFn
-            if isScalar argShape then Some [ Scalar; Scalar ]
-            elif isMatrix argShape then
-                match argShape with
-                | Matrix(_, c) ->
-                    let reduction = Matrix(Concrete 1, c)
-                    Some [ reduction; reduction ]
-                | _ -> Some [ UnknownShape; UnknownShape ]
-            else Some [ UnknownShape; UnknownShape ]
+        // Both outputs of [m, i] = max(...) take the single-output reduction
+        // shape.  MATLAB rejects the two-operand form [m,i] = max(a,b), so that
+        // case stays conservative rather than claiming a shape.
+        let reduced =
+            match args.Length with
+            | 1 -> handleReduction args env warnings ctx evalExprFn
+            | 3 -> handleReduction [ args.[0]; args.[2] ] env warnings ctx evalExprFn
+            | _ ->
+                for a in args do evalArgShape a env warnings ctx evalExprFn |> ignore
+                None
+        match reduced with
+        | Some s -> Some [ s; s ]
+        | None -> Some [ UnknownShape; UnknownShape ]
+
+
+// [p, S, mu] = polyfit(x, y, n).  p is 1-by-(n+1) (same as the 1-output form),
+// S is the error-estimate struct, mu = [mean(x); std(x)] is 2-by-1.
+// S is OPEN: its field set has grown across MATLAB releases (rsquared is recent),
+// so an open struct annotates the documented fields without warning on others.
+let private handleMultiPolyfit
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (numTargets: int)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape list option =
+    if numTargets > 3 then None
+    else
+        let pShape = handlePolyfit args env ctx evalExprFn |> Option.defaultValue (Matrix(Concrete 1, Unknown))
+        let np1 = match pShape with Matrix(_, c) -> c | _ -> Unknown
+        let sShape =
+            Struct([ "R", Matrix(np1, np1); "df", Scalar; "normr", Scalar; "rsquared", Scalar ]
+                   |> List.sortBy fst, true)
+        Some ([ pShape; sShape; Matrix(Concrete 2, Concrete 1) ]).[..numTargets - 1]
+
+
+// [y, delta] = polyval(p, x, S[, mu]): delta is the standard-error estimate at
+// each query point, so it matches y.
+let private handleMultiPolyval
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (numTargets: int)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape list option =
+    if numTargets <> 2 then None
+    else
+        let y = handlePolyval args env warnings ctx evalExprFn |> Option.defaultValue UnknownShape
+        Some [ y; y ]
 
 
 let private handleMultiFileparts (_args: IndexArg list) (numTargets: int) : Shape list option =
@@ -1584,8 +1753,22 @@ let private handleMultiFopen (_args: IndexArg list) (numTargets: int) : Shape li
     else None
 
 
-let private handleMultiMeshgrid (_args: IndexArg list) (numTargets: int) : Shape list option =
-    if numTargets = 2 || numTargets = 3 then Some (List.replicate numTargets UnknownShape)
+let private handleMultiMeshgrid
+    (args: IndexArg list)
+    (env: Env)
+    (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (numTargets: int)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape list option =
+    if numTargets = 2 then
+        match meshgridDims args env warnings ctx evalExprFn with
+        | Some (r, c) -> let s = Matrix(r, c) in Some [ s; s ]
+        | None -> Some [ Matrix(Unknown, Unknown); Matrix(Unknown, Unknown) ]
+    elif numTargets = 3 then
+        // [X,Y,Z] = meshgrid(x,y,z) is a 3-D grid: unrepresentable, stay unknown.
+        for a in args do argToShapeWithRanges a env warnings ctx evalExprFn |> ignore
+        Some [ UnknownShape; UnknownShape; UnknownShape ]
     else None
 
 
@@ -2016,6 +2199,7 @@ let MULTI_SUPPORTED_FORMS : Map<string, string> =
         "pca", "1-3"; "ind2sub", "any"; "linprog", "1-3"; "quadprog", "1-3"
         "fmincon", "1-3"; "fsolve", "1-2"; "kmeans", "1-4"
         "intersect", "1-3"; "union", "1-3"; "setdiff", "1-2"; "ismember", "1-2"
+        "polyfit", "1-3"; "polyval", "1 or 2"; "xcorr", "1 or 2"
     ]
 
 
@@ -2237,9 +2421,12 @@ let rec evalMultiBuiltinCall
     | "find"     -> handleMultiFind    args env warnings ctx numTargets evalExprFn
     | "unique"   -> handleMultiUnique  args env warnings ctx numTargets evalExprFn
     | "min" | "max" -> handleMultiMinmax args env warnings ctx numTargets evalExprFn
+    | "polyfit"  -> handleMultiPolyfit  args env warnings ctx numTargets evalExprFn
+    | "polyval"  -> handleMultiPolyval  args env warnings ctx numTargets evalExprFn
+    | "xcorr"    -> handleMultiXcorr    args env warnings ctx numTargets evalExprFn
     | "fileparts" -> handleMultiFileparts args numTargets
     | "fopen"    -> handleMultiFopen   args numTargets
-    | "meshgrid" -> handleMultiMeshgrid args numTargets
+    | "meshgrid" -> handleMultiMeshgrid args env warnings ctx numTargets evalExprFn
     | "cellfun"  -> handleMultiCellfun  line args env warnings ctx numTargets evalExprFn
     | "arrayfun" -> handleMultiArrayfun line args env warnings ctx numTargets evalExprFn
     | "ndgrid" | "regexp" | "regexpi" | "kmeans" -> handleMultiAny numTargets

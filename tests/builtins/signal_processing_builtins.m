@@ -23,7 +23,7 @@ c2 = conv([1 2 3], [4 5]);
 
 % xcorr
 r = xcorr(x);
-% EXPECT: r = matrix[None x 1]
+% EXPECT: r = matrix[199 x 1]
 
 % window functions
 w1 = hamming(64);
