@@ -3,7 +3,7 @@
 % A([1:3]) parses correctly; plain colon ranges also work; 0 warnings throughout
 % EXPECT: A = matrix[10 x 5]
 % EXPECT: B = matrix[1 x 3]
-% EXPECT: C = matrix[None x None]
+% EXPECT: C = matrix[3 x 2]
 % EXPECT: D = matrix[3 x 5]
 % EXPECT: E = matrix[10 x 3]
 % EXPECT: F = matrix[1 x 3]
@@ -15,7 +15,7 @@ A = rand(10, 5);
 % Matrix literal as 1-arg linear index: result has same shape as the index vector
 B = A([1 2 3]);
 
-% Matrix literal as 2-arg subscript index: result shape is matrix[None x None]
+% Matrix literal as 2-arg subscript index: numeric literals fold to numel per dim
 C = A([1 2 3], [4 5]);
 
 % Plain colon ranges inside index args -- these work and produce no warnings

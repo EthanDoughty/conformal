@@ -189,7 +189,7 @@ let warnInvalidRangeEndLtStart (line: int) (arg: IndexArg) : Diagnostic =
 
 let warnNonScalarIndexArg (line: int) (arg: IndexArg) (shape: Shape) : Diagnostic =
     makeDiag line W_NON_SCALAR_INDEX
-        $"{prettyIndexArgIr arg}: non-scalar index {shapeToString shape}. Shape assumed unknown."
+        $"{prettyIndexArgIr arg}: matrix subscript {shapeToString shape}; extent along this dimension assumed unknown."
 
 let warnElementwiseMismatch
     (line: int) (op: string) (leftExpr: Expr) (rightExpr: Expr) (left: Shape) (right: Shape) : Diagnostic =

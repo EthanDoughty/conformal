@@ -222,14 +222,28 @@ let indexArgToExtentIr
 
     | IndexExpr(_, expr) ->
         let s = evalFn expr env warnings ctx containerShape
+        // A numeric-literal subscript is provably a double array, so its extent is
+        // numel. A variable subscript may be a logical mask (extent = nnz <= numel),
+        // and the shape domain cannot tell the two apart, so its extent stays Unknown.
+        let isNumericLiteral =
+            match expr with
+            | MatrixLit(_, rows) ->
+                rows |> List.forall (List.forall (fun e ->
+                    match e with Const _ -> true | _ -> false))
+            | _ -> false
         match s with
         | Matrix(Concrete 1, Concrete 1) -> Concrete 1   // 1x1 acts as a scalar index
-        | Matrix _ ->
-            match expr with
-            | MatrixLit _ -> Unknown   // matrix literal as subscript: valid MATLAB
-            | _ ->
+        | Matrix(r, c) when isNumericLiteral -> mulDim r c
+        | Matrix(r, c) ->
+            // Warn only when the subscript is provably neither scalar nor a vector,
+            // i.e. both dimensions are concrete and > 1. Any dimension that is
+            // merely unresolved (Unknown) is not "definitely non-vector," and
+            // mulDim would be Unknown there anyway, so this costs no precision.
+            match r, c with
+            | Concrete rr, Concrete cc when rr > 1 && cc > 1 ->
                 warnings.Add(warnNonScalarIndexArg line arg s)
-                Unknown
+            | _ -> ()
+            Unknown
         | _ -> Concrete 1
 
 
@@ -821,27 +835,13 @@ and private evalIndexing
             let rExtent = indexArgToExtentIr a1 env warnings line ctx (Some baseShape) m evalFn
             let cExtent = indexArgToExtentIr a2 env warnings line ctx (Some baseShape) n evalFn
 
-            let isAllowedUnknown (a: IndexArg) =
-                match a with
-                | Colon _ | Ir.Range _ -> true
-                | IndexExpr(_, MatrixLit _) -> true
-                | _ -> false
-
-            let rExtentFinal =
-                if rExtent = Unknown && not (isAllowedUnknown a1) then Unknown
-                else if isColon a1 then m else rExtent
-
-            let cExtentFinal =
-                if cExtent = Unknown && not (isAllowedUnknown a2) then Unknown
-                else if isColon a2 then n else cExtent
-
-            if (rExtent = Unknown && not (isAllowedUnknown a1)) ||
-               (cExtent = Unknown && not (isAllowedUnknown a2)) then
-                UnknownShape
-            else
-                match rExtentFinal, cExtentFinal with
-                | Concrete 1, Concrete 1 -> Scalar
-                | _ -> Matrix(rExtentFinal, cExtentFinal)
+            // An unknown extent in one subscript position must not erase the other:
+            // A(anything, :) always has exactly size(A,2) columns.
+            let rExtentFinal = if isColon a1 then m else rExtent
+            let cExtentFinal = if isColon a2 then n else cExtent
+            match rExtentFinal, cExtentFinal with
+            | Concrete 1, Concrete 1 -> Scalar
+            | _ -> Matrix(rExtentFinal, cExtentFinal)
 
         | c when c > 2 ->
             warnings.Add(warnTooManyIndices line (Apply(loc line 0, Var(loc line 0, "?"), args)))
