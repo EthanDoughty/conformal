@@ -15,12 +15,23 @@ export interface ExampleParam {
     label: string;  // short name shown beside the input
 }
 
+// Optional teaching annotations for a matrix/vector knob. Short symbols in
+// rows/cols sit in the grid gutter and header; rowDesc holds a longer, plain
+// description shown beside each row. All are only rendered while the knob is at
+// its original shape; resizing hides them (they would no longer line up).
+export interface MatrixMeta {
+    rows?: string[];      // short label per row (length must equal the row count)
+    cols?: string[];      // short label per column (length must equal the column count)
+    rowDesc?: string[];   // longer description per row (length must equal the row count)
+}
+
 export interface Example {
     label: string;
     code: string;
     note?: string;   // shown as a muted caption while the example is selected
     params?: ExampleParam[];             // editable values, in panel order
     docs?: { [lhs: string]: string };    // comment text per assignment line
+    matrixMeta?: { [key: string]: MatrixMeta };  // row/column teaching labels per matrix knob
 }
 
 // Every example is verified against the analyzer before shipping: the error
@@ -226,6 +237,9 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     'P': 'point cloud, one column per point',
                     'moved': 'the cloud rotated then translated',
                 },
+                matrixMeta: {
+                    't': { rows: ['x', 'y', 'z'], rowDesc: ['shift along x', 'shift along y', 'shift along z'] },
+                },
             },
             {
                 label: 'ECEF to NED transform',
@@ -328,6 +342,11 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     'R': 'direction cosine matrix from q',
                     'vNav': 'velocity resolved in navigation axes, m/s',
                     'orthErr': 'residual of R transpose R in Frobenius norm',
+                },
+                matrixMeta: {
+                    'qa': { rows: ['w', 'x', 'y', 'z'], rowDesc: ['scalar part', 'x component', 'y component', 'z component'] },
+                    'qb': { rows: ['w', 'x', 'y', 'z'], rowDesc: ['scalar part', 'x component', 'y component', 'z component'] },
+                    'vBody': { rows: ['x', 'y', 'z'], rowDesc: ['forward axis', 'right axis', 'down axis'] },
                 },
             },
             {
@@ -2291,6 +2310,13 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 docs: {
                     'P': 'transition probabilities, rows sum to one',
                     'p': 'probability mass on each state',
+                },
+                matrixMeta: {
+                    'P': {
+                        rows: ['s1', 's2', 's3'], cols: ['s1', 's2', 's3'],
+                        rowDesc: ['from state 1', 'from state 2', 'from state 3'],
+                    },
+                    'p': { rows: ['s1', 's2', 's3'], rowDesc: ['start in state 1', 'start in state 2', 'start in state 3'] },
                 },
             },
             {

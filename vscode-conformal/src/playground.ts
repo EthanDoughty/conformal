@@ -19,7 +19,7 @@ import { tags } from '@lezer/highlight';
 // @ts-expect-error -- Fable emits no declarations; the interfaces below mirror Interop.fs
 import { analyzeSource } from './fable-out/Interop.js';
 
-import { EXAMPLE_GROUPS, EXAMPLES, Example, generateCode, defaultParamValues } from './playground-examples';
+import { EXAMPLE_GROUPS, EXAMPLES, Example, MatrixMeta, generateCode, defaultParamValues } from './playground-examples';
 
 // ---------------------------------------------------------------------------
 // Types from the Fable output (mirroring Interop.fs records; see server.ts)
@@ -430,6 +430,109 @@ function matrixToString(cells: string[][]): string {
     return '[' + cells.map(r => r.join(', ')).join('; ') + ']';
 }
 
+const MATRIX_MAX = 6;   // resize cap per dimension
+
+// Build the square-cell matrix knob into `block`: an editable grid of number
+// squares with optional row/column teaching labels and resize steppers. Labels
+// show only at the original shape (resizing would misalign them). Every edit or
+// resize reassembles the "[a, b; c, d]" string and calls onChange.
+function buildMatrixKnob(
+    block: HTMLElement, key: string, initial: LiteralMatrix,
+    meta: MatrixMeta | undefined, onChange: (value: string) => void,
+): void {
+    const origRows = initial.rows, origCols = initial.cols;
+    let cells: string[][] = initial.cells.map(r => r.slice());
+    // A matrix with three or more columns, or one carrying labels, is too wide
+    // for a single grid track, so it takes the full panel width.
+    if (origCols >= 3 || meta) block.classList.add('pg-param-wide');
+
+    const wrap = document.createElement('div');
+    wrap.className = 'pg-matrix-wrap';
+
+    const span = (cls: string, text?: string): HTMLElement => {
+        const s = document.createElement('span');
+        s.className = cls;
+        if (text != null) s.textContent = text;
+        return s;
+    };
+    const commit = () => onChange(matrixToString(cells));
+
+    const resize = (dim: 'row' | 'col', delta: number) => {
+        const rows = cells.length, cols = cells[0].length;
+        if (dim === 'row') {
+            if (delta > 0 && rows < MATRIX_MAX) cells.push(new Array(cols).fill('0'));
+            else if (delta < 0 && rows > 1 && rows * cols > 2) cells.pop();
+        } else {
+            if (delta > 0 && cols < MATRIX_MAX) cells.forEach(r => r.push('0'));
+            else if (delta < 0 && cols > 1 && rows * cols > 2) cells.forEach(r => r.pop());
+        }
+        commit();
+        render();
+    };
+
+    const stepper = (labelText: string, dim: 'row' | 'col', count: number, rows: number, cols: number): HTMLElement => {
+        const grp = span('pg-matrix-step');
+        grp.appendChild(span('pg-matrix-steplabel', `${labelText} ${count}`));
+        const minus = document.createElement('button');
+        minus.type = 'button'; minus.className = 'pg-matrix-btn'; minus.textContent = '−';
+        minus.disabled = (dim === 'row' ? rows : cols) <= 1 || rows * cols <= 2;
+        minus.addEventListener('click', () => resize(dim, -1));
+        const plus = document.createElement('button');
+        plus.type = 'button'; plus.className = 'pg-matrix-btn'; plus.textContent = '+';
+        plus.disabled = (dim === 'row' ? rows : cols) >= MATRIX_MAX;
+        plus.addEventListener('click', () => resize(dim, +1));
+        grp.appendChild(minus);
+        grp.appendChild(plus);
+        return grp;
+    };
+
+    const render = () => {
+        wrap.textContent = '';
+        const rows = cells.length, cols = cells[0].length;
+        const atOriginal = rows === origRows && cols === origCols;
+        const colL = atOriginal && meta?.cols && meta.cols.length === cols ? meta.cols : null;
+        const rowL = atOriginal && meta?.rows && meta.rows.length === rows ? meta.rows : null;
+        const rowD = atOriginal && meta?.rowDesc && meta.rowDesc.length === rows ? meta.rowDesc : null;
+
+        const table = span('pg-matrix');
+        if (colL) {
+            const hr = span('pg-matrix-row');
+            if (rowL) hr.appendChild(span('pg-matrix-corner'));
+            for (let j = 0; j < cols; j++) hr.appendChild(span('pg-matrix-collabel', colL[j]));
+            table.appendChild(hr);
+        }
+        for (let i = 0; i < rows; i++) {
+            const rr = span('pg-matrix-row');
+            if (rowL) rr.appendChild(span('pg-matrix-rowlabel', rowL[i]));
+            for (let j = 0; j < cols; j++) {
+                const ci = document.createElement('input');
+                ci.type = 'text';
+                ci.spellcheck = false;
+                ci.className = 'pg-matrix-cell';
+                ci.value = cells[i][j];
+                const ii = i, jj = j;
+                ci.addEventListener('input', () => { cells[ii][jj] = ci.value.trim() || '0'; commit(); });
+                rr.appendChild(ci);
+            }
+            if (rowD) rr.appendChild(span('pg-matrix-rowdesc', rowD[i]));
+            table.appendChild(rr);
+        }
+        wrap.appendChild(table);
+
+        const controls = span('pg-matrix-controls');
+        if (rows === 1) controls.appendChild(stepper('length', 'col', cols, rows, cols));
+        else if (cols === 1) controls.appendChild(stepper('length', 'row', rows, rows, cols));
+        else {
+            controls.appendChild(stepper('rows', 'row', rows, rows, cols));
+            controls.appendChild(stepper('cols', 'col', cols, rows, cols));
+        }
+        wrap.appendChild(controls);
+    };
+
+    render();
+    block.appendChild(wrap);
+}
+
 // ---------------------------------------------------------------------------
 // Bootstrap
 // ---------------------------------------------------------------------------
@@ -640,32 +743,8 @@ function main(): void {
             const desc = (current.docs || {})[p.key] || '';
             const mat = parseLiteralMatrix(paramValues[p.key] ?? '');
             if (matrixEligible(mat)) {
-                // A grid of number squares; editing any cell reassembles the
-                // whole "[a, b; c, d]" string in the same house style.
-                const key = p.key;
-                const mgrid = document.createElement('div');
-                mgrid.className = 'pg-matrix';
-                mgrid.style.gridTemplateColumns = `repeat(${mat.cols}, minmax(34px, 1fr))`;
-                const cellInputs: HTMLInputElement[][] = [];
-                for (let i = 0; i < mat.rows; i++) {
-                    cellInputs[i] = [];
-                    for (let j = 0; j < mat.cols; j++) {
-                        const ci = document.createElement('input');
-                        ci.type = 'text';
-                        ci.spellcheck = false;
-                        ci.className = 'pg-matrix-cell';
-                        ci.value = mat.cells[i][j];
-                        ci.addEventListener('input', () => {
-                            const cells = cellInputs.map(row => row.map(x => x.value.trim() || '0'));
-                            paramValues[key] = matrixToString(cells);
-                            scheduleRegenerate();
-                        });
-                        cellInputs[i].push(ci);
-                        mgrid.appendChild(ci);
-                    }
-                }
-                if (desc !== '') mgrid.title = desc;
-                block.appendChild(mgrid);
+                buildMatrixKnob(block, p.key, mat, (current.matrixMeta || {})[p.key],
+                    (v) => { paramValues[p.key] = v; scheduleRegenerate(); });
             } else {
                 const input = document.createElement('input');
                 input.type = 'text';

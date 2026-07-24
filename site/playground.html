@@ -193,6 +193,8 @@
             gap: 6px;
         }
 
+        .pg-param-wide { grid-column: 1 / -1; }
+
         .pg-param-name {
             font-size: 0.8rem;
             font-weight: 500;
@@ -223,24 +225,78 @@
             box-shadow: 0 0 0 2px rgba(212, 160, 33, 0.16);
         }
 
-        /* Matrix knob: a grid of number squares matching the matrix shape. */
-        .pg-matrix {
-            display: grid;
-            gap: 4px;
+        /* Matrix knob: square cells, optional teaching labels, resize steppers. */
+        .pg-matrix-wrap {
+            display: inline-flex;
+            flex-direction: column;
+            gap: 8px;
+            max-width: 100%;
+            overflow-x: auto;
         }
 
+        .pg-matrix { display: inline-flex; flex-direction: column; gap: 4px; }
+
+        .pg-matrix-row { display: flex; align-items: center; gap: 4px; }
+
         .pg-matrix-cell {
-            width: 100%;
+            width: 44px;
+            height: 44px;
             box-sizing: border-box;
             background: var(--code-bg);
             color: var(--text);
             border: 1px solid var(--border);
-            border-radius: 5px;
-            padding: 5px 4px;
-            font-size: 0.78rem;
+            border-radius: 6px;
+            padding: 2px;
+            font-size: 0.76rem;
             font-family: 'JetBrains Mono', 'Fira Code', monospace;
             text-align: center;
         }
+
+        .pg-matrix-corner { width: 52px; flex-shrink: 0; }
+
+        .pg-matrix-rowlabel,
+        .pg-matrix-collabel {
+            flex-shrink: 0;
+            font-size: 0.7rem;
+            color: var(--muted);
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+        }
+
+        .pg-matrix-rowlabel { width: 52px; text-align: right; }
+        .pg-matrix-collabel { width: 44px; text-align: center; }
+
+        .pg-matrix-rowdesc {
+            margin-left: 4px;
+            font-size: 0.72rem;
+            color: var(--muted);
+            white-space: nowrap;
+        }
+
+        .pg-matrix-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px 16px;
+            align-items: center;
+        }
+
+        .pg-matrix-step { display: inline-flex; align-items: center; gap: 6px; }
+        .pg-matrix-steplabel { font-size: 0.72rem; color: var(--muted); }
+
+        .pg-matrix-btn {
+            width: 22px;
+            height: 22px;
+            line-height: 1;
+            padding: 0;
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--muted);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.95rem;
+        }
+
+        .pg-matrix-btn:hover:not(:disabled) { color: var(--text); border-color: var(--muted); }
+        .pg-matrix-btn:disabled { opacity: 0.35; cursor: default; }
 
         .pg-reset {
             background: none;
@@ -421,6 +477,6 @@
         </div>
     </footer>
 
-    <script src="./playground.js?v=20"></script>
+    <script src="./playground.js?v=21"></script>
 </body>
 </html>
