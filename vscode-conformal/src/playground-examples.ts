@@ -636,6 +636,9 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     'S': 'innovation covariance',
                     'K': 'Kalman gain',
                 },
+                matrixMeta: {
+                    'z': { rows: ['x', 'y'], rowDesc: ['measured x', 'measured y'] },
+                },
             },
             {
                 label: 'Controllability and observability',
@@ -1585,6 +1588,9 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     'd': 'discount factor for each payment',
                     'price': 'present value of the cash flows',
                 },
+                matrixMeta: {
+                    'cf': { cols: ['yr 1', 'yr 2', 'yr 3', 'yr 4'] },
+                },
             },
             {
                 label: 'CAPM beta',
@@ -1649,6 +1655,11 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     'mu_r': 'expected return of each asset',
                     'ret': 'portfolio expected return',
                     'var_p': 'portfolio variance',
+                },
+                matrixMeta: {
+                    'w': { rows: ['A1', 'A2', 'A3'], rowDesc: ['weight, asset 1', 'weight, asset 2', 'weight, asset 3'] },
+                    'mu_r': { rows: ['A1', 'A2', 'A3'], rowDesc: ['return, asset 1', 'return, asset 2', 'return, asset 3'] },
+                    'Sigma': { rows: ['A1', 'A2', 'A3'], cols: ['A1', 'A2', 'A3'] },
                 },
             },
         ],
@@ -2182,6 +2193,9 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     'A': 'linear system being integrated',
                     'y': 'current state',
                     'h': 'step size',
+                },
+                matrixMeta: {
+                    'y': { rows: ['x', 'v'], rowDesc: ['position', 'velocity'] },
                 },
             },
             {
