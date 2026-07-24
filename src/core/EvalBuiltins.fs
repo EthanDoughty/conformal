@@ -50,6 +50,20 @@ let PASSTHROUGH_BUILTINS : Set<string> =
         "rgb2gray"
     ]
 
+// Builtins whose n-ary forms take a dimension or option argument and always
+// return a result the same size as the first argument. Membership is a claim
+// about EVERY documented call form, so keep it narrow: atan2d and complex
+// broadcast, typecast resizes, and unique reshapes, so none of them belong
+// here even though they sit in the passthrough set.
+let SIZE_PRESERVING_NARY_BUILTINS : Set<string> =
+    Set.ofList [
+        "sort"; "cumsum"; "cumprod"; "circshift"
+        "triu"; "tril"; "flip"; "round"; "sortrows"; "detrend"; "gradient"
+        "cummax"; "cummin"; "normalize"; "rescale"; "zscore"; "fftshift"
+        "ifftshift"; "unwrap"; "sgolayfilt"
+        "movmean"; "movstd"; "movmedian"; "movsum"; "movmax"; "movmin"
+    ]
+
 let SCALAR_PREDICATE_BUILTINS : Set<string> =
     Set.ofList [
         "isa"
@@ -424,6 +438,21 @@ let private handleDiag
             else Some (Matrix(minDim r c, Concrete 1))
         | _ -> Some UnknownShape
     else None
+
+
+// roots(c) for a length-n coefficient vector returns an (n-1)-by-1 column.
+let private handleRoots
+    (args: IndexArg list) (env: Env) (warnings: ResizeArray<Diagnostic>)
+    (ctx: AnalysisContext)
+    (evalExprFn: Expr -> Env -> ResizeArray<Diagnostic> -> AnalysisContext -> Shape)
+    : Shape option =
+    if args.Length <> 1 then Some UnknownShape
+    else
+        match evalArgShape args.[0] env warnings ctx evalExprFn with
+        | Matrix(Concrete 1, c) -> Some (Matrix(subDim c (Concrete 1), Concrete 1))
+        | Matrix(r, Concrete 1) -> Some (Matrix(subDim r (Concrete 1), Concrete 1))
+        | IsScalar              -> Some (Matrix(Concrete 0, Concrete 1))
+        | _                     -> Some UnknownShape
 
 
 let private handleInv
@@ -2245,9 +2274,10 @@ let evalBuiltinCall
         | "cross"          -> handleCross args env warnings ctx evalExprFn
         | "conv"           -> handleConv args env warnings ctx evalExprFn
         | "deconv"         -> Some (Matrix(Unknown, Concrete 1))
+        | "roots"          -> handleRoots args env warnings ctx evalExprFn
         | "polyfit"        -> handlePolyfit args env ctx evalExprFn
         | "polyval"        -> handlePolyval args env warnings ctx evalExprFn
-        | "interp1"        -> handleInterp1 fname args env warnings ctx evalExprFn
+        | "interp1" | "spline" -> handleInterp1 fname args env warnings ctx evalExprFn
         | "meshgrid"       -> handleMeshgrid args env warnings ctx evalExprFn
         | "struct"         -> handleStruct args env warnings ctx evalExprFn
         | "fieldnames"     -> handleFieldnames args
@@ -2373,6 +2403,12 @@ let evalBuiltinCall
         // Declarative dispatch
         if Set.contains fname PASSTHROUGH_BUILTINS || Set.contains fname TYPE_CAST_BUILTINS then
             if args.Length = 1 then evalArgShape args.[0] env warnings ctx evalExprFn
+            elif args.Length >= 1 && Set.contains fname SIZE_PRESERVING_NARY_BUILTINS then
+                // Evaluate args[0] once and keep its shape; walk the rest so that
+                // errors nested in a dimension argument are still reported.
+                let s0 = evalArgShape args.[0] env warnings ctx evalExprFn
+                for a in List.tail args do evalArgShape a env warnings ctx evalExprFn |> ignore
+                s0
             else UnknownShape
         elif Set.contains fname SCALAR_PREDICATE_BUILTINS then
             if args.Length >= 1 then

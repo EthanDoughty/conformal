@@ -153,16 +153,18 @@ d2a = diff(A, 2);
 % EXPECT: d2a = unknown
 
 % ==========================================================================
-% cumsum/cumprod with 2 args → unknown
+% cumsum/cumprod with 2 args → size preserved (dim arg picks the axis, not
+% the extent: MATLAB's cumsum/cumprod with an explicit dimension return the
+% same size as the input)
 % ==========================================================================
 cs1 = cumsum(A);
 % EXPECT: cs1 = matrix[3 x 4]
 
 cs2 = cumsum(A, 2);
-% EXPECT: cs2 = unknown
+% EXPECT: cs2 = matrix[3 x 4]
 
 cp2 = cumprod(A, 2);
-% EXPECT: cp2 = unknown
+% EXPECT: cp2 = matrix[3 x 4]
 
 % ==========================================================================
 % atan2 with matching and mismatched shapes
