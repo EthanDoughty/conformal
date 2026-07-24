@@ -33,8 +33,8 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 label: 'Matrix multiply',
                 code: 'A = zeros(3,4);\nB = ones(5,6);\nC = A * B;\n',
                 params: [
-                    { key: 'A', label: 'Matrix A' },
-                    { key: 'B', label: 'Matrix B' },
+                    { key: 'A', label: 'Left factor' },
+                    { key: 'B', label: 'Right factor' },
                 ],
                 docs: {
                     'A': 'left factor of the product',
@@ -46,8 +46,8 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 label: 'Elementwise op',
                 code: 'A = zeros(2, 3);\nB = ones(3, 2);\nC = A .* B;\n',
                 params: [
-                    { key: 'A', label: 'Matrix A' },
-                    { key: 'B', label: 'Matrix B' },
+                    { key: 'A', label: 'First operand' },
+                    { key: 'B', label: 'Second operand' },
                 ],
                 docs: {
                     'A': 'first operand',
@@ -111,7 +111,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: 'dt = 1;\nCq = 8000;\nRrc = 0.015;\nCrc = 2400;\nA = [1, 0; 0, 1 - dt / (Rrc * Crc)];\nB = [-dt / Cq; dt / Crc];\nx = [0.9; 0];\nfor k = 1:60\n    x = A * x + B * 12;\nend\nv = 3.6 + 0.7 * x(1) - x(2);\n',
                 note: 'An equivalent-circuit battery state stepped over a discharge.',
                 params: [
-                    { key: 'dt', label: 'Time step' },
+                    { key: 'dt', label: 'Time step (s)' },
                     { key: 'Cq', label: 'Cell capacity' },
                     { key: 'Rrc', label: 'RC resistance' },
                     { key: 'Crc', label: 'RC capacitance' },
@@ -133,7 +133,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 note: 'Stopping distances over a speed sweep with reaction time.',
                 params: [
                     { key: 'v0', label: 'Speed sweep' },
-                    { key: 'mu_f', label: 'Friction' },
+                    { key: 'mu_f', label: 'Friction coefficient' },
                     { key: 'treact', label: 'Reaction time' },
                 ],
                 docs: {
@@ -151,7 +151,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 params: [
                     { key: 'gearRatios', label: 'Transmission gear ratios' },
                     { key: 'finalDrive', label: 'Final drive ratio' },
-                    { key: 'wheelRadius', label: 'Wheel radius (m)' },
+                    { key: 'wheelRadius', label: 'Wheel radius' },
                     { key: 'rpm', label: 'Engine speed sweep (rev/min)' },
                 ],
                 docs: {
@@ -216,7 +216,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: 'theta = pi / 4;\nR = [cos(theta), -sin(theta), 0; sin(theta), cos(theta), 0; 0, 0, 1];\nt = [1; 2; 0];\nP = zeros(3, 25);\nmoved = R * P + t * ones(1, 25);\n',
                 note: 'Rotate and translate a point cloud in one expression.',
                 params: [
-                    { key: 'theta', label: 'Rotation angle' },
+                    { key: 'theta', label: 'Rotation angle (rad)' },
                     { key: 't', label: 'Translation' },
                 ],
                 docs: {
@@ -357,9 +357,9 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: 'tas = 215;\nwdir = 305;\nwspd = 42;\ncrs = [78, 145, 260, 12, 330];\ndist = [95, 120, 210, 60, 140];\ndw = (wdir - crs) * pi / 180;\nwca = asin(wspd * sin(dw) / tas);\nhdg = mod(crs + wca * 180 / pi, 360);\ngs = tas * cos(wca) - wspd * cos(dw);\nxw = wspd * sin(dw);\nete = dist ./ gs * 60;\ntotal = sum(ete);\n',
                 note: 'A wind correction angle and ground speed solved for every leg of a route.',
                 params: [
-                    { key: 'tas', label: 'True airspeed' },
-                    { key: 'wdir', label: 'Wind direction' },
-                    { key: 'wspd', label: 'Wind speed' },
+                    { key: 'tas', label: 'True airspeed (kt)' },
+                    { key: 'wdir', label: 'Wind direction (deg)' },
+                    { key: 'wspd', label: 'Wind speed (kt)' },
                 ],
                 docs: {
                     'tas': 'true airspeed in knots',
@@ -386,8 +386,8 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: 'Tlo = 300;\nThi = 900;\nT = linspace(Tlo, Thi, 25);\nA0 = 1e7;\nEa = 80000;\nRg = 8.314;\nk = A0 * exp(-Ea ./ (Rg * T));\nratio = k(25) / k(1);\n',
                 note: 'Reaction rate constants over a temperature sweep with the hot-to-cold rate ratio.',
                 params: [
-                    { key: 'Tlo', label: 'Cold end' },
-                    { key: 'Thi', label: 'Hot end' },
+                    { key: 'Tlo', label: 'Coldest temperature' },
+                    { key: 'Thi', label: 'Hottest temperature' },
                     { key: 'A0', label: 'Pre-exponential factor' },
                     { key: 'Ea', label: 'Activation energy' },
                 ],
@@ -409,7 +409,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 params: [
                     { key: 'C0', label: 'Initial concentration' },
                     { key: 'k', label: 'Rate constant' },
-                    { key: 'dt', label: 'Time step' },
+                    { key: 'dt', label: 'Time step (s)' },
                 ],
                 docs: {
                     'C0': 'positive initial concentration in mol/L',
@@ -484,8 +484,8 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 note: 'Euler buckling loads swept across column lengths.',
                 params: [
                     { key: 'E', label: 'Elastic modulus' },
-                    { key: 'I', label: 'Second moment' },
-                    { key: 'Lv', label: 'Column lengths' },
+                    { key: 'I', label: 'Second moment of area' },
+                    { key: 'Lv', label: 'Column length sweep' },
                 ],
                 docs: {
                     'E': 'elastic modulus in Pa',
@@ -500,8 +500,8 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 note: 'Darcy-Weisbach losses across four segments at once.',
                 params: [
                     { key: 'L', label: 'Segment lengths' },
-                    { key: 'D', label: 'Diameters' },
-                    { key: 'v', label: 'Velocities' },
+                    { key: 'D', label: 'Segment diameters' },
+                    { key: 'v', label: 'Flow velocities' },
                     { key: 'f', label: 'Friction factor' },
                 ],
                 docs: {
@@ -520,7 +520,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 params: [
                     { key: 'M', label: 'Mass matrix' },
                     { key: 'K', label: 'Stiffness matrix' },
-                    { key: 'x', label: 'Initial sway' },
+                    { key: 'x', label: 'Initial displacement' },
                 ],
                 docs: {
                     'M': 'floor masses',
@@ -556,7 +556,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: 'dt = 1.0;\nalpha = 0.85;\nbeta = 0.005;\nx = [0; 0];\nz = 1000;\nfor k = 1:10\n    xp = [x(1) + dt * x(2); x(2)];\n    rres = z - xp(1);\n    x = [xp(1) + alpha * rres; xp(2) + (beta / dt) * rres];\nend\n',
                 note: 'The classic two-gain tracker smoothing noisy range measurements.',
                 params: [
-                    { key: 'dt', label: 'Time step' },
+                    { key: 'dt', label: 'Time step (s)' },
                     { key: 'alpha', label: 'Alpha gain' },
                     { key: 'beta', label: 'Beta gain' },
                     { key: 'z', label: 'Measured range' },
@@ -576,10 +576,10 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: "dt = 0.1;\nF = [1, 0, dt, 0; 0, 1, 0, dt; 0, 0, 1, 0; 0, 0, 0, 1];\nH = [1, 0, 0, 0; 0, 1, 0, 0];\nQ = 0.01 * eye(size(F, 1));\nRm = 0.5 * eye(size(H, 1));\nx = zeros(size(F, 1), 1);\nP = eye(size(F, 1));\nz = [10; 5];\nfor k = 1:20\n    x = F * x;\n    P = F * P * F' + Q;\n    S = H * P * H' + Rm;\n    K = P * H' / S;\n    x = x + K * (z - H * x);\n    P = (eye(size(F, 1)) - K * H) * P;\nend\n",
                 note: 'Predict and correct cycles of a constant-velocity Kalman tracker.',
                 params: [
-                    { key: 'dt', label: 'Time step' },
-                    { key: 'Q', label: 'Process noise' },
-                    { key: 'Rm', label: 'Measurement noise' },
-                    { key: 'z', label: 'Measurement' },
+                    { key: 'dt', label: 'Time step (s)' },
+                    { key: 'Q', label: 'Process noise covariance' },
+                    { key: 'Rm', label: 'Measurement noise covariance' },
+                    { key: 'z', label: 'Measured position' },
                 ],
                 docs: {
                     'dt': 'time between measurements',
@@ -800,7 +800,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: "X = [2.0, 100.0; 2.5, 130.0; 1.8, 90.0; 3.1, 160.0; 2.7, 145.0; 2.2, 110.0];\nlam = 0.1;\nn = size(X, 1);\nmu = mean(X);\nsd = std(X);\nZ = (X - ones(n, 1) * mu) ./ (ones(n, 1) * sd);\nchk_mean = mean(Z);\nchk_std = std(Z);\nG = (Z' * Z) / (n - 1);\nGs = (1 - lam) * G + lam * eye(size(X, 2));\n",
                 note: 'A data matrix centered and scaled to unit variance, then summarized by a shrunk correlation matrix.',
                 params: [
-                    { key: 'X', label: 'Feature matrix' },
+                    { key: 'X', label: 'Data matrix' },
                     { key: 'lam', label: 'Shrinkage fraction' },
                 ],
                 docs: {
@@ -843,9 +843,9 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: "t = linspace(0, 3, 12)';\namp = 2.5;\nrate = 0.8;\niters = 8;\ny = amp * exp(-rate * t);\np = [1.0; 0.3];\nfor k = 1:iters\n    m = p(1) * exp(-p(2) * t);\n    r = y - m;\n    J = [exp(-p(2) * t), -p(1) * t .* exp(-p(2) * t)];\n    d = (J' * J) \\ (J' * r);\n    p = p + d;\nend\nrms = norm(y - p(1) * exp(-p(2) * t)) / sqrt(numel(t));\n",
                 note: 'A decaying exponential fitted by repeated linear least squares steps on the linearized residual.',
                 params: [
-                    { key: 't', label: 'Sample times' },
+                    { key: 't', label: 'Sample times (s)' },
                     { key: 'amp', label: 'Signal amplitude' },
-                    { key: 'rate', label: 'Decay rate per second' },
+                    { key: 'rate', label: 'Decay rate' },
                     { key: 'iters', label: 'Gauss-Newton passes' },
                 ],
                 docs: {
@@ -888,7 +888,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: "X = zeros(100, 3);\ny = zeros(size(X, 1), 1);\nXtX = X' * X;\nbeta = inv(XtX) * X' * y;\nr = y - X * beta;\nsse = r' * r;\n",
                 note: 'Normal equations for a linear fit, from data matrix to residual.',
                 params: [
-                    { key: 'X', label: 'Data matrix' },
+                    { key: 'X', label: 'Design matrix' },
                     { key: 'y', label: 'Targets' },
                 ],
                 docs: {
@@ -905,7 +905,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: "t = linspace(0, 4, 15)';\ny = 1.8 * sin(0.9 * t);\np = [1.0; 0.7];\nlam = 0.01;\nfor k = 1:10\n    r = y - p(1) * sin(p(2) * t);\n    J = [sin(p(2) * t), p(1) * t .* cos(p(2) * t)];\n    d = (J' * J + lam * eye(2)) \\ (J' * r);\n    p = p + d;\n    lam = 0.5 * lam;\nend\nyfit = p(1) * sin(p(2) * t);\n",
                 note: 'A damped Gauss-Newton fit of a sine amplitude and frequency with the damping relaxed on every pass.',
                 params: [
-                    { key: 't', label: 'Sample times' },
+                    { key: 't', label: 'Sample times (s)' },
                     { key: 'lam', label: 'Initial damping' },
                 ],
                 docs: {
@@ -924,7 +924,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: "X = zeros(100, 3);\nyl = zeros(size(X, 1), 1);\nw = zeros(size(X, 2), 1);\neta = 0.1;\nfor k = 1:50\n    z = X * w;\n    prob = 1 ./ (1 + exp(-z));\n    grad = X' * (prob - yl) / size(X, 1);\n    w = w - eta * grad;\nend\n",
                 note: 'Fifty gradient steps with the sigmoid applied elementwise.',
                 params: [
-                    { key: 'X', label: 'Data matrix' },
+                    { key: 'X', label: 'Design matrix' },
                     { key: 'yl', label: 'Labels' },
                     { key: 'w', label: 'Initial weights' },
                     { key: 'eta', label: 'Learning rate' },
@@ -1025,7 +1025,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: "F = [0.2, 1.4, 3.1; 1.9, 0.5, 2.2; 0.7, 2.8, 1.0; 3.3, 0.9, 0.4; 1.1, 2.0, 2.6];\nk = 2;\nw = ones(size(F, 2), 1) / size(F, 2);\nscores = F * w;\n[ranked, order] = sort(scores, 'descend');\ntop_idx = order(1:k);\ntop_rows = F(top_idx, :);\ntop_mean = mean(top_rows);\nlift = top_mean - mean(F);\ngap = ranked(1) - ranked(k);\n",
                 note: 'Feature rows ranked by a composite score and reordered by the permutation that the sort returns.',
                 params: [
-                    { key: 'F', label: 'Feature matrix' },
+                    { key: 'F', label: 'Data matrix' },
                     { key: 'k', label: 'Candidates kept' },
                 ],
                 docs: {
@@ -1069,9 +1069,9 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: 'A = [0, 1; -4, 0];\nh = 0.2;\nsteps = 200;\nI = eye(size(A, 1));\nM = inv(I - (h / 2) * A) * (I + (h / 2) * A);\ndetM = det(M);\ny = I(:, 1);\nfor k = 1:steps\n    y = M * y;\nend\nE = norm(y);\n',
                 note: 'An undamped oscillator advanced by a fixed implicit propagator over many steps.',
                 params: [
-                    { key: 'A', label: 'Oscillator state matrix' },
-                    { key: 'h', label: 'Step size' },
-                    { key: 'steps', label: 'Time steps' },
+                    { key: 'A', label: 'State matrix' },
+                    { key: 'h', label: 'Time step (s)' },
+                    { key: 'steps', label: 'Number of steps' },
                 ],
                 docs: {
                     'A': 'state matrix of the oscillator',
@@ -1090,7 +1090,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: "zmin = -3;\nn = 61;\nz = linspace(zmin, 0, n)';\nE = 1 + z;\nH = 1 + z + z.^2 / 2;\nR = 1 + z + z.^2 / 2 + z.^3 / 6 + z.^4 / 24;\nG = [abs(E), abs(H), abs(R)];\npeak = max(G);\ntotal = norm(G * ones(3, 1));\n",
                 note: 'Amplification factors of three explicit one-step methods sampled along the negative real axis, where a peak magnitude above one marks a loss of stability.',
                 params: [
-                    { key: 'n', label: 'Samples along the axis' },
+                    { key: 'n', label: 'Sample count' },
                     { key: 'zmin', label: 'Left end of the axis' },
                 ],
                 docs: {
@@ -1110,7 +1110,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: 'steps = 200;\nh = 1 / steps;\nA = [0, 1; -9, 0];\nc = [0; 1];\ntarget = 0.5;\nM = eye(2) + h * A;\nY = zeros(2, steps + 1);\nZ = zeros(2, steps + 1);\nZ(:, 1) = [0; 1];\nfor k = 1:steps\n    Y(:, k+1) = M * Y(:, k) + h * c;\n    Z(:, k+1) = M * Z(:, k);\nend\ns = (target - Y(1, steps + 1)) / Z(1, steps + 1);\nu = Y + s * Z;\nmiss = u(1, steps + 1) - target;\n',
                 note: 'A linear boundary value problem solved by combining two initial value trajectories with one scalar weight.',
                 params: [
-                    { key: 'steps', label: 'Marching steps' },
+                    { key: 'steps', label: 'Number of steps' },
                     { key: 'target', label: 'Right boundary value' },
                 ],
                 docs: {
@@ -1167,8 +1167,8 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: 'f = @(t, y) [y(2); -9.81 * sin(y(1))];\nh = 0.01;\nN = 1000;\nt = zeros(1, N + 1);\nY = zeros(2, N + 1);\nY(:, 1) = [pi / 6; 0];\nfor i = 1:N\n    k1 = f(t(i), Y(:, i));\n    k2 = f(t(i) + h / 2, Y(:, i) + h / 2 * k1);\n    k3 = f(t(i) + h / 2, Y(:, i) + h / 2 * k2);\n    k4 = f(t(i) + h, Y(:, i) + h * k3);\n    Y(:, i + 1) = Y(:, i) + h / 6 * (k1 + 2 * k2 + 2 * k3 + k4);\n    t(i + 1) = t(i) + h;\nend\nplot(t, Y(1, :));\n',
                 note: 'A pendulum trajectory stepped by a hand-written fourth-order Runge-Kutta loop.',
                 params: [
-                    { key: 'h', label: 'Step size' },
-                    { key: 'N', label: 'Step count' },
+                    { key: 'h', label: 'Time step (s)' },
+                    { key: 'N', label: 'Number of steps' },
                 ],
                 docs: {
                     'f': 'pendulum state derivative',
@@ -1224,7 +1224,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 note: 'A square pulse carried across a uniform grid by a one sided upstream difference.',
                 params: [
                     { key: 'c', label: 'Courant number' },
-                    { key: 'sweeps', label: 'Time steps' },
+                    { key: 'sweeps', label: 'Number of steps' },
                     { key: 'u(40:80)', label: 'Pulse height' },
                 ],
                 docs: {
@@ -1248,9 +1248,9 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: 'Rg = 8.314;\nF = 96485;\nT = 298;\ni0 = 0.001;\nalphaA = 0.5;\nalphaC = 0.5;\neta = linspace(-0.1, 0.1, 81);\ni = i0 * (exp(alphaA * F * eta / (Rg * T)) - exp(-alphaC * F * eta / (Rg * T)));\nipk = max(i);\n',
                 note: 'The Butler-Volmer net current density traced over an overpotential sweep.',
                 params: [
-                    { key: 'i0', label: 'Exchange current' },
-                    { key: 'alphaA', label: 'Anodic coefficient' },
-                    { key: 'alphaC', label: 'Cathodic coefficient' },
+                    { key: 'i0', label: 'Exchange current density' },
+                    { key: 'alphaA', label: 'Anodic transfer coefficient' },
+                    { key: 'alphaC', label: 'Cathodic transfer coefficient' },
                     { key: 'T', label: 'Temperature' },
                 ],
                 docs: {
@@ -1314,7 +1314,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     { key: 'T', label: 'Temperature' },
                     { key: 'n', label: 'Electrons transferred' },
                     { key: 'E0', label: 'Standard potential' },
-                    { key: 'Q', label: 'Quotient sweep' },
+                    { key: 'Q', label: 'Reaction quotient sweep' },
                 ],
                 docs: {
                     'Rg': 'gas constant in joules per mole kelvin',
@@ -1435,9 +1435,9 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: "p.mass = 2.5;\np.k = 400;\np.c = 12;\nwn = sqrt(p.k / p.mass);\nzeta = p.c / (2 * sqrt(p.k * p.mass));\nif zeta < 1\n    kind = 'underdamped';\nelseif zeta == 1\n    kind = 'critically damped';\nelse\n    kind = 'overdamped';\nend\ndisp(['wn = ' num2str(wn) ' rad/s, zeta = ' num2str(zeta) ' (' kind ')']);\n",
                 note: 'A struct parameter bundle classifying a damped oscillator as underdamped, critically damped, or overdamped by its damping ratio.',
                 params: [
-                    { key: 'p.mass', label: 'Mass (kg)' },
-                    { key: 'p.k', label: 'Stiffness (N/m)' },
-                    { key: 'p.c', label: 'Damping (N s/m)' },
+                    { key: 'p.mass', label: 'Mass' },
+                    { key: 'p.k', label: 'Stiffness' },
+                    { key: 'p.c', label: 'Damping' },
                 ],
                 docs: {
                     'p.mass': 'oscillator mass in kg',
@@ -1485,7 +1485,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 note: 'A week of daily rainfall totals summarized by its wettest and driest days and the volume a roof would collect.',
                 params: [
                     { key: 'rainfall', label: 'Daily rainfall (mm)' },
-                    { key: 'roofArea', label: 'Catchment area (square meters)' },
+                    { key: 'roofArea', label: 'Catchment area (m²)' },
                 ],
                 docs: {
                     'rainfall': 'daily rainfall totals in millimeters',
@@ -1504,7 +1504,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: "t = 0:0.01:1;\nf = 5;\ny1 = sin(2 * pi * f * t);\ny2 = cos(2 * pi * f * t);\nfigure;\nplot(t, y1, 'b-');\nhold on\nplot(t, y2, 'r--');\nhold off\nlegend('sin', 'cos');\nxlabel('Time (s)');\nylabel('Amplitude');\n",
                 note: 'Two sinusoids overlaid with hold on and a legend, both curves fully tracked through the graphics calls.',
                 params: [
-                    { key: 't', label: 'Time grid (s)' },
+                    { key: 't', label: 'Sample times (s)' },
                     { key: 'f', label: 'Frequency (Hz)' },
                 ],
                 docs: {
@@ -1574,7 +1574,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: 't = linspace(0, 3, 120);\np = 100 + 5 * sin(2 * t) + t;\nfast = (p(3:120) + p(2:119) + p(1:118)) / 3;\nslow = (p(5:120) + p(4:119) + p(3:118) + p(2:117) + p(1:116)) / 5;\nsignal = fast(3:118) - slow;\n',
                 note: 'Fast and slow averages aligned by slicing, then differenced.',
                 params: [
-                    { key: 'p', label: 'Price model' },
+                    { key: 'p', label: 'Price series' },
                 ],
                 docs: {
                     't': 'time axis for 120 sessions',
@@ -1687,10 +1687,10 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: "h = 96;\nw = 144;\nxs = linspace(0, 1, w);\nys = linspace(0, 1, h);\nframe = (0.5 + 0.5 * cos(2 * pi * ys')) * (0.5 + 0.5 * sin(4 * pi * xs));\ndx = 6;\ndy = 3;\nmoved = circshift(frame, [dy, dx]);\ndelta = moved - frame;\nmag = abs(delta);\nrowEnergy = sum(mag, 2);\ncolEnergy = sum(mag, 1);\nfprintf('mean interframe change %.4f\\n', mean(mag(:)));\nfprintf('peak column energy %.3f\\n', max(colEnergy));\n",
                 note: 'A synthetic frame shifted by a few pixels and differenced against the original to expose motion.',
                 params: [
-                    { key: 'h', label: 'Frame height (pixels)' },
-                    { key: 'w', label: 'Frame width (pixels)' },
-                    { key: 'dx', label: 'Horizontal shift (pixels)' },
-                    { key: 'dy', label: 'Vertical shift (pixels)' },
+                    { key: 'h', label: 'Frame height' },
+                    { key: 'w', label: 'Frame width' },
+                    { key: 'dx', label: 'Horizontal shift' },
+                    { key: 'dy', label: 'Vertical shift' },
                 ],
                 docs: {
                     'h': 'frame height in pixels',
@@ -1712,8 +1712,8 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: "h = 120;\nw = 180;\nimg = 0.4 + 0.6 * rand(h, w);\nxs = linspace(-1, 1, w);\nys = linspace(-1, 1, h);\n[X, Y] = meshgrid(xs, ys);\nradius = sqrt(X.^2 + Y.^2);\nfalloff = 1.6;\nmask = exp(-falloff * radius.^2);\nshaded = img .* mask;\ncenterGain = max(mask(:));\ncornerGain = min(mask(:));\nlightKept = sum(shaded(:)) / sum(img(:));\nfprintf('center gain %.3f, corner gain %.3f, light kept %.3f\\n', centerGain, cornerGain, lightKept);\n",
                 note: 'A radial vignette mask built over the pixel grid and multiplied into a non-square image.',
                 params: [
-                    { key: 'h', label: 'Image height (pixels)' },
-                    { key: 'w', label: 'Image width (pixels)' },
+                    { key: 'h', label: 'Image height' },
+                    { key: 'w', label: 'Image width' },
                     { key: 'falloff', label: 'Vignette falloff strength' },
                 ],
                 docs: {
@@ -1776,10 +1776,10 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: 'y = [10; 5];\na = 1.1;\nb = 0.4;\nc = 0.1;\ndelta = 0.4;\ndt = 0.01;\nfor k = 1:1000\n    y = y + dt * [a * y(1) - b * y(1) * y(2); c * y(1) * y(2) - delta * y(2)];\nend\n',
                 note: 'Predator and prey populations stepped through a thousand updates.',
                 params: [
-                    { key: 'a', label: 'Prey growth' },
+                    { key: 'a', label: 'Prey growth rate' },
                     { key: 'b', label: 'Predation rate' },
                     { key: 'c', label: 'Conversion rate' },
-                    { key: 'delta', label: 'Predator death' },
+                    { key: 'delta', label: 'Predator death rate' },
                 ],
                 docs: {
                     'y': 'prey and predator counts',
@@ -1813,8 +1813,8 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 note: 'A two-compartment drug model decaying between compartments.',
                 params: [
                     { key: 'k10', label: 'Elimination rate' },
-                    { key: 'k12', label: 'To tissue' },
-                    { key: 'k21', label: 'To plasma' },
+                    { key: 'k12', label: 'Transfer to tissue' },
+                    { key: 'k21', label: 'Transfer to plasma' },
                     { key: 'x', label: 'Initial dose' },
                 ],
                 docs: {
@@ -1857,7 +1857,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 note: 'Roll separating force per unit width swept across several exit thicknesses.',
                 params: [
                     { key: 'h0', label: 'Entry thickness' },
-                    { key: 'hf', label: 'Exit sweep' },
+                    { key: 'hf', label: 'Exit thickness sweep' },
                     { key: 'R', label: 'Roll radius' },
                     { key: 'K', label: 'Strength coefficient' },
                 ],
@@ -1883,7 +1883,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     { key: 'h', label: 'Film coefficient' },
                     { key: 'm', label: 'Part mass' },
                     { key: 'Tq', label: 'Bath temperature' },
-                    { key: 'dt', label: 'Time step' },
+                    { key: 'dt', label: 'Time step (s)' },
                 ],
                 docs: {
                     'h': 'positive film coefficient in W per m2 K',
@@ -1904,7 +1904,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     { key: 'Y', label: 'Yield strength' },
                     { key: 'E', label: 'Elastic modulus' },
                     { key: 't', label: 'Sheet thickness' },
-                    { key: 'R', label: 'Radius sweep' },
+                    { key: 'R', label: 'Bend radius sweep' },
                 ],
                 docs: {
                     'Y': 'yield strength of the sheet in MPa',
@@ -2029,7 +2029,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: "A = [4, 1, 0; 1, 3, 1; 0, 1, 2];\nb = [1; 2; 3];\nx = zeros(size(A, 1), 1);\nr = b - A * x;\np = r;\nfor k = 1:numel(x)\n    Ap = A * p;\n    alpha = (r' * r) / (p' * Ap);\n    x = x + alpha * p;\n    rnew = r - alpha * Ap;\n    beta = (rnew' * rnew) / (r' * r);\n    p = rnew + beta * p;\n    r = rnew;\nend\nres = norm(b - A * x);\n",
                 note: 'A symmetric positive definite system solved by conjugate directions, which reach the exact answer in as many steps as there are unknowns.',
                 params: [
-                    { key: 'A', label: 'System matrix' },
+                    { key: 'A', label: 'Coefficient matrix' },
                     { key: 'b', label: 'Right-hand side' },
                     { key: 'x', label: 'Initial guess' },
                 ],
@@ -2087,7 +2087,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: 't = linspace(0, 1, 128);\ns = sin(2 * pi * 8 * t) + 0.5 * sin(2 * pi * 20 * t);\nS = fft(s);\nm = abs(S);\n',
                 note: 'A two-tone signal and its spectrum, lengths preserved end to end.',
                 params: [
-                    { key: 's', label: 'Signal model' },
+                    { key: 's', label: 'Input signal' },
                 ],
                 docs: {
                     't': 'one second of time, 128 samples',
@@ -2114,9 +2114,9 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: 'A = [0, 1; -4, 0];\ny = [1; 0];\nh = 0.01;\nfor k = 1:200\n    y = y + h * (A * y);\nend\n',
                 note: 'Forward Euler marching a two-state oscillator.',
                 params: [
-                    { key: 'A', label: 'System matrix' },
+                    { key: 'A', label: 'State matrix' },
                     { key: 'y', label: 'Initial state' },
-                    { key: 'h', label: 'Step size' },
+                    { key: 'h', label: 'Time step (s)' },
                 ],
                 docs: {
                     'A': 'linear system being integrated',
@@ -2165,7 +2165,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: 'Q = [3, 1; 1, 2];\nb = [1; 1];\nx = zeros(2, 1);\nalpha = 0.1;\nfor k = 1:50\n    g = Q * x - b;\n    x = x - alpha * g;\nend\nr = Q * x - b;\n',
                 note: 'Steepest descent on a quadratic, fifty steps with steady shapes.',
                 params: [
-                    { key: 'Q', label: 'Quadratic term' },
+                    { key: 'Q', label: 'Curvature matrix' },
                     { key: 'b', label: 'Linear term' },
                     { key: 'alpha', label: 'Step size' },
                 ],
@@ -2215,7 +2215,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: 'A = [10, 7, 8, 7; 7, 5, 6, 5; 8, 6, 10, 9; 7, 5, 9, 10];\nsteps = 3;\nxt = ones(size(A, 1), 1);\nb = A * xt;\nx = A \\ b;\nfor k = 1:steps\n    r = b - A * x;\n    d = A \\ r;\n    x = x + d;\nend\nerr = norm(x - xt) / norm(xt);\nres = norm(b - A * x) / norm(b);\n',
                 note: 'A badly conditioned solve corrected by solving again with the residual and adding the update back.',
                 params: [
-                    { key: 'A', label: 'System matrix' },
+                    { key: 'A', label: 'Coefficient matrix' },
                     { key: 'steps', label: 'Refinement passes' },
                 ],
                 docs: {
@@ -2237,7 +2237,6 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 note: 'Repeated neighbor averaging across an interior block while the boundary row stays fixed.',
                 params: [
                     { key: 'U(1, 1:32)', label: 'Boundary value' },
-                    { key: 'mid', label: 'Interior probe' },
                 ],
                 docs: {
                     'U': 'grid values over the square domain',
@@ -2248,14 +2247,15 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
             },
             {
                 label: 'KKT block assembly',
-                code: "Q = [2, 0, 0; 0, 2, 0; 0, 0, 2];\nA = [1, 1, 0; 0, 1, 1];\nK = [Q, A'; A, zeros(2, 2)];\nrhs = [zeros(3, 1); ones(2, 1)];\nsol = inv(K) * rhs;\n",
+                code: "Q = [2, 0, 0; 0, 2, 0; 0, 0, 2];\nA = [1, 1, 0; 0, 1, 1];\nK = [Q, A'; A, zeros(size(A, 1), size(A, 1))];\nrhs = [zeros(size(Q, 1), 1); ones(size(A, 1), 1)];\nsol = inv(K) * rhs;\n",
                 note: 'Four blocks concatenated into one saddle-point system.',
                 params: [
-                    { key: 'Q', label: 'Cost curvature' },
+                    { key: 'Q', label: 'Curvature matrix' },
+                    { key: 'A', label: 'Constraint matrix' },
                 ],
                 docs: {
                     'Q': 'quadratic cost on the primal variables',
-                    'A': 'two equality constraints',
+                    'A': 'equality constraint rows',
                     'K': 'saddle point system in four blocks',
                     'rhs': 'gradient target and constraint values',
                     'sol': 'primal solution then multipliers',
@@ -2298,7 +2298,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: "A = [1, 1, 1; 1e-4, 0, 0; 0, 1e-4, 0; 0, 0, 1e-4];\nQ = zeros(4, 3);\nR = zeros(3, 3);\nV = A;\nfor j = 1:3\n    R(j, j) = norm(V(:, j));\n    Q(:, j) = V(:, j) / R(j, j);\n    for k = j + 1:3\n        R(j, k) = Q(:, j)' * V(:, k);\n        V(:, k) = V(:, k) - R(j, k) * Q(:, j);\n    end\nend\north_defect = norm(Q' * Q - eye(3));\nfactor_error = norm(Q * R - A);\n",
                 note: 'A nearly parallel column block orthogonalized against the running remainder and checked for drift from the identity.',
                 params: [
-                    { key: 'A', label: 'Column block' },
+                    { key: 'A', label: 'Tall matrix' },
                 ],
                 docs: {
                     'A': 'column block fed to the factorization',
@@ -2343,8 +2343,8 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: "t = linspace(0, 1, 6)';\nA = [t.^0, t, t.^2];\ny = 1 + 2 * t + 0.5 * t.^2;\n[U, S, V] = svd(A);\nkappa_A = S(1, 1) / S(3, 3);\nG = A' * A;\n[Ug, Sg, Vg] = svd(G);\nkappa_G = Sg(1, 1) / Sg(3, 3);\nratio = kappa_G / (kappa_A^2);\nc_normal = G \\ (A' * y);\n",
                 note: 'A tall polynomial design matrix and its cross product measured side by side for conditioning.',
                 params: [
-                    { key: 't', label: 'Fit nodes' },
-                    { key: 'y', label: 'Fitted values' },
+                    { key: 't', label: 'Nodes' },
+                    { key: 'y', label: 'Values' },
                 ],
                 docs: {
                     't': 'node positions of the polynomial fit',
@@ -2379,7 +2379,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: "A = [2, 1; 1, 3];\nv = [1; 0];\nfor k = 1:20\n    w = A * v;\n    v = w / norm(w);\nend\nlambda = v' * A * v;\n",
                 note: 'Twenty power steps converging on the dominant eigenvector.',
                 params: [
-                    { key: 'A', label: 'Matrix' },
+                    { key: 'A', label: 'Symmetric matrix' },
                     { key: 'v', label: 'Starting vector' },
                 ],
                 docs: {
@@ -2437,7 +2437,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 note: 'A tridiagonal matrix driven toward triangular form by repeated factoring and reversed reassembly.',
                 params: [
                     { key: 'T', label: 'Tridiagonal matrix' },
-                    { key: 'steps', label: 'Sweeps' },
+                    { key: 'steps', label: 'QR sweeps' },
                 ],
                 docs: {
                     'T': 'symmetric tridiagonal matrix being reduced',
@@ -2478,7 +2478,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: 'A = [1e-14, 1, 2; 1, 3, 1; 2, 1, 5];\nn = size(A, 1);\nb = A * ones(n, 1);\nP = eye(n);\nP(1:2, 1:2) = [0, 1; 1, 0];\nx_naive = A \\ b;\nx_piv = (P * A) \\ (P * b);\ngap = norm(x_naive - x_piv);\npivot_ratio = abs(A(2, 1)) / abs(A(1, 1));\n',
                 note: 'The same well conditioned system solved in natural order and after swapping the two leading rows.',
                 params: [
-                    { key: 'A', label: 'System matrix' },
+                    { key: 'A', label: 'Coefficient matrix' },
                 ],
                 docs: {
                     'A': 'system matrix with a very small pivot',
@@ -2518,7 +2518,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 params: [
                     { key: 'qi', label: 'Initial rate' },
                     { key: 'Di', label: 'Decline rate' },
-                    { key: 'dt', label: 'Sample spacing' },
+                    { key: 'dt', label: 'Time step (days)' },
                 ],
                 docs: {
                     'qi': 'initial rate in barrels per day',
@@ -2581,7 +2581,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     { key: 'k', label: 'Permeability' },
                     { key: 'h', label: 'Pay thickness' },
                     { key: 'mu', label: 'Oil viscosity' },
-                    { key: 'pwf', label: 'Drawdown sweep' },
+                    { key: 'pwf', label: 'Bottomhole pressure sweep' },
                 ],
                 docs: {
                     'k': 'formation permeability in darcys',
@@ -2662,7 +2662,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 params: [
                     { key: 'r', label: 'Initial position' },
                     { key: 'v', label: 'Initial velocity' },
-                    { key: 'dt', label: 'Time step' },
+                    { key: 'dt', label: 'Time step (s)' },
                 ],
                 docs: {
                     'mu': 'gravitational parameter in km^3/s^2',
@@ -2704,7 +2704,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 params: [
                     { key: 'v', label: 'Launch velocity' },
                     { key: 'c', label: 'Drag coefficient' },
-                    { key: 'dt', label: 'Time step' },
+                    { key: 'dt', label: 'Time step (s)' },
                 ],
                 docs: {
                     'p': 'position in meters',
@@ -2776,7 +2776,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 note: 'A robot pose integrated from wheel speed and turn rate.',
                 params: [
                     { key: 'v', label: 'Forward speed' },
-                    { key: 'omega', label: 'Turn rate' },
+                    { key: 'omega', label: 'Turn rate (rad/s)' },
                 ],
                 docs: {
                     'pose': 'x, y, and heading',
@@ -2792,7 +2792,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 params: [
                     { key: 'L1', label: 'Link 1 length' },
                     { key: 'L2', label: 'Link 2 length' },
-                    { key: 'q', label: 'Initial angles' },
+                    { key: 'q', label: 'Initial angles (rad)' },
                     { key: 'target', label: 'Target point' },
                 ],
                 docs: {
@@ -2812,7 +2812,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 params: [
                     { key: 'Kp', label: 'P gains' },
                     { key: 'Kd', label: 'D gains' },
-                    { key: 'qref', label: 'Reference angles' },
+                    { key: 'qref', label: 'Reference angles (rad)' },
                 ],
                 docs: {
                     'M': 'joint space inertia matrix',
@@ -2831,8 +2831,8 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: 'q1 = 0.5;\nq2 = 0.8;\nL1 = 0.5;\nL2 = 0.35;\np1 = L1 * [cos(q1); sin(q1)];\np2 = p1 + L2 * [cos(q1 + q2); sin(q1 + q2)];\nJ = [-L1 * sin(q1) - L2 * sin(q1 + q2), -L2 * sin(q1 + q2); L1 * cos(q1) + L2 * cos(q1 + q2), L2 * cos(q1 + q2)];\nvel = J * [0.1; 0.2];\n',
                 note: 'End effector position and velocity through the Jacobian.',
                 params: [
-                    { key: 'q1', label: 'Shoulder angle' },
-                    { key: 'q2', label: 'Elbow angle' },
+                    { key: 'q1', label: 'Shoulder angle (rad)' },
+                    { key: 'q2', label: 'Elbow angle (rad)' },
                     { key: 'L1', label: 'Link 1 length' },
                     { key: 'L2', label: 'Link 2 length' },
                 ],
@@ -2878,7 +2878,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 params: [
                     { key: 'xD', label: 'Distillate purity' },
                     { key: 'xB', label: 'Bottoms composition' },
-                    { key: 'alpha', label: 'Volatility sweep' },
+                    { key: 'alpha', label: 'Relative volatility sweep' },
                 ],
                 docs: {
                     'xD': 'distillate purity between zero and one',
@@ -2934,7 +2934,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: "t = linspace(0, 6.2, 100);\ns = sin(3 * t);\nr0 = s * s' / 100;\nr5 = s(1:95) * s(6:100)' / 95;\nr10 = s(1:90) * s(11:100)' / 90;\nlags = [r0, r5, r10];\n",
                 note: 'Three lags computed from shifted slices and stitched together.',
                 params: [
-                    { key: 's', label: 'Signal model' },
+                    { key: 's', label: 'Input signal' },
                 ],
                 docs: {
                     't': 'time axis',
@@ -2965,7 +2965,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: 'n = 64;\na = zeros(n, 1);\na(1:5) = 1;\nb = zeros(n, 1);\nb(3:8) = 1;\ny = ifft(fft(a) .* fft(b));\nd = conv(a, b);\ngap = norm(y - d(1:n));\nplot(abs(y));\n',
                 note: 'A circular convolution formed by multiplying two spectra, checked against the leading block of the plain convolution.',
                 params: [
-                    { key: 'n', label: 'Transform length in samples' },
+                    { key: 'n', label: 'Transform length (samples)' },
                 ],
                 docs: {
                     'n': 'transform length in samples',
@@ -2981,9 +2981,9 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: 'fs = 1000;\nN = 512;\nD = 40;\nt = linspace(0, (N - 1) / fs, N);\na = exp(-4 * t) .* sin(2 * pi * 25 * t);\nb = [zeros(1, D), a(1:N - D)];\n[r, lags] = xcorr(a, b);\n[peak, at] = max(r);\nlag_est = lags(at);\ndelay_ms = -1000 * lag_est / fs;\nplot(lags, r);\n',
                 note: 'A delayed copy of a decaying burst correlated against the original to recover the shift from the peak lag.',
                 params: [
-                    { key: 'fs', label: 'Sample rate in Hz' },
-                    { key: 'N', label: 'Record length in samples' },
-                    { key: 'D', label: 'Applied delay in samples' },
+                    { key: 'fs', label: 'Sample rate (Hz)' },
+                    { key: 'N', label: 'Record length (samples)' },
+                    { key: 'D', label: 'Applied delay (samples)' },
                 ],
                 docs: {
                     'fs': 'sample rate in Hz',
@@ -3003,7 +3003,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: 't = linspace(0, 1, 200);\ns = sin(12 * t);\nd = s(1:4:200);\n',
                 note: 'Every fourth sample kept, the stepped range folded to its length.',
                 params: [
-                    { key: 's', label: 'Signal model' },
+                    { key: 's', label: 'Input signal' },
                 ],
                 docs: {
                     't': 'time axis',
@@ -3016,7 +3016,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: 't = linspace(0, 6.2, 100);\ns = sin(20 * t) + 0.3 * sin(45 * t);\ny = 0.25 * s(1:98) + 0.5 * s(2:99) + 0.25 * s(3:100);\n',
                 note: 'A three-tap smoother written as shifted slice arithmetic.',
                 params: [
-                    { key: 's', label: 'Signal model' },
+                    { key: 's', label: 'Input signal' },
                 ],
                 docs: {
                     't': 'time axis',
@@ -3046,8 +3046,8 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: "fs = 4000;\nf0 = 300;\nt = linspace(0, 80 / fs, 81)';\ntmpl = sin(2 * pi * f0 * t) .* hamming(81);\nnoise = 0.2 * randn(400, 1);\nx = noise;\nx(121:201) = x(121:201) + tmpl;\nh = flipud(tmpl);\ny = conv(x, h);\npeak = max(abs(y));\nenergy = norm(tmpl)^2;\ngain = peak / energy;\nplot(abs(y));\n",
                 note: 'A known burst recovered from a noisy record by convolving with a time-reversed copy of the template.',
                 params: [
-                    { key: 'fs', label: 'Sample rate in Hz' },
-                    { key: 'f0', label: 'Template tone frequency in Hz' },
+                    { key: 'fs', label: 'Sample rate (Hz)' },
+                    { key: 'f0', label: 'Template tone frequency (Hz)' },
                 ],
                 docs: {
                     'fs': 'sample rate in Hz',
@@ -3068,9 +3068,9 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: "fs = 500;\nN = 400;\nL = 9;\nt = linspace(0, (N - 1) / fs, N);\nx = sin(2 * pi * 6 * t) + 0.3 * sin(2 * pi * 90 * t);\nh = ones(1, L) / L;\nxs = conv(x, h, 'same');\nresid = x - xs;\nrms_resid = sqrt(mean(resid .^ 2));\npeak_resid = max(abs(resid));\nfrac = rms_resid / sqrt(mean(x .^ 2));\nplot(t, xs);\n",
                 note: 'A boxcar kernel convolved in length-preserving mode so the residual against the raw record lines up sample for sample.',
                 params: [
-                    { key: 'fs', label: 'Sample rate in Hz' },
-                    { key: 'N', label: 'Record length in samples' },
-                    { key: 'L', label: 'Smoothing window length' },
+                    { key: 'fs', label: 'Sample rate (Hz)' },
+                    { key: 'N', label: 'Record length (samples)' },
+                    { key: 'L', label: 'Window length (samples)' },
                 ],
                 docs: {
                     'fs': 'sample rate in Hz',
@@ -3091,9 +3091,9 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: "fs = 800;\nNh = 256;\nf0 = 90;\nN = 2 * Nh;\nt = linspace(0, (N - 1) / fs, N);\ntone = sin(2 * pi * f0 * t);\nx = tone + 0.2 * randn(size(t));\nw = hamming(N)';\nX = fft(x .* w);\nmag = abs(X(1:Nh)) / N;\n[pk, k] = max(mag);\nf_peak = (k - 1) * fs / N;\ncrest = pk / mean(mag);\nplot(mag);\n",
                 note: 'A tone buried in additive noise gets windowed and transformed so the strongest magnitude bin gives the frequency estimate.',
                 params: [
-                    { key: 'fs', label: 'Sample rate in Hz' },
-                    { key: 'Nh', label: 'Half record length in samples' },
-                    { key: 'f0', label: 'Tone frequency in Hz' },
+                    { key: 'fs', label: 'Sample rate (Hz)' },
+                    { key: 'Nh', label: 'Half record length (samples)' },
+                    { key: 'f0', label: 'Tone frequency (Hz)' },
                 ],
                 docs: {
                     'fs': 'sample rate in Hz',
@@ -3116,9 +3116,9 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: "fs = 1000;\nf0 = 60;\nr = 0.95;\nw0 = 2 * pi * f0 / fs;\nb = [1, -2 * cos(w0), 1];\na = [1, -2 * r * cos(w0), r^2];\nt = linspace(0, 500 / fs, 501)';\nclean = sin(2 * pi * 7 * t);\nx = clean + 0.8 * sin(2 * pi * f0 * t);\ny = filter(b, a, x);\nbefore = norm(x - clean) / norm(clean);\nafter = norm(y - clean) / norm(clean);\nplot(t, y);\n",
                 note: 'A second-order notch tuned to the mains frequency and applied to a hum-contaminated record.',
                 params: [
-                    { key: 'fs', label: 'Sample rate in Hz' },
-                    { key: 'f0', label: 'Notch center frequency in Hz' },
-                    { key: 'r', label: 'Pole radius setting the notch width' },
+                    { key: 'fs', label: 'Sample rate (Hz)' },
+                    { key: 'f0', label: 'Notch center frequency (Hz)' },
+                    { key: 'r', label: 'Pole radius' },
                 ],
                 docs: {
                     'fs': 'sample rate in Hz',
@@ -3140,8 +3140,8 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: "fs = 2000;\namp = 1.5;\nt = linspace(0, 1023 / fs, 1024)';\ns = amp * sin(2 * pi * 50 * t);\nw = 0.3 * randn(1024, 1);\nx = s + w;\nrms_s = norm(s) / sqrt(1024);\nrms_w = norm(w) / sqrt(1024);\nsnr_db = 20 * log10(rms_s / rms_w);\ncrest = max(abs(x)) / (norm(x) / sqrt(1024));\nfprintf('SNR %.1f dB, crest %.2f\\n', snr_db, crest);\n",
                 note: 'Root-mean-square levels of a tone and its noise turned into a signal-to-noise ratio in decibels and a crest factor.',
                 params: [
-                    { key: 'fs', label: 'Sample rate in Hz' },
-                    { key: 'amp', label: 'Tone amplitude in volts' },
+                    { key: 'fs', label: 'Sample rate (Hz)' },
+                    { key: 'amp', label: 'Tone amplitude' },
                 ],
                 docs: {
                     'fs': 'sample rate in Hz',
@@ -3183,7 +3183,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: "N = 16;\nm = linspace(0, N - 1, N);\nW = exp((-2i * pi / N) * (m' * m));\nG = W' * W;\ndev = norm(G - N * eye(N));\nx = cos((pi / 4) * m');\nX = W * x;\ngap = norm(X - fft(x));\n",
                 note: 'A discrete transform matrix built from powers of a root of unity, checked against a scaled identity and against the fast transform.',
                 params: [
-                    { key: 'N', label: 'Transform size in points' },
+                    { key: 'N', label: 'Transform length (samples)' },
                 ],
                 docs: {
                     'N': 'transform size in points',
@@ -3201,9 +3201,9 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: "fs = 1024;\nN = 1024;\nt = (0:N-1) / fs;\nx = sin(2 * pi * 100 * t) + 0.5 * sin(2 * pi * 300 * t);\nw = hamming(N)';\nxw = x .* w;\nX = fftshift(fft(xw));\nf = (-N/2:N/2-1) * (fs / N);\nmag = abs(X) / N;\n",
                 note: 'A two-tone signal is Hamming windowed before an FFT with a centered frequency axis.',
                 params: [
-                    { key: 'fs', label: 'Sampling rate' },
-                    { key: 'N', label: 'Record length' },
-                    { key: 'x', label: 'Signal model' },
+                    { key: 'fs', label: 'Sample rate (Hz)' },
+                    { key: 'N', label: 'Record length (samples)' },
+                    { key: 'x', label: 'Input signal' },
                 ],
                 docs: {
                     'fs': 'sampling rate in Hz',
@@ -3248,7 +3248,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 code: "t = 0:0.1:6.2;\ns = sin(t);\nM = [s; cos(t)];\np = M * M';\n",
                 note: 'Every inferred shape appears inline. Toggle Shape annotations to hide them.',
                 params: [
-                    { key: 't', label: 'Time range' },
+                    { key: 't', label: 'Sample times' },
                 ],
                 docs: {
                     't': 'a range with a folded length',
