@@ -186,11 +186,9 @@ let private constructorSizeArgDims (arg: Expr) (env: Env) (ctx: AnalysisContext)
     match arg with
     // size(X) as the sole argument: adopt X's extents directly.
     | Apply(_, Var(_, "size"), [IndexExpr(_, Var(_, srcName))]) ->
-        match Env.get env srcName with
-        | Scalar        -> (Concrete 1, Concrete 1)
-        | Matrix(r, c)  -> (r, c)
-        | Cell(r, c, _) -> (r, c)
-        | _             -> (Unknown, Unknown)
+        match shapeExtents (Env.get env srcName) with
+        | Some (r, c) -> (r, c)
+        | None        -> (Unknown, Unknown)
     | _ ->
         // A named variable already known to be non-scalar is a size vector, not
         // an extent.  Bottom (never assigned) keeps today's symbolic reading so

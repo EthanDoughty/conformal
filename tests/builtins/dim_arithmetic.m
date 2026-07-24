@@ -25,7 +25,7 @@ E = zeros(n+2, 3*m);
 F = reshape(A, 2*n, m+1);
 % EXPECT: F = matrix[(2*n) x (m+1)]
 
-% Edge case: nested function call returns None
+% Edge case: max of two symbolic extents has no representation
 G = zeros(length(A), m);
 % EXPECT: G = matrix[None x m]
 

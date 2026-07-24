@@ -45,6 +45,43 @@ let rec exprToDimWithEnd (expr: Expr) (env: Env) (endDim: Dim) : Dim =
     | _ -> Unknown
 
 
+/// Builtins whose value is a single extent derived from an argument's shape.
+let SHAPE_QUERY_BUILTINS : Set<string> = Set.ofList ["numel"; "length"; "size"]
+
+/// Row and column extents of a shape, or None when the shape carries none.
+/// Struct is excluded on purpose: a struct array's element count is not modeled.
+let shapeExtents (s: Shape) : (Dim * Dim) option =
+    match s with
+    | Scalar        -> Some (Concrete 1, Concrete 1)
+    | Matrix(r, c)  -> Some (r, c)
+    | Cell(r, c, _) -> Some (r, c)
+    | _             -> None
+
+/// True when either extent is a non-point dim or a literal zero.  Zero is
+/// excluded because an empty-literal accumulator (K = {}; A = []) keeps a zero
+/// extent that MATLAB would have grown, and folding it turns a sound unknown
+/// into a confident wrong answer.
+let private extentsUnfoldable (r: Dim) (c: Dim) =
+    match r, c with
+    | Unknown, _ | _, Unknown | Range _, _ | _, Range _ -> true
+    | Concrete 0, _ | _, Concrete 0 -> true
+    | _ -> false
+
+let numelDim (s: Shape) : Dim =
+    match shapeExtents s with
+    | Some (r, c) when not (extentsUnfoldable r c) -> mulDim r c
+    | _ -> Unknown
+
+let lengthDim (s: Shape) : Dim =
+    match shapeExtents s with
+    | Some (r, c) when not (extentsUnfoldable r c) ->
+        match r, c with
+        | Concrete 1, d | d, Concrete 1 -> d
+        | Concrete m, Concrete n -> Concrete (max m n)
+        | _ -> Unknown            // max of two symbolics is not representable
+    | _ -> Unknown
+
+
 /// Convert an expression to a Dim without End support.
 /// When ctx (AnalysisContext) is provided, checks value_ranges for exact scalar values.
 let rec exprToDimIr (expr: Expr) (env: Env) : Dim =
@@ -90,6 +127,31 @@ and exprToDimIrCtx (expr: Expr) (env: Env) (ctx: Context.AnalysisContext option)
             | "-" -> subDim l r
             | "*" -> mulDim l r
             | _   -> Unknown   // unsupported operators
+    // A shape query written inline in a dimension argument.  Restricted to a
+    // bare variable argument so the shape can be read from env without
+    // evaluating (DimExtract precedes EvalExpr in compile order), which is the
+    // same restriction the statement-level hook in StmtFuncAnalysis already uses.
+    | Apply(_, Var(_, fname), fnArgs) when Set.contains fname SHAPE_QUERY_BUILTINS ->
+        match ctx with
+        | None -> Unknown          // no shadowing information available: stay conservative
+        | Some c ->
+            let shadowed =
+                c.call.functionRegistry.ContainsKey fname
+                || c.call.nestedFunctionRegistry.ContainsKey fname
+                || c.ws.privateFunctions.ContainsKey fname
+                || c.ws.externalFunctions.ContainsKey fname
+                || (match Env.get env fname with FunctionHandle _ -> true | _ -> false)
+            if shadowed then Unknown
+            else
+                match fname, fnArgs with
+                | "numel",  [IndexExpr(_, Var(_, v))] -> numelDim  (Env.get env v)
+                | "length", [IndexExpr(_, Var(_, v))] -> lengthDim (Env.get env v)
+                | "size",   [IndexExpr(_, Var(_, v)); IndexExpr(_, kExpr)] ->
+                    match shapeExtents (Env.get env v), exprToDimIrCtx kExpr env ctx with
+                    | Some (r, _), Concrete 1 when r <> Unknown -> r
+                    | Some (_, cD), Concrete 2 when cD <> Unknown -> cD
+                    | _ -> Unknown      // k >= 3 is left to the ndArraySlices path
+                | _ -> Unknown
     | _ -> Unknown
 
 

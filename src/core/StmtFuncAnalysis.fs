@@ -910,12 +910,16 @@ and analyzeStmtIr
                 | Matrix(Concrete 1, d) when d <> Unknown -> applySizeAlias ctx env name d false
                 | Matrix(d, Concrete 1) when d <> Unknown -> applySizeAlias ctx env name d false
                 | Matrix(Concrete m, Concrete n) -> Some { lo = Finite (max m n); hi = Finite (max m n) }
+                | Cell(Concrete 1, d, _) when d <> Unknown -> applySizeAlias ctx env name d false   // length
+                | Cell(d, Concrete 1, _) when d <> Unknown -> applySizeAlias ctx env name d false   // length
+                | Cell(Concrete m, Concrete n, _) -> Some { lo = Finite (max m n); hi = Finite (max m n) }  // length
                 | _ -> None
             | Apply(_, Var(_, "numel"), [IndexExpr(_, argExpr)]) ->
                 let argShape = match argExpr with Var(_, n) -> Env.get env n | _ -> UnknownShape
                 match argShape with
                 | Scalar -> Some { lo = Finite 1; hi = Finite 1 }
                 | Matrix(Concrete m, Concrete n) -> Some { lo = Finite (m * n); hi = Finite (m * n) }
+                | Cell(Concrete m, Concrete n, _) -> Some { lo = Finite (m * n); hi = Finite (m * n) }
                 | _ -> None
             | _ -> None
 
@@ -1653,6 +1657,12 @@ and private analyzeAssignMulti
                                 let len = max m n
                                 ctx.cst.valueRanges <- Map.add tgt { lo = Finite len; hi = Finite len } ctx.cst.valueRanges
                                 TightenDomains.tightenDomains ctx env
+                            | Cell(Concrete 1, d, _) when d <> Unknown -> applySizeAlias ctx env tgt d true |> ignore
+                            | Cell(d, Concrete 1, _) when d <> Unknown -> applySizeAlias ctx env tgt d true |> ignore
+                            | Cell(Concrete m, Concrete n, _) ->
+                                let len = max m n
+                                ctx.cst.valueRanges <- Map.add tgt { lo = Finite len; hi = Finite len } ctx.cst.valueRanges
+                                TightenDomains.tightenDomains ctx env
                             | _ -> ()
                         | _ -> ()
                 // numel() propagation: inject concrete interval
@@ -1667,6 +1677,10 @@ and private analyzeAssignMulti
                             | Scalar ->
                                 ctx.cst.valueRanges <- Map.add tgt { lo = Finite 1; hi = Finite 1 } ctx.cst.valueRanges
                             | Matrix(Concrete m, Concrete n) ->
+                                let count = m * n
+                                ctx.cst.valueRanges <- Map.add tgt { lo = Finite count; hi = Finite count } ctx.cst.valueRanges
+                                TightenDomains.tightenDomains ctx env
+                            | Cell(Concrete m, Concrete n, _) ->
                                 let count = m * n
                                 ctx.cst.valueRanges <- Map.add tgt { lo = Finite count; hi = Finite count } ctx.cst.valueRanges
                                 TightenDomains.tightenDomains ctx env
