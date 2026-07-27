@@ -15,15 +15,22 @@ export interface ExampleParam {
     label: string;  // short name shown beside the input
 }
 
-// Optional teaching annotations for a matrix/vector knob. Short symbols in
-// rows/cols sit in the grid gutter and header; rowDesc holds a longer, plain
-// description shown beside each row. All are only rendered while the knob is at
-// its original shape; resizing hides them (they would no longer line up).
+// Optional teaching annotations for a matrix/vector knob, shown under its size
+// badge as a legend naming what the entries along an axis hold. Where a row
+// carries both a bare symbol and a description, the description is what shows,
+// since a lone "x" teaches nothing; word-length labels like "sat 1" show as they
+// are. A knob resized past its labelled entries pads with generic indices, so
+// growing a dimension extends the legend rather than blanking it.
 export interface MatrixMeta {
-    rows?: string[];      // short label per row (length must equal the row count)
-    cols?: string[];      // short label per column (length must equal the column count)
-    rowDesc?: string[];   // longer description per row (length must equal the row count)
+    rows?: string[];      // short label per row
+    cols?: string[];      // short label per column
+    rowDesc?: string[];   // longer description per row, preferred over a symbolic rows label
 }
+
+// One axis of a matrix knob's shape: a fixed size (number) or the name of a
+// template dimension (string). Several matrices naming the same dimension resize
+// together, so the whole template stays conformant when one of them grows.
+export type DimSpec = number | string;
 
 export interface Example {
     label: string;
@@ -32,6 +39,9 @@ export interface Example {
     params?: ExampleParam[];             // editable values, in panel order
     docs?: { [lhs: string]: string };    // comment text per assignment line
     matrixMeta?: { [key: string]: MatrixMeta };  // row/column teaching labels per matrix knob
+    shapes?: { [key: string]: [DimSpec, DimSpec] };  // param -> [rows, cols], each a fixed size or a shared dimension name
+    dimLabels?: { [dim: string]: string };           // short noun shown on a dimension's resize stepper
+    dimMin?: { [dim: string]: number };              // smallest size the template still means something at (default 1)
 }
 
 // Every example is verified against the analyzer before shipping: the error
@@ -120,6 +130,13 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     'x_cam': { rows: ['x', 'y'], rowDesc: ['x position', 'y position'] },
                     'x_rad': { rows: ['x', 'y'], rowDesc: ['x position', 'y position'] },
                 },
+                shapes: {
+                    'x_cam': ['state', 1],
+                    'P_cam': ['state', 'state'],
+                    'x_rad': ['state', 1],
+                    'P_rad': ['state', 'state'],
+                },
+                dimLabels: { 'state': 'state' },
             },
             {
                 label: 'Battery RC model',
@@ -642,7 +659,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
             },
             {
                 label: 'Controllability and observability',
-                code: 'A = [0 1 0; 0 0 1; -2 -5 -4];\nB = [0; 0; 1];\nC = [1 0 0];\nWc = [B, A * B, A^2 * B];\nWo = [C; C * A; C * A^2];\nrc = rank(Wc);\nro = rank(Wo);\ndisp(num2str([rc, ro]));\n',
+                code: 'A = [0, 1, 0; 0, 0, 1; -2, -5, -4];\nB = [0; 0; 1];\nC = [1, 0, 0];\nWc = [B, A * B, A^2 * B];\nWo = [C; C * A; C * A^2];\nrc = rank(Wc);\nro = rank(Wo);\ndisp(num2str([rc, ro]));\n',
                 note: 'A controllability matrix and an observability matrix assembled from powers of the state matrix.',
                 params: [
                     { key: 'A', label: 'State matrix' },
@@ -658,6 +675,12 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     'rc': 'rank of the controllability matrix',
                     'ro': 'rank of the observability matrix',
                 },
+                shapes: {
+                    'A': ['n', 'n'],
+                    'B': ['n', 1],
+                    'C': [1, 'n'],
+                },
+                dimLabels: { 'n': 'states' },
             },
             {
                 label: 'Frequency response sweep',
@@ -829,6 +852,13 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     'A1': 'closest rank-one matrix to A',
                     'gap': 'residual norm minus second singular value',
                 },
+                shapes: {
+                    'A': ['m', 'n'],
+                },
+                dimLabels: { 'm': 'rows', 'n': 'cols' },
+                // A single row or column leaves one singular value, so the
+                // second one the example reads would not exist.
+                dimMin: { 'm': 2, 'n': 2 },
             },
             {
                 label: 'Covariance matrix',
@@ -1657,8 +1687,8 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     'var_p': 'portfolio variance',
                 },
                 matrixMeta: {
-                    'w': { rows: ['A1', 'A2', 'A3'], rowDesc: ['weight, asset 1', 'weight, asset 2', 'weight, asset 3'] },
-                    'mu_r': { rows: ['A1', 'A2', 'A3'], rowDesc: ['return, asset 1', 'return, asset 2', 'return, asset 3'] },
+                    'w': { rows: ['A1', 'A2', 'A3'], rowDesc: ['asset 1 weight', 'asset 2 weight', 'asset 3 weight'] },
+                    'mu_r': { rows: ['A1', 'A2', 'A3'], rowDesc: ['asset 1 return', 'asset 2 return', 'asset 3 return'] },
                     'Sigma': { rows: ['A1', 'A2', 'A3'], cols: ['A1', 'A2', 'A3'] },
                 },
             },
@@ -2048,6 +2078,11 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                     'r': 'residual after the solve',
                     'relres': 'residual norm relative to b',
                 },
+                shapes: {
+                    'A': ['n', 'n'],
+                    'b': ['n', 1],
+                },
+                dimLabels: { 'n': 'size' },
             },
             {
                 label: 'BFGS inverse Hessian update',
@@ -2368,7 +2403,7 @@ export const EXAMPLE_GROUPS: { group: string; items: Example[] }[] = [
                 },
                 matrixMeta: {
                     'P': {
-                        rows: ['s1', 's2', 's3'], cols: ['s1', 's2', 's3'],
+                        rows: ['s1', 's2', 's3'], cols: ['to state 1', 'to state 2', 'to state 3'],
                         rowDesc: ['from state 1', 'from state 2', 'from state 3'],
                     },
                     'p': { rows: ['s1', 's2', 's3'], rowDesc: ['start in state 1', 'start in state 2', 'start in state 3'] },

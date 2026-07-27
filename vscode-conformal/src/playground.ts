@@ -19,7 +19,7 @@ import { tags } from '@lezer/highlight';
 // @ts-expect-error -- Fable emits no declarations; the interfaces below mirror Interop.fs
 import { analyzeSource } from './fable-out/Interop.js';
 
-import { EXAMPLE_GROUPS, EXAMPLES, Example, MatrixMeta, generateCode, defaultParamValues } from './playground-examples';
+import { EXAMPLE_GROUPS, EXAMPLES, Example, DimSpec, MatrixMeta, generateCode, defaultParamValues } from './playground-examples';
 
 // ---------------------------------------------------------------------------
 // Types from the Fable output (mirroring Interop.fs records; see server.ts)
@@ -430,107 +430,116 @@ function matrixToString(cells: string[][]): string {
     return '[' + cells.map(r => r.join(', ')).join('; ') + ']';
 }
 
-const MATRIX_MAX = 6;   // resize cap per dimension
+const MATRIX_CELL_MAX = 4;   // per-axis cap that keeps a resized grid an eligible knob (see matrixEligible)
+const LEGEND_WIDE_AT = 48;   // legend length past which a knob claims the whole panel row
 
-// Build the square-cell matrix knob into `block`: an editable grid of number
-// squares with optional row/column teaching labels and resize steppers. Labels
-// show only at the original shape (resizing would misalign them). Every edit or
-// resize reassembles the "[a, b; c, d]" string and calls onChange.
-function buildMatrixKnob(
-    block: HTMLElement, key: string, initial: LiteralMatrix,
-    meta: MatrixMeta | undefined, onChange: (value: string) => void,
+// One resize control on a knob. It changes a named template dimension, so
+// pressing it can grow several matrices at once; the panel computes the range
+// (canDec/canInc) and does the actual regeneration.
+interface KnobStepper {
+    label: string;
+    size: number;
+    canDec: boolean;
+    canInc: boolean;
+    onDec: () => void;
+    onInc: () => void;
+}
+
+// Resize a cell grid to (targetRows x targetCols), keeping existing entries.
+// A square matrix (both axes are the same dimension) grows identity-style so a
+// covariance or rotation stays well-formed; every other new entry is 0. The
+// user never sees these numbers (the knob shows only the shape); they exist so
+// the generated code the analyzer reads is a well-formed matrix of the shape.
+function resizeCells(cells: string[][], targetRows: number, targetCols: number, square: boolean): string[][] {
+    const out: string[][] = [];
+    const srcCols = cells[0].length;
+    for (let i = 0; i < targetRows; i++) {
+        const row: string[] = [];
+        for (let j = 0; j < targetCols; j++) {
+            if (i < cells.length && j < srcCols) row.push(cells[i][j]);
+            else row.push(square && i === j ? '1' : '0');
+        }
+        out.push(row);
+    }
+    return out;
+}
+
+// Choose which of a knob's two label lists to show for one axis. Short labels
+// are often bare symbols (x, y, z) that explain nothing on their own, so where
+// descriptions sit alongside them the descriptions read better. Once the short
+// labels are words in their own right (sat 1, seg 2) they win, since a full
+// description per entry would run past the width of a panel cell.
+function pickAxisLabels(short?: string[], desc?: string[]): string[] | undefined {
+    const symbolic = short == null || short.every(s => s.length <= 2);
+    if (symbolic && desc != null && desc.length > 0) return desc;
+    return short != null && short.length > 0 ? short : undefined;
+}
+
+// Names for one axis, padded out to `count` so a knob that has been resized
+// past its labelled entries keeps its legend instead of blanking it.
+function axisNames(count: number, kind: 'row' | 'col', short?: string[], desc?: string[]): string[] | null {
+    if (count < 2) return null;   // a single entry has no ordering to teach
+    const source = pickAxisLabels(short, desc);
+    if (!source) return null;
+    const out: string[] = [];
+    for (let i = 0; i < count; i++) out.push(source[i] ?? `${kind} ${i + 1}`);
+    return out;
+}
+
+// Build the shape knob into `block`: a compact "rows x cols" size badge, any
+// dimension steppers, and a legend naming what the entries along each axis hold.
+// There is no value editing. The analyzer is shape-only, so the knob only plays
+// with dimensions; the template's literals fill themselves in behind the scenes
+// when a dimension changes.
+function buildShapeKnob(
+    block: HTMLElement, initial: LiteralMatrix, steppers: KnobStepper[], meta?: MatrixMeta,
 ): void {
-    const origRows = initial.rows, origCols = initial.cols;
-    let cells: string[][] = initial.cells.map(r => r.slice());
-    // A matrix with three or more columns, or one carrying labels, is too wide
-    // for a single grid track, so it takes the full panel width.
-    if (origCols >= 3 || meta) block.classList.add('pg-param-wide');
-
-    const wrap = document.createElement('div');
-    wrap.className = 'pg-matrix-wrap';
-
     const span = (cls: string, text?: string): HTMLElement => {
         const s = document.createElement('span');
         s.className = cls;
         if (text != null) s.textContent = text;
         return s;
     };
-    const commit = () => onChange(matrixToString(cells));
 
-    const resize = (dim: 'row' | 'col', delta: number) => {
-        const rows = cells.length, cols = cells[0].length;
-        if (dim === 'row') {
-            if (delta > 0 && rows < MATRIX_MAX) cells.push(new Array(cols).fill('0'));
-            else if (delta < 0 && rows > 1 && rows * cols > 2) cells.pop();
-        } else {
-            if (delta > 0 && cols < MATRIX_MAX) cells.forEach(r => r.push('0'));
-            else if (delta < 0 && cols > 1 && rows * cols > 2) cells.forEach(r => r.pop());
-        }
-        commit();
-        render();
-    };
+    const wrap = document.createElement('div');
+    wrap.className = 'pg-shape-wrap';
+    wrap.appendChild(span('pg-shape-badge', `${initial.rows} × ${initial.cols}`));
 
-    const stepper = (labelText: string, dim: 'row' | 'col', count: number, rows: number, cols: number): HTMLElement => {
-        const grp = span('pg-matrix-step');
-        grp.appendChild(span('pg-matrix-steplabel', `${labelText} ${count}`));
-        const minus = document.createElement('button');
-        minus.type = 'button'; minus.className = 'pg-matrix-btn'; minus.textContent = '−';
-        minus.disabled = (dim === 'row' ? rows : cols) <= 1 || rows * cols <= 2;
-        minus.addEventListener('click', () => resize(dim, -1));
-        const plus = document.createElement('button');
-        plus.type = 'button'; plus.className = 'pg-matrix-btn'; plus.textContent = '+';
-        plus.disabled = (dim === 'row' ? rows : cols) >= MATRIX_MAX;
-        plus.addEventListener('click', () => resize(dim, +1));
-        grp.appendChild(minus);
-        grp.appendChild(plus);
-        return grp;
-    };
-
-    const render = () => {
-        wrap.textContent = '';
-        const rows = cells.length, cols = cells[0].length;
-        const atOriginal = rows === origRows && cols === origCols;
-        const colL = atOriginal && meta?.cols && meta.cols.length === cols ? meta.cols : null;
-        const rowL = atOriginal && meta?.rows && meta.rows.length === rows ? meta.rows : null;
-        const rowD = atOriginal && meta?.rowDesc && meta.rowDesc.length === rows ? meta.rowDesc : null;
-
-        const table = span('pg-matrix');
-        if (colL) {
-            const hr = span('pg-matrix-row');
-            if (rowL) hr.appendChild(span('pg-matrix-corner'));
-            for (let j = 0; j < cols; j++) hr.appendChild(span('pg-matrix-collabel', colL[j]));
-            table.appendChild(hr);
-        }
-        for (let i = 0; i < rows; i++) {
-            const rr = span('pg-matrix-row');
-            if (rowL) rr.appendChild(span('pg-matrix-rowlabel', rowL[i]));
-            for (let j = 0; j < cols; j++) {
-                const ci = document.createElement('input');
-                ci.type = 'text';
-                ci.spellcheck = false;
-                ci.className = 'pg-matrix-cell';
-                ci.value = cells[i][j];
-                const ii = i, jj = j;
-                ci.addEventListener('input', () => { cells[ii][jj] = ci.value.trim() || '0'; commit(); });
-                rr.appendChild(ci);
-            }
-            if (rowD) rr.appendChild(span('pg-matrix-rowdesc', rowD[i]));
-            table.appendChild(rr);
-        }
-        wrap.appendChild(table);
-
+    if (steppers.length > 0) {
         const controls = span('pg-matrix-controls');
-        if (rows === 1) controls.appendChild(stepper('length', 'col', cols, rows, cols));
-        else if (cols === 1) controls.appendChild(stepper('length', 'row', rows, rows, cols));
-        else {
-            controls.appendChild(stepper('rows', 'row', rows, rows, cols));
-            controls.appendChild(stepper('cols', 'col', cols, rows, cols));
+        for (const st of steppers) {
+            const grp = span('pg-matrix-step');
+            grp.appendChild(span('pg-matrix-steplabel', `${st.label} ${st.size}`));
+            const minus = document.createElement('button');
+            minus.type = 'button'; minus.className = 'pg-matrix-btn'; minus.textContent = '−';
+            minus.disabled = !st.canDec;
+            minus.addEventListener('click', st.onDec);
+            const plus = document.createElement('button');
+            plus.type = 'button'; plus.className = 'pg-matrix-btn'; plus.textContent = '+';
+            plus.disabled = !st.canInc;
+            plus.addEventListener('click', st.onInc);
+            grp.appendChild(minus);
+            grp.appendChild(plus);
+            controls.appendChild(grp);
         }
         wrap.appendChild(controls);
-    };
+    }
 
-    render();
     block.appendChild(wrap);
+
+    const rowNames = axisNames(initial.rows, 'row', meta?.rows, meta?.rowDesc);
+    const colNames = axisNames(initial.cols, 'col', meta?.cols);
+    for (const [kind, names] of [['rows', rowNames], ['cols', colNames]] as const) {
+        if (!names) continue;
+        const text = names.join(', ');
+        // A legend of spelled-out entries wraps to several lines inside one
+        // narrow grid cell, so a long one takes the full panel width instead.
+        if (text.length > LEGEND_WIDE_AT) block.classList.add('pg-param-wide');
+        const line = span('pg-shape-legend');
+        line.appendChild(span('pg-shape-legend-kind', `${kind}:`));
+        line.appendChild(document.createTextNode(' ' + text));
+        block.appendChild(line);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -728,6 +737,81 @@ function main(): void {
         head.appendChild(reset);
         paramsHost.appendChild(head);
 
+        // Shape model: each param may bind its rows/cols to a fixed size or a
+        // named template dimension. Steppers change a dimension, and every
+        // matrix that names it is regenerated together, so the template stays
+        // conformant. A param with no shape has no steppers (locked, editable).
+        const shapes = current.shapes || {};
+        const dimLabels = current.dimLabels || {};
+        const dimMin = current.dimMin || {};
+
+        // The live size of a dimension, read straight from the first literal
+        // matrix that binds it, so paramValues stays the single source of truth.
+        const dimSize = (d: string): number => {
+            for (const key of Object.keys(shapes)) {
+                const m = parseLiteralMatrix(paramValues[key] ?? '');
+                if (!m) continue;
+                if (shapes[key][0] === d) return m.rows;
+                if (shapes[key][1] === d) return m.cols;
+            }
+            return 1;
+        };
+        const resolveDim = (sp: DimSpec, d: string, val: number): number =>
+            typeof sp === 'number' ? sp : (sp === d ? val : dimSize(sp));
+
+        // A dimension can move to `next` only if it stays at or above the size
+        // the template still means something at, and every matrix bound to it
+        // stays an eligible knob shape there (no 1x1 scalar, nothing past the cap).
+        const dimOk = (d: string, next: number): boolean => {
+            if (next < Math.max(1, dimMin[d] ?? 1)) return false;
+            for (const key of Object.keys(shapes)) {
+                const sp = shapes[key];
+                if (sp[0] !== d && sp[1] !== d) continue;
+                const tr = resolveDim(sp[0], d, next);
+                const tc = resolveDim(sp[1], d, next);
+                if (tr < 1 || tc < 1) return false;
+                if (tr === 1 && tc === 1) return false;
+                if (tr > MATRIX_CELL_MAX || tc > MATRIX_CELL_MAX || tr * tc > 16) return false;
+            }
+            return true;
+        };
+
+        const resizeDim = (d: string, delta: number) => {
+            const next = dimSize(d) + delta;
+            if (!dimOk(d, next)) return;
+            for (const key of Object.keys(shapes)) {
+                const sp = shapes[key];
+                if (sp[0] !== d && sp[1] !== d) continue;
+                const m = parseLiteralMatrix(paramValues[key] ?? '');
+                if (!m) continue;
+                const tr = resolveDim(sp[0], d, next);
+                const tc = resolveDim(sp[1], d, next);
+                paramValues[key] = matrixToString(resizeCells(m.cells, tr, tc, sp[0] === sp[1]));
+            }
+            buildParamsPanel();
+            regenerate();
+        };
+
+        // Steppers for one param: one per distinct named dimension it binds.
+        const steppersFor = (key: string): KnobStepper[] => {
+            const sp = shapes[key];
+            if (!sp) return [];
+            const dims: string[] = [];
+            if (typeof sp[0] === 'string') dims.push(sp[0]);
+            if (typeof sp[1] === 'string' && sp[1] !== sp[0]) dims.push(sp[1]);
+            return dims.map(d => {
+                const size = dimSize(d);
+                return {
+                    label: dimLabels[d] || d,
+                    size,
+                    canDec: dimOk(d, size - 1),
+                    canInc: dimOk(d, size + 1),
+                    onDec: () => resizeDim(d, -1),
+                    onInc: () => resizeDim(d, +1),
+                };
+            });
+        };
+
         // Each knob is a grid cell: name on top, input, then its description.
         // The grid aligns the cells regardless of description length.
         const grid = document.createElement('div');
@@ -743,8 +827,10 @@ function main(): void {
             const desc = (current.docs || {})[p.key] || '';
             const mat = parseLiteralMatrix(paramValues[p.key] ?? '');
             if (matrixEligible(mat)) {
-                buildMatrixKnob(block, p.key, mat, (current.matrixMeta || {})[p.key],
-                    (v) => { paramValues[p.key] = v; scheduleRegenerate(); });
+                // A matrix is a shape to play with, not values to type: show its
+                // size, any dimension steppers (none => locked, shape shown),
+                // and the legend naming what its rows and columns hold.
+                buildShapeKnob(block, mat, steppersFor(p.key), (current.matrixMeta || {})[p.key]);
             } else {
                 const input = document.createElement('input');
                 input.type = 'text';
