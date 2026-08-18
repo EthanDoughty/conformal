@@ -396,24 +396,6 @@
             border: 1px solid rgba(212, 160, 33, 0.2);
         }
 
-        /* Migrate */
-        .migrate-section {
-            padding: 48px 0;
-            border-top: 1px solid var(--border);
-        }
-
-        .migrate-section h2 {
-            font-size: 1.3rem;
-            font-weight: 600;
-            margin-bottom: 12px;
-        }
-
-        .migrate-section p {
-            color: var(--muted);
-            font-size: 0.925rem;
-            max-width: 640px;
-        }
-
         /* Steps */
         .steps {
             display: flex;
@@ -518,9 +500,12 @@
         <section class="hero">
             <h1><span>Conformal</span></h1>
             <p class="tagline">
-                Conformal is a free code checker for MATLAB. It reads your code without running it and tells you
-                where something will break, usually a matrix that is the wrong size for what comes next.
-                You do not need a MATLAB license to use it.
+                Conformal is a free static code analyzer for the MATLAB language.
+                It tracks shapes across functions and files, resolves symbolic dimensions,
+                and reports the exact line where a mismatch originates.
+                Size errors are found deterministically using
+                path-sensitive analysis and relational loop bounds.
+                Conformal does not require a MATLAB license.
             </p>
             <div class="buttons">
                 <a href="playground.html" class="btn btn-primary">
@@ -559,9 +544,9 @@ R = <span class="code-func">process</span>(A, w);</code></pre>
   <span class="dim-warn">matrix[10 x 3] vs matrix[4 x 1]</span>
   (in process, called from line 8)
 
-<span class="code-comment">The shapes follow into the function.</span>
-<span class="code-comment">data is 10x3, weights is 4x1.</span>
-<span class="code-comment">Line 2 is where it breaks.</span></code></pre>
+<span class="code-comment">Shapes follow into the function</span>
+<span class="code-comment">data dimensions are 10x3 and weights dimensions are 4x1</span>
+<span class="code-comment">Line 2 is the location of the bug</span></code></pre>
                 </div>
             </div>
         </section>
@@ -569,13 +554,15 @@ R = <span class="code-func">process</span>(A, w);</code></pre>
         <!-- Playground callout -->
         <section class="playground-callout">
             <div>
-                <h2>Try it on real problems, right now</h2>
+                <h2>Try it on real problems</h2>
                 <p>
-                    The playground runs the full checker in your browser with nothing to install,
-                    and your code never leaves the page. It comes loaded with worked examples from
-                    across engineering, from Kalman filters to beam deflection. Pick one, change
-                    its values in place, and watch the shapes and warnings react. A toggle adds
-                    comments explaining every variable.
+                    The playground runs the Conformal analyzer on a single file in your own browser
+                    without needing to install it. Paste in code of your own, or try one of the examples there.
+                    Examples were chosen to cover a broad range
+                    of applications to show how Conformal can work for any discipline that
+                    uses MATLAB. Change variable values in place to see how Conformal reacts to new shapes and dimensions.
+                    Note: the playground runs entirely in your browser, so your code is never uploaded and
+                    the page cannot read or write files on your computer.
                 </p>
             </div>
             <a href="playground.html" class="btn btn-primary">Open the playground</a>
@@ -629,13 +616,13 @@ R = <span class="code-func">process</span>(A, w);</code></pre>
                 <li>Indexing past the end of an array</li>
                 <li>Mistakes that only show up when one function hands data to another, including across files</li>
                 <li>Size errors hiding inside structs, cell arrays, and class objects</li>
-                <li>Code that MATLAB Coder will refuse to compile, once that check is switched on</li>
+                <li>Code that MATLAB Coder will refuse to compile when the option is enabled</li>
             </ul>
         </section>
 
-        <!-- Where you run it -->
+        <!-- Where to run it -->
         <section class="section">
-            <h2>Where you run it</h2>
+            <h2>Where to run it</h2>
             <table class="runtable">
                 <tr>
                     <th>Where</th>
@@ -654,8 +641,8 @@ R = <span class="code-func">process</span>(A, w);</code></pre>
                     <td>One file, or a whole folder in a single pass</td>
                 </tr>
                 <tr>
-                    <td>Your build system</td>
-                    <td>A machine-readable report, so a bad merge fails the build instead of reaching someone else</td>
+                    <td>A build system</td>
+                    <td>A machine-readable report, so a bad merge fails the build</td>
                 </tr>
             </table>
         </section>
@@ -679,7 +666,7 @@ R = <span class="code-func">process</span>(A, w);</code></pre>
                 <div class="step">
                     <span class="step-num">2</span>
                     <div>
-                        <strong>Add conformal_check.m to your MATLAB path</strong><br>
+                        <strong>Add conformal_check.m to the MATLAB path</strong><br>
                         <span class="step-detail">Download <a href="https://github.com/EthanDoughty/conformal/blob/main/site/conformal_check.m" style="color:var(--accent)">conformal_check.m</a>
                         and save it anywhere on your MATLAB path. This is a small wrapper that calls the CLI binary and prints results
                         in the command window.</span>
@@ -689,13 +676,13 @@ R = <span class="code-func">process</span>(A, w);</code></pre>
                     <span class="step-num">3</span>
                     <div>
                         <strong>Analyze</strong><br>
-                        <span class="step-detail"><code class="inline">&gt;&gt; conformal_check</code> to analyze whatever file is open in the editor.<br>
+                        <span class="step-detail"><code class="inline">&gt;&gt; conformal_check</code> to analyze the file that is currently open in the editor.<br>
                         <code class="inline">&gt;&gt; conformal_check('ekf_update.m')</code> to analyze a specific file.</span>
                     </div>
                 </div>
             </div>
             <p style="margin-top:16px">
-                For a team: put both files on a shared drive and add it in everyone's <code class="inline">startup.m</code>.
+                For a team: put both files on a shared drive and add it in each individual's <code class="inline">startup.m</code>.
             </p>
         </section>
 
@@ -705,7 +692,7 @@ R = <span class="code-func">process</span>(A, w);</code></pre>
             <p>
                 15,085 .m files from 34 public projects, including chebfun (3,435 files), PlatEMO (2,416),
                 MATPOWER (979), NASA's MUSCAT spacecraft toolkit, the KU CReSIS polar radar toolbox,
-                LADAC aircraft dynamics, eeglab, and ecg-kit. Zero crashes across the full corpus.
+                LADAC aircraft dynamics, eeglab, and ecg-kit.
             </p>
             <div class="domains">
                 <span class="domain-tag">aerospace</span>
@@ -730,15 +717,15 @@ R = <span class="code-func">process</span>(A, w);</code></pre>
                 <h2>How the analysis works</h2>
                 <p>
                     Shapes are inferred over a small lattice and carried across function calls, files, nested
-                    functions, and closures, so a mismatch deep in a call chain still traces back to where it
-                    started. Struct fields, cell contents, classdef properties, and the
+                    functions, and closures. This allows mismatches deep in a call chain to trace back to where they
+                    were introduced. Struct fields, cell contents, classdef properties, and the
                     <code class="inline">nargin</code>/<code class="inline">nargout</code>/<code class="inline">varargin</code>
-                    forms are all tracked. Dimensions can stay symbolic, so
+                    forms are all tracked. Dimensions can stay symbolic throughout the abstract interpretation, so
                     <code class="inline">zeros(n+1, 2*m)</code> is held as <code class="inline">matrix[(n+1) x (2*m)]</code>
-                    and that expression survives the rest of the program instead of collapsing to unknown. Loop
+                    and the algebraic expression survives the rest of the program instead of collapsing to unknown. Loop
                     index bounds are tracked relationally, which is why
-                    <code class="inline">for i=1:n-1; A(i+1)</code> raises no false alarm. Analysis is
-                    path-sensitive, so shapes that only differ on a branch that cannot run stay quiet.
+                    <code class="inline">for i=1:n-1; A(i+1)</code> raises no false alarm. The analysis is
+                    path-sensitive, so shapes that only differ on a branch that can't run stay silent.
                 </p>
             </div>
             <div>
@@ -746,25 +733,13 @@ R = <span class="code-func">process</span>(A, w);</code></pre>
                 <p>
                     <code class="inline">--format sarif</code> produces SARIF 2.1.0 with SHA-256 file hashes for
                     traceability. <code class="inline">--batch dir/</code> sweeps a directory in one process.
-                    <code class="inline">.conformal.json</code> locks per-repo settings so the whole team runs the
-                    same checks. <code class="inline">--coder</code> flags constructs that MATLAB Coder cannot
-                    compile. <code class="inline">--fixpoint</code> switches loops to widening-based iteration
-                    when single-pass is not enough. Output is deterministic, which matters when the result gates
-                    a build.
+                    <code class="inline">.conformal.json</code> locks per-repo settings so a team can run the
+                    same checks. <code class="inline">--coder</code> flags constructs that MATLAB Coder can't
+                    compile. <code class="inline">--fixpoint</code> switches to widening-based iteration
+                    to analyze loops beyond a single-pass.
                 </p>
             </div>
         </div>
-
-        <!-- Migrate teaser -->
-        <section class="migrate-section">
-            <h2>Conformal Migrate</h2>
-            <p>
-                The repo also includes a MATLAB-to-Python transpiler. It uses the shape analysis to pick
-                <code class="inline">*</code> vs <code class="inline">np.dot</code>, handles many builtins,
-                and converts 1-based indexing to 0-based with constant folding. Work in progress.
-            </p>
-        </section>
-
     </div>
 
     <footer>
@@ -778,7 +753,7 @@ R = <span class="code-func">process</span>(A, w);</code></pre>
                     <a href="https://github.com/EthanDoughty/conformal/blob/main/CHANGELOG.md">Changelog</a>
                     <a href="https://github.com/EthanDoughty/conformal/issues/new/choose">Feedback</a>
                 </div>
-                <p>BSL-1.1 License. Built by Ethan Doughty.</p>
+                <p>BSL-1.1 License. Built by Ethan Doughty (2026).</p>
             </div>
         </div>
     </footer>
